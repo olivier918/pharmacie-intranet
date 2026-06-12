@@ -1,0 +1,13 @@
+# Dépendances (recréées par "npm install" — ne pas versionner)
+node_modules/
+
+# Données vivantes et sauvegardes locales de la pharmacie (propres à chaque serveur)
+data/*.json
+
+# Réglages locaux de Claude Code / de l'éditeur
+.claude/settings.local.json
+
+# Divers
+*.log
+Thumbs.db
+.DS_Store

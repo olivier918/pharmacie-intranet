@@ -1,0 +1,12 @@
+{
+  "name": "pharmacie-intranet",
+  "version": "1.0.0",
+  "description": "Intranet Pharmacie du Centre — Mondeville",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

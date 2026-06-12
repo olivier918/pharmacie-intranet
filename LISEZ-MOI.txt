@@ -1,0 +1,78 @@
+╔══════════════════════════════════════════════════════════════╗
+║          PHARMACIE DU CENTRE — INTRANET                     ║
+║          Guide d'installation                               ║
+╚══════════════════════════════════════════════════════════════╝
+
+PRÉREQUIS
+─────────
+• Un PC Windows 10/11 connecté au réseau de la pharmacie
+• Ce PC doit rester allumé pendant les heures d'ouverture
+• Connexion internet (uniquement pour l'installation initiale)
+
+
+ÉTAPE 1 — Installer Node.js (une seule fois)
+─────────────────────────────────────────────
+1. Ouvrir le navigateur sur le PC serveur
+2. Aller sur : https://nodejs.org
+3. Télécharger la version « LTS » (le gros bouton vert)
+4. Installer en cliquant Suivant à chaque étape
+5. Redémarrer le PC si demandé
+
+
+ÉTAPE 2 — Installer l'intranet (une seule fois)
+────────────────────────────────────────────────
+1. Copier le dossier « pharmacie-intranet » sur le Bureau
+2. Double-cliquer sur « installer.bat »
+3. Attendre que le message « Installation terminée » apparaisse
+4. Fermer la fenêtre
+
+
+ÉTAPE 3 — Démarrer l'intranet (chaque jour)
+────────────────────────────────────────────
+1. Double-cliquer sur « demarrer.bat »
+2. Une fenêtre noire s'ouvre avec l'adresse à utiliser
+3. NE PAS FERMER cette fenêtre (la réduire dans la barre des tâches)
+
+   ┌──────────────────────────────────────────┐
+   │  Sur ce poste :  http://localhost:3000   │
+   │  Autres postes : http://192.168.X.X:3000│
+   └──────────────────────────────────────────┘
+
+
+ÉTAPE 4 — Accéder depuis les autres postes
+──────────────────────────────────────────
+Sur chaque poste de la pharmacie, ouvrir le navigateur
+(Chrome, Edge, Firefox) et taper l'adresse affichée
+dans la fenêtre noire (ex: http://192.168.1.50:3000).
+
+Conseil : mettre cette adresse en favori/marque-page.
+
+
+CONNEXION
+─────────
+• E-mail    : admin@pharmacie-mondeville.fr
+• Mot de passe : pharma2026
+• Puis entrer votre code PIN personnel
+
+
+SAUVEGARDE
+──────────
+Les données sont sauvegardées automatiquement dans le dossier
+pharmacie-intranet/data/ sur le PC serveur.
+Une sauvegarde quotidienne est créée automatiquement.
+
+
+DÉPANNAGE
+─────────
+❓ « Le site ne s'affiche pas depuis un autre poste »
+   → Vérifier que la fenêtre noire est ouverte sur le PC serveur
+   → Vérifier que les deux PC sont sur le même réseau Wi-Fi/Ethernet
+   → Le pare-feu Windows peut bloquer : autoriser Node.js si demandé
+
+❓ « Les données ont disparu »
+   → Les données sont dans pharmacie-intranet/data/pharmacie-data.json
+   → Des sauvegardes quotidiennes sont dans le même dossier (backup-YYYY-MM-DD.json)
+
+❓ « Erreur au démarrage »
+   → Relancer installer.bat
+   → Si ça persiste, réinstaller Node.js depuis nodejs.org
