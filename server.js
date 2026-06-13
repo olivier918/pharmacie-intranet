@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'pharmacie-data.json');
 
 // Parse JSON bodies up to 50MB (for base64 images in preps)
