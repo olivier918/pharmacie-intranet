@@ -1258,6 +1258,23 @@ tr:hover td{background:#fafffe}
   </div>
 </div>
 
+<!-- Edit staff PIN -->
+<div class="overlay" id="staff-pin-modal">
+  <div class="confirm-box">
+    <h4><svg class="ico"><use href="#ic-verrouiller"></use></svg> Modifier le code PIN</h4>
+    <p id="staff-pin-name" style="font-weight:600;margin-bottom:.8rem;color:var(--g-dark)"></p>
+    <div class="fg">
+      <label>Nouveau code PIN (4 chiffres)</label>
+      <input type="password" id="staff-pin-input" maxlength="4" placeholder="••••" style="font-size:1.3rem;letter-spacing:.5rem;text-align:center;padding:.7rem" autocomplete="off" inputmode="numeric">
+    </div>
+    <div id="staff-pin-error" style="display:none;color:var(--red);font-size:.8rem;margin-top:.5rem;font-weight:500"></div>
+    <div class="confirm-btns" style="margin-top:1.1rem">
+      <button class="btn bp" onclick="saveStaffPin()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
+      <button class="btn bs" onclick="closeModal('staff-pin-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <!-- Mail preview -->
 <div class="overlay" id="mail-modal">
   <div class="mbox" style="max-width:640px">
@@ -2730,7 +2747,61 @@ function renderStaff(){
       <div style="font-weight:600;font-size:.92rem">${s.prenom} ${s.nom}</div>
       <div style="font-size:.74rem;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px">${s.poste}</div>
       <div style="font-size:.7rem;color:var(--gray-400)">Code : ${s.id}</div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn bs sm" onclick="editStaffPin('${s.id}')" title="Modifier le code PIN"><svg class="ico"><use href="#ic-verrouiller"></use></svg> PIN</button>
+        <button class="btn bd sm" onclick="deleteStaff('${s.id}')" title="Supprimer ce collaborateur"><svg class="ico"><use href="#ic-supprimer"></use></svg></button>
+      </div>
     </div>`).join('');
+}
+
+let staffPinEditId=null;
+function editStaffPin(id){
+  const s=staffDB.find(x=>x.id===id);
+  if(!s)return;
+  staffPinEditId=id;
+  document.getElementById('staff-pin-name').textContent=`${s.prenom} ${s.nom} — ${s.poste}`;
+  document.getElementById('staff-pin-input').value='';
+  document.getElementById('staff-pin-error').style.display='none';
+  openModal('staff-pin-modal');
+  setTimeout(()=>document.getElementById('staff-pin-input').focus(),100);
+}
+function saveStaffPin(){
+  if(!staffPinEditId)return;
+  const pin=document.getElementById('staff-pin-input').value;
+  const err=document.getElementById('staff-pin-error');
+  if(pin.length!==4||!/^\d+$/.test(pin)){
+    err.textContent='Le PIN doit contenir exactement 4 chiffres.';
+    err.style.display='block';
+    return;
+  }
+  const conflict=staffDB.find(x=>x.id!==staffPinEditId&&x.pin===pin);
+  if(conflict){
+    err.textContent=`Ce PIN est déjà utilisé par ${conflict.prenom} ${conflict.nom}.`;
+    err.style.display='block';
+    return;
+  }
+  const s=staffDB.find(x=>x.id===staffPinEditId);
+  if(s)s.pin=pin;
+  staffPinEditId=null;
+  closeModal('staff-pin-modal');
+  renderStaff();
+}
+function deleteStaff(id){
+  const s=staffDB.find(x=>x.id===id);
+  if(!s)return;
+  if(currentUser&&currentUser.id===id){
+    alert("Vous ne pouvez pas supprimer votre propre compte pendant que vous êtes connecté(e). Demandez à un(e) collègue de le faire.");
+    return;
+  }
+  document.getElementById('conf-title').textContent='Supprimer ce collaborateur';
+  document.getElementById('conf-msg').textContent=`Supprimer définitivement ${s.prenom} ${s.nom} (${s.poste}) ? Cette action est irréversible. Les actions passées (livraisons, messages, etc.) conserveront la mention « ${s.id} » comme référence historique.`;
+  pendingAction=()=>{
+    staffDB=staffDB.filter(x=>x.id!==id);
+    renderStaff();
+    closeModal('confirm-modal');
+  };
+  document.getElementById('conf-ok').onclick=pendingAction;
+  openModal('confirm-modal');
 }
 function loadLabo(){
   document.getElementById('lab-nom').value=labo.nom;
