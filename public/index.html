@@ -887,10 +887,10 @@ tr:hover td{background:#fafffe}
           <span style="font-size:.78rem;color:var(--gray-500)">feuille à plier en enveloppe</span>
         </div>
         <div class="fgrid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
-          <div class="fg"><label>Billets de 100 €</label><input type="number" min="0" step="1" id="cf-100" oninput="updCoffre()" placeholder="0"></div>
-          <div class="fg"><label>Billets de 50 €</label><input type="number" min="0" step="1" id="cf-50" oninput="updCoffre()" placeholder="0"></div>
-          <div class="fg"><label>Billets de 20 €</label><input type="number" min="0" step="1" id="cf-20" oninput="updCoffre()" placeholder="0"></div>
           <div class="fg"><label>Billets de 10 €</label><input type="number" min="0" step="1" id="cf-10" oninput="updCoffre()" placeholder="0"></div>
+          <div class="fg"><label>Billets de 20 €</label><input type="number" min="0" step="1" id="cf-20" oninput="updCoffre()" placeholder="0"></div>
+          <div class="fg"><label>Billets de 50 €</label><input type="number" min="0" step="1" id="cf-50" oninput="updCoffre()" placeholder="0"></div>
+          <div class="fg"><label>Billets de 100 €</label><input type="number" min="0" step="1" id="cf-100" oninput="updCoffre()" placeholder="0"></div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;flex-wrap:wrap;gap:8px">
           <div style="font-size:.95rem">Total : <strong id="cf-total" style="font-size:1.3rem;color:var(--g-dark)">0,00 €</strong> <span id="cf-count" style="font-size:.8rem;color:var(--gray-500)"></span></div>
@@ -4510,7 +4510,7 @@ function printCaisseMonth(){
 }
 
 // ─── Comptage des billets pour mise au coffre (enveloppe imprimable) ───
-const COFFRE = [100,50,20,10];
+const COFFRE = [10,20,50,100];
 function updCoffre(){
   let total=0, count=0;
   COFFRE.forEach(v=>{ const n=parseInt(document.getElementById('cf-'+v)?.value||'0',10)||0; total+=n*v; count+=n; });
