@@ -76,6 +76,10 @@ header{grid-area:hd;background:#fff;color:var(--gray-900);padding:0 1.5rem;displ
 .sb-item.active{background:var(--g-pale);color:var(--g-dark);border-left-color:var(--g-mid);font-weight:600}
 .sb-ico{width:22px;height:22px;flex-shrink:0}
 .sb-label{overflow:hidden;text-overflow:ellipsis}
+.sb-badge{margin-left:auto;background:var(--amber);color:#fff;font-size:.66rem;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:none;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;line-height:1}
+.sb-badge.on{display:inline-flex}
+#app.sb-collapsed .sb-item{position:relative}
+#app.sb-collapsed .sb-badge{position:absolute;top:5px;right:7px;margin:0;min-width:16px;height:16px;font-size:.58rem;padding:0 3px}
 #app.sb-collapsed .sb-label{display:none}
 #app.sb-collapsed .sb-item{justify-content:center;padding:.7rem .5rem;gap:0}
 
@@ -464,7 +468,7 @@ tr:hover td{background:#fafffe}
   </header>
 
   <aside class="sidebar" id="sidebar">
-    <button class="sb-item active" data-sec="livraisons" onclick="showSec('livraisons',this)"><svg class="ico sb-ico"><use href="#ic-livraison"></use></svg><span class="sb-label">Livraisons</span></button>
+    <button class="sb-item active" data-sec="livraisons" onclick="showSec('livraisons',this)"><svg class="ico sb-ico"><use href="#ic-livraison"></use></svg><span class="sb-label">Livraisons</span><span class="sb-badge" id="navb-liv" title="Livraisons à préparer"></span></button>
     <button class="sb-item" data-sec="messagerie" onclick="showSec('messagerie',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">Messagerie</span></button>
     <button class="sb-item" data-sec="preparations" onclick="showSec('preparations',this)"><svg class="ico sb-ico"><use href="#ic-realisation"></use></svg><span class="sb-label">Préparations</span></button>
     <button class="sb-item" data-sec="bpm" onclick="showSec('bpm',this)"><svg class="ico sb-ico"><use href="#ic-ordonnance"></use></svg><span class="sb-label">BPM</span></button>
@@ -1330,7 +1334,7 @@ tr:hover td{background:#fafffe}
     <div class="fg" style="margin-top:.7rem"><label>Note (optionnel)</label><textarea id="cpay-notes" placeholder="Ex : réglé en caisse, régularisation mutuelle reçue, plan de paiement convenu…"></textarea></div>
     <div style="font-size:.74rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45;padding:8px 10px;background:#f5f5f5;border-radius:6px">La saisie comptable (mode de paiement, montants encaissés) reste à effectuer dans votre logiciel métier. Cette action ferme uniquement le dossier de relance.</div>
     <div style="display:flex;gap:8px;margin-top:1rem">
-      <button class="btn bp" onclick="saveCredSolder()"><svg class="ico"><use href="#ic-clore-dossier"></use></svg> Clore le dossier</button>
+      <button class="btn bp" onclick="saveCredSolder()" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-clore-dossier"></use></svg> Clore le dossier</button>
       <button class="btn bs" onclick="closeModal('cred-pay-modal')">Annuler</button>
     </div>
   </div>
@@ -1900,6 +1904,14 @@ function restoreSidebarState(){
 }
 function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();schedSave();}
 
+// Pastille bandeau : nombre de livraisons « à préparer »
+function updateNavBadges(){
+  const el=document.getElementById('navb-liv'); if(!el)return;
+  const n=deliveries.filter(d=>d.status==='wait').length;
+  if(n>0){ el.textContent=n>99?'99+':String(n); el.classList.add('on'); }
+  else{ el.textContent=''; el.classList.remove('on'); }
+}
+
 // ═══════════ DELIVERIES ═══════════
 function setView(v,btn){
   delivView=v;
@@ -1911,6 +1923,8 @@ function renderD(){
   const date=document.getElementById('dv-date').value;
   const sf=document.getElementById('dv-status').value;
   const lf=document.getElementById('dv-lieu').value;
+
+  updateNavBadges();
 
   // Base data for the selected period (day or week) — no status/lieu filter
   let periodData=[...deliveries];
@@ -4041,7 +4055,7 @@ function renderCreds(){
             <button class="btn bs btn-ico" onclick="openCredDetail(${c.id})" title="Détail">${ico('voir')}</button>
             ${c.status==='en cours'?`<button class="btn bs btn-ico" onclick="openCredRelanceModal(${c.id})" title="Enregistrer une relance">${ico('telephone')}</button>`:''}
             ${c.status==='en cours'?`<button class="btn bs btn-ico" onclick="openCredMsgModal(${c.id})" title="Préparer un message">${ico('envoyer')}</button>`:''}
-            ${c.status==='en cours'?`<button class="btn bp btn-ico" onclick="openCredSolder(${c.id})" title="Clore le dossier">${ico('clore-dossier')}</button>`:''}
+            ${c.status==='en cours'?`<button class="btn bp btn-ico" onclick="openCredSolder(${c.id})" title="Clore le dossier" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)">${ico('clore-dossier')}</button>`:''}
             <button class="btn bd btn-ico" onclick="deleteCred(${c.id})" title="Supprimer">${ico('corbeille')}</button>
           </div>
         </td>
@@ -4212,7 +4226,7 @@ function openCredDetail(id){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:1.2rem">
       ${c.status==='en cours'?`<button class="btn bs sm" onclick="closeModal('cred-detail-modal');openCredRelanceModal(${c.id})">${ico('telephone')} Saisir une relance</button>`:''}
       ${c.status==='en cours'?`<button class="btn bs sm" onclick="closeModal('cred-detail-modal');openCredMsgModal(${c.id})">${ico('envoyer')} Préparer un message</button>`:''}
-      ${c.status==='en cours'?`<button class="btn bp sm" onclick="closeModal('cred-detail-modal');openCredSolder(${c.id})">${ico('clore-dossier')} Clore le dossier</button>`:''}
+      ${c.status==='en cours'?`<button class="btn bp sm" onclick="closeModal('cred-detail-modal');openCredSolder(${c.id})" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)">${ico('clore-dossier')} Clore le dossier</button>`:''}
       ${c.status==='en cours'?`<button class="btn bd sm" onclick="markCredIrrecouvrable(${c.id})">${ico('supprimer')} Irrécouvrable</button>`:''}
       ${c.status!=='en cours'?`<button class="btn bs sm" onclick="reopenCred(${c.id})">${ico('renouveler')} Ré-ouvrir</button>`:''}
     </div>`;
