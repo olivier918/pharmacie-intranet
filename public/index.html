@@ -1075,10 +1075,9 @@ tr:hover td{background:#fafffe}
         <button class="btn bp" id="bot1" onclick="boTab('staff')"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Collaborateurs</button>
         <button class="btn bs" id="bot2" onclick="boTab('patients')"><svg class="ico"><use href="#ic-patients"></use></svg> Patients</button>
         <button class="btn bs" id="bot5" onclick="boTab('medecins')"><svg class="ico"><use href="#ic-medecin"></use></svg> Médecins</button>
-        <button class="btn bs" id="bot3" onclick="boTab('labo')"><svg class="ico"><use href="#ic-realisation"></use></svg> Préparatoire sous-traitant</button>
+        <button class="btn bs" id="bot3" onclick="boTab('labo')"><svg class="ico"><use href="#ic-realisation"></use></svg> Sous-traitants</button>
         <button class="btn bs" id="bot4" onclick="boTab('compte')"><svg class="ico"><use href="#ic-securite"></use></svg> Compte admin</button>
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
-        <button class="btn bs" id="bot7" onclick="boTab('retours')"><svg class="ico"><use href="#ic-retour"></use></svg> Retours Bluestone</button>
       </div>
 
       <!-- STAFF -->
@@ -1164,6 +1163,15 @@ tr:hover td{background:#fafffe}
           <button class="btn bp" style="margin-top:.9rem" onclick="saveLabo()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
           <div id="labo-saved" style="display:none;margin-top:.75rem;color:#2E7D32;font-size:.85rem"><svg class="ico"><use href="#ic-valider"></use></svg> Informations enregistrées</div>
         </div>
+        <div class="card">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-retour"></use></svg> Fournisseur matériel — Bluestone Medical</span></div>
+          <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">Adresse e-mail à laquelle part le mail récapitulatif de retour du matériel loué. Modifiez-la temporairement (par ex. votre propre adresse) pour tester l'envoi, puis remettez celle de Bluestone.</div>
+          <div class="fgrid" style="grid-template-columns:1fr">
+            <div class="fg"><label>E-mail destinataire des retours</label><input type="email" id="bs-mail" placeholder="serviceclient@bluestone-medical.fr"></div>
+          </div>
+          <button class="btn bp" style="margin-top:.9rem" onclick="saveBluestone()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
+          <div id="bs-saved" style="display:none;margin-top:.75rem;color:#2E7D32;font-size:.85rem"><svg class="ico"><use href="#ic-valider"></use></svg> Adresse enregistrée</div>
+        </div>
       </div>
 
       <!-- COMPTE -->
@@ -1192,18 +1200,6 @@ tr:hover td{background:#fafffe}
         </div>
       </div>
 
-      <!-- RETOURS BLUESTONE -->
-      <div id="bo-retours" style="display:none">
-        <div class="card" style="max-width:520px">
-          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-retour"></use></svg> Destinataire des retours Bluestone</span></div>
-          <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">Adresse e-mail à laquelle part le mail récapitulatif de retour. Modifiez-la temporairement pour tester l'envoi (par ex. votre propre adresse), puis remettez celle de Bluestone.</div>
-          <div class="fgrid" style="grid-template-columns:1fr">
-            <div class="fg"><label>E-mail destinataire (Bluestone Medical)</label><input type="email" id="bs-mail" placeholder="serviceclient@bluestone-medical.fr"></div>
-          </div>
-          <button class="btn bp" style="margin-top:.9rem" onclick="saveBluestone()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
-          <div id="bs-saved" style="display:none;margin-top:.75rem;color:#2E7D32;font-size:.85rem"><svg class="ico"><use href="#ic-valider"></use></svg> Adresse enregistrée</div>
-        </div>
-      </div>
     </div>
   </main>
 </div>
@@ -3000,19 +2996,18 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot4','bot6','bot7'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte','bo-backups','bo-retours'];
+const BOT=['bot1','bot2','bot5','bot3','bot4','bot6'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte','bo-backups'];
 function boTab(t){
   if((t==='compte'||t==='backups') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,compte:4,backups:5,retours:6};
+  const map={staff:0,patients:1,medecins:2,labo:3,compte:4,backups:5};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
   if(t==='patients')renderPatients();
   if(t==='medecins')renderMedecins();
-  if(t==='labo')loadLabo();
+  if(t==='labo'){loadLabo();loadBluestone();}
   if(t==='backups')renderBackups();
-  if(t==='retours')loadBluestone();
   applyAdminUI();
 }
 
