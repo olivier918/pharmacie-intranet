@@ -21,6 +21,33 @@ let dbError = null;      // dernier message d'erreur de connexion (diagnostic)
 let dbConnectedAt = null;
 const DATABASE_URL = process.env.DATABASE_URL;
 
+// ─── ENVOI D'E-MAILS (SMTP via nodemailer) ───
+let mailTransport = null;
+let mailError = null;
+function initMail() {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    console.log('  ✉️  SMTP non configuré (envoi direct désactivé)');
+    return;
+  }
+  try {
+    const nodemailer = require('nodemailer');
+    const port = parseInt(SMTP_PORT || '587', 10);
+    mailTransport = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port,
+      secure: process.env.SMTP_SECURE === 'true' || port === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS }
+    });
+    mailError = null;
+    console.log('  ✉️  Envoi SMTP configuré (' + SMTP_HOST + ')');
+  } catch (err) {
+    mailError = err.message;
+    console.error('  ❌ Erreur configuration SMTP:', err.message);
+    mailTransport = null;
+  }
+}
+
 async function initDB() {
   if (!DATABASE_URL) {
     console.log('  📁 Mode fichier local (pas de DATABASE_URL)');
@@ -73,6 +100,35 @@ app.get('/api/health', (req, res) => {
     dbError,
     time: new Date().toISOString()
   });
+});
+
+// ─── Statut de l'envoi d'e-mails (le front active/désactive le bouton Envoyer) ───
+app.get('/api/mail-status', (req, res) => {
+  res.json({
+    configured: !!mailTransport,
+    from: process.env.MAIL_FROM || process.env.SMTP_USER || null,
+    error: mailError
+  });
+});
+
+// ─── Envoi d'un e-mail (déclenché par l'utilisateur depuis l'appli) ───
+app.post('/api/send-mail', async (req, res) => {
+  if (!mailTransport) return res.status(400).json({ ok: false, error: 'Envoi SMTP non configuré sur le serveur.' });
+  const { to, cc, subject, text } = req.body || {};
+  if (!to || !subject || !text) return res.status(400).json({ ok: false, error: 'Destinataire, objet et message sont requis.' });
+  try {
+    const info = await mailTransport.sendMail({
+      from: process.env.MAIL_FROM || process.env.SMTP_USER,
+      to,
+      cc: cc || undefined,
+      subject,
+      text
+    });
+    res.json({ ok: true, id: info.messageId });
+  } catch (err) {
+    console.error('Envoi mail:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // ─── Archive l'état ACTUEL avant qu'il ne soit remplacé (filet anti-écrasement) ───
@@ -197,6 +253,7 @@ app.get('/api/backups/:id', async (req, res) => {
 // ─── Start server ───
 async function start() {
   await initDB();
+  initMail();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log('');

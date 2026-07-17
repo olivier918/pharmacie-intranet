@@ -1078,6 +1078,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot3" onclick="boTab('labo')"><svg class="ico"><use href="#ic-realisation"></use></svg> Préparatoire sous-traitant</button>
         <button class="btn bs" id="bot4" onclick="boTab('compte')"><svg class="ico"><use href="#ic-securite"></use></svg> Compte admin</button>
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
+        <button class="btn bs" id="bot7" onclick="boTab('retours')"><svg class="ico"><use href="#ic-retour"></use></svg> Retours Bluestone</button>
       </div>
 
       <!-- STAFF -->
@@ -1188,6 +1189,19 @@ tr:hover td{background:#fafffe}
           </div>
           <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">Chaque enregistrement crée une sauvegarde de l'état précédent en base (les 300 dernières sont conservées). Vous pouvez visualiser un état antérieur ou le restaurer en un clic. Les heures sont affichées en heure française.</div>
           <div id="bk-list"></div>
+        </div>
+      </div>
+
+      <!-- RETOURS BLUESTONE -->
+      <div id="bo-retours" style="display:none">
+        <div class="card" style="max-width:520px">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-retour"></use></svg> Destinataire des retours Bluestone</span></div>
+          <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">Adresse e-mail à laquelle part le mail récapitulatif de retour. Modifiez-la temporairement pour tester l'envoi (par ex. votre propre adresse), puis remettez celle de Bluestone.</div>
+          <div class="fgrid" style="grid-template-columns:1fr">
+            <div class="fg"><label>E-mail destinataire (Bluestone Medical)</label><input type="email" id="bs-mail" placeholder="serviceclient@bluestone-medical.fr"></div>
+          </div>
+          <button class="btn bp" style="margin-top:.9rem" onclick="saveBluestone()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
+          <div id="bs-saved" style="display:none;margin-top:.75rem;color:#2E7D32;font-size:.85rem"><svg class="ico"><use href="#ic-valider"></use></svg> Adresse enregistrée</div>
         </div>
       </div>
     </div>
@@ -1705,8 +1719,10 @@ tr:hover td{background:#fafffe}
     <input type="text" id="ret-mail-subject" readonly style="width:100%;margin-bottom:.6rem;font-size:.82rem">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.3rem"><label style="font-size:.78rem;font-weight:700;color:var(--gray-700)">Message</label><button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="copyRenouvField('ret-mail-content',this)">Copier le message</button></div>
     <textarea id="ret-mail-content" readonly style="width:100%;min-height:180px;font-size:.82rem;line-height:1.5"></textarea>
-    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
-      <a class="btn bp" id="ret-mail-open" href="#" style="text-decoration:none"><svg class="ico"><use href="#ic-envoyer"></use></svg> Ouvrir dans ma messagerie</a>
+    <div id="ret-mail-hint" style="font-size:.75rem;color:var(--gray-500);margin-top:.8rem;line-height:1.5"></div>
+    <div style="display:flex;gap:8px;margin-top:.6rem;flex-wrap:wrap">
+      <button class="btn bp" id="ret-mail-send" onclick="sendRetourMailNow()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Envoyer à Bluestone</button>
+      <a class="btn bs" id="ret-mail-open" href="#" style="text-decoration:none"><svg class="ico"><use href="#ic-envoyer"></use></svg> Ouvrir ma messagerie</a>
       <button class="btn bs" onclick="openRetourAffiche(currentRetourId)"><svg class="ico"><use href="#ic-imprimer"></use></svg> Rouvrir l'affiche</button>
       <button class="btn bs" onclick="closeModal('ret-mail-modal')">Fermer</button>
     </div>
@@ -1830,7 +1846,7 @@ function schedSave(){ if(!_loadedOK||_suppressSave) return; clearTimeout(_saveTi
 async function saveAll(){
   try{
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
   }catch(e){console.warn('Sauvegarde:',e.message);}
 }
 async function loadAll(){
@@ -1852,6 +1868,7 @@ async function loadAll(){
     if(data.controles)controles=data.controles;
     if(data.controlesMail)controlesMail=data.controlesMail;
     if(data.retours)retours=data.retours;
+    if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
   }catch(e){console.warn('Chargement:',e.message);}
 }
@@ -1872,6 +1889,7 @@ setInterval(async()=>{
         if(d.controles)controles=d.controles;
         if(d.controlesMail)controlesMail=d.controlesMail;
         if(d.retours)retours=d.retours;
+        if(d.bluestone&&d.bluestone.mail)BLUESTONE.mail=d.bluestone.mail;
         _suppressSave=true; try{ renderAll(); } finally { _suppressSave=false; }
       }
     }catch(e){ _loadedOK=false; }
@@ -2982,11 +3000,11 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot4','bot6'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte','bo-backups'];
+const BOT=['bot1','bot2','bot5','bot3','bot4','bot6','bot7'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte','bo-backups','bo-retours'];
 function boTab(t){
   if((t==='compte'||t==='backups') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,compte:4,backups:5};
+  const map={staff:0,patients:1,medecins:2,labo:3,compte:4,backups:5,retours:6};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
@@ -2994,6 +3012,7 @@ function boTab(t){
   if(t==='medecins')renderMedecins();
   if(t==='labo')loadLabo();
   if(t==='backups')renderBackups();
+  if(t==='retours')loadBluestone();
   applyAdminUI();
 }
 
@@ -3452,6 +3471,18 @@ function saveLabo(){
   labo.tel=document.getElementById('lab-tel').value;
   labo.mail=document.getElementById('lab-mail').value;
   const el=document.getElementById('labo-saved');
+  el.style.display='block';
+  setTimeout(()=>el.style.display='none',3000);
+}
+function loadBluestone(){
+  const el=document.getElementById('bs-mail'); if(el)el.value=BLUESTONE.mail||'';
+}
+function saveBluestone(){
+  const v=document.getElementById('bs-mail').value.trim();
+  if(!v || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)){ alert('Veuillez saisir une adresse e-mail valide.'); return; }
+  BLUESTONE.mail=v;
+  schedSave();
+  const el=document.getElementById('bs-saved');
   el.style.display='block';
   setTimeout(()=>el.style.display='none',3000);
 }
@@ -5569,6 +5600,7 @@ function renderRetours(){
       +'<div style="font-weight:700;color:var(--gray-900);margin-top:2px">'+ctlEsc(r.patient||'')+'</div>'
       +'<div style="font-size:.78rem;color:var(--gray-500);margin-top:2px">Parc : '+ctlEsc(r.parc||'—')+' · Fin de location : '+ctlEsc(r.finFr||'—')+'</div>'
       +'<div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">'+ico('retour')+' '+ctlEsc(r.canalLbl||'')+' · '+ico('utilisateur')+' '+ctlEsc(r.operateur||'—')+' · '+ctlEsc(r.dateFr||'')+'</div>'
+      +(r.mailSent?'<div style="font-size:.72rem;color:var(--g-dark);font-weight:700;margin-top:3px">✓ Mail envoyé le '+ctlEsc(new Date(r.mailSent).toLocaleDateString('fr-FR'))+'</div>':'')
       +'</div></div>'
       +'<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">'
       +'<button class="btn bp sm" onclick="openRetourAffiche('+r.id+')">'+ico('imprimer')+' Affiche</button>'
@@ -5704,6 +5736,49 @@ function openRetourMail(id){
   document.getElementById('ret-mail-content').value=m.body;
   document.getElementById('ret-mail-open').href='mailto:'+m.to+'?subject='+encodeURIComponent(m.subject)+'&body='+encodeURIComponent(m.body);
   openModal('ret-mail-modal');
+  updateMailSendUI(rec);
+}
+
+async function updateMailSendUI(rec){
+  const btn=document.getElementById('ret-mail-send');
+  const hint=document.getElementById('ret-mail-hint');
+  if(!btn||!hint)return;
+  btn.disabled=true; btn.style.opacity='.5'; hint.textContent='Vérification de la configuration d\'envoi…';
+  try{
+    const r=await fetch('/api/mail-status'); const s=await r.json();
+    if(s.configured){
+      btn.disabled=false; btn.style.opacity='';
+      let t='Le mail sera envoyé depuis '+(s.from||'votre messagerie')+' à '+BLUESTONE.mail+'.';
+      if(rec&&rec.mailSent){ t='✓ Déjà envoyé le '+new Date(rec.mailSent).toLocaleString('fr-FR')+'. Vous pouvez le renvoyer.'; }
+      hint.textContent=t;
+    } else {
+      btn.disabled=true; btn.style.opacity='.5';
+      hint.textContent='Envoi direct non configuré sur le serveur. Utilisez « Ouvrir ma messagerie », ou renseignez les variables SMTP (voir la doc).';
+    }
+  }catch(e){ btn.disabled=true; btn.style.opacity='.5'; hint.textContent='Statut d\'envoi indisponible pour le moment.'; }
+}
+
+async function sendRetourMailNow(){
+  const rec=retours.find(x=>x.id===currentRetourId); if(!rec)return;
+  const btn=document.getElementById('ret-mail-send'); const hint=document.getElementById('ret-mail-hint');
+  const m=buildRetourMail(rec);
+  const old=btn.innerHTML; btn.disabled=true; btn.innerHTML='Envoi…';
+  try{
+    const r=await fetch('/api/send-mail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:m.to,subject:m.subject,text:m.body})});
+    const d=await r.json();
+    if(d.ok){
+      rec.mailSent=new Date().toISOString();
+      schedSave(); renderRetours();
+      btn.innerHTML='✓ Envoyé'; if(hint)hint.textContent='Mail envoyé à '+m.to+'.';
+      setTimeout(()=>{ closeModal('ret-mail-modal'); btn.innerHTML=old; btn.disabled=false; },1400);
+    } else {
+      alert('Échec de l\'envoi : '+(d.error||'erreur inconnue')+'\n\nVous pouvez utiliser « Ouvrir ma messagerie ».');
+      btn.innerHTML=old; btn.disabled=false;
+    }
+  }catch(e){
+    alert('Échec de l\'envoi : '+e.message+'\n\nVous pouvez utiliser « Ouvrir ma messagerie ».');
+    btn.innerHTML=old; btn.disabled=false;
+  }
 }
 
 function deleteRetour(id){
