@@ -244,22 +244,31 @@ app.post('/api/data', async (req, res) => {
   try {
     // On archive l'état existant AVANT de le remplacer
     await snapshotCurrent();
+    const incoming = req.body || {};
     if (db) {
-      // PostgreSQL
+      // PostgreSQL — fusion au niveau des rubriques : un client sur une ancienne
+      // version, qui n'envoie pas certaines rubriques (retours, bluestone,
+      // contrôles, crédits…), ne doit PAS les effacer de la base.
+      const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
+      const existing = (cur.rows[0] && cur.rows[0].data) || {};
+      const merged = Object.assign({}, existing, incoming);
       await db.query(
         'UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1',
-        [JSON.stringify(req.body)]
+        [JSON.stringify(merged)]
       );
     } else {
-      // Fichier local
+      // Fichier local — même logique de fusion
       const dir = path.dirname(DATA_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(DATA_FILE, JSON.stringify(req.body, null, 2), 'utf8');
+      let existing = {};
+      if (fs.existsSync(DATA_FILE)) { try { existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {} }
+      const merged = Object.assign({}, existing, incoming);
+      fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf8');
       // Backup quotidien
       const today = new Date().toISOString().split('T')[0];
       const backupFile = path.join(dir, `backup-${today}.json`);
       if (!fs.existsSync(backupFile)) {
-        fs.writeFileSync(backupFile, JSON.stringify(req.body, null, 2), 'utf8');
+        fs.writeFileSync(backupFile, JSON.stringify(merged, null, 2), 'utf8');
       }
     }
     res.json({ ok: true, saved: new Date().toISOString() });
