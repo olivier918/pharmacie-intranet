@@ -21,31 +21,83 @@ let dbError = null;      // dernier message d'erreur de connexion (diagnostic)
 let dbConnectedAt = null;
 const DATABASE_URL = process.env.DATABASE_URL;
 
-// ─── ENVOI D'E-MAILS (SMTP via nodemailer) ───
+// ─── ENVOI D'E-MAILS ───
+// Deux méthodes possibles :
+//   1) Brevo (API HTTPS, port 443) — recommandé sur hébergeur cloud (jamais bloqué). Variable BREVO_API_KEY.
+//   2) SMTP direct (nodemailer) — souvent bloqué par les messageries mutualisées (Viaduc, etc.).
+let mailMethod = null;      // 'brevo' | 'smtp' | null
 let mailTransport = null;
 let mailError = null;
+function mailFrom() { return process.env.MAIL_FROM || process.env.SMTP_USER || process.env.BREVO_SENDER || null; }
+
 function initMail() {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    console.log('  ✉️  SMTP non configuré (envoi direct désactivé)');
+  if (process.env.BREVO_API_KEY) {
+    mailMethod = 'brevo';
+    mailError = null;
+    console.log('  ✉️  Envoi via Brevo (API HTTPS) configuré');
     return;
   }
-  try {
-    const nodemailer = require('nodemailer');
-    const port = parseInt(SMTP_PORT || '587', 10);
-    mailTransport = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port,
-      secure: process.env.SMTP_SECURE === 'true' || port === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS }
-    });
-    mailError = null;
-    console.log('  ✉️  Envoi SMTP configuré (' + SMTP_HOST + ')');
-  } catch (err) {
-    mailError = err.message;
-    console.error('  ❌ Erreur configuration SMTP:', err.message);
-    mailTransport = null;
+  const { SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env;
+  if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
+    try {
+      const nodemailer = require('nodemailer');
+      const port = parseInt(process.env.SMTP_PORT || '587', 10);
+      mailTransport = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port,
+        secure: process.env.SMTP_SECURE === 'true' || port === 465,
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
+        connectionTimeout: 12000, greetingTimeout: 12000, socketTimeout: 15000
+      });
+      mailMethod = 'smtp';
+      mailError = null;
+      console.log('  ✉️  Envoi SMTP configuré (' + SMTP_HOST + ')');
+      return;
+    } catch (err) {
+      mailError = err.message;
+      console.error('  ❌ Erreur configuration SMTP:', err.message);
+    }
   }
+  console.log('  ✉️  Aucun service d\'envoi configuré (ni Brevo ni SMTP)');
+}
+
+// Envoi via l'API HTTPS de Brevo
+function sendViaBrevo({ to, cc, subject, text, from }) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const payload = JSON.stringify({
+      sender: { email: from },
+      to: [{ email: to }],
+      cc: cc ? [{ email: cc }] : undefined,
+      subject,
+      textContent: text
+    });
+    const req = https.request({
+      hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST',
+      headers: {
+        'api-key': process.env.BREVO_API_KEY,
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        'content-length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', (c) => body += c);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          let id = null; try { id = JSON.parse(body).messageId; } catch (e) {}
+          resolve({ id });
+        } else {
+          let msg = body; try { msg = JSON.parse(body).message || body; } catch (e) {}
+          reject(new Error('Brevo ' + res.statusCode + ' : ' + msg));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(new Error('Délai dépassé (Brevo injoignable)')); });
+    req.write(payload);
+    req.end();
+  });
 }
 
 async function initDB() {
@@ -105,29 +157,30 @@ app.get('/api/health', (req, res) => {
 // ─── Statut de l'envoi d'e-mails (le front active/désactive le bouton Envoyer) ───
 app.get('/api/mail-status', (req, res) => {
   res.json({
-    configured: !!mailTransport,
-    from: process.env.MAIL_FROM || process.env.SMTP_USER || null,
+    configured: mailMethod !== null,
+    method: mailMethod,
+    from: mailFrom(),
     error: mailError
   });
 });
 
 // ─── Envoi d'un e-mail (déclenché par l'utilisateur depuis l'appli) ───
 app.post('/api/send-mail', async (req, res) => {
-  if (!mailTransport) return res.status(400).json({ ok: false, error: 'Envoi SMTP non configuré sur le serveur.' });
+  if (!mailMethod) return res.status(400).json({ ok: false, error: 'Aucun service d\'envoi configuré sur le serveur.' });
   const { to, cc, subject, text } = req.body || {};
   if (!to || !subject || !text) return res.status(400).json({ ok: false, error: 'Destinataire, objet et message sont requis.' });
+  const from = mailFrom();
+  if (!from) return res.status(400).json({ ok: false, error: 'Adresse expéditeur (MAIL_FROM) non configurée.' });
   try {
-    const info = await mailTransport.sendMail({
-      from: process.env.MAIL_FROM || process.env.SMTP_USER,
-      to,
-      cc: cc || undefined,
-      subject,
-      text
-    });
-    res.json({ ok: true, id: info.messageId });
+    if (mailMethod === 'brevo') {
+      const r = await sendViaBrevo({ to, cc, subject, text, from });
+      return res.json({ ok: true, id: r.id });
+    }
+    const info = await mailTransport.sendMail({ from, to, cc: cc || undefined, subject, text });
+    return res.json({ ok: true, id: info.messageId });
   } catch (err) {
     console.error('Envoi mail:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
