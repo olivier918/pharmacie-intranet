@@ -1778,6 +1778,7 @@ function checkPin(){
     pinStr=''; updDots();
     startTimer();
     renderAll();
+    applyAdminUI();
   } else {
     document.getElementById('pin-err').textContent='Code PIN incorrect.';
     document.getElementById('pin-who').textContent='';
@@ -1874,7 +1875,7 @@ function showSec(name,btn){
   if(name==='controles')renderControles();
   if(name==='credits'){renderCreds();document.getElementById('cred-form-card').style.display='none';}
   if(name==='caisse')renderCaisse();
-  if(name==='backoffice'){renderStaff();renderPatients()}
+  if(name==='backoffice'){renderStaff();renderPatients();applyAdminUI();}
 }
 
 // Bascule le volet : desktop = collapse/expand persistant ; mobile = drawer open/close
@@ -2772,6 +2773,7 @@ function newBpm(){
 const BOT=['bot1','bot2','bot5','bot3','bot4','bot6'];
 const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte','bo-backups'];
 function boTab(t){
+  if((t==='compte'||t==='backups') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
   const map={staff:0,patients:1,medecins:2,labo:3,compte:4,backups:5};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
@@ -2780,6 +2782,7 @@ function boTab(t){
   if(t==='medecins')renderMedecins();
   if(t==='labo')loadLabo();
   if(t==='backups')renderBackups();
+  applyAdminUI();
 }
 
 // ═══════════ SAUVEGARDES (historique app_data_history) ═══════════
@@ -3072,18 +3075,62 @@ function addStaff(){
   ['st-nom','st-prenom','st-pin'].forEach(i=>document.getElementById(i).value='');
   renderStaff(); buildPinChips();
 }
+// ═══════════ DROITS ADMIN (par collaborateur) ═══════════
+// Les « admins » sont les seuls collaborateurs autorisés à accéder à « Compte admin » et « Sauvegardes ».
+// Tant qu'aucun admin n'est explicitement défini, on retombe par défaut sur les pharmaciens Ferran (AF, OF)
+// pour éviter tout verrouillage ; dès qu'un admin est défini dans l'interface, seuls les flags explicites comptent.
+function staffIsAdmin(s){
+  if(!s) return false;
+  const anyFlagged = staffDB.some(x=>x.admin===true);
+  if(anyFlagged) return s.admin===true;
+  return s.id==='OF' || s.id==='AF';
+}
+function isAdmin(u){
+  u = u || currentUser;
+  if(!u) return false;
+  const rec = staffDB.find(s=>s.id===u.id) || u;
+  return staffIsAdmin(rec);
+}
+function applyAdminUI(){
+  const admin = isAdmin();
+  const b4=document.getElementById('bot4'); // onglet « Compte admin »
+  const b6=document.getElementById('bot6'); // onglet « Sauvegardes »
+  if(b4) b4.style.display = admin ? '' : 'none';
+  if(b6) b6.style.display = admin ? '' : 'none';
+}
+function toggleAdmin(id){
+  if(!isAdmin()){ alert('Action réservée aux administrateurs.'); return; }
+  const target = staffDB.find(x=>x.id===id); if(!target) return;
+  // Première configuration : on matérialise les admins par défaut pour un état déterministe
+  if(!staffDB.some(x=>x.admin===true)){ staffDB.forEach(x=>{ x.admin = (x.id==='OF'||x.id==='AF'); }); }
+  const wasAdmin = target.admin===true;
+  if(wasAdmin && currentUser && currentUser.id===id){ alert('Vous ne pouvez pas retirer vos propres droits administrateur.'); return; }
+  if(wasAdmin && staffDB.filter(x=>x.admin===true).length<=1){ alert('Il doit rester au moins un administrateur.'); return; }
+  target.admin = !wasAdmin;
+  renderStaff(); applyAdminUI(); schedSave();
+}
+
 function renderStaff(){
-  document.getElementById('staff-grid').innerHTML=staffDB.map(s=>`
+  const admin = isAdmin();
+  document.getElementById('staff-grid').innerHTML=staffDB.map(s=>{
+    const isA = staffIsAdmin(s);
+    const badge = isA ? `<div style="font-size:.66rem;font-weight:700;color:#8a5a00;background:#FFF3CD;border:1px solid #ffe08a;padding:2px 8px;border-radius:20px;margin-top:2px">★ Admin</div>` : '';
+    const adminBtn = admin ? `<button class="btn ${isA?'bd':'bs'} sm" onclick="toggleAdmin('${s.id}')" title="${isA?'Retirer les droits admin':'Donner les droits admin'}"><svg class="ico"><use href="#ic-securite"></use></svg> ${isA?'Retirer admin':'Rendre admin'}</button>` : '';
+    return `
     <div class="sfc">
       <div class="sfav" style="background:${s.col}">${s.id}</div>
       <div style="font-weight:600;font-size:.92rem">${s.prenom} ${s.nom}</div>
       <div style="font-size:.74rem;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px">${s.poste}</div>
+      ${badge}
       <div style="font-size:.7rem;color:var(--gray-400)">Code : ${s.id}</div>
-      <div style="display:flex;gap:6px;margin-top:6px">
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn bs sm" onclick="editStaffPin('${s.id}')" title="Modifier le code PIN"><svg class="ico"><use href="#ic-verrouiller"></use></svg> PIN</button>
         <button class="btn bd sm" onclick="deleteStaff('${s.id}')" title="Supprimer ce collaborateur"><svg class="ico"><use href="#ic-supprimer"></use></svg></button>
+        ${adminBtn}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  applyAdminUI();
 }
 
 let staffPinEditId=null;
