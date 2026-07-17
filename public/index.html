@@ -469,6 +469,7 @@ tr:hover td{background:#fafffe}
     <button class="sb-item" data-sec="preparations" onclick="showSec('preparations',this)"><svg class="ico sb-ico"><use href="#ic-realisation"></use></svg><span class="sb-label">Préparations</span></button>
     <button class="sb-item" data-sec="bpm" onclick="showSec('bpm',this)"><svg class="ico sb-ico"><use href="#ic-ordonnance"></use></svg><span class="sb-label">BPM</span></button>
     <button class="sb-item" data-sec="locations" onclick="showSec('locations',this)"><svg class="ico sb-ico"><use href="#ic-location"></use></svg><span class="sb-label">Locations</span></button>
+    <button class="sb-item" data-sec="controles" onclick="showSec('controles',this)"><svg class="ico sb-ico"><use href="#ic-securite"></use></svg><span class="sb-label">Contrôle lits</span></button>
     <button class="sb-item" data-sec="credits" onclick="showSec('credits',this)"><svg class="ico sb-ico"><use href="#ic-euro"></use></svg><span class="sb-label">Crédits</span></button>
     <button class="sb-item" data-sec="caisse" onclick="showSec('caisse',this)"><svg class="ico sb-ico"><use href="#ic-caisse"></use></svg><span class="sb-label">Caisse</span></button>
     <button class="sb-item" data-sec="backoffice" onclick="showSec('backoffice',this)"><svg class="ico sb-ico"><use href="#ic-reglages"></use></svg><span class="sb-label">Back Office</span></button>
@@ -910,6 +911,81 @@ tr:hover td{background:#fafffe}
           </div>
         </div>
         <div class="twrap" id="caisse-table"></div>
+      </div>
+    </div>
+
+    <!-- ═══ CONTRÔLE ANNUEL DES LITS MÉDICALISÉS (FICHE 110) ═══ -->
+    <div id="sec-controles" class="sec">
+      <style>
+        .ctl-hero{border:none;box-shadow:none;background:linear-gradient(135deg,#E3F2FD 0%,#fff 45%);border-radius:16px;padding:1.4rem 1.5rem 1rem;margin-bottom:1.1rem}
+        .ctl-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:1rem}
+        .ctl-search{border:1px solid var(--gray-200);border-radius:9px;padding:9px 13px;font-size:.9rem;flex:1;min-width:170px}
+        .ctl-card{background:#fff;border:1px solid var(--gray-200);border-radius:13px;padding:13px 15px;margin-bottom:10px;box-shadow:var(--shadow)}
+        .ctl-card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+        .ctl-num{font-weight:800;color:var(--b-dark);font-size:.82rem;letter-spacing:.3px}
+        .ctl-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.7rem;font-weight:700}
+        .ctl-b-ok{background:var(--g-pale);color:var(--g-dark)}
+        .ctl-b-nc{background:var(--red-pale);color:var(--red)}
+        /* Formulaire de contrôle */
+        .ctl-modal .mbox{max-width:680px}
+        .ctl-step-title{font-weight:800;color:var(--b-dark);font-size:.95rem;margin:1.4rem 0 .7rem;padding-bottom:6px;border-bottom:2px solid var(--b-pale);display:flex;align-items:center;gap:8px}
+        .ctl-step-title:first-of-type{margin-top:.3rem}
+        .ctl-line{border:1px solid var(--gray-200);border-radius:12px;padding:11px 13px;margin-bottom:9px;background:#fff}
+        .ctl-line-lbl{font-size:.9rem;line-height:1.35;color:var(--gray-900);font-weight:600;margin-bottom:9px}
+        .ctl-line-lbl .star{color:var(--amber);font-weight:800}
+        .ctl-states{display:flex;gap:7px;flex-wrap:wrap}
+        .ctl-st{flex:1;min-width:74px;border:2px solid var(--gray-200);background:#fff;border-radius:11px;padding:11px 4px;font-size:.82rem;font-weight:700;color:var(--gray-500);cursor:pointer;text-align:center;transition:.12s;-webkit-tap-highlight-color:transparent}
+        .ctl-st:active{transform:scale(.97)}
+        .ctl-st.on-c{background:var(--g-dark);border-color:var(--g-dark);color:#fff}
+        .ctl-st.on-nc{background:var(--red);border-color:var(--red);color:#fff}
+        .ctl-st.on-na{background:var(--gray-500);border-color:var(--gray-500);color:#fff}
+        .ctl-extra{margin-top:10px;display:none}
+        .ctl-extra.show{display:block}
+        .ctl-mini-btn{display:inline-flex;align-items:center;gap:6px;border:1px dashed var(--b-mid);color:var(--b-dark);background:var(--b-pale);border-radius:9px;padding:8px 12px;font-size:.8rem;font-weight:600;cursor:pointer}
+        .ctl-photos{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+        .ctl-photos .ph{position:relative;width:62px;height:62px;border-radius:9px;overflow:hidden;border:1px solid var(--gray-200)}
+        .ctl-photos .ph img{width:100%;height:100%;object-fit:cover}
+        .ctl-photos .ph .del{position:absolute;top:1px;right:1px;background:rgba(198,40,40,.92);color:#fff;border:none;border-radius:50%;width:19px;height:19px;font-size:12px;line-height:1;cursor:pointer;font-weight:700}
+        .ctl-action-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+        .ctl-action-row textarea{flex:1;min-width:180px;min-height:44px}
+        .ctl-follow{display:flex;gap:6px}
+        .ctl-follow button{border:2px solid var(--gray-200);background:#fff;border-radius:9px;padding:7px 11px;font-size:.76rem;font-weight:700;color:var(--gray-500);cursor:pointer}
+        .ctl-follow button.on-todo{background:var(--amber-pale);border-color:var(--amber);color:var(--amber)}
+        .ctl-follow button.on-done{background:var(--g-pale);border-color:var(--g-dark);color:var(--g-dark)}
+        .ctl-obso{display:flex;gap:6px;flex-wrap:wrap}
+        .ctl-obso button{flex:1;min-width:56px;border:2px solid var(--gray-200);background:#fff;border-radius:11px;padding:12px 4px;font-weight:800;color:var(--gray-500);cursor:pointer;font-size:.9rem;line-height:1.2}
+        .ctl-obso button small{display:block;font-size:.6rem;font-weight:600;margin-top:3px}
+        .ctl-obso button.on{background:var(--b-mid);border-color:var(--b-mid);color:#fff}
+        .ctl-env{display:flex;gap:6px}
+        .ctl-env button{flex:1;border:2px solid var(--gray-200);background:#fff;border-radius:10px;padding:11px 4px;font-weight:800;color:var(--gray-500);cursor:pointer}
+        .ctl-env button.on{background:var(--b-mid);border-color:var(--b-mid);color:#fff}
+        .ctl-sign-wrap{border:1px solid var(--gray-200);border-radius:12px;background:#fff;overflow:hidden}
+        #ctl-sign-canvas{width:100%;height:170px;display:block;touch-action:none;background:#fff}
+        .ctl-sticky{position:sticky;bottom:-1.75rem;background:#fff;padding:12px 0 2px;margin-top:1rem;border-top:1px solid var(--gray-200);display:flex;gap:8px}
+        .ctl-sticky .btn{flex:1}
+        .ctl-progress{font-size:.74rem;color:var(--gray-500);text-align:center;margin-top:6px}
+      </style>
+      <div class="card ctl-hero">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:.9rem">
+          <div style="width:46px;height:46px;border-radius:14px;background:#fff;border:1px solid var(--gray-200);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg class="ico" style="color:var(--b-mid);width:24px;height:24px"><use href="#ic-securite"></use></svg>
+          </div>
+          <div>
+            <div style="font-weight:800;color:var(--b-dark);font-size:1.05rem">Contrôle annuel des lits médicalisés</div>
+            <div style="font-size:.8rem;color:var(--gray-500)">Réf. FICHE 110 Winncare — Maintenance annuelle (NF EN 60601-2-52)</div>
+          </div>
+        </div>
+        <button class="btn bp" onclick="openControleForm()"><svg class="ico"><use href="#ic-securite"></use></svg> Nouveau contrôle</button>
+      </div>
+      <div class="card">
+        <div class="ch">
+          <span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Historique des contrôles</span>
+          <span id="ctl-count" style="font-size:.78rem;color:var(--gray-500)"></span>
+        </div>
+        <div class="ctl-toolbar">
+          <input type="text" id="ctl-q" class="ctl-search" placeholder="Rechercher (patient, n° de série/parc, n° de rapport…)" oninput="renderControles()">
+        </div>
+        <div id="ctl-list"></div>
       </div>
     </div>
 
@@ -1409,6 +1485,53 @@ tr:hover td{background:#fafffe}
   </div>
 </div>
 
+<!-- Formulaire de contrôle annuel lit (FICHE 110) -->
+<div class="overlay ctl-modal" id="ctl-form-modal">
+  <div class="mbox">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-securite"></use></svg> <span id="ctl-form-title">Nouveau contrôle</span></span>
+      <button class="btn bs sm" onclick="closeControleForm()"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem" id="ctl-form-meta"></div>
+
+    <div class="ctl-step-title"><svg class="ico"><use href="#ic-document"></use></svg> Identification</div>
+    <div class="fgrid">
+      <div class="fg"><label>N° de série ou de parc <span class="req">*</span></label><input type="text" id="ctl-serie" placeholder="Ex. PARC-0142"></div>
+      <div class="fg" style="position:relative"><label>Nom du patient (locataire) <span class="req">*</span></label>
+        <input type="text" id="ctl-patient" placeholder="Rechercher ou saisir NOM Prénom…" autocomplete="off" oninput="ctlPatientSearch()" onblur="setTimeout(()=>{const e=document.getElementById('ctl-psugg');if(e)e.style.display='none'},150)">
+        <div id="ctl-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
+      </div>
+      <div class="fg"><label>Marque / modèle</label><input type="text" id="ctl-marque" placeholder="Ex. Winncare / Medical'lit"></div>
+      <div class="fg"><label>Année de fabrication</label><input type="text" id="ctl-annee" inputmode="numeric" placeholder="Ex. 2019"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Localisation (adresse / commune du patient)</label><input type="text" id="ctl-loc" placeholder="Adresse, commune"></div>
+    </div>
+
+    <div id="ctl-checklist"></div>
+
+    <div class="ctl-step-title"><svg class="ico"><use href="#ic-usure"></use></svg> Fin de contrôle</div>
+    <div class="ctl-line">
+      <div class="ctl-line-lbl">Obsolescence du lit</div>
+      <div class="ctl-obso" id="ctl-obso"></div>
+    </div>
+    <div class="ctl-line">
+      <div class="ctl-line-lbl">Observations (texte libre)</div>
+      <textarea id="ctl-obs" placeholder="Observations générales, remarques…" style="width:100%;min-height:64px"></textarea>
+    </div>
+    <div class="ctl-line">
+      <div class="ctl-line-lbl">Signature du contrôleur</div>
+      <div class="ctl-sign-wrap"><canvas id="ctl-sign-canvas"></canvas></div>
+      <button class="ctl-mini-btn" style="margin-top:8px;border-style:solid" onclick="clearSignature()"><svg class="ico"><use href="#ic-corbeille"></use></svg> Effacer la signature</button>
+    </div>
+
+    <div id="ctl-form-error" style="display:none;color:var(--red);font-size:.82rem;font-weight:600;margin-top:.8rem"></div>
+    <div class="ctl-sticky">
+      <button class="btn bs" onclick="closeControleForm()">Annuler</button>
+      <button class="btn bp" onclick="validateControle()"><svg class="ico"><use href="#ic-valider"></use></svg> Valider &amp; générer le rapport</button>
+    </div>
+    <div class="ctl-progress" id="ctl-progress"></div>
+  </div>
+</div>
+
 <script>
 function ico(n){return '<svg class="ico"><use href="#ic-'+n+'"></use></svg>';}
 
@@ -1486,18 +1609,26 @@ let bpmList = [
 
 let caisse = { seuilAlerteEuros:50, dureeAlerteJours:3, releves:[], remises:[], ajustements:[] };
 
+// Module « Contrôle annuel des lits médicalisés » (FICHE 110 / NF EN 60601-2-52)
+let controles = [];
+// Adresse fixe destinataire du rapport (préparé pour un futur envoi email — phase 2)
+let controlesMail = { dest:'contact@pharmacie-mondeville.fr' };
+
 // ═══════════ PERSISTENCE API ═══════════
 let _saveTimer=null;
-function schedSave(){clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
+let _loadedOK=false;    // passe à true UNIQUEMENT après lecture réussie de l'état serveur (anti-écrasement)
+let _suppressSave=false; // true pendant un rafraîchissement : on ne ré-écrit pas ce qu'on vient de lire
+function schedSave(){ if(!_loadedOK||_suppressSave) return; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
 async function saveAll(){
   try{
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail})});
   }catch(e){console.warn('Sauvegarde:',e.message);}
 }
 async function loadAll(){
   try{
     const res=await fetch('/api/data');const data=await res.json();
+    _loadedOK=true;   // serveur joignable et état lu : les sauvegardes sont désormais autorisées
     if(!data)return;
     if(data.staffDB)staffDB=data.staffDB;
     if(data.patients)patients=data.patients;
@@ -1510,12 +1641,15 @@ async function loadAll(){
     if(data.caisse)caisse=data.caisse;
     if(data.credits)credits=data.credits;
     if(data.labo)labo=data.labo;
+    if(data.controles)controles=data.controles;
+    if(data.controlesMail)controlesMail=data.controlesMail;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
   }catch(e){console.warn('Chargement:',e.message);}
 }
 setInterval(async()=>{
   if(document.getElementById('app').style.display!=='none'){
     try{const r=await fetch('/api/data');const d=await r.json();
+      _loadedOK=true;
       if(d){
         if(d.deliveries)deliveries=d.deliveries;
         if(d.threads)threads=d.threads;
@@ -1526,9 +1660,11 @@ setInterval(async()=>{
         if(d.credits)credits=d.credits;
         if(d.patients)patients=d.patients;
         if(d.medecins)medecins=d.medecins;
-        renderAll();
+        if(d.controles)controles=d.controles;
+        if(d.controlesMail)controlesMail=d.controlesMail;
+        _suppressSave=true; try{ renderAll(); } finally { _suppressSave=false; }
       }
-    }catch(e){}
+    }catch(e){ _loadedOK=false; }
   }
 },30000);
 
@@ -1698,6 +1834,7 @@ const SEC_LABEL = {
   preparations:'Préparations officinales',
   bpm:'Bilans Partagés de Médication',
   locations:'Locations de matériel',
+  controles:'Contrôle annuel des lits médicalisés',
   credits:'Crédits & produits avancés',
   caisse:'Caisse — clôture du soir',
   backoffice:'Back Office'
@@ -1721,6 +1858,7 @@ function showSec(name,btn){
   if(name==='preparations')renderPreps();
   if(name==='bpm')renderBpm();
   if(name==='locations'){renderLocs();document.getElementById('loc-form-card').style.display='none';}
+  if(name==='controles')renderControles();
   if(name==='credits'){renderCreds();document.getElementById('cred-form-card').style.display='none';}
   if(name==='caisse')renderCaisse();
   if(name==='backoffice'){renderStaff();renderPatients()}
@@ -1746,7 +1884,7 @@ function restoreSidebarState(){
     }
   } catch(e){}
 }
-function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();schedSave();}
+function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();schedSave();}
 
 // ═══════════ DELIVERIES ═══════════
 function setView(v,btn){
@@ -4591,9 +4729,349 @@ function openModal(id){document.getElementById(id).classList.add('open')}
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
 
+// ═══════════ CONTRÔLE ANNUEL DES LITS (FICHE 110 / NF EN 60601-2-52) ═══════════
+// Reproduction fidèle de la FICHE 110. na:true = « N.A. » autorisé (uniquement là où la fiche le prévoit).
+// star:true = point avec mesure de gabarit (renvoi bas de fiche).
+const CTL_SECTIONS = [
+  {key:'visuel', title:'Contrôle visuel', items:[
+    {id:'v1',  label:'Identification – étiquetage'},
+    {id:'v2',  label:'Propreté générale'},
+    {id:'v3',  label:'État et fixation des panneaux tête et pieds', na:true},
+    {id:'v4',  label:'Potence (fixation, sangle, enrouleur …)', na:true},
+    {id:'v5',  label:'Plan de couchage (sommier)'},
+    {id:'v6',  label:'Serrages des boulonneries, axes et fixation des goupilles'},
+    {id:'v7',  label:'Corrosion, soudures'},
+    {id:'v8',  label:'Télécommandes (boutons, voyants, système de verrouillage)'},
+    {id:'v9',  label:'Barrières — Espacement entre la tête du lit et la barrière (< 60 mm)', star:true},
+    {id:'v10', label:'Barrières — Espacement entre ½ barrières (< 60 ou > 318 mm)', star:true},
+    {id:'v11', label:'Barrières — État, sens de montage, adaptation au lit …', na:true},
+  ]},
+  {key:'fonctionnel', title:'Contrôle fonctionnel', items:[
+    {id:'f1', label:'Parties mobiles (hauteur variable, relève buste, relève jambes, proclive, déclive …)'},
+    {id:'f2', label:'Télécommande y compris verrouillage des fonctions'},
+    {id:'f3', label:'Roues (pivotement, roulage …)'},
+    {id:'f4', label:'Freins (blocage)'},
+    {id:'f5', label:'Fixation des barrières et verrouillage en position haute (fermée)', na:true},
+    {id:'f6', label:'Absence de nuisances sonores (grincements)'},
+  ]},
+  {key:'electrique', title:'Contrôle électrique', items:[
+    {id:'e1', label:'État des câbles électriques, des prises et des connecteurs', na:true},
+    {id:'e2', label:"État des équipements électriques (bloc d'alimentation, vérins …)", na:true},
+  ]},
+];
+const CTL_OBSO_LBL = {1:'Neuf',2:'Bon',3:'Moyen',4:'Vétuste',5:'Obsolète'};
+function ctlAllItems(){ return CTL_SECTIONS.reduce((a,s)=>a.concat(s.items),[]); }
+function ctlItem(id){ return ctlAllItems().find(i=>i.id===id); }
+function ctlEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+let ctlDraft = null;      // brouillon en cours de saisie
+let ctlSignReady = false; // canvas signature initialisé
+
+function ctlNextNum(){
+  const y=new Date().getFullYear();
+  let max=0;
+  controles.forEach(c=>{ const m=(c.num||'').match(new RegExp('^CTRL-'+y+'-(\\d+)$')); if(m){const n=parseInt(m[1],10); if(n>max)max=n;} });
+  return 'CTRL-'+y+'-'+String(max+1).padStart(3,'0');
+}
+function ctlSummary(rec){
+  let nc=0,c=0,na=0,done=0;
+  ctlAllItems().forEach(it=>{ const r=(rec.results||{})[it.id]; if(!r||!r.state)return; done++; if(r.state==='NC')nc++; else if(r.state==='C')c++; else if(r.state==='NA')na++; });
+  return {nc,c,na,done,total:ctlAllItems().length, global: nc>0?'Non conforme':'Conforme'};
+}
+
+// ── Historique ──
+function renderControles(){
+  const list=document.getElementById('ctl-list'); if(!list)return;
+  const q=(document.getElementById('ctl-q')?.value||'').trim().toLowerCase();
+  let rows=controles.slice().sort((a,b)=>b.id-a.id);
+  if(q){ rows=rows.filter(c=>[c.patient,c.serie,c.num,c.marque,c.loc].some(v=>(v||'').toLowerCase().includes(q))); }
+  const cnt=document.getElementById('ctl-count'); if(cnt)cnt.textContent=controles.length?controles.length+' contrôle(s)':'';
+  if(!rows.length){ list.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.6rem;font-size:.88rem">'+(controles.length?'Aucun contrôle ne correspond à la recherche.':'Aucun contrôle enregistré. Cliquez sur « Nouveau contrôle ».')+'</div>'; return; }
+  list.innerHTML=rows.map(c=>{
+    const s=ctlSummary(c);
+    const badge=s.global==='Conforme'?'<span class="ctl-badge ctl-b-ok">✓ Conforme</span>':'<span class="ctl-badge ctl-b-nc">✕ Non conforme · '+s.nc+' NC</span>';
+    const d=c.dateFr||(c.date?new Date(c.date).toLocaleDateString('fr-FR'):'');
+    return '<div class="ctl-card"><div class="top">'
+      +'<div><div class="ctl-num">'+ctlEsc(c.num||'')+'</div>'
+      +'<div style="font-weight:700;color:var(--gray-900);margin-top:2px">'+ctlEsc(c.patient||'—')+'</div>'
+      +'<div style="font-size:.78rem;color:var(--gray-500);margin-top:2px">Lit '+ctlEsc(c.serie||'—')+(c.marque?' · '+ctlEsc(c.marque):'')+'</div>'
+      +'<div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">'+ico('calendrier')+' '+ctlEsc(d)+' · '+ico('utilisateur')+' '+ctlEsc(c.controleur||'—')+'</div>'
+      +'</div><div style="text-align:right">'+badge+'</div></div>'
+      +'<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">'
+      +'<button class="btn bp sm" onclick="viewControlePdf('+c.id+')">'+ico('imprimer')+' Rapport PDF</button>'
+      +'<button class="btn bd sm" onclick="deleteControle('+c.id+')">'+ico('supprimer')+'</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+// ── Ouverture / construction du formulaire ──
+function openControleForm(){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN avant de réaliser un contrôle.'); return; }
+  ctlDraft={ results:{}, env:null, obso:null, sign:null, patientRef:null };
+  ctlAllItems().forEach(it=>{ ctlDraft.results[it.id]={state:null,photos:[],action:'',follow:null}; });
+  const sug=document.getElementById('ctl-psugg'); if(sug)sug.style.display='none';
+  document.getElementById('ctl-serie').value='';
+  document.getElementById('ctl-patient').value='';
+  document.getElementById('ctl-marque').value='';
+  document.getElementById('ctl-annee').value='';
+  document.getElementById('ctl-loc').value='';
+  document.getElementById('ctl-obs').value='';
+  document.getElementById('ctl-form-error').style.display='none';
+  const now=new Date();
+  document.getElementById('ctl-form-title').textContent='Nouveau contrôle';
+  document.getElementById('ctl-form-meta').textContent='N° '+ctlNextNum()+' · '+now.toLocaleDateString('fr-FR')+' · Contrôleur : '+(currentUser.prenom+' '+currentUser.nom);
+  // Obsolescence 1..5
+  document.getElementById('ctl-obso').innerHTML=[1,2,3,4,5].map(n=>'<button type="button" data-obso="'+n+'" onclick="ctlSetObso('+n+',this)">'+n+'<small>'+CTL_OBSO_LBL[n]+'</small></button>').join('');
+  buildCtlChecklist();
+  updateCtlProgress();
+  openModal('ctl-form-modal');
+  const box=document.querySelector('#ctl-form-modal .mbox'); if(box)box.scrollTop=0;
+  setTimeout(initSignature,80);
+}
+function closeControleForm(){ closeModal('ctl-form-modal'); }
+
+// ── Liaison avec la base patients (autocomplétion nom + adresse) ──
+function ctlPatientSearch(){
+  const q=(document.getElementById('ctl-patient').value||'').toLowerCase().trim();
+  const el=document.getElementById('ctl-psugg');
+  if(ctlDraft)ctlDraft.patientRef=null; // saisie modifiée → on délie tant qu'on n'a pas resélectionné
+  if(q.length<2){el.style.display='none';return;}
+  const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
+  if(!m.length){el.style.display='none';return;}
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  el.style.display='block';
+  el.innerHTML=m.map(p=>{
+    const adr=[p.adresse,p.cp,p.commune].filter(Boolean).join(' ');
+    return '<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="ctlFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.adresse||'')+'\',\''+esc(p.cp||'')+'\',\''+esc(p.commune||'')+'\')">'
+      +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
+      +'<div style="font-size:.74rem;color:var(--gray-500)">'+ctlEsc(adr||'Adresse non renseignée')+'</div></div>';
+  }).join('');
+}
+function ctlFillPatient(nom,prenom,adresse,cp,commune){
+  document.getElementById('ctl-patient').value=(nom+' '+prenom).trim();
+  document.getElementById('ctl-loc').value=[adresse,cp,commune].filter(Boolean).join(' ');
+  document.getElementById('ctl-psugg').style.display='none';
+  if(ctlDraft)ctlDraft.patientRef={nom,prenom};
+}
+
+function buildCtlChecklist(){
+  const host=document.getElementById('ctl-checklist');
+  let html='';
+  CTL_SECTIONS.forEach(sec=>{
+    const icoName = sec.key==='electrique'?'securite':(sec.key==='cpr'?'alerte':(sec.key==='fonctionnel'?'renouveler':'voir'));
+    html+='<div class="ctl-step-title">'+ico(icoName)+' '+ctlEsc(sec.title)+'</div>';
+    sec.items.forEach(it=>{
+      html+='<div class="ctl-line" id="ctlline-'+it.id+'">'
+        +'<div class="ctl-line-lbl">'+ctlEsc(it.label)+(it.star?' <span class="star">*</span>':'')+'</div>'
+        +'<div class="ctl-states">'
+        +'<div class="ctl-st" data-st="C" onclick="ctlSetState(\''+it.id+'\',\'C\',this)">Conforme</div>'
+        +'<div class="ctl-st" data-st="NC" onclick="ctlSetState(\''+it.id+'\',\'NC\',this)">Non conforme</div>'
+        +(it.na?'<div class="ctl-st" data-st="NA" onclick="ctlSetState(\''+it.id+'\',\'NA\',this)">N.A.</div>':'')
+        +'</div>'
+        +'<button type="button" class="ctl-mini-btn" style="margin-top:9px" onclick="ctlToggleExtra(\''+it.id+'\')">'+ico('joindre')+' Photo / action corrective</button>'
+        +'<div class="ctl-extra" id="ctlextra-'+it.id+'">'
+        +'<div class="ctl-photos" id="ctlph-'+it.id+'"></div>'
+        +'<label class="ctl-mini-btn" style="margin-top:8px;border-style:solid">'+ico('joindre')+' Ajouter une photo<input type="file" accept="image/*" capture="environment" multiple hidden onchange="ctlAddPhoto(\''+it.id+'\',this)"></label>'
+        +'<div class="ctl-action-row"><textarea placeholder="Action corrective…" oninput="ctlSetAction(\''+it.id+'\',this.value)"></textarea>'
+        +'<div class="ctl-follow"><button type="button" data-f="todo" onclick="ctlSetFollow(\''+it.id+'\',\'todo\',this)">À faire</button><button type="button" data-f="done" onclick="ctlSetFollow(\''+it.id+'\',\'done\',this)">Fait</button></div>'
+        +'</div></div></div>';
+    });
+  });
+  host.innerHTML='<div class="ctl-step-title" style="margin-top:1.2rem">'+ico('document')+' Points de contrôle — FICHE 110</div>'+html
+    +'<div style="font-size:.72rem;color:var(--gray-500);margin-top:8px;line-height:1.4">* Espacements mesurés au gabarit (NF EN 60601-2-52). N.A. proposé uniquement sur les lignes prévues par la fiche.</div>';
+}
+
+function ctlSetState(id,st,el){
+  ctlDraft.results[id].state=st;
+  const row=el.parentElement;
+  row.querySelectorAll('.ctl-st').forEach(b=>b.classList.remove('on-c','on-nc','on-na'));
+  el.classList.add(st==='C'?'on-c':st==='NC'?'on-nc':'on-na');
+  if(st==='NC'){ const ex=document.getElementById('ctlextra-'+id); if(ex&&!ex.classList.contains('show'))ex.classList.add('show'); }
+  updateCtlProgress();
+}
+function ctlToggleExtra(id){ document.getElementById('ctlextra-'+id).classList.toggle('show'); }
+function ctlSetAction(id,v){ ctlDraft.results[id].action=v; }
+function ctlSetFollow(id,f,el){
+  const cur=ctlDraft.results[id].follow;
+  ctlDraft.results[id].follow = cur===f?null:f;
+  el.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on-todo','on-done'));
+  if(ctlDraft.results[id].follow==='todo')el.classList.add('on-todo');
+  else if(ctlDraft.results[id].follow==='done')el.classList.add('on-done');
+}
+function ctlAddPhoto(id,input){
+  const files=Array.from(input.files||[]);
+  let pending=files.length;
+  files.forEach(f=>{ if(!f.type.startsWith('image/')){pending--;return;} const r=new FileReader(); r.onload=e=>{ ctlDraft.results[id].photos.push(e.target.result); if(--pending<=0)ctlRenderPhotos(id); }; r.readAsDataURL(f); });
+  input.value='';
+}
+function ctlRenderPhotos(id){
+  const host=document.getElementById('ctlph-'+id); if(!host)return;
+  host.innerHTML=ctlDraft.results[id].photos.map((p,i)=>'<div class="ph"><img src="'+p+'"><button type="button" class="del" onclick="ctlDelPhoto(\''+id+'\','+i+')">×</button></div>').join('');
+}
+function ctlDelPhoto(id,i){ ctlDraft.results[id].photos.splice(i,1); ctlRenderPhotos(id); }
+function ctlSetObso(n,el){ ctlDraft.obso=n; document.querySelectorAll('#ctl-obso button').forEach(b=>b.classList.remove('on')); el.classList.add('on'); }
+function updateCtlProgress(){
+  const s=ctlSummary({results:ctlDraft.results});
+  const el=document.getElementById('ctl-progress'); if(el)el.textContent=s.done+' / '+s.total+' points renseignés';
+}
+
+// ── Signature tactile ──
+function initSignature(){
+  const cv=document.getElementById('ctl-sign-canvas'); if(!cv)return;
+  const rect=cv.getBoundingClientRect();
+  cv.width=Math.max(300,Math.round(rect.width)); cv.height=170;
+  const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.lineWidth=2.4; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.strokeStyle='#12233a';
+  if(ctlSignReady)return; ctlSignReady=true;
+  let drawing=false,last=null;
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left; const cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top; return {x:cx*(cv.width/r.width), y:cy*(cv.height/r.height)}; };
+  const start=e=>{ drawing=true; last=pos(e); e.preventDefault(); };
+  const move=e=>{ if(!drawing)return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; if(ctlDraft)ctlDraft.sign='dirty'; e.preventDefault(); };
+  const end=()=>{ if(drawing&&ctlDraft){ ctlDraft.sign=cv.toDataURL('image/png'); } drawing=false; };
+  cv.addEventListener('mousedown',start); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',end);
+}
+function clearSignature(){
+  const cv=document.getElementById('ctl-sign-canvas'); if(!cv)return;
+  cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
+  if(ctlDraft)ctlDraft.sign=null;
+}
+
+// ── Validation → enregistrement + rapport ──
+function validateControle(){
+  const err=document.getElementById('ctl-form-error');
+  const serie=document.getElementById('ctl-serie').value.trim();
+  const patient=document.getElementById('ctl-patient').value.trim();
+  if(!serie||!patient){ err.textContent='Le n° de série/parc et le nom du patient sont obligatoires.'; err.style.display='block'; document.querySelector('#ctl-form-modal .mbox').scrollTop=0; return; }
+  err.style.display='none';
+  const cv=document.getElementById('ctl-sign-canvas');
+  const sign=(ctlDraft.sign&&ctlDraft.sign!=='dirty')?ctlDraft.sign:(ctlDraft.sign==='dirty'&&cv?cv.toDataURL('image/png'):'');
+  const now=new Date();
+  const rec={
+    id:Date.now(), num:ctlNextNum(),
+    date:new Date().toISOString().split('T')[0], dateFr:now.toLocaleDateString('fr-FR'),
+    heure:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+    controleurId: currentUser?currentUser.id:'', controleur: currentUser?(currentUser.prenom+' '+currentUser.nom):'—',
+    serie, patient,
+    patientRef: ctlDraft.patientRef || null,
+    marque:document.getElementById('ctl-marque').value.trim(),
+    annee:document.getElementById('ctl-annee').value.trim(),
+    loc:document.getElementById('ctl-loc').value.trim(),
+    obso:ctlDraft.obso,
+    obs:document.getElementById('ctl-obs').value.trim(),
+    signature:sign||'',
+    results:JSON.parse(JSON.stringify(ctlDraft.results))
+  };
+  controles.unshift(rec);
+  schedSave();
+  renderControles();
+  closeControleForm();
+  viewControlePdf(rec.id);
+}
+
+function deleteControle(id){
+  const c=controles.find(x=>x.id===id); if(!c)return;
+  document.getElementById('conf-title').textContent='Supprimer ce contrôle';
+  document.getElementById('conf-msg').textContent='Supprimer définitivement le contrôle '+(c.num||'')+' — '+(c.patient||'')+' ? Cette action est irréversible.';
+  document.getElementById('conf-ok').onclick=()=>{ controles=controles.filter(x=>x.id!==id); renderControles(); schedSave(); closeModal('confirm-modal'); };
+  openModal('confirm-modal');
+}
+
+// ── Rapport PDF (HTML imprimable, cohérent avec les bons de préparation) ──
+function viewControlePdf(id){
+  const rec=controles.find(x=>x.id===id); if(!rec)return;
+  const html=buildControlePdfHtml(rec);
+  const w=window.open('','_blank'); if(!w){alert('Autorisez les fenêtres pop-up pour afficher/imprimer le rapport.');return;}
+  w.document.write(html); w.document.close(); w.focus();
+}
+function buildControlePdfHtml(rec){
+  const s=ctlSummary(rec);
+  const logoSrc=document.querySelector('header img')?.src||'';
+  const stateCell=st=>{ if(st==='C')return '<span class="st st-c">Conforme</span>'; if(st==='NC')return '<span class="st st-nc">Non conforme</span>'; if(st==='NA')return '<span class="st st-na">N.A.</span>'; return '<span class="st st-none">—</span>'; };
+  let sectionsHtml='';
+  CTL_SECTIONS.forEach(sec=>{
+    let rowsHtml='';
+    sec.items.forEach(it=>{
+      const r=(rec.results||{})[it.id]||{};
+      rowsHtml+='<tr><td class="lbl">'+ctlEsc(it.label)+(it.star?' <span class="star">*</span>':'')+'</td><td class="stcell">'+stateCell(r.state)+'</td></tr>';
+      if(r.state==='NC' && (r.action || (r.photos&&r.photos.length))){
+        const follow=r.follow==='done'?'<span class="fw fw-done">Fait</span>':r.follow==='todo'?'<span class="fw fw-todo">À faire</span>':'';
+        let extra='<tr class="nc-detail"><td colspan="2"><div class="nc-box">';
+        if(r.action)extra+='<div><strong>Action corrective :</strong> '+ctlEsc(r.action)+' '+follow+'</div>';
+        else if(follow)extra+='<div><strong>Suivi :</strong> '+follow+'</div>';
+        if(r.photos&&r.photos.length){ extra+='<div class="ncphotos">'+r.photos.map(p=>'<img src="'+p+'">').join('')+'</div>'; }
+        extra+='</div></td></tr>';
+        rowsHtml+=extra;
+      }
+    });
+    sectionsHtml+='<div class="sec-block"><div class="sec-h">'+ctlEsc(sec.title)+'</div><table class="ctbl">'+rowsHtml+'</table></div>';
+  });
+  const obsoTxt=rec.obso?(rec.obso+' — '+(CTL_OBSO_LBL[rec.obso]||'')):'—';
+  const synthClass=s.global==='Conforme'?'syn-ok':'syn-nc';
+  const synthTxt=s.global==='Conforme'?'✓ CONFORME — Aucun point non conforme':'✕ NON CONFORME — '+s.nc+' point(s) non conforme(s)';
+  const signBlock=rec.signature?'<img src="'+rec.signature+'" class="sign-img">':'<div style="height:60px"></div>';
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>Contrôle '+ctlEsc(rec.num)+' — '+ctlEsc(rec.patient)+'</title>'
+    +'<style>@page{margin:14mm;size:A4}*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:\'Segoe UI\',Arial,sans-serif;font-size:10.5pt;color:#111;line-height:1.5}'
+    +'.header{display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;border-bottom:3px solid #1565C0;margin-bottom:14px}'
+    +'.logo{width:58px;height:58px;object-fit:contain;border-radius:8px}.pharma-name{font-size:13pt;font-weight:700;color:#1565C0}'
+    +'.pharma-info{text-align:right;font-size:9pt;color:#555}'
+    +'.title-band{background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:10px 16px;margin-bottom:14px}'
+    +'.title-band h1{font-size:13pt;color:#0D47A1;margin-bottom:2px}.title-band .sub{font-size:8.5pt;color:#1565C0}'
+    +'.idgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}'
+    +'.field{background:#f7f9fc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 10px}'
+    +'.field .k{font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:.4px;font-weight:600}'
+    +'.field .v{font-size:10.5pt;font-weight:700;margin-top:1px}'
+    +'.synth{border-radius:8px;padding:11px 16px;font-weight:800;font-size:11pt;margin-bottom:14px;text-align:center}'
+    +'.syn-ok{background:#E8F5E9;color:#1D5C3A;border:2px solid #81C784}.syn-nc{background:#FFEBEE;color:#C62828;border:2px solid #EF9A9A}'
+    +'.sec-block{margin-bottom:12px;break-inside:avoid}'
+    +'.sec-h{font-weight:800;font-size:10pt;color:#0D47A1;background:#f0f6ff;border-left:4px solid #1565C0;padding:5px 10px;border-radius:0 5px 5px 0;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}'
+    +'.ctbl{width:100%;border-collapse:collapse}'
+    +'.ctbl td{border-bottom:1px solid #eee;padding:6px 8px;vertical-align:top}'
+    +'.ctbl td.lbl{font-size:9.5pt}.ctbl td.stcell{width:120px;text-align:right;white-space:nowrap}'
+    +'.st{display:inline-block;padding:2px 9px;border-radius:12px;font-size:8pt;font-weight:700}'
+    +'.st-c{background:#E8F5E9;color:#1D5C3A}.st-nc{background:#FFEBEE;color:#C62828}.st-na{background:#eceff1;color:#546e7a}.st-none{background:#fafafa;color:#bbb}'
+    +'.star{color:#E65100;font-weight:800}'
+    +'.nc-detail td{background:#fff8f8;border-bottom:1px solid #f3d5d5}'
+    +'.nc-box{font-size:8.8pt;color:#8a2b2b;padding:2px 2px 2px 4px}'
+    +'.fw{display:inline-block;padding:1px 7px;border-radius:10px;font-size:7.5pt;font-weight:700;margin-left:4px}'
+    +'.fw-todo{background:#FFF3E0;color:#E65100}.fw-done{background:#E8F5E9;color:#1D5C3A}'
+    +'.ncphotos{margin-top:5px;display:flex;gap:6px;flex-wrap:wrap}.ncphotos img{width:120px;height:120px;object-fit:cover;border:1px solid #ddd;border-radius:6px}'
+    +'.obs-box{background:#f7f9fc;border:1px solid #e2e8f0;border-radius:6px;padding:9px 12px;font-size:9.5pt;white-space:pre-wrap;min-height:34px}'
+    +'.sign-area{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;break-inside:avoid}'
+    +'.sign-box{border:1px solid #bbb;border-radius:6px;padding:8px 12px;min-height:92px}'
+    +'.sign-label{font-size:8pt;color:#777;margin-bottom:4px}.sign-img{max-width:100%;max-height:70px}'
+    +'.footer{margin-top:18px;border-top:1px solid #ccc;padding-top:7px;display:flex;justify-content:space-between;font-size:8pt;color:#888}'
+    +'.print-bar{position:fixed;top:8px;right:8px}.print-bar button{background:#1565C0;color:#fff;border:none;border-radius:7px;padding:9px 16px;font-size:10pt;font-weight:700;cursor:pointer}'
+    +'@media print{.print-bar{display:none}}</style></head><body>'
+    +'<div class="print-bar"><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button></div>'
+    +'<div class="header"><div style="display:flex;align-items:center;gap:12px">'+(logoSrc?'<img src="'+logoSrc+'" class="logo">':'<div style="width:58px;height:58px;background:#1565C0;border-radius:8px"></div>')+'<div><div class="pharma-name">Pharmacie du Centre</div><div style="font-size:8.5pt;color:#555">48 Rue Chapron · 14120 Mondeville</div></div></div><div class="pharma-info"><div style="font-weight:600">02 31 52 15 71</div><div>contact@pharmacie-mondeville.fr</div></div></div>'
+    +'<div class="title-band"><h1>Rapport de contrôle annuel — Lit médicalisé</h1><div class="sub">Réf. FICHE 110 (Winncare) · Maintenance annuelle suivant NF EN 60601-2-52</div></div>'
+    +'<div class="idgrid">'
+    +'<div class="field"><div class="k">N° de rapport</div><div class="v">'+ctlEsc(rec.num||'—')+'</div></div>'
+    +'<div class="field"><div class="k">Date du contrôle</div><div class="v">'+ctlEsc(rec.dateFr||'')+'</div></div>'
+    +'<div class="field"><div class="k">Contrôleur</div><div class="v">'+ctlEsc(rec.controleur||'—')+'</div></div>'
+    +'<div class="field"><div class="k">N° série / parc</div><div class="v">'+ctlEsc(rec.serie||'—')+'</div></div>'
+    +'<div class="field"><div class="k">Patient (locataire)</div><div class="v">'+ctlEsc(rec.patient||'—')+'</div></div>'
+    +'<div class="field"><div class="k">Marque / modèle</div><div class="v">'+ctlEsc(rec.marque||'—')+'</div></div>'
+    +'<div class="field"><div class="k">Année de fabrication</div><div class="v">'+ctlEsc(rec.annee||'—')+'</div></div>'
+    +'<div class="field"><div class="k">Localisation</div><div class="v" style="font-size:9pt">'+ctlEsc(rec.loc||'—')+'</div></div>'
+    +'</div>'
+    +'<div class="synth '+synthClass+'">'+synthTxt+'</div>'
+    +sectionsHtml
+    +'<div class="sec-block"><div class="sec-h">Obsolescence &amp; observations</div>'
+    +'<div style="margin:6px 0 8px;font-size:9.5pt"><strong>Obsolescence :</strong> '+ctlEsc(obsoTxt)+' <span style="color:#888;font-size:8.5pt">(échelle 1 Neuf → 5 Obsolète)</span></div>'
+    +'<div class="obs-box">'+(rec.obs?ctlEsc(rec.obs):'—')+'</div></div>'
+    +'<div class="sign-area"><div class="sign-box"><div class="sign-label">Signature du contrôleur — '+ctlEsc(rec.controleur||'')+'</div>'+signBlock+'</div>'
+    +'<div class="sign-box"><div class="sign-label">Synthèse</div><div style="font-size:9pt;line-height:1.6">Points conformes : '+s.c+'<br>Non conformes : '+s.nc+'<br>Non applicables : '+s.na+'<br>Renseignés : '+s.done+' / '+s.total+'</div></div></div>'
+    +'<div class="footer"><span>Pharmacie du Centre · 48 Rue Chapron · 14120 Mondeville</span><span>'+ctlEsc(rec.num||'')+' · Généré le '+ctlEsc(rec.dateFr||'')+' à '+ctlEsc(rec.heure||'')+'</span></div>'
+    +'</body></html>';
+}
+
 // ═══════════ AUTO-SAVE HOOKS ═══════════
 // Wrap all render functions so every data change triggers a server save
-['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins'].forEach(fn=>{
+['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins','renderControles'].forEach(fn=>{
   const orig=window[fn];
   if(orig) window[fn]=function(){orig.apply(this,arguments);schedSave();};
 });

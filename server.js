@@ -6,6 +6,8 @@ const os = require('os');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'pharmacie-data.json');
+const HISTORY_DIR = path.join(__dirname, 'data', 'history');
+const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de données)
 
 // Parse JSON bodies up to 50MB (for base64 images in preps)
 app.use(express.json({ limit: '50mb' }));
@@ -41,11 +43,50 @@ async function initDB() {
       INSERT INTO app_data (id, data) VALUES (1, '{}')
       ON CONFLICT (id) DO NOTHING
     `);
+    // Historique automatique : chaque sauvegarde archive l'état précédent
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS app_data_history (
+        id BIGSERIAL PRIMARY KEY,
+        data JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     console.log('  🐘 Base PostgreSQL connectée !');
   } catch (err) {
     console.error('  ❌ Erreur connexion PostgreSQL:', err.message);
     console.log('  📁 Repli sur fichier local');
     db = null;
+  }
+}
+
+// ─── Archive l'état ACTUEL avant qu'il ne soit remplacé (filet anti-écrasement) ───
+async function snapshotCurrent() {
+  try {
+    if (db) {
+      const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
+      const data = cur.rows[0] && cur.rows[0].data;
+      if (data && Object.keys(data).length > 0) {
+        await db.query('INSERT INTO app_data_history (data) VALUES ($1)', [JSON.stringify(data)]);
+        // Purge : ne conserver que les MAX_HISTORY plus récents
+        await db.query(
+          `DELETE FROM app_data_history
+             WHERE id NOT IN (SELECT id FROM app_data_history ORDER BY id DESC LIMIT ${MAX_HISTORY})`
+        );
+      }
+    } else {
+      if (fs.existsSync(DATA_FILE)) {
+        if (!fs.existsSync(HISTORY_DIR)) fs.mkdirSync(HISTORY_DIR, { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        fs.copyFileSync(DATA_FILE, path.join(HISTORY_DIR, `snapshot-${ts}.json`));
+        // Purge
+        const files = fs.readdirSync(HISTORY_DIR).filter(f => f.startsWith('snapshot-')).sort();
+        while (files.length > MAX_HISTORY) {
+          fs.unlinkSync(path.join(HISTORY_DIR, files.shift()));
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Snapshot historique:', e.message);
   }
 }
 
@@ -76,6 +117,8 @@ app.get('/api/data', async (req, res) => {
 // ─── Save all data ───
 app.post('/api/data', async (req, res) => {
   try {
+    // On archive l'état existant AVANT de le remplacer
+    await snapshotCurrent();
     if (db) {
       // PostgreSQL
       await db.query(
@@ -98,6 +141,40 @@ app.post('/api/data', async (req, res) => {
   } catch (err) {
     console.error('Erreur sauvegarde:', err.message);
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─── Liste des snapshots d'historique ───
+app.get('/api/backups', async (req, res) => {
+  try {
+    if (db) {
+      const r = await db.query('SELECT id, created_at FROM app_data_history ORDER BY id DESC LIMIT 300');
+      return res.json(r.rows);
+    } else {
+      if (!fs.existsSync(HISTORY_DIR)) return res.json([]);
+      const files = fs.readdirSync(HISTORY_DIR).filter(f => f.startsWith('snapshot-')).sort().reverse();
+      return res.json(files.map(f => ({ id: f, created_at: f.replace('snapshot-', '').replace('.json', '') })));
+    }
+  } catch (err) {
+    console.error('Erreur liste backups:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Contenu d'un snapshot (pour consultation / restauration manuelle) ───
+app.get('/api/backups/:id', async (req, res) => {
+  try {
+    if (db) {
+      const r = await db.query('SELECT data FROM app_data_history WHERE id = $1', [req.params.id]);
+      return res.json(r.rows.length ? r.rows[0].data : null);
+    } else {
+      const fp = path.join(HISTORY_DIR, path.basename(req.params.id));
+      if (!fs.existsSync(fp)) return res.json(null);
+      return res.json(JSON.parse(fs.readFileSync(fp, 'utf8')));
+    }
+  } catch (err) {
+    console.error('Erreur lecture backup:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
