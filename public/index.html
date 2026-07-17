@@ -475,6 +475,7 @@ tr:hover td{background:#fafffe}
     <button class="sb-item" data-sec="locations" onclick="showSec('locations',this)"><svg class="ico sb-ico"><use href="#ic-location"></use></svg><span class="sb-label">Locations</span></button>
     <button class="sb-item" data-sec="controles" onclick="showSec('controles',this)"><svg class="ico sb-ico"><use href="#ic-securite"></use></svg><span class="sb-label">Contrôle lits</span></button>
     <button class="sb-item" data-sec="formulaires" onclick="showSec('formulaires',this)"><svg class="ico sb-ico"><use href="#ic-document"></use></svg><span class="sb-label">Formulaires</span></button>
+    <button class="sb-item" data-sec="retours" onclick="showSec('retours',this)"><svg class="ico sb-ico"><use href="#ic-retour"></use></svg><span class="sb-label">Retours Bluestone</span></button>
     <button class="sb-item" data-sec="credits" onclick="showSec('credits',this)"><svg class="ico sb-ico"><use href="#ic-euro"></use></svg><span class="sb-label">Crédits</span></button>
     <button class="sb-item" data-sec="caisse" onclick="showSec('caisse',this)"><svg class="ico sb-ico"><use href="#ic-caisse"></use></svg><span class="sb-label">Caisse</span></button>
     <button class="sb-item" data-sec="backoffice" onclick="showSec('backoffice',this)"><svg class="ico sb-ico"><use href="#ic-reglages"></use></svg><span class="sb-label">Back Office</span></button>
@@ -1035,6 +1036,35 @@ tr:hover td{background:#fafffe}
       </div>
       <div class="card">
         <div style="display:flex;align-items:flex-start;gap:10px;font-size:.8rem;color:var(--gray-500)"><svg class="ico" style="flex:none;margin-top:1px"><use href="#ic-document"></use></svg><span>Les bons ne sont pas archivés : chaque bon est généré à la demande puis imprimé ou enregistré dans votre LGO. Aucune donnée bénéficiaire n'est conservée dans l'intranet.</span></div>
+      </div>
+    </div>
+
+    <!-- ═══ RETOURS BLUESTONE ═══ -->
+    <div id="sec-retours" class="sec">
+      <div class="card frm-hero">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:46px;height:46px;border-radius:14px;background:#fff;border:1px solid var(--gray-200);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="ico" style="color:var(--g-dark);width:24px;height:24px"><use href="#ic-retour"></use></svg></div>
+          <div>
+            <div style="font-weight:800;color:var(--g-dark);font-size:1.05rem">Retours matériel — Bluestone Medical</div>
+            <div style="font-size:.8rem;color:var(--gray-500)">Éditez l'affiche de retour du matériel loué et le mail récapitulatif à Bluestone.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:1.1rem">
+        <div class="ch"><span class="ct">Nouveau retour</span></div>
+        <div class="frm-choice">
+          <div class="ic"><svg class="ico" style="color:var(--g-dark);width:22px;height:22px"><use href="#ic-location"></use></svg></div>
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;color:var(--gray-900)">Retour de matériel loué</div>
+            <div style="font-size:.78rem;color:var(--gray-500)">Génère l'affiche à coller sur le matériel + le mail récapitulatif</div>
+          </div>
+          <button class="btn bp sm" onclick="openRetourForm()" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-retour"></use></svg> Nouveau retour</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Historique des retours</span><span id="ret-count" style="font-size:.78rem;color:var(--gray-500)"></span></div>
+        <div class="ctl-toolbar" style="margin-bottom:1rem"><input type="text" id="ret-q" class="ctl-search" placeholder="Rechercher (patient, n° de parc, canal…)" oninput="renderRetours()"></div>
+        <div id="ret-list"></div>
       </div>
     </div>
 
@@ -1626,6 +1656,63 @@ tr:hover td{background:#fafffe}
   </div>
 </div>
 
+<!-- Retour matériel Bluestone -->
+<div class="overlay" id="ret-form-modal">
+  <div class="mbox" style="max-width:620px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-retour"></use></svg> Retour de matériel — Bluestone</span>
+      <button class="btn bs sm" onclick="closeModal('ret-form-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.6rem" id="ret-meta"></div>
+    <div class="fgrid">
+      <div class="fg" style="position:relative;grid-column:1/-1"><label>Patient (locataire) <span class="req">*</span></label>
+        <input type="text" id="ret-patient" placeholder="Rechercher ou saisir NOM Prénom…" autocomplete="off" oninput="retPatientSearch()" onblur="setTimeout(()=>{const e=document.getElementById('ret-psugg');if(e)e.style.display='none'},150)">
+        <div id="ret-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
+      </div>
+      <div class="fg"><label>Date de fin de location <span class="req">*</span></label><input type="date" id="ret-fin"></div>
+      <div class="fg"><label>N° de parc (série Bluestone) <span class="req">*</span></label><input type="text" id="ret-parc" placeholder="Ex. BS-04821"></div>
+    </div>
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1rem 0 .5rem">Canal de transport du retour</div>
+    <div class="fgrid" style="grid-template-columns:1fr 1fr">
+      <label class="ret-canal" style="display:flex;align-items:center;gap:10px;border:1px solid var(--gray-200);border-radius:12px;padding:12px 14px;cursor:pointer">
+        <input type="radio" name="ret-canal" value="alliance" checked style="accent-color:var(--g-dark)">
+        <span><span style="font-weight:700;color:var(--gray-900)">Via Alliance Healthcare</span><br><span style="font-size:.75rem;color:var(--gray-500)">Grossiste répartiteur</span></span>
+      </label>
+      <label class="ret-canal" style="display:flex;align-items:center;gap:10px;border:1px solid var(--gray-200);border-radius:12px;padding:12px 14px;cursor:pointer">
+        <input type="radio" name="ret-canal" value="direct" style="accent-color:var(--g-dark)">
+        <span><span style="font-weight:700;color:var(--gray-900)">Bluestone en direct</span><br><span style="font-size:.75rem;color:var(--gray-500)">Retour direct au fournisseur</span></span>
+      </label>
+    </div>
+    <div id="ret-form-error" style="display:none;color:var(--red);font-size:.82rem;font-weight:600;margin-top:.8rem"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn bs" onclick="closeModal('ret-form-modal')">Annuler</button>
+      <button class="btn bp" onclick="validateRetour()"><svg class="ico"><use href="#ic-valider"></use></svg> Générer l'affiche &amp; le mail</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mail récapitulatif de retour (à copier / envoyer à Bluestone) -->
+<div class="overlay" id="ret-mail-modal">
+  <div class="mbox" style="max-width:620px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-envoyer"></use></svg> Mail récapitulatif — Bluestone</span>
+      <button class="btn bs sm" onclick="closeModal('ret-mail-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.7rem;line-height:1.5">Envoyez ce récapitulatif à Bluestone Medical. Vous pouvez ouvrir votre messagerie pré-remplie, ou copier les champs.</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.3rem"><label style="font-size:.78rem;font-weight:700;color:var(--gray-700)">Destinataire</label><button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="copyRenouvField('ret-mail-to',this)">Copier</button></div>
+    <input type="text" id="ret-mail-to" readonly style="width:100%;margin-bottom:.6rem;font-size:.82rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.3rem"><label style="font-size:.78rem;font-weight:700;color:var(--gray-700)">Objet</label><button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="copyRenouvField('ret-mail-subject',this)">Copier</button></div>
+    <input type="text" id="ret-mail-subject" readonly style="width:100%;margin-bottom:.6rem;font-size:.82rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.3rem"><label style="font-size:.78rem;font-weight:700;color:var(--gray-700)">Message</label><button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="copyRenouvField('ret-mail-content',this)">Copier le message</button></div>
+    <textarea id="ret-mail-content" readonly style="width:100%;min-height:180px;font-size:.82rem;line-height:1.5"></textarea>
+    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+      <a class="btn bp" id="ret-mail-open" href="#" style="text-decoration:none"><svg class="ico"><use href="#ic-envoyer"></use></svg> Ouvrir dans ma messagerie</a>
+      <button class="btn bs" onclick="openRetourAffiche(currentRetourId)"><svg class="ico"><use href="#ic-imprimer"></use></svg> Rouvrir l'affiche</button>
+      <button class="btn bs" onclick="closeModal('ret-mail-modal')">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <!-- Signature collaborateur (réutilisable) -->
 <div class="overlay" id="sig-modal">
   <div class="mbox" style="max-width:460px">
@@ -1726,6 +1813,10 @@ let controlesMail = { dest:'contact@pharmacie-mondeville.fr' };
 
 // Module « Formulaires » — bons générés (ex. bon de prise en charge vaccination)
 let bons = [];
+// Module « Retours matériel — Bluestone Medical » (historique conservé)
+let retours = [];
+const BLUESTONE = { nom:'Bluestone Medical', mail:'serviceclient@bluestone-medical.fr' };
+const ALLIANCE = { nom:'Alliance Healthcare' };
 // Coordonnées officine pour les formulaires
 const OFFICINE = { nom:'Pharmacie du Centre', adresse:'48 rue Chapron', cp:'14120', ville:'Mondeville', finess:'14 2 00647 7', tel:'02 31 52 15 71', mail:'contact@pharmacie-mondeville.fr' };
 // Logo Normandie Pharma (fourni, intégré tel quel)
@@ -1739,7 +1830,7 @@ function schedSave(){ if(!_loadedOK||_suppressSave) return; clearTimeout(_saveTi
 async function saveAll(){
   try{
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours})});
   }catch(e){console.warn('Sauvegarde:',e.message);}
 }
 async function loadAll(){
@@ -1760,6 +1851,7 @@ async function loadAll(){
     if(data.labo)labo=data.labo;
     if(data.controles)controles=data.controles;
     if(data.controlesMail)controlesMail=data.controlesMail;
+    if(data.retours)retours=data.retours;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
   }catch(e){console.warn('Chargement:',e.message);}
 }
@@ -1779,6 +1871,7 @@ setInterval(async()=>{
         if(d.medecins)medecins=d.medecins;
         if(d.controles)controles=d.controles;
         if(d.controlesMail)controlesMail=d.controlesMail;
+        if(d.retours)retours=d.retours;
         _suppressSave=true; try{ renderAll(); } finally { _suppressSave=false; }
       }
     }catch(e){ _loadedOK=false; }
@@ -1954,6 +2047,7 @@ const SEC_LABEL = {
   locations:'Locations de matériel',
   controles:'Contrôle annuel des lits médicalisés',
   formulaires:'Formulaires',
+  retours:'Retours matériel — Bluestone Medical',
   credits:'Crédits & produits avancés',
   caisse:'Caisse — clôture du soir',
   backoffice:'Back Office'
@@ -1979,6 +2073,7 @@ function showSec(name,btn){
   if(name==='locations'){renderLocs();document.getElementById('loc-form-card').style.display='none';}
   if(name==='controles')renderControles();
   if(name==='formulaires')renderForms();
+  if(name==='retours')renderRetours();
   if(name==='credits'){renderCreds();document.getElementById('cred-form-card').style.display='none';}
   if(name==='caisse')renderCaisse();
   if(name==='backoffice'){renderStaff();renderPatients();applyAdminUI();}
@@ -2004,7 +2099,7 @@ function restoreSidebarState(){
     }
   } catch(e){}
 }
-function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();if(typeof renderForms==='function')renderForms();schedSave();}
+function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();if(typeof renderForms==='function')renderForms();if(typeof renderRetours==='function')renderRetours();schedSave();}
 
 // Pastille bandeau : nombre de livraisons « à préparer » du jour
 function updateNavBadges(){
@@ -5448,6 +5543,174 @@ function deleteBon(id){
   document.getElementById('conf-title').textContent='Supprimer ce bon';
   document.getElementById('conf-msg').textContent='Supprimer définitivement le bon '+(b.num||'')+' — '+((b.benef&&b.benef.nom)||'')+' ? Cette action est irréversible.';
   document.getElementById('conf-ok').onclick=()=>{ bons=bons.filter(x=>x.id!==id); renderForms(); schedSave(); closeModal('confirm-modal'); };
+  openModal('confirm-modal');
+}
+
+// ═══════════ RETOURS MATÉRIEL — BLUESTONE ═══════════
+let retDraft=null;
+let currentRetourId=null;
+
+function retourNextNum(){
+  const y=new Date().getFullYear(); let max=0;
+  retours.forEach(r=>{ const m=(r.num||'').match(new RegExp('^RET-'+y+'-(\\d+)$')); if(m){const n=parseInt(m[1],10); if(n>max)max=n;} });
+  return 'RET-'+y+'-'+String(max+1).padStart(3,'0');
+}
+
+function renderRetours(){
+  const host=document.getElementById('ret-list'); if(!host)return;
+  const q=(document.getElementById('ret-q')?.value||'').trim().toLowerCase();
+  let rows=retours.slice().sort((a,b)=>b.id-a.id);
+  if(q){ rows=rows.filter(r=>[r.num,r.patient,r.parc,r.canalLbl].some(v=>(v||'').toLowerCase().includes(q))); }
+  const cnt=document.getElementById('ret-count'); if(cnt)cnt.textContent=retours.length?retours.length+' retour(s)':'';
+  if(!rows.length){ host.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.6rem;font-size:.88rem">'+(retours.length?'Aucun retour ne correspond à la recherche.':'Aucun retour enregistré pour le moment.')+'</div>'; return; }
+  host.innerHTML=rows.map(r=>{
+    return '<div class="bon-card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+      +'<div><div style="font-weight:800;color:var(--b-dark);font-size:.82rem">'+ctlEsc(r.num||'')+'</div>'
+      +'<div style="font-weight:700;color:var(--gray-900);margin-top:2px">'+ctlEsc(r.patient||'')+'</div>'
+      +'<div style="font-size:.78rem;color:var(--gray-500);margin-top:2px">Parc : '+ctlEsc(r.parc||'—')+' · Fin de location : '+ctlEsc(r.finFr||'—')+'</div>'
+      +'<div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">'+ico('retour')+' '+ctlEsc(r.canalLbl||'')+' · '+ico('utilisateur')+' '+ctlEsc(r.operateur||'—')+' · '+ctlEsc(r.dateFr||'')+'</div>'
+      +'</div></div>'
+      +'<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">'
+      +'<button class="btn bp sm" onclick="openRetourAffiche('+r.id+')">'+ico('imprimer')+' Affiche</button>'
+      +'<button class="btn bs sm" onclick="openRetourMail('+r.id+')">'+ico('envoyer')+' Mail Bluestone</button>'
+      +'<button class="btn bd sm" onclick="deleteRetour('+r.id+')">'+ico('supprimer')+'</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+function openRetourForm(){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  retDraft={patientRef:null};
+  ['ret-patient','ret-parc'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  document.getElementById('ret-fin').value='';
+  const a=document.querySelector('input[name="ret-canal"][value="alliance"]'); if(a)a.checked=true;
+  document.getElementById('ret-form-error').style.display='none';
+  const sug=document.getElementById('ret-psugg'); if(sug)sug.style.display='none';
+  const now=new Date();
+  document.getElementById('ret-meta').textContent='N° '+retourNextNum()+' · '+now.toLocaleDateString('fr-FR')+' · Opérateur : '+currentUser.prenom+' '+currentUser.nom;
+  openModal('ret-form-modal');
+  const box=document.querySelector('#ret-form-modal .mbox'); if(box)box.scrollTop=0;
+}
+
+function retPatientSearch(){
+  const q=(document.getElementById('ret-patient').value||'').toLowerCase().trim();
+  const el=document.getElementById('ret-psugg');
+  if(retDraft)retDraft.patientRef=null;
+  if(q.length<2){el.style.display='none';return;}
+  const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
+  if(!m.length){el.style.display='none';return;}
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  el.style.display='block';
+  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="retFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div></div>').join('');
+}
+function retFillPatient(nom,prenom){
+  document.getElementById('ret-patient').value=(nom+' '+prenom).trim();
+  document.getElementById('ret-psugg').style.display='none';
+  if(retDraft)retDraft.patientRef={nom,prenom};
+}
+
+function validateRetour(){
+  const err=document.getElementById('ret-form-error');
+  const patient=document.getElementById('ret-patient').value.trim();
+  const fin=document.getElementById('ret-fin').value;
+  const parc=document.getElementById('ret-parc').value.trim();
+  if(!patient){ err.textContent='Le nom du patient (locataire) est obligatoire.'; err.style.display='block'; return; }
+  if(!fin){ err.textContent='La date de fin de location est obligatoire.'; err.style.display='block'; return; }
+  if(!parc){ err.textContent='Le n° de parc (série Bluestone) est obligatoire.'; err.style.display='block'; return; }
+  err.style.display='none';
+  const canal=document.querySelector('input[name="ret-canal"]:checked')?.value||'alliance';
+  const now=new Date();
+  const rec={
+    id:Date.now(), num:retourNextNum(),
+    date:now.toISOString().split('T')[0], dateFr:now.toLocaleDateString('fr-FR'),
+    operateurId:currentUser.id, operateur:currentUser.prenom+' '+currentUser.nom,
+    patient, patientRef:retDraft?retDraft.patientRef:null,
+    fin, finFr:fin?new Date(fin).toLocaleDateString('fr-FR'):'',
+    parc, canal, canalLbl: canal==='alliance'?'Via Alliance Healthcare':'Bluestone en direct'
+  };
+  retours.unshift(rec);
+  schedSave(); renderRetours(); closeModal('ret-form-modal');
+  openRetourAffiche(rec.id);
+  openRetourMail(rec.id);
+}
+
+function buildRetourAfficheHtml(rec){
+  const esc=s=>ctlEsc(s);
+  const channelBig = rec.canal==='alliance' ? 'VIA ALLIANCE HEALTHCARE' : 'RETOUR DIRECT';
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Retour '+esc(rec.num)+'</title>'
+  +'<style>@page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}'
+  +'body{font-family:\'Segoe UI\',Arial,sans-serif;color:#111;margin:0;padding:24px}'
+  +'.sheet{max-width:720px;margin:0 auto}'
+  +'.top{text-align:center;color:#666;font-size:13px;letter-spacing:.18em;text-transform:uppercase;margin-bottom:6px}'
+  +'.num{text-align:center;color:#999;font-size:12px;margin-bottom:22px}'
+  +'.dest-box{border:3px solid #2E7D54;border-radius:20px;padding:26px 20px;text-align:center;background:#F5FAF7}'
+  +'.dest-lbl{font-size:14px;letter-spacing:.2em;text-transform:uppercase;color:#2E7D54;font-weight:700}'
+  +'.dest-name{font-size:52px;font-weight:800;color:#111;line-height:1.05;margin:8px 0 4px}'
+  +'.channel{display:inline-block;margin-top:12px;font-size:28px;font-weight:800;color:#2E7D54;background:#fff;border:2px solid #2E7D54;border-radius:12px;padding:8px 20px}'
+  +'.from{text-align:center;margin:26px 0 8px;color:#444;font-size:15px}.from b{color:#111;font-size:18px}'
+  +'.info{border:1px solid #ddd;border-radius:14px;margin-top:22px;overflow:hidden}'
+  +'.info .row{display:flex;border-bottom:1px solid #eee}.info .row:last-child{border-bottom:none}'
+  +'.info .k{width:42%;background:#fafafa;padding:14px 16px;font-size:13px;color:#666;text-transform:uppercase;letter-spacing:.05em;font-weight:600}'
+  +'.info .v{flex:1;padding:14px 16px;font-size:20px;font-weight:700;color:#111}'
+  +'.foot{margin-top:20px;text-align:center;color:#aaa;font-size:11px}'
+  +'.no-print{text-align:center;margin-top:22px}'
+  +'.btn{background:#2E7D54;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer}'
+  +'@media print{body{padding:0}.no-print{display:none}}</style></head><body><div class="sheet">'
+  +'<div class="top">Retour de matériel médical</div>'
+  +'<div class="num">'+esc(rec.num)+' · Édité le '+esc(rec.dateFr)+'</div>'
+  +'<div class="dest-box"><div class="dest-lbl">Destinataire</div>'
+  +'<div class="dest-name">'+esc(BLUESTONE.nom.toUpperCase())+'</div>'
+  +'<div class="channel">'+channelBig+'</div></div>'
+  +'<div class="from">Expéditeur : <b>'+esc(OFFICINE.nom)+'</b><br>'+esc(OFFICINE.adresse)+' · '+esc(OFFICINE.cp)+' '+esc(OFFICINE.ville)+' · Tél. '+esc(OFFICINE.tel)+'</div>'
+  +'<div class="info">'
+  +'<div class="row"><div class="k">Patient (locataire)</div><div class="v">'+esc(rec.patient)+'</div></div>'
+  +'<div class="row"><div class="k">Date de fin de location</div><div class="v">'+esc(rec.finFr||'—')+'</div></div>'
+  +'<div class="row"><div class="k">N° de parc (série Bluestone)</div><div class="v">'+esc(rec.parc||'—')+'</div></div>'
+  +'</div>'
+  +'<div class="foot">Affiche à apposer sur le matériel retourné · '+esc(OFFICINE.nom)+'</div>'
+  +'<div class="no-print"><button class="btn" onclick="window.print()">Imprimer</button></div>'
+  +'</div></body></html>';
+}
+
+function openRetourAffiche(id){
+  const rec=retours.find(x=>x.id===id); if(!rec)return;
+  const w=window.open('','_blank'); if(!w){alert('Autorisez les fenêtres pop-up pour afficher l\'affiche.');return;}
+  w.document.write(buildRetourAfficheHtml(rec)); w.document.close(); w.focus();
+}
+
+function buildRetourMail(rec){
+  const to=BLUESTONE.mail;
+  const subject='Retour de matériel — '+rec.patient+' — Parc '+(rec.parc||'');
+  const body='Bonjour,\n\n'
+    +'Nous vous informons du retour du matériel médical suivant, loué à notre patient :\n\n'
+    +'• Patient (locataire) : '+rec.patient+'\n'
+    +'• Date de fin de location : '+(rec.finFr||'—')+'\n'
+    +'• N° de parc (série Bluestone) : '+(rec.parc||'—')+'\n'
+    +'• Canal de retour : '+rec.canalLbl+'\n\n'
+    +'Le matériel est retourné '+(rec.canal==='alliance'?'via le grossiste Alliance Healthcare.':'directement à Bluestone Medical.')+'\n\n'
+    +'Référence interne : '+rec.num+'\n\n'
+    +'Cordialement,\n\n'
+    +OFFICINE.nom+'\n'+OFFICINE.adresse+' · '+OFFICINE.cp+' '+OFFICINE.ville+'\nTél. '+OFFICINE.tel+' · '+OFFICINE.mail;
+  return {to,subject,body};
+}
+
+function openRetourMail(id){
+  const rec=retours.find(x=>x.id===id); if(!rec)return;
+  currentRetourId=id;
+  const m=buildRetourMail(rec);
+  document.getElementById('ret-mail-to').value=m.to;
+  document.getElementById('ret-mail-subject').value=m.subject;
+  document.getElementById('ret-mail-content').value=m.body;
+  document.getElementById('ret-mail-open').href='mailto:'+m.to+'?subject='+encodeURIComponent(m.subject)+'&body='+encodeURIComponent(m.body);
+  openModal('ret-mail-modal');
+}
+
+function deleteRetour(id){
+  const r=retours.find(x=>x.id===id); if(!r)return;
+  document.getElementById('conf-title').textContent='Supprimer ce retour';
+  document.getElementById('conf-msg').textContent='Supprimer définitivement le retour '+(r.num||'')+' — '+(r.patient||'')+' ? Cette action est irréversible.';
+  document.getElementById('conf-ok').onclick=()=>{ retours=retours.filter(x=>x.id!==id); renderRetours(); schedSave(); closeModal('confirm-modal'); };
   openModal('confirm-modal');
 }
 
