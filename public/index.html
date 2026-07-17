@@ -474,6 +474,7 @@ tr:hover td{background:#fafffe}
     <button class="sb-item" data-sec="bpm" onclick="showSec('bpm',this)"><svg class="ico sb-ico"><use href="#ic-ordonnance"></use></svg><span class="sb-label">BPM</span></button>
     <button class="sb-item" data-sec="locations" onclick="showSec('locations',this)"><svg class="ico sb-ico"><use href="#ic-location"></use></svg><span class="sb-label">Locations</span></button>
     <button class="sb-item" data-sec="controles" onclick="showSec('controles',this)"><svg class="ico sb-ico"><use href="#ic-securite"></use></svg><span class="sb-label">Contrôle lits</span></button>
+    <button class="sb-item" data-sec="formulaires" onclick="showSec('formulaires',this)"><svg class="ico sb-ico"><use href="#ic-document"></use></svg><span class="sb-label">Formulaires</span></button>
     <button class="sb-item" data-sec="credits" onclick="showSec('credits',this)"><svg class="ico sb-ico"><use href="#ic-euro"></use></svg><span class="sb-label">Crédits</span></button>
     <button class="sb-item" data-sec="caisse" onclick="showSec('caisse',this)"><svg class="ico sb-ico"><use href="#ic-caisse"></use></svg><span class="sb-label">Caisse</span></button>
     <button class="sb-item" data-sec="backoffice" onclick="showSec('backoffice',this)"><svg class="ico sb-ico"><use href="#ic-reglages"></use></svg><span class="sb-label">Back Office</span></button>
@@ -993,6 +994,39 @@ tr:hover td{background:#fafffe}
       </div>
     </div>
 
+    <!-- ═══ FORMULAIRES ═══ -->
+    <div id="sec-formulaires" class="sec">
+      <style>
+        .frm-hero{border:none;box-shadow:none;background:linear-gradient(135deg,#E8F5E9 0%,#fff 45%);border-radius:16px;padding:1.4rem 1.5rem 1rem;margin-bottom:1.1rem}
+        .frm-choice{display:flex;align-items:center;gap:14px;border:1px solid var(--gray-200);border-radius:13px;padding:14px 16px;background:#fff;flex-wrap:wrap}
+        .frm-choice .ic{width:46px;height:46px;border-radius:13px;background:var(--g-pale);border:1px solid var(--g-border);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        .bon-card{background:#fff;border:1px solid var(--gray-200);border-radius:13px;padding:13px 15px;margin-bottom:10px;box-shadow:var(--shadow)}
+      </style>
+      <div class="card frm-hero">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:46px;height:46px;border-radius:14px;background:#fff;border:1px solid var(--gray-200);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="ico" style="color:var(--g-dark);width:24px;height:24px"><use href="#ic-document"></use></svg></div>
+          <div>
+            <div style="font-weight:800;color:var(--g-dark);font-size:1.05rem">Formulaires</div>
+            <div style="font-size:.8rem;color:var(--gray-500)">Générez des documents personnalisés à l'en-tête de la pharmacie, à imprimer.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:1.1rem">
+        <div class="ch"><span class="ct">Formulaires disponibles</span></div>
+        <div class="frm-choice">
+          <div class="ic"><svg class="ico" style="color:var(--g-dark);width:22px;height:22px"><use href="#ic-ordonnance"></use></svg></div>
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;color:var(--gray-900)">Bon de prise en charge — Vaccination</div>
+            <div style="font-size:.78rem;color:var(--gray-500)">Hors grippe et COVID · réf. 611 CNAM 09/2023</div>
+          </div>
+          <button class="btn bp sm" onclick="openBonForm()" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-document"></use></svg> Nouveau bon</button>
+        </div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:flex-start;gap:10px;font-size:.8rem;color:var(--gray-500)"><svg class="ico" style="flex:none;margin-top:1px"><use href="#ic-document"></use></svg><span>Les bons ne sont pas archivés : chaque bon est généré à la demande puis imprimé ou enregistré dans votre LGO. Aucune donnée bénéficiaire n'est conservée dans l'intranet.</span></div>
+      </div>
+    </div>
+
     <!-- ═══ BACK OFFICE ═══ -->
     <div id="sec-backoffice" class="sec">
       <p class="stitle"><svg class="ico"><use href="#ic-reglages"></use></svg> Back Office</p>
@@ -1019,6 +1053,7 @@ tr:hover td{background:#fafffe}
               </select>
             </div>
             <div class="fg"><label>Code PIN (4 chiffres)</label><input type="password" id="st-pin" placeholder="••••" maxlength="4"></div>
+            <div class="fg"><label>N° RPPS (optionnel)</label><input type="text" id="st-rpps" placeholder="Ex. 10001234567" inputmode="numeric"></div>
           </div>
           <button class="btn bp" style="margin-top:.9rem" onclick="addStaff()">+ Ajouter</button>
         </div>
@@ -1549,6 +1584,55 @@ tr:hover td{background:#fafffe}
   </div>
 </div>
 
+<!-- Bon de prise en charge — Vaccination -->
+<div class="overlay" id="bon-form-modal">
+  <div class="mbox" style="max-width:640px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-ordonnance"></use></svg> Bon de prise en charge — Vaccination</span>
+      <button class="btn bs sm" onclick="closeModal('bon-form-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.5rem" id="bon-meta"></div>
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:.6rem 0 .5rem">Bénéficiaire</div>
+    <div class="fgrid">
+      <div class="fg" style="position:relative"><label>Nom <span class="req">*</span></label>
+        <input type="text" id="bon-nom" placeholder="Rechercher ou saisir NOM…" autocomplete="off" oninput="bonPatientSearch()" onblur="setTimeout(()=>{const e=document.getElementById('bon-psugg');if(e)e.style.display='none'},150)">
+        <div id="bon-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
+      </div>
+      <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="bon-prenom" placeholder="Prénom"></div>
+      <div class="fg"><label>Date de naissance</label><input type="date" id="bon-dob"></div>
+      <div class="fg"><label>Rang de naissance</label><input type="number" id="bon-rang" value="1" min="1" max="9"></div>
+      <div class="fg"><label>N° d'immatriculation (sécu)</label><input type="text" id="bon-ss" placeholder="1 85 05 14 XXX XXX XX" inputmode="numeric"></div>
+    </div>
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1rem 0 .5rem">Prescription</div>
+    <div class="fgrid">
+      <div class="fg" style="grid-column:1/-1"><label>Vaccin prescrit (spécialité) <span class="req">*</span></label><input type="text" id="bon-vaccin" placeholder="Ex. Boostrixtetra, Repevax, Prevenar 20…"></div>
+      <div class="fg"><label>Date de prescription</label><input type="date" id="bon-date"></div>
+    </div>
+    <div id="bon-presc-info" style="background:var(--g-pale);border:1px solid var(--g-border);border-radius:10px;padding:10px 13px;font-size:.8rem;color:var(--g-dark);margin-top:.9rem;line-height:1.5"></div>
+    <div id="bon-form-error" style="display:none;color:var(--red);font-size:.82rem;font-weight:600;margin-top:.8rem"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn bs" onclick="closeModal('bon-form-modal')">Annuler</button>
+      <button class="btn bp" onclick="validateBon()"><svg class="ico"><use href="#ic-valider"></use></svg> Générer le bon</button>
+    </div>
+  </div>
+</div>
+
+<!-- Signature collaborateur (réutilisable) -->
+<div class="overlay" id="sig-modal">
+  <div class="mbox" style="max-width:460px">
+    <h3><svg class="ico"><use href="#ic-modifier"></use></svg> Signature — <span id="sig-name"></span></h3>
+    <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.6rem">Signez dans le cadre. Cette signature sera apposée automatiquement sur les bons que vous générez.</div>
+    <div style="border:1px solid var(--gray-200);border-radius:12px;background:#fff;overflow:hidden"><canvas id="sig-canvas" style="width:100%;height:180px;display:block;touch-action:none;background:#fff"></canvas></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn bp" onclick="saveStaffSig()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
+      <button class="btn bs" onclick="clearSigPad()">Effacer</button>
+      <button class="btn bs" onclick="closeModal('sig-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="/gotham-font.js"></script>
 <script>
 function ico(n){return '<svg class="ico"><use href="#ic-'+n+'"></use></svg>';}
 
@@ -1630,6 +1714,13 @@ let caisse = { seuilAlerteEuros:50, dureeAlerteJours:3, releves:[], remises:[], 
 let controles = [];
 // Adresse fixe destinataire du rapport (préparé pour un futur envoi email — phase 2)
 let controlesMail = { dest:'contact@pharmacie-mondeville.fr' };
+
+// Module « Formulaires » — bons générés (ex. bon de prise en charge vaccination)
+let bons = [];
+// Coordonnées officine pour les formulaires
+const OFFICINE = { nom:'Pharmacie du Centre', adresse:'48 rue Chapron', cp:'14120', ville:'Mondeville', finess:'14 2 00647 7', tel:'02 31 52 15 71', mail:'contact@pharmacie-mondeville.fr' };
+// Logo Normandie Pharma (fourni, intégré tel quel)
+const NORMANDIE_LOGO = (typeof window!=='undefined'&&window.NORMANDIE_LOGO)||'data:image/png;base64,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';
 
 // ═══════════ PERSISTENCE API ═══════════
 let _saveTimer=null;
@@ -1853,6 +1944,7 @@ const SEC_LABEL = {
   bpm:'Bilans Partagés de Médication',
   locations:'Locations de matériel',
   controles:'Contrôle annuel des lits médicalisés',
+  formulaires:'Formulaires',
   credits:'Crédits & produits avancés',
   caisse:'Caisse — clôture du soir',
   backoffice:'Back Office'
@@ -1877,6 +1969,7 @@ function showSec(name,btn){
   if(name==='bpm')renderBpm();
   if(name==='locations'){renderLocs();document.getElementById('loc-form-card').style.display='none';}
   if(name==='controles')renderControles();
+  if(name==='formulaires')renderForms();
   if(name==='credits'){renderCreds();document.getElementById('cred-form-card').style.display='none';}
   if(name==='caisse')renderCaisse();
   if(name==='backoffice'){renderStaff();renderPatients();applyAdminUI();}
@@ -1902,7 +1995,7 @@ function restoreSidebarState(){
     }
   } catch(e){}
 }
-function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();schedSave();}
+function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();if(typeof renderForms==='function')renderForms();schedSave();}
 
 // Pastille bandeau : nombre de livraisons « à préparer » du jour
 function updateNavBadges(){
@@ -3086,8 +3179,8 @@ function addStaff(){
   if(pin.length!==4||!/^\d+$/.test(pin)){alert('Le PIN doit être 4 chiffres.');return}
   const colors=['#1D5C3A','#1565C0','#6A1B9A','#00695C','#558B2F','#E65100','#4E342E','#AD1457','#2E7D32','#0277BD','#37474F','#880E4F'];
   const id=(prenom[0]+(nom[0]||'X')).toUpperCase()+(staffDB.length%10);
-  staffDB.push({id,nom,prenom,poste:document.getElementById('st-poste').value,pin,col:colors[staffDB.length%colors.length]});
-  ['st-nom','st-prenom','st-pin'].forEach(i=>document.getElementById(i).value='');
+  staffDB.push({id,nom,prenom,poste:document.getElementById('st-poste').value,pin,col:colors[staffDB.length%colors.length],rpps:(document.getElementById('st-rpps')?document.getElementById('st-rpps').value.trim():''),sig:''});
+  ['st-nom','st-prenom','st-pin','st-rpps'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
   renderStaff(); buildPinChips();
 }
 // ═══════════ DROITS ADMIN (par collaborateur) ═══════════
@@ -3138,14 +3231,60 @@ function renderStaff(){
       <div style="font-size:.74rem;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px">${s.poste}</div>
       ${badge}
       <div style="font-size:.7rem;color:var(--gray-400)">Code : ${s.id}</div>
+      <div style="font-size:.68rem;color:var(--gray-500);margin-top:2px">RPPS : ${s.rpps?s.rpps:'—'} · Signature : ${s.sig?'✓ enregistrée':'—'}</div>
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn bs sm" onclick="editStaffPin('${s.id}')" title="Modifier le code PIN"><svg class="ico"><use href="#ic-verrouiller"></use></svg> PIN</button>
+        <button class="btn bs sm" onclick="editStaffRpps('${s.id}')" title="Renseigner le n° RPPS"><svg class="ico"><use href="#ic-modifier"></use></svg> RPPS</button>
+        <button class="btn ${s.sig?'bp':'bs'} sm" onclick="openStaffSig('${s.id}')" title="Enregistrer la signature"><svg class="ico"><use href="#ic-modifier"></use></svg> Signature${s.sig?' ✓':''}</button>
         <button class="btn bd sm" onclick="deleteStaff('${s.id}')" title="Supprimer ce collaborateur"><svg class="ico"><use href="#ic-supprimer"></use></svg></button>
         ${adminBtn}
       </div>
     </div>`;
   }).join('');
   applyAdminUI();
+}
+
+// ── RPPS + signature enregistrée par collaborateur ──
+function editStaffRpps(id){
+  const s=staffDB.find(x=>x.id===id); if(!s)return;
+  const v=prompt('N° RPPS de '+s.prenom+' '+s.nom+' (laisser vide pour effacer) :', s.rpps||'');
+  if(v===null)return;
+  s.rpps=v.trim(); renderStaff(); schedSave();
+}
+let _sigTargetId=null, _sigCtx=null, _sigCanvas=null, _sigHas=false, _sigBound=false;
+function openStaffSig(id){
+  const s=staffDB.find(x=>x.id===id); if(!s)return;
+  _sigTargetId=id;
+  document.getElementById('sig-name').textContent=s.prenom+' '+s.nom;
+  openModal('sig-modal');
+  setTimeout(()=>initSigPad(s.sig),80);
+}
+function initSigPad(existing){
+  const cv=document.getElementById('sig-canvas'); if(!cv)return;
+  _sigCanvas=cv;
+  const rect=cv.getBoundingClientRect();
+  cv.width=Math.max(320,Math.round(rect.width)); cv.height=180;
+  const ctx=cv.getContext('2d'); _sigCtx=ctx;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.lineWidth=2.4; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.strokeStyle='#12233a';
+  _sigHas=false;
+  if(existing){ const img=new Image(); img.onload=()=>{ try{ctx.drawImage(img,0,0,cv.width,cv.height);}catch(e){} }; img.src=existing; _sigHas=true; }
+  if(_sigBound)return; _sigBound=true;
+  let drawing=false,last=null;
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left; const cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top; return {x:cx*(cv.width/r.width),y:cy*(cv.height/r.height)}; };
+  const start=e=>{ drawing=true; last=pos(e); e.preventDefault(); };
+  const move=e=>{ if(!drawing)return; const p=pos(e); _sigCtx.beginPath(); _sigCtx.moveTo(last.x,last.y); _sigCtx.lineTo(p.x,p.y); _sigCtx.stroke(); last=p; _sigHas=true; e.preventDefault(); };
+  const end=()=>{ drawing=false; };
+  cv.addEventListener('mousedown',start); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',end);
+}
+function clearSigPad(){ if(_sigCtx&&_sigCanvas){ _sigCtx.clearRect(0,0,_sigCanvas.width,_sigCanvas.height); _sigHas=false; } }
+function saveStaffSig(){
+  if(!_sigTargetId)return;
+  const s=staffDB.find(x=>x.id===_sigTargetId); if(!s)return;
+  if(!_sigHas){ if(!confirm('Aucun tracé détecté. Effacer la signature enregistrée ?'))return; s.sig=''; }
+  else { s.sig=_sigCanvas.toDataURL('image/png'); }
+  closeModal('sig-modal'); renderStaff(); schedSave();
 }
 
 let staffPinEditId=null;
@@ -5201,9 +5340,255 @@ function buildControlePdfHtml(rec){
     +'</body></html>';
 }
 
+// ═══════════ FORMULAIRES — Bon de prise en charge vaccination ═══════════
+let bonDraft = null;
+
+function normandieLogoSvg(){
+  return '<img src="'+NORMANDIE_LOGO+'" alt="Normandie Pharma" style="width:215px;max-width:215px;display:block">';
+}
+
+function renderForms(){
+  const host=document.getElementById('forms-list'); if(!host)return;
+  const q=(document.getElementById('forms-q')?.value||'').trim().toLowerCase();
+  let rows=bons.slice().sort((a,b)=>b.id-a.id);
+  if(q){ rows=rows.filter(b=>[b.num,(b.benef&&b.benef.nom),(b.benef&&b.benef.prenom),b.vaccin].some(v=>(v||'').toLowerCase().includes(q))); }
+  const cnt=document.getElementById('forms-count'); if(cnt)cnt.textContent=bons.length?bons.length+' bon(s)':'';
+  if(!rows.length){ host.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.6rem;font-size:.88rem">'+(bons.length?'Aucun bon ne correspond à la recherche.':'Aucun bon généré pour le moment.')+'</div>'; return; }
+  host.innerHTML=rows.map(b=>{
+    const be=b.benef||{};
+    return '<div class="bon-card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+      +'<div><div style="font-weight:800;color:var(--b-dark);font-size:.82rem">'+ctlEsc(b.num||'')+'</div>'
+      +'<div style="font-weight:700;color:var(--gray-900);margin-top:2px">'+ctlEsc(be.nom||'')+' '+ctlEsc(be.prenom||'')+'</div>'
+      +'<div style="font-size:.78rem;color:var(--gray-500);margin-top:2px">Vaccin : '+ctlEsc(b.vaccin||'—')+'</div>'
+      +'<div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">'+ico('calendrier')+' '+ctlEsc(b.dateFr||'')+' · '+ico('utilisateur')+' '+ctlEsc(b.operateur||'—')+'</div>'
+      +'</div></div>'
+      +'<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">'
+      +'<button class="btn bp sm" onclick="viewBonPdf('+b.id+')">'+ico('imprimer')+' Imprimer le bon</button>'
+      +'<button class="btn bd sm" onclick="deleteBon('+b.id+')">'+ico('supprimer')+'</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+function bonNextNum(){
+  // Référence unique horodatée (les bons ne sont pas archivés) : BPC-AAAAMMJJ-HHMM
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return 'BPC-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes());
+}
+
+function openBonForm(){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  bonDraft={patientRef:null};
+  ['bon-nom','bon-prenom','bon-ss','bon-vaccin'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  document.getElementById('bon-dob').value='';
+  document.getElementById('bon-rang').value='1';
+  document.getElementById('bon-date').value=todayStr();
+  document.getElementById('bon-form-error').style.display='none';
+  const sug=document.getElementById('bon-psugg'); if(sug)sug.style.display='none';
+  const now=new Date();
+  document.getElementById('bon-meta').textContent='N° '+bonNextNum()+' · '+now.toLocaleDateString('fr-FR')+' · Opérateur : '+currentUser.prenom+' '+currentUser.nom;
+  const me=staffDB.find(s=>s.id===currentUser.id)||currentUser;
+  const sigTxt=me.sig?'✓ signature enregistrée':'⚠ aucune signature enregistrée (Back Office → Collaborateurs → bouton Signature)';
+  document.getElementById('bon-presc-info').innerHTML='<strong>Prescripteur :</strong> '+ctlEsc(me.prenom+' '+me.nom)+(me.rpps?' · RPPS '+ctlEsc(me.rpps):' · RPPS non renseigné')+'<br><strong>Structure :</strong> '+ctlEsc(OFFICINE.nom)+' — FINESS '+ctlEsc(OFFICINE.finess)+'<br>'+sigTxt;
+  openModal('bon-form-modal');
+  const box=document.querySelector('#bon-form-modal .mbox'); if(box)box.scrollTop=0;
+}
+
+function bonPatientSearch(){
+  const q=(document.getElementById('bon-nom').value||'').toLowerCase().trim();
+  const el=document.getElementById('bon-psugg');
+  if(bonDraft)bonDraft.patientRef=null;
+  if(q.length<2){el.style.display='none';return;}
+  const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
+  if(!m.length){el.style.display='none';return;}
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  el.style.display='block';
+  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="bonFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.dob||'')+'\')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
+    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?ctlEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
+}
+function bonFillPatient(nom,prenom,dob){
+  document.getElementById('bon-nom').value=nom;
+  document.getElementById('bon-prenom').value=prenom;
+  if(dob)document.getElementById('bon-dob').value=dob;
+  document.getElementById('bon-psugg').style.display='none';
+  if(bonDraft)bonDraft.patientRef={nom,prenom};
+}
+
+function validateBon(){
+  const err=document.getElementById('bon-form-error');
+  const nom=document.getElementById('bon-nom').value.trim().toUpperCase();
+  const prenom=document.getElementById('bon-prenom').value.trim();
+  const vaccin=document.getElementById('bon-vaccin').value.trim();
+  if(!nom||!prenom){ err.textContent='Le nom et le prénom du bénéficiaire sont obligatoires.'; err.style.display='block'; return; }
+  if(!vaccin){ err.textContent='Le vaccin prescrit est obligatoire.'; err.style.display='block'; return; }
+  err.style.display='none';
+  const me=staffDB.find(s=>s.id===currentUser.id)||currentUser;
+  if(!me.sig){ if(!confirm('Vous n\'avez pas de signature enregistrée (Back Office → Collaborateurs → Signature). Générer le bon avec une zone de signature vide ?'))return; }
+  const w=window.open('','_blank'); // onglet ouvert dans le geste du clic (évite le blocage des pop-ups)
+  const now=new Date();
+  const dob=document.getElementById('bon-dob').value;
+  const datePresc=document.getElementById('bon-date').value||todayStr();
+  const rec={
+    id:Date.now(), num:bonNextNum(),
+    date:new Date().toISOString().split('T')[0], dateFr:now.toLocaleDateString('fr-FR'), heure:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+    operateurId:currentUser.id, operateur:currentUser.prenom+' '+currentUser.nom, rpps:me.rpps||'', sig:me.sig||'',
+    patientRef:bonDraft?bonDraft.patientRef:null,
+    benef:{ nom, prenom, dob, dobFr:dob?new Date(dob).toLocaleDateString('fr-FR'):'', rang:document.getElementById('bon-rang').value||'1', ss:document.getElementById('bon-ss').value.trim() },
+    vaccin, datePresc, datePrescFr:datePresc?new Date(datePresc).toLocaleDateString('fr-FR'):''
+  };
+  closeModal('bon-form-modal');
+  openBonPdf(w, rec);
+}
+
+function deleteBon(id){
+  const b=bons.find(x=>x.id===id); if(!b)return;
+  document.getElementById('conf-title').textContent='Supprimer ce bon';
+  document.getElementById('conf-msg').textContent='Supprimer définitivement le bon '+(b.num||'')+' — '+((b.benef&&b.benef.nom)||'')+' ? Cette action est irréversible.';
+  document.getElementById('conf-ok').onclick=()=>{ bons=bons.filter(x=>x.id!==id); renderForms(); schedSave(); closeModal('confirm-modal'); };
+  openModal('confirm-modal');
+}
+
+// Génère un vrai PDF A4 (jsPDF), texte sélectionnable/copiable
+function buildBonPdfDoc(rec){
+  const JP = window.jspdf && window.jspdf.jsPDF; if(!JP) return null;
+  const be=rec.benef||{};
+  const d=new JP({unit:'mm',format:'a4'});
+  let FONT='helvetica';
+  try{ if(window.GOTHAM_FONT_B64){ d.addFileToVFS('Gotham.ttf', window.GOTHAM_FONT_B64); ['normal','bold','italic','bolditalic'].forEach(st=>d.addFont('Gotham.ttf','gotham',st)); FONT='gotham'; } }catch(e){}
+  const M=16, R=210-16;
+  try{ const _hasL=(typeof window!=='undefined'&&window.NORMANDIE_LOGO); const _lw=_hasL?40:52, _lr=_hasL?682/1385:55/420; d.addImage(NORMANDIE_LOGO,'PNG',M,13,_lw,_lw*_lr); }catch(e){}
+  d.setFont(FONT,'bold'); d.setFontSize(12.5); d.setTextColor(29,92,58);
+  d.text(OFFICINE.nom, R, 18, {align:'right'});
+  d.setFont(FONT,'normal'); d.setFontSize(8.5); d.setTextColor(107,107,107);
+  d.text(OFFICINE.adresse+' · '+OFFICINE.cp+' '+OFFICINE.ville, R, 23, {align:'right'});
+  d.text('FINESS '+OFFICINE.finess, R, 27, {align:'right'});
+  d.text(OFFICINE.tel+' · '+OFFICINE.mail, R, 31, {align:'right'});
+  d.setDrawColor(46,125,84); d.setLineWidth(0.6); d.line(M,37,R,37);
+  d.setDrawColor(207,230,216); d.setLineWidth(0.3); d.line(M,38.4,R,38.4);
+  d.setFont(FONT,'italic'); d.setFontSize(10.5); d.setTextColor(90,90,90);
+  d.text('Fait à '+OFFICINE.ville+', le '+(rec.datePrescFr||rec.dateFr||''), R, 46, {align:'right'});
+  d.setFont(FONT,'bold'); d.setFontSize(17); d.setTextColor(29,92,58);
+  d.text('Bon de prise en charge — Vaccination', M, 56);
+  d.setFillColor(46,125,84); d.rect(M,58.5,24,1.1,'F');
+  d.setFont(FONT,'italic'); d.setFontSize(9.5); d.setTextColor(140,140,140);
+  d.text('Vaccin hors grippe saisonnière et COVID-19 · N° '+(rec.num||''), M, 64.5);
+  d.setFont(FONT,'normal'); d.setFontSize(7.6); d.setTextColor(165,165,165);
+  const refs=d.splitTextToSize('Réf. 611 CNAM 09/2023 · Art. L.162-16-1 CSS et L.5125-1-1-A CSP · Arrêté du 8 août 2023 fixant les honoraires de vaccination du pharmacien d’officine.', R-M);
+  d.text(refs, M, 70);
+  let y=70+refs.length*3.3+9;
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(138,168,154);
+  d.text('BÉNÉFICIAIRE DE LA PRISE EN CHARGE', M, y); y+=6.5;
+  d.setFont(FONT,'bold'); d.setFontSize(15); d.setTextColor(26,26,26);
+  d.text((be.nom||'—')+' '+(be.prenom||''), M, y); y+=6;
+  d.setFont(FONT,'normal'); d.setFontSize(9.5); d.setTextColor(100,100,100);
+  d.text('Né(e) le '+(be.dobFr||'—')+' (rang '+(be.rang||'1')+')   ·   N° d’immatriculation : '+(be.ss||'—'), M, y);
+  y+=10;
+  const bh=27; d.setFillColor(245,250,247); d.setDrawColor(207,230,216); d.setLineWidth(0.3);
+  d.roundedRect(M,y,R-M,bh,2.5,2.5,'FD');
+  const cy=y+bh/2, cx=M+8; d.setFillColor(46,125,84);
+  d.rect(cx-1.1,cy-4,2.2,8,'F'); d.rect(cx-4,cy-1.1,8,2.2,'F');
+  const tx=M+18;
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(58,125,82);
+  d.text('VACCIN PRESCRIT', tx, y+8.5);
+  d.setFont(FONT,'bold'); d.setFontSize(15); d.setTextColor(17,17,17);
+  d.text(rec.vaccin||'—', tx, y+16.5);
+  d.setFont(FONT,'italic'); d.setFontSize(8.2); d.setTextColor(138,138,138);
+  d.text('Prescription établie au titre de la compétence vaccinale du pharmacien d’officine.', tx, y+22.5);
+  y+=bh+16;
+  d.setFont(FONT,'italic'); d.setFontSize(9.5); d.setTextColor(100,100,100);
+  d.text('Le pharmacien prescripteur', R, y, {align:'right'});
+  d.setFont(FONT,'bold'); d.setFontSize(11); d.setTextColor(29,92,58);
+  d.text(rec.operateur||'—', R, y+5, {align:'right'});
+  d.setFont(FONT,'normal'); d.setFontSize(8.2); d.setTextColor(136,136,136);
+  d.text((rec.rpps?'RPPS '+rec.rpps+' · ':'')+'FINESS '+OFFICINE.finess, R, y+9.5, {align:'right'});
+  if(rec.sig){ try{ d.addImage(rec.sig,'PNG', R-50, y+11, 50, 16); }catch(e){} }
+  d.setDrawColor(191,191,191); d.setLineWidth(0.2); d.line(R-64, y+29, R, y+29);
+  d.setFont(FONT,'normal'); d.setFontSize(7.6); d.setTextColor(170,170,170);
+  d.text('Signature et cachet', R, y+32.5, {align:'right'});
+  d.setDrawColor(236,236,236); d.setLineWidth(0.2); d.line(M,268,R,268);
+  d.setFont(FONT,'normal'); d.setFontSize(6.8); d.setTextColor(176,176,176);
+  const men=d.splitTextToSize('Conformément au RGPD (Règlement 2016/679/UE) et à la loi « informatique et libertés » du 6 janvier 1978 modifiée, le bénéficiaire dispose d’un droit d’accès et de rectification aux données le concernant. Quiconque se rend coupable de fraude ou de fausse déclaration est passible de pénalités financières, d’amende et/ou d’emprisonnement (Art. 313-1 à 313-3, 441-1 et suivants du Code pénal, art. L.114-17-1 CSS).', R-M);
+  d.text(men, M, 272);
+  d.setFontSize(7); d.setTextColor(194,194,194);
+  d.text(OFFICINE.nom+' · '+OFFICINE.adresse+', '+OFFICINE.cp+' '+OFFICINE.ville+' · FINESS '+OFFICINE.finess, M, 291);
+  d.text('Réf. 611 CNAM - 09/2023 · '+(rec.num||''), R, 291, {align:'right'});
+  return d;
+}
+function openBonPdf(w, rec){
+  try{
+    const d=buildBonPdfDoc(rec);
+    if(d){ const url=URL.createObjectURL(d.output('blob')); if(w){ w.location.href=url; } else { window.open(url,'_blank'); } return; }
+  }catch(e){ console.warn('PDF jsPDF:', e && e.message); }
+  // Repli : page HTML imprimable si jsPDF indisponible
+  if(w){ w.document.write(buildBonPdfHtml(rec)); w.document.close(); w.focus(); }
+  else { const w2=window.open('','_blank'); if(w2){ w2.document.write(buildBonPdfHtml(rec)); w2.document.close(); } }
+}
+function viewBonPdf(id){ const rec=bons.find(x=>x.id===id); if(!rec)return; openBonPdf(window.open('','_blank'), rec); }
+
+function buildBonPdfHtml(rec){
+  const be=rec.benef||{};
+  const naissance=(be.dobFr||'—')+' (rang '+(be.rang||'1')+')';
+  const signBlock=rec.sig?'<img src="'+rec.sig+'">':'';
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>Bon de prise en charge — '+ctlEsc(be.nom||'')+' '+ctlEsc(be.prenom||'')+'</title>'
+    +'<style>@page{margin:15mm;size:A4}*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:\'Segoe UI\',Arial,sans-serif;font-size:10.8pt;color:#2a2a2a;line-height:1.6;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'.head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px}'
+    +'.head .info{text-align:right;font-size:8.8pt;color:#6b6b6b;line-height:1.6}'
+    +'.head .info .nm{font-family:Georgia,\'Times New Roman\',serif;color:#1D5C3A;font-size:12.5pt;font-weight:700;letter-spacing:.3px;margin-bottom:2px}'
+    +'.rule{border-top:2px solid #2E7D54;margin-top:9px}.rule2{border-top:1px solid #cfe6d8;margin-top:2px;margin-bottom:16px}'
+    +'.date{text-align:right;font-style:italic;font-size:10pt;color:#555;margin-bottom:18px}'
+    +'.title{font-family:Georgia,\'Times New Roman\',serif;font-size:16pt;color:#1D5C3A;letter-spacing:.3px;margin-bottom:5px}'
+    +'.tu{width:66px;height:3px;background:#2E7D54;border-radius:2px;margin-bottom:7px}'
+    +'.subtitle{font-style:italic;font-size:9pt;color:#8a8a8a;margin-bottom:5px}'
+    +'.refs{font-size:7.6pt;color:#aaa;margin-bottom:24px;line-height:1.45}'
+    +'.label{font-size:8pt;letter-spacing:2px;text-transform:uppercase;color:#8aa89a;font-weight:600;margin-bottom:5px}'
+    +'.benef .who{font-family:Georgia,\'Times New Roman\',serif;font-size:15pt;font-weight:700;color:#1a1a1a}'
+    +'.benef .det{font-size:9.5pt;color:#666;margin-top:4px;line-height:1.6}'
+    +'.rx{margin:24px 0 6px;display:flex;gap:16px;align-items:flex-start;padding:16px 20px;border:1px solid #cfe6d8;border-radius:10px;background:#f5faf7}'
+    +'.rx .cross{font-size:24pt;color:#2E7D54;line-height:1;flex-shrink:0}'
+    +'.rx .body{flex:1}'
+    +'.rx .lab{font-size:8pt;letter-spacing:2px;text-transform:uppercase;color:#3A7D52;font-weight:600;margin-bottom:6px}'
+    +'.rx .item{font-family:Georgia,\'Times New Roman\',serif;font-size:15pt;font-weight:700;color:#111}'
+    +'.rx .note{font-size:8.4pt;font-style:italic;color:#8a8a8a;margin-top:9px}'
+    +'.sign{display:flex;justify-content:flex-end;margin-top:40px}.sign .box{min-width:270px;text-align:center}'
+    +'.sign .who{font-style:italic;font-size:9.5pt;color:#666;margin-bottom:3px}'
+    +'.sign .nm{font-family:Georgia,\'Times New Roman\',serif;font-weight:700;color:#1D5C3A;font-size:11pt}'
+    +'.sign .rp{font-size:8.4pt;color:#888;margin-bottom:6px}'
+    +'.sign .simg{height:62px;display:flex;align-items:flex-end;justify-content:center}.sign .simg img{max-width:210px;max-height:60px}'
+    +'.sign .line{border-top:1px solid #bfbfbf;margin-top:4px;padding-top:3px;font-size:7.6pt;color:#aaa}'
+    +'.mentions{margin-top:30px;border-top:1px solid #ececec;padding-top:10px;font-size:6.9pt;color:#b0b0b0;line-height:1.5;text-align:justify}'
+    +'.foot{margin-top:8px;display:flex;justify-content:space-between;font-size:7.2pt;color:#c2c2c2}'
+    +'.print-bar{position:fixed;top:10px;right:10px}.print-bar button{background:#2E7D54;color:#fff;border:none;border-radius:8px;padding:9px 17px;font-size:10pt;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15)}'
+    +'@media print{.print-bar{display:none}}</style></head><body>'
+    +'<div class="print-bar"><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button></div>'
+    +'<div class="head"><div>'+normandieLogoSvg()+'</div>'
+    +'<div class="info"><div class="nm">'+ctlEsc(OFFICINE.nom)+'</div>'+ctlEsc(OFFICINE.adresse)+' · '+ctlEsc(OFFICINE.cp)+' '+ctlEsc(OFFICINE.ville)+'<br>FINESS '+ctlEsc(OFFICINE.finess)+'<br>'+ctlEsc(OFFICINE.tel)+' · '+ctlEsc(OFFICINE.mail)+'</div></div>'
+    +'<div class="rule"></div><div class="rule2"></div>'
+    +'<div class="date">Fait à '+ctlEsc(OFFICINE.ville)+', le '+ctlEsc(rec.datePrescFr||rec.dateFr||'')+'</div>'
+    +'<div class="title">Bon de prise en charge — Vaccination</div>'
+    +'<div class="tu"></div>'
+    +'<div class="subtitle">Vaccin hors grippe saisonnière et COVID-19 · N° '+ctlEsc(rec.num||'')+'</div>'
+    +'<div class="refs">Réf. 611 CNAM 09/2023 · Art. L.162-16-1 du code de la sécurité sociale et L.5125-1-1-A du code de la santé publique · Arrêté du 8 août 2023 fixant les honoraires de vaccination du pharmacien d\'officine.</div>'
+    +'<div class="benef"><div class="label">Bénéficiaire de la prise en charge</div>'
+    +'<div class="who">'+ctlEsc(be.nom||'—')+' '+ctlEsc(be.prenom||'')+'</div>'
+    +'<div class="det">Né(e) le '+ctlEsc(naissance)+'  ·  N° d\'immatriculation : '+ctlEsc(be.ss||'—')+'</div></div>'
+    +'<div class="rx"><div class="cross">✚</div><div class="body"><div class="lab">Vaccin prescrit</div>'
+    +'<div class="item">'+ctlEsc(rec.vaccin||'—')+'</div>'
+    +'<div class="note">Prescription établie au titre de la compétence vaccinale du pharmacien d\'officine.</div></div></div>'
+    +'<div class="sign"><div class="box"><div class="who">Le pharmacien prescripteur</div>'
+    +'<div class="nm">'+ctlEsc(rec.operateur||'—')+'</div>'
+    +'<div class="rp">'+(rec.rpps?'RPPS '+ctlEsc(rec.rpps)+' · ':'')+'FINESS '+ctlEsc(OFFICINE.finess)+'</div>'
+    +'<div class="simg">'+signBlock+'</div>'
+    +'<div class="line">Signature et cachet</div></div></div>'
+    +'<div class="mentions">Conformément au Règlement européen n°2016/679/UE du 27 avril 2016 et à la loi « informatique et libertés » du 6 janvier 1978 modifiée, le bénéficiaire dispose d\'un droit d\'accès et de rectification aux données le concernant auprès du Directeur de son organisme d\'assurance maladie ou de son Délégué à la Protection des Données. En cas de difficultés, une réclamation peut être introduite auprès de la CNIL. Quiconque se rend coupable de fraude ou de fausse déclaration est passible de pénalités financières, d\'amende et/ou d\'emprisonnement (Articles 313-1 à 313-3, 433-19, 441-1 et suivants du Code pénal, article L.114-17-1 du Code de la sécurité sociale).</div>'
+    +'<div class="foot"><span>'+ctlEsc(OFFICINE.nom)+' · '+ctlEsc(OFFICINE.adresse)+', '+ctlEsc(OFFICINE.cp)+' '+ctlEsc(OFFICINE.ville)+' · FINESS '+ctlEsc(OFFICINE.finess)+'</span><span>Réf. 611 CNAM - 09/2023 · '+ctlEsc(rec.num||'')+'</span></div>'
+    +'</body></html>';
+}
+
 // ═══════════ AUTO-SAVE HOOKS ═══════════
 // Wrap all render functions so every data change triggers a server save
-['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins','renderControles'].forEach(fn=>{
+['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins','renderControles','renderForms'].forEach(fn=>{
   const orig=window[fn];
   if(orig) window[fn]=function(){orig.apply(this,arguments);schedSave();};
 });
