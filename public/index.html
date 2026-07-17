@@ -1022,6 +1022,17 @@ tr:hover td{background:#fafffe}
           <button class="btn bp sm" onclick="openBonForm()" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-document"></use></svg> Nouveau bon</button>
         </div>
       </div>
+      <div class="card" style="margin-bottom:1.1rem">
+        <div class="ch"><span class="ct">Documents à imprimer</span></div>
+        <div class="frm-choice">
+          <div class="ic"><svg class="ico" style="color:var(--g-dark);width:22px;height:22px"><use href="#ic-document"></use></svg></div>
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;color:var(--gray-900)">Attestation sur l'honneur — Séjour à l'étranger</div>
+            <div style="font-size:.78rem;color:var(--gray-500)">CPAM Paris (75) · à compléter et signer par le patient</div>
+          </div>
+          <a class="btn bp sm" href="/documents/attestation-sejour-etranger-cpam75.pdf" target="_blank" rel="noopener" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border);text-decoration:none"><svg class="ico"><use href="#ic-imprimer"></use></svg> Ouvrir / Imprimer</a>
+        </div>
+      </div>
       <div class="card">
         <div style="display:flex;align-items:flex-start;gap:10px;font-size:.8rem;color:var(--gray-500)"><svg class="ico" style="flex:none;margin-top:1px"><use href="#ic-document"></use></svg><span>Les bons ne sont pas archivés : chaque bon est généré à la demande puis imprimé ou enregistré dans votre LGO. Aucune donnée bénéficiaire n'est conservée dans l'intranet.</span></div>
       </div>
@@ -1553,8 +1564,6 @@ tr:hover td{background:#fafffe}
         <input type="text" id="ctl-patient" placeholder="Rechercher ou saisir NOM Prénom…" autocomplete="off" oninput="ctlPatientSearch()" onblur="setTimeout(()=>{const e=document.getElementById('ctl-psugg');if(e)e.style.display='none'},150)">
         <div id="ctl-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
       </div>
-      <div class="fg"><label>Marque / modèle</label><input type="text" id="ctl-marque" placeholder="Ex. Winncare / Medical'lit"></div>
-      <div class="fg"><label>Année de fabrication</label><input type="text" id="ctl-annee" inputmode="numeric" placeholder="Ex. 2019"></div>
       <div class="fg" style="grid-column:1/-1"><label>Localisation (adresse / commune du patient)</label><input type="text" id="ctl-loc" placeholder="Adresse, commune"></div>
     </div>
 
@@ -5083,8 +5092,6 @@ function openControleForm(){
   const sug=document.getElementById('ctl-psugg'); if(sug)sug.style.display='none';
   document.getElementById('ctl-serie').value='';
   document.getElementById('ctl-patient').value='';
-  document.getElementById('ctl-marque').value='';
-  document.getElementById('ctl-annee').value='';
   document.getElementById('ctl-loc').value='';
   document.getElementById('ctl-obs').value='';
   document.getElementById('ctl-form-error').style.display='none';
@@ -5225,8 +5232,6 @@ function validateControle(){
     controleurId: currentUser?currentUser.id:'', controleur: currentUser?(currentUser.prenom+' '+currentUser.nom):'—',
     serie, patient,
     patientRef: ctlDraft.patientRef || null,
-    marque:document.getElementById('ctl-marque').value.trim(),
-    annee:document.getElementById('ctl-annee').value.trim(),
     loc:document.getElementById('ctl-loc').value.trim(),
     obso:ctlDraft.obso,
     obs:document.getElementById('ctl-obs').value.trim(),
@@ -5325,8 +5330,6 @@ function buildControlePdfHtml(rec){
     +'<div class="field"><div class="k">Contrôleur</div><div class="v">'+ctlEsc(rec.controleur||'—')+'</div></div>'
     +'<div class="field"><div class="k">N° série / parc</div><div class="v">'+ctlEsc(rec.serie||'—')+'</div></div>'
     +'<div class="field"><div class="k">Patient (locataire)</div><div class="v">'+ctlEsc(rec.patient||'—')+'</div></div>'
-    +'<div class="field"><div class="k">Marque / modèle</div><div class="v">'+ctlEsc(rec.marque||'—')+'</div></div>'
-    +'<div class="field"><div class="k">Année de fabrication</div><div class="v">'+ctlEsc(rec.annee||'—')+'</div></div>'
     +'<div class="field"><div class="k">Localisation</div><div class="v" style="font-size:9pt">'+ctlEsc(rec.loc||'—')+'</div></div>'
     +'</div>'
     +'<div class="synth '+synthClass+'">'+synthTxt+'</div>'
