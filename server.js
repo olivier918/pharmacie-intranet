@@ -17,6 +17,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── DATABASE SETUP ───
 let db = null;
+let dbError = null;      // dernier message d'erreur de connexion (diagnostic)
+let dbConnectedAt = null;
 const DATABASE_URL = process.env.DATABASE_URL;
 
 async function initDB() {
@@ -51,13 +53,27 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    dbError = null;
+    dbConnectedAt = new Date().toISOString();
     console.log('  🐘 Base PostgreSQL connectée !');
   } catch (err) {
+    dbError = err.message;
     console.error('  ❌ Erreur connexion PostgreSQL:', err.message);
     console.log('  📁 Repli sur fichier local');
     db = null;
   }
 }
+
+// ─── Diagnostic : mode réel + éventuelle erreur de connexion DB ───
+app.get('/api/health', (req, res) => {
+  res.json({
+    mode: db ? 'postgresql' : 'fichier',
+    hasDatabaseUrl: !!DATABASE_URL,
+    dbConnectedAt,
+    dbError,
+    time: new Date().toISOString()
+  });
+});
 
 // ─── Archive l'état ACTUEL avant qu'il ne soit remplacé (filet anti-écrasement) ───
 async function snapshotCurrent() {
