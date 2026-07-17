@@ -998,6 +998,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot5" onclick="boTab('medecins')"><svg class="ico"><use href="#ic-medecin"></use></svg> Médecins</button>
         <button class="btn bs" id="bot3" onclick="boTab('labo')"><svg class="ico"><use href="#ic-realisation"></use></svg> Préparatoire sous-traitant</button>
         <button class="btn bs" id="bot4" onclick="boTab('compte')"><svg class="ico"><use href="#ic-securite"></use></svg> Compte admin</button>
+        <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
       </div>
 
       <!-- STAFF -->
@@ -1095,6 +1096,18 @@ tr:hover td{background:#fafffe}
           </div>
           <button class="btn bp" style="margin-top:.9rem" onclick="saveCompte()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
           <div id="compte-msg" style="margin-top:.75rem;font-size:.85rem"></div>
+        </div>
+      </div>
+
+      <!-- SAUVEGARDES -->
+      <div id="bo-backups" style="display:none">
+        <div class="card">
+          <div class="ch">
+            <span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes automatiques</span>
+            <button class="btn bs sm no-print" onclick="renderBackups()"><svg class="ico"><use href="#ic-renouveler"></use></svg> Rafraîchir</button>
+          </div>
+          <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">Chaque enregistrement crée une sauvegarde de l'état précédent en base (les 300 dernières sont conservées). Vous pouvez visualiser un état antérieur ou le restaurer en un clic. Les heures sont affichées en heure française.</div>
+          <div id="bk-list"></div>
         </div>
       </div>
     </div>
@@ -2756,16 +2769,73 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot4'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte'];
+const BOT=['bot1','bot2','bot5','bot3','bot4','bot6'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte','bo-backups'];
 function boTab(t){
-  const map={staff:0,patients:1,medecins:2,labo:3,compte:4};
+  const map={staff:0,patients:1,medecins:2,labo:3,compte:4,backups:5};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
   if(t==='patients')renderPatients();
   if(t==='medecins')renderMedecins();
   if(t==='labo')loadLabo();
+  if(t==='backups')renderBackups();
+}
+
+// ═══════════ SAUVEGARDES (historique app_data_history) ═══════════
+async function renderBackups(){
+  const host=document.getElementById('bk-list'); if(!host)return;
+  host.innerHTML='<div style="color:var(--gray-500);padding:1rem;font-size:.85rem">Chargement…</div>';
+  try{
+    const r=await fetch('/api/backups?t='+Date.now());
+    const list=await r.json();
+    if(!Array.isArray(list)||!list.length){ host.innerHTML='<div style="color:var(--gray-500);padding:1rem;font-size:.85rem">Aucune sauvegarde disponible pour le moment.</div>'; return; }
+    host.innerHTML='<div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.6rem">'+list.length+' sauvegarde(s) · la plus récente en haut</div>'+list.map(b=>{
+      const d=new Date(b.created_at);
+      const when=isNaN(d)?b.created_at:d.toLocaleString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      const wj=when.replace(/'/g,"\\'");
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--gray-200);flex-wrap:wrap">'
+        +'<div><div style="font-weight:600;color:var(--g-dark);font-size:.9rem">'+ico('archives')+' '+when+'</div>'
+        +'<div style="font-size:.72rem;color:var(--gray-500)">Réf. interne #'+b.id+'</div></div>'
+        +'<div style="display:flex;gap:6px">'
+        +'<button class="btn bs sm" onclick="viewBackup(\''+b.id+'\')">'+ico('voir')+' Voir</button>'
+        +'<button class="btn bp sm" onclick="restoreBackup(\''+b.id+'\',\''+wj+'\')">'+ico('renouveler')+' Restaurer</button>'
+        +'</div></div>';
+    }).join('');
+  }catch(e){ host.innerHTML='<div style="color:var(--red);padding:1rem;font-size:.85rem">Erreur de chargement des sauvegardes : '+e.message+'</div>'; }
+}
+async function viewBackup(id){
+  try{
+    const r=await fetch('/api/backups/'+id+'?t='+Date.now());
+    const data=await r.json();
+    if(!data){alert('Sauvegarde introuvable.');return;}
+    const c=n=>Array.isArray(data[n])?data[n].length:0;
+    const resume='Patients : '+c('patients')+' · Livraisons : '+c('deliveries')+' · Préparations : '+c('preps')+' · Locations : '+c('locations')+' · BPM : '+c('bpmList')+' · Contrôles lits : '+c('controles')+' · Crédits : '+c('credits')+' · Collaborateurs : '+c('staffDB');
+    const w=window.open('','_blank'); if(!w){alert('Autorisez les fenêtres pop-up pour visualiser.');return;}
+    w.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Sauvegarde #'+id+'</title><style>body{font-family:\'Segoe UI\',Arial,sans-serif;margin:22px;color:#111;line-height:1.5}h2{color:#1D5C3A;margin:0 0 6px}.resume{background:#E8F5E9;border:1px solid #81C784;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:600;color:#1D5C3A;margin-bottom:14px}pre{background:#f5f5f5;border:1px solid #ddd;border-radius:8px;padding:14px;white-space:pre-wrap;word-break:break-word;font-size:12px}</style></head><body><h2>Aperçu de la sauvegarde #'+id+'</h2><div class="resume">'+resume+'</div><pre>'+JSON.stringify(data,null,2).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');
+    w.document.close();
+  }catch(e){alert('Erreur : '+e.message);}
+}
+function restoreBackup(id,when){
+  document.getElementById('conf-title').textContent='Restaurer cette sauvegarde';
+  document.getElementById('conf-msg').textContent='Restaurer l\'état du '+when+' ? Les données actuelles seront remplacées par cette sauvegarde. L\'état actuel est lui-même archivé juste avant, donc l\'opération reste réversible.';
+  document.getElementById('conf-ok').onclick=async()=>{
+    const btn=document.getElementById('conf-ok'); btn.disabled=true; const old=btn.textContent; btn.textContent='Restauration…';
+    try{
+      const r=await fetch('/api/backups/'+id+'?t='+Date.now());
+      const data=await r.json();
+      if(!data){alert('Sauvegarde introuvable.');btn.disabled=false;btn.textContent=old;return;}
+      const res=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      if(!res.ok)throw new Error('échec écriture');
+      await loadAll();
+      renderAll();
+      renderBackups();
+      closeModal('confirm-modal');
+      alert('✅ Sauvegarde restaurée avec succès.');
+    }catch(e){ alert('Erreur lors de la restauration : '+e.message); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  };
+  openModal('confirm-modal');
 }
 
 let patEditIdx=null;
