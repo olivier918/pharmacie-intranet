@@ -1886,6 +1886,11 @@ setInterval(async()=>{
         if(d.controlesMail)controlesMail=d.controlesMail;
         if(d.retours)retours=d.retours;
         if(d.bluestone&&d.bluestone.mail)BLUESTONE.mail=d.bluestone.mail;
+        // Rafraîchir aussi staffDB / labo / ADMIN pour éviter qu'un onglet resté ouvert
+        // ne réécrive d'anciennes valeurs (ex. PIN) par-dessus la base.
+        if(d.staffDB){ staffDB=d.staffDB; if(currentUser){ const u=staffDB.find(x=>x.id===currentUser.id); if(u)currentUser=u; } }
+        if(d.labo)labo=d.labo;
+        if(d.ADMIN)Object.assign(ADMIN,d.ADMIN);
         _suppressSave=true; try{ renderAll(); } finally { _suppressSave=false; }
       }
     }catch(e){ _loadedOK=false; }
