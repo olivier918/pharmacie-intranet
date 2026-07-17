@@ -1904,10 +1904,11 @@ function restoreSidebarState(){
 }
 function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();schedSave();}
 
-// Pastille bandeau : nombre de livraisons « à préparer »
+// Pastille bandeau : nombre de livraisons « à préparer » du jour
 function updateNavBadges(){
   const el=document.getElementById('navb-liv'); if(!el)return;
-  const n=deliveries.filter(d=>d.status==='wait').length;
+  const t=todayStr();
+  const n=deliveries.filter(d=>d.status==='wait' && d.date===t).length;
   if(n>0){ el.textContent=n>99?'99+':String(n); el.classList.add('on'); }
   else{ el.textContent=''; el.classList.remove('on'); }
 }
