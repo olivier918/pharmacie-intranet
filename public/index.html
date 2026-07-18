@@ -2723,11 +2723,14 @@ function sendPrepAndSave(){
   const np={id:Date.now(),nom,prenom,dob,med,prep,type,scan:scanFile.name,scanData:null,bonPdfHtml:null,
     pdfVersions:[],operateur,heure,date:new Date().toISOString().split('T')[0],
     status:type==='devis'?'devis':'en préparation'};
-  if(scanFile.type.startsWith('image/')){
-    const r=new FileReader();r.onload=e=>{np.scanData=e.target.result;
-      st.textContent='📄 Génération du PDF…';setTimeout(()=>finishSendPrep(np,today,heure,operateur),300);};
-    r.readAsDataURL(scanFile);
-  } else {st.textContent='📄 Génération du PDF…';setTimeout(()=>finishSendPrep(np,today,heure,operateur),300);}
+  // Lecture du fichier en data URL quel que soit le type (image OU PDF) afin de toujours
+  // pouvoir joindre l'ordonnance au mail. L'intégration en page 2 du bon reste réservée aux images.
+  const r=new FileReader();
+  r.onload=e=>{np.scanData=e.target.result;
+    st.textContent='📄 Génération du PDF…';setTimeout(()=>finishSendPrep(np,today,heure,operateur),300);};
+  r.onerror=()=>{np.scanData=null;
+    st.textContent='📄 Génération du PDF…';setTimeout(()=>finishSendPrep(np,today,heure,operateur),300);};
+  r.readAsDataURL(scanFile);
 }
 
 function finishSendPrep(p,today,heure,operateur){
@@ -3625,6 +3628,7 @@ function saveLabo(){
   labo.adr=document.getElementById('lab-adr').value;
   labo.tel=document.getElementById('lab-tel').value;
   labo.mail=document.getElementById('lab-mail').value;
+  schedSave();
   const el=document.getElementById('labo-saved');
   el.style.display='block';
   setTimeout(()=>el.style.display='none',3000);
