@@ -1526,13 +1526,14 @@ tr:hover td{background:#fafffe}
     <h3 id="mail-modal-title"><svg class="ico"><use href="#ic-envoyer"></use></svg> Bon de commande — Envoi au préparatoire</h3>
     <div id="mail-modal-content" style="background:var(--gray-100);border-radius:8px;padding:1rem;font-size:.85rem;line-height:1.8;white-space:pre-wrap;font-family:monospace;max-height:40vh;overflow-y:auto"></div>
     <div style="margin-top:.75rem;font-size:.78rem;color:var(--gray-500)">Destinataire : <strong id="mail-dest">—</strong></div>
+    <div id="mail-send-hint" style="margin-top:.5rem;font-size:.78rem;color:var(--gray-500)"></div>
     <div id="mail-confirm-bar" style="display:none;margin-top:.75rem;padding:10px 14px;border-radius:8px;background:#E8F5E9;border:1px solid #81C784;color:#1D5C3A;font-weight:600;font-size:.85rem;animation:summarySlide .4s ease">
-      <svg class="ico"><use href="#ic-valider"></use></svg> Envoi confirmé ! Le bon de commande a été transmis au préparatoire.
+      <svg class="ico"><use href="#ic-valider"></use></svg> <span id="mail-confirm-text">Envoi confirmé ! Le bon de commande a été transmis au préparatoire.</span>
     </div>
     <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap" id="mail-modal-actions">
       <button class="btn bp" id="btn-confirm-send" onclick="confirmSendMail()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Confirmer l'envoi</button>
+      <button class="btn bw" onclick="openPrepMailto()"><svg class="ico"><use href="#ic-messagerie"></use></svg> Ouvrir ma messagerie</button>
       <button class="btn bw" onclick="viewCurrentPdf()"><svg class="ico"><use href="#ic-document"></use></svg> Voir le PDF</button>
-      <button class="btn bs" onclick="resendPrepMail()"><svg class="ico"><use href="#ic-renouveler"></use></svg> Renvoyer</button>
       <button class="btn bs" onclick="closeModal('mail-modal')">Fermer</button>
     </div>
   </div>
@@ -2756,11 +2757,162 @@ function finishSendPrep(p,today,heure,operateur){
     document.getElementById('mail-confirm-bar').style.display='none';
     document.getElementById('btn-confirm-send').style.display='';
     openModal('mail-modal');
+    updatePrepMailSendUI(p);
   },400);
 }
-function confirmSendMail(){document.getElementById('mail-confirm-bar').style.display='block';document.getElementById('btn-confirm-send').style.display='none';setTimeout(()=>{const s=document.getElementById('prep-send-status');if(s)s.style.display='none';},3000);}
+// Vérifie la configuration d'envoi du serveur et prépare le bouton (calqué sur les retours Bluestone)
+async function updatePrepMailSendUI(p){
+  const btn=document.getElementById('btn-confirm-send');
+  const hint=document.getElementById('mail-send-hint');
+  document.getElementById('mail-confirm-bar').style.display='none';
+  if(!btn||!hint)return;
+  btn.disabled=true; btn.style.opacity='.5'; hint.textContent='Vérification de la configuration d\'envoi…';
+  try{
+    const r=await fetch('/api/mail-status'); const s=await r.json();
+    if(s.configured){
+      btn.disabled=false; btn.style.opacity='';
+      btn.innerHTML=(p&&p.mailSent)?'<svg class="ico"><use href="#ic-renouveler"></use></svg> Renvoyer':'<svg class="ico"><use href="#ic-envoyer"></use></svg> Confirmer l\'envoi';
+      let t='Le mail partira de '+(s.from||'la messagerie de la pharmacie')+' vers '+labo.mail+', ordonnance et bon de commande en pièces jointes (PDF).';
+      if(p&&p.mailSent){ t='✓ Déjà envoyé le '+new Date(p.mailSent).toLocaleString('fr-FR')+(p.mailSentBy?' par '+p.mailSentBy:'')+'. Vous pouvez le renvoyer.'; }
+      hint.textContent=t;
+    } else {
+      btn.disabled=true; btn.style.opacity='.5';
+      hint.textContent='Envoi automatique non configuré sur le serveur (variable BREVO_API_KEY absente). Utilisez « Ouvrir ma messagerie » pour envoyer manuellement.';
+    }
+  }catch(e){
+    // Serveur injoignable (ex. ouverture du fichier hors serveur) : on garde le repli messagerie actif
+    btn.disabled=true; btn.style.opacity='.5';
+    hint.textContent='Statut d\'envoi indisponible (serveur injoignable). Utilisez « Ouvrir ma messagerie ».';
+  }
+}
+
+// Envoi RÉEL de la demande de préparation à Kerangal (Brevo, via /api/send-mail)
+async function confirmSendMail(){
+  const p=currentMailPrepId?preps.find(x=>x.id===currentMailPrepId):null;
+  if(!p){alert('Préparation introuvable.');return;}
+  const btn=document.getElementById('btn-confirm-send');
+  const hint=document.getElementById('mail-send-hint');
+  const now=new Date(); const today=now.toLocaleDateString('fr-FR');
+  const heure=now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  const op=currentUser?`${currentUser.prenom} ${currentUser.nom}`:(p.operateur||'Opérateur');
+  const typeObj=p.type==='devis'?'[DEVIS]':'[RÉALISATION]';
+  const subject=`${typeObj} ${p.nom} ${p.prenom} — ${today}`;
+  const body=buildPrepMailBody(p.nom,p.prenom,p.dob,p.med,p.type,p.prep,p.scan,today);
+  const old=btn.innerHTML; btn.disabled=true; btn.style.opacity='.6'; btn.innerHTML='⏳ Envoi…';
+  try{
+    const attachments=buildPrepAttachments(p,today,heure,op);
+    const r=await fetch('/api/send-mail',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({to:labo.mail,subject,text:body,attachments})});
+    const d=await r.json();
+    if(d.ok){
+      p.mailSent=new Date().toISOString(); p.mailSentBy=op;
+      p.mailLog=p.mailLog||[]; p.mailLog.push({at:p.mailSent,by:op,to:labo.mail});
+      schedSave(); renderPreps();
+      document.getElementById('mail-confirm-text').textContent='Envoi confirmé ! Le bon de commande et l\'ordonnance ont été transmis à '+labo.nom+'.';
+      document.getElementById('mail-confirm-bar').style.display='block';
+      btn.innerHTML='✓ Envoyé';
+      if(hint)hint.textContent='Mail envoyé à '+labo.mail+' le '+new Date(p.mailSent).toLocaleString('fr-FR')+'.';
+      const s=document.getElementById('prep-send-status'); if(s)setTimeout(()=>{s.style.display='none';},3000);
+      setTimeout(()=>{ btn.disabled=false; btn.style.opacity=''; btn.innerHTML='<svg class="ico"><use href="#ic-renouveler"></use></svg> Renvoyer'; },1600);
+    } else {
+      alert('Échec de l\'envoi : '+(d.error||'erreur inconnue')+'\n\nVous pouvez utiliser « Ouvrir ma messagerie » pour envoyer manuellement.');
+      btn.disabled=false; btn.style.opacity=''; btn.innerHTML=old;
+    }
+  }catch(e){
+    alert('Échec de l\'envoi : '+e.message+'\n\nVous pouvez utiliser « Ouvrir ma messagerie » pour envoyer manuellement.');
+    btn.disabled=false; btn.style.opacity=''; btn.innerHTML=old;
+  }
+}
+
+// Repli : ouvre le client mail de l'utilisateur pré-rempli (sans pièce jointe automatique)
+function openPrepMailto(){
+  const p=currentMailPrepId?preps.find(x=>x.id===currentMailPrepId):null; if(!p)return;
+  const today=new Date().toLocaleDateString('fr-FR');
+  const typeObj=p.type==='devis'?'[DEVIS]':'[RÉALISATION]';
+  const subject=`${typeObj} ${p.nom} ${p.prenom} — ${today}`;
+  const body=buildPrepMailBody(p.nom,p.prenom,p.dob,p.med,p.type,p.prep,p.scan,today);
+  window.location.href='mailto:'+encodeURIComponent(labo.mail)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+}
+
+// Construit les pièces jointes : bon de commande PDF (jsPDF) + ordonnance d'origine
+function buildPrepAttachments(p,today,heure,op){
+  const atts=[];
+  try{
+    const doc=buildPrepPdfDoc(p,today,heure,op);
+    if(doc){
+      const b64=doc.output('datauristring').split(',')[1];
+      const safe=((p.nom||'')+'-'+(p.prenom||'')).replace(/[^a-zA-Z0-9-_]/g,'_');
+      atts.push({name:(p.type==='devis'?'devis-':'bon-commande-')+safe+'.pdf', content:b64});
+    }
+  }catch(e){ console.warn('PDF prépa:', e&&e.message); }
+  if(p.scanData && typeof p.scanData==='string' && p.scanData.indexOf('base64,')>-1){
+    atts.push({name:p.scan||'ordonnance', content:p.scanData.split(',')[1]});
+  }
+  return atts;
+}
+
+// Génère un vrai PDF A4 du bon de commande (texte sélectionnable), + l'ordonnance en page 2 si image
+function buildPrepPdfDoc(p,today,heure,op){
+  const JP = window.jspdf && window.jspdf.jsPDF; if(!JP) return null;
+  const isDevis=p.type==='devis';
+  const d=new JP({unit:'mm',format:'a4'});
+  let FONT='helvetica';
+  try{ if(window.GOTHAM_FONT_B64){ d.addFileToVFS('Gotham.ttf', window.GOTHAM_FONT_B64); ['normal','bold','italic','bolditalic'].forEach(st=>d.addFont('Gotham.ttf','gotham',st)); FONT='gotham'; } }catch(e){}
+  const M=16, R=210-16, W=R-M;
+  try{ const _lw=40, _lr=682/1385; d.addImage(NORMANDIE_LOGO,'PNG',M,13,_lw,_lw*_lr); }catch(e){}
+  d.setFont(FONT,'bold'); d.setFontSize(12.5); d.setTextColor(29,92,58);
+  d.text(OFFICINE.nom, R, 18, {align:'right'});
+  d.setFont(FONT,'normal'); d.setFontSize(8.5); d.setTextColor(107,107,107);
+  d.text(OFFICINE.adresse+' · '+OFFICINE.cp+' '+OFFICINE.ville, R, 23, {align:'right'});
+  d.text('FINESS '+OFFICINE.finess, R, 27, {align:'right'});
+  d.text(OFFICINE.tel+' · '+OFFICINE.mail, R, 31, {align:'right'});
+  d.setDrawColor(46,125,84); d.setLineWidth(0.6); d.line(M,37,R,37);
+  d.setDrawColor(207,230,216); d.setLineWidth(0.3); d.line(M,38.4,R,38.4);
+  let y=45;
+  if(isDevis){ d.setFillColor(255,243,205); } else { d.setFillColor(232,245,233); }
+  d.roundedRect(M,y,W,14,2.5,2.5,'F');
+  d.setFont(FONT,'bold'); d.setFontSize(14);
+  if(isDevis){ d.setTextColor(133,100,4); } else { d.setTextColor(29,92,58); }
+  d.text(isDevis?'DEMANDE DE DEVIS':'COMMANDE DE RÉALISATION', M+6, y+9);
+  d.setFont(FONT,'italic'); d.setFontSize(7.6);
+  d.text(isDevis?'Aucune fabrication avant validation du devis.':'Fabrication à lancer selon la formule ci-dessous.', R-4, y+9, {align:'right'});
+  y+=22;
+  d.setFont(FONT,'normal'); d.setFontSize(8.5); d.setTextColor(120,120,120);
+  d.text('Date : '+today+' · '+(heure||'')+'     ·     Opérateur : '+(op||'—')+'     ·     Réf. '+p.id, M, y);
+  y+=5; d.setDrawColor(236,236,236); d.setLineWidth(0.2); d.line(M,y,R,y); y+=9;
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(138,168,154); d.text('PRÉPARATOIRE DESTINATAIRE', M, y); y+=5.5;
+  d.setFont(FONT,'bold'); d.setFontSize(11); d.setTextColor(26,26,26); d.text((labo.nom||'')+'  ·  '+(labo.mail||''), M, y); y+=11;
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(138,168,154); d.text('PATIENT', M, y); y+=5.5;
+  d.setFont(FONT,'bold'); d.setFontSize(13); d.setTextColor(26,26,26); d.text((p.nom||'')+' '+(p.prenom||''), M, y); y+=6;
+  d.setFont(FONT,'normal'); d.setFontSize(9.5); d.setTextColor(100,100,100);
+  d.text('Né(e) le '+(p.dob||'—')+'     ·     Médecin : '+(p.med||'—'), M, y); y+=11;
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(138,168,154); d.text('FORMULE / DESCRIPTION', M, y); y+=5;
+  const formLines=d.splitTextToSize(p.prep||'—', W-8);
+  const boxH=Math.max(20, formLines.length*5+8);
+  d.setFillColor(244,244,244); d.setDrawColor(221,221,221); d.setLineWidth(0.3); d.roundedRect(M,y,W,boxH,2,2,'FD');
+  d.setFont(FONT,'normal'); d.setFontSize(10.5); d.setTextColor(40,40,40); d.text(formLines, M+4, y+6.5); y+=boxH+9;
+  d.setFont(FONT,'normal'); d.setFontSize(9); d.setTextColor(120,120,120);
+  d.text('Ordonnance : '+(p.scan?('jointe — '+p.scan):'non jointe'), M, y);
+  d.setDrawColor(236,236,236); d.setLineWidth(0.2); d.line(M,285,R,285);
+  d.setFont(FONT,'normal'); d.setFontSize(7); d.setTextColor(176,176,176);
+  d.text(OFFICINE.nom+' · '+OFFICINE.adresse+', '+OFFICINE.cp+' '+OFFICINE.ville+' · FINESS '+OFFICINE.finess, M, 290);
+  d.text('Généré le '+today+' à '+(heure||'')+' par '+(op||'—'), R, 290, {align:'right'});
+  if(p.scanData && typeof p.scanData==='string' && /^data:image\//.test(p.scanData)){
+    try{
+      const props=d.getImageProperties(p.scanData);
+      const maxW=W, maxH=248; let iw=maxW, ih=iw*props.height/props.width;
+      if(ih>maxH){ ih=maxH; iw=ih*props.width/props.height; }
+      d.addPage();
+      d.setFont(FONT,'bold'); d.setFontSize(11); d.setTextColor(29,92,58);
+      d.text('Ordonnance — '+(p.nom||'')+' '+(p.prenom||''), M, 20);
+      const fmt=(props.fileType||'JPEG').toUpperCase();
+      d.addImage(p.scanData, fmt==='JPG'?'JPEG':fmt, M+(maxW-iw)/2, 26, iw, ih);
+    }catch(e){ console.warn('addImage ordo:', e&&e.message); }
+  }
+  return d;
+}
+
 function viewCurrentPdf(){const p=currentMailPrepId?preps.find(x=>x.id===currentMailPrepId):null;if(p&&p.bonPdfHtml){const w=window.open('','_blank');w.document.write(p.bonPdfHtml);w.document.close();}}
-function resendPrepMail(){document.getElementById('mail-confirm-bar').style.display='none';document.getElementById('btn-confirm-send').style.display='';}
 
 function buildPrepPdfHtml(p,today,heure,operateur){
   const isDevis=p.type==='devis';
@@ -2805,13 +2957,14 @@ function sendPrepMailForPrep(p){
   if(!p.bonPdfHtml){p.bonPdfHtml=buildPrepPdfHtml(p,today,heure,op);
     p.pdfVersions=p.pdfVersions||[];p.pdfVersions.push({html:p.bonPdfHtml,date:today,heure,operateur:op,version:(p.pdfVersions.length||0)+1});}
   currentMailPrepId=p.id;
-  const body=buildPrepMailBody(p.nom,p.prenom,p.dob,p.med,'realisation',p.prep,p.scan,today);
-  document.getElementById('mail-modal-title').textContent='🔬 Commande — Envoi';
+  const body=buildPrepMailBody(p.nom,p.prenom,p.dob,p.med,p.type,p.prep,p.scan,today);
+  document.getElementById('mail-modal-title').textContent=p.type==='devis'?'💰 Demande de devis — Envoi':'🔬 Commande — Envoi';
   document.getElementById('mail-modal-content').textContent=body;
   document.getElementById('mail-dest').textContent=labo.mail+' ('+labo.nom+')';
   document.getElementById('mail-confirm-bar').style.display='none';
   document.getElementById('btn-confirm-send').style.display='';
   openModal('mail-modal');
+  updatePrepMailSendUI(p);
 }
 
 let showPrepArchives=false;
@@ -2889,12 +3042,14 @@ function prepCard(p){
         <span class="badge" style="${typeCol};padding:3px 10px;border-radius:6px;font-size:.7rem;font-weight:700">${typeLbl}</span>
         ${p.bonPdfHtml?`<span class="badge" style="background:var(--b-pale);color:var(--b-dark);cursor:pointer;padding:3px 8px" onclick="viewBonPdf(${p.id})">${ico('document')} PDF</span>`:''}
         ${p.scan?'<span class="badge" style="background:#E8F5E9;color:#2E7D32;padding:3px 8px">'+ico('joindre')+' Ordo</span>':''}
+        ${p.mailSent?'<span class="badge" style="background:var(--b-pale);color:var(--b-dark);padding:3px 8px" title="Envoyé à '+labo.mail+' le '+new Date(p.mailSent).toLocaleString('fr-FR')+(p.mailSentBy?' par '+p.mailSentBy:'')+'">'+ico('valider')+' Envoyé</span>':''}
       </div>
       ${p.prep?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${p.prep}</span></div>`:''}
       <div class="dc-row2"><span class="dc-track">Date : ${p.date}</span></div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
+      ${!archived?`<button class="btn bs btn-ico" onclick="sendPrepMailForPrep(preps.find(x=>x.id===${p.id}))" title="${p.mailSent?'Renvoyer à '+labo.nom:'Envoyer à '+labo.nom}">${ico('envoyer')}</button>`:''}
       ${p.type==='devis'&&p.status==='devis'?`<button class="btn bw btn-ico" onclick="convertDevisToRealisation(${p.id})" title="Accepter → Réalisation" style="font-size:.72rem;padding:4px 8px">${ico('valider')}</button>`:''}
       ${!archived?`<button class="btn bd btn-ico" onclick="abandonPrep(${p.id})" title="Abandonner">${ico('fermer')}</button>`:''}
     </div>

@@ -62,7 +62,7 @@ function initMail() {
 }
 
 // Envoi via l'API HTTPS de Brevo
-function sendViaBrevo({ to, cc, subject, text, from }) {
+function sendViaBrevo({ to, cc, subject, text, from, attachments }) {
   return new Promise((resolve, reject) => {
     const https = require('https');
     const payload = JSON.stringify({
@@ -70,7 +70,11 @@ function sendViaBrevo({ to, cc, subject, text, from }) {
       to: [{ email: to }],
       cc: cc ? [{ email: cc }] : undefined,
       subject,
-      textContent: text
+      textContent: text,
+      // Brevo attend { name, content(base64) } — omis si aucune pièce jointe (rétro-compatible)
+      attachment: (Array.isArray(attachments) && attachments.length)
+        ? attachments.map(a => ({ name: a.name, content: a.content }))
+        : undefined
     });
     const req = https.request({
       hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST',
@@ -167,16 +171,27 @@ app.get('/api/mail-status', (req, res) => {
 // ─── Envoi d'un e-mail (déclenché par l'utilisateur depuis l'appli) ───
 app.post('/api/send-mail', async (req, res) => {
   if (!mailMethod) return res.status(400).json({ ok: false, error: 'Aucun service d\'envoi configuré sur le serveur.' });
-  const { to, cc, subject, text } = req.body || {};
+  const { to, cc, subject, text, attachments } = req.body || {};
   if (!to || !subject || !text) return res.status(400).json({ ok: false, error: 'Destinataire, objet et message sont requis.' });
   const from = mailFrom();
   if (!from) return res.status(400).json({ ok: false, error: 'Adresse expéditeur (MAIL_FROM) non configurée.' });
+  // Normalisation des pièces jointes : on n'accepte que { name, content(base64) }, sans en-tête data:
+  let atts = null;
+  if (Array.isArray(attachments) && attachments.length) {
+    atts = attachments
+      .filter(a => a && a.name && a.content)
+      .map(a => ({ name: String(a.name), content: String(a.content).replace(/^data:[^;]*;base64,/, '') }));
+    if (!atts.length) atts = null;
+  }
   try {
     if (mailMethod === 'brevo') {
-      const r = await sendViaBrevo({ to, cc, subject, text, from });
+      const r = await sendViaBrevo({ to, cc, subject, text, from, attachments: atts });
       return res.json({ ok: true, id: r.id });
     }
-    const info = await mailTransport.sendMail({ from, to, cc: cc || undefined, subject, text });
+    const info = await mailTransport.sendMail({
+      from, to, cc: cc || undefined, subject, text,
+      attachments: atts ? atts.map(a => ({ filename: a.name, content: a.content, encoding: 'base64' })) : undefined
+    });
     return res.json({ ok: true, id: info.messageId });
   } catch (err) {
     console.error('Envoi mail:', err.message);
