@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const maint = require('./maintenance');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -214,11 +215,17 @@ app.post('/api/send-mail', async (req, res) => {
 async function snapshotCurrent() {
   try {
     if (db) {
+      // Throttle : pas de nouvel instantané si le dernier est très récent (évite les doublons pendant l'édition)
+      const last = await db.query('SELECT created_at FROM app_data_history ORDER BY id DESC LIMIT 1');
+      if (last.rows.length) {
+        const ageMin = (Date.now() - new Date(last.rows[0].created_at).getTime()) / 60000;
+        if (ageMin < maint.HISTORY_MIN_INTERVAL_MIN) return;
+      }
       const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
       const data = cur.rows[0] && cur.rows[0].data;
       if (data && Object.keys(data).length > 0) {
-        await db.query('INSERT INTO app_data_history (data) VALUES ($1)', [JSON.stringify(data)]);
-        // Purge : ne conserver que les MAX_HISTORY plus récents
+        // Instantané ALLÉGÉ (sans les champs lourds régénérables)
+        await db.query('INSERT INTO app_data_history (data) VALUES ($1)', [JSON.stringify(maint.slimForHistory(data))]);
         await db.query(
           `DELETE FROM app_data_history
              WHERE id NOT IN (SELECT id FROM app_data_history ORDER BY id DESC LIMIT ${MAX_HISTORY})`
@@ -227,9 +234,15 @@ async function snapshotCurrent() {
     } else {
       if (fs.existsSync(DATA_FILE)) {
         if (!fs.existsSync(HISTORY_DIR)) fs.mkdirSync(HISTORY_DIR, { recursive: true });
+        // Throttle : dernier snapshot trop récent ?
+        const existing = fs.readdirSync(HISTORY_DIR).filter(f => f.startsWith('snapshot-')).sort();
+        if (existing.length) {
+          const newest = path.join(HISTORY_DIR, existing[existing.length - 1]);
+          if ((Date.now() - fs.statSync(newest).mtimeMs) / 60000 < maint.HISTORY_MIN_INTERVAL_MIN) return;
+        }
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        fs.copyFileSync(DATA_FILE, path.join(HISTORY_DIR, `snapshot-${ts}.json`));
-        // Purge
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        fs.writeFileSync(path.join(HISTORY_DIR, `snapshot-${ts}.json`), JSON.stringify(maint.slimForHistory(data)), 'utf8');
         const files = fs.readdirSync(HISTORY_DIR).filter(f => f.startsWith('snapshot-')).sort();
         while (files.length > MAX_HISTORY) {
           fs.unlinkSync(path.join(HISTORY_DIR, files.shift()));
@@ -248,14 +261,14 @@ app.get('/api/data', async (req, res) => {
       // PostgreSQL
       const result = await db.query('SELECT data FROM app_data WHERE id = 1');
       if (result.rows.length > 0 && Object.keys(result.rows[0].data).length > 0) {
-        return res.json(result.rows[0].data);
+        return res.json(maint.pruneRetention(result.rows[0].data));
       }
       return res.json(null);
     } else {
       // Fichier local
       if (fs.existsSync(DATA_FILE)) {
         const raw = fs.readFileSync(DATA_FILE, 'utf8');
-        return res.json(JSON.parse(raw));
+        return res.json(maint.pruneRetention(JSON.parse(raw)));
       }
       return res.json(null);
     }
@@ -277,7 +290,7 @@ app.post('/api/data', async (req, res) => {
       // contrôles, crédits…), ne doit PAS les effacer de la base.
       const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
       const existing = (cur.rows[0] && cur.rows[0].data) || {};
-      const merged = Object.assign({}, existing, incoming);
+      const merged = maint.pruneRetention(Object.assign({}, existing, incoming));
       await db.query(
         'UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1',
         [JSON.stringify(merged)]
@@ -288,7 +301,7 @@ app.post('/api/data', async (req, res) => {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       let existing = {};
       if (fs.existsSync(DATA_FILE)) { try { existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {} }
-      const merged = Object.assign({}, existing, incoming);
+      const merged = maint.pruneRetention(Object.assign({}, existing, incoming));
       fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf8');
       // Backup quotidien
       const today = new Date().toISOString().split('T')[0];
@@ -342,6 +355,10 @@ app.get('/api/backups/:id', async (req, res) => {
 async function start() {
   await initDB();
   initMail();
+  await snapshotCurrent();   // point de restauration AVANT la purge de rétention
+  if (await maint.pruneStored(db, DATA_FILE)) {
+    console.log('  🧹 Rétention : anciennes livraisons (>' + maint.DELIV_DAYS + 'j) / préparations (>' + maint.PREPS_DAYS + 'j) purgées au démarrage');
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log('');
