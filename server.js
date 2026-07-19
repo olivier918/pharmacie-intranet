@@ -12,6 +12,17 @@ const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de donné
 // Parse JSON bodies up to 50MB (for base64 images in preps)
 app.use(express.json({ limit: '50mb' }));
 
+// ─── Authentification (portail serveur) ───
+// Ferme le trou « API ouverte » : protège /api/* et les pages tant qu'aucune
+// session valide n'est présente. Désactivé si GATE_PASSWORD n'est pas défini
+// (déploiement sans risque de blocage). N'affecte pas index.html.
+const auth = require('./auth');
+auth.install(app);            // routes /api/login, /api/logout (avant le portail)
+app.use(auth.gate);           // portail : à placer avant le static et les routes /api de données
+console.log(auth.AUTH_DISABLED
+  ? '  🔓 Portail d\'accès DÉSACTIVÉ (définir GATE_PASSWORD pour l\'activer)'
+  : '  🔒 Portail d\'accès ACTIF');
+
 // Serve the frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
