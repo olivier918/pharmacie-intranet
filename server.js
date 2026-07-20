@@ -284,18 +284,28 @@ function mergeStaff(existingArr, incomingArr) {
   existingArr.forEach(r => { if (r && r.id != null) byId[r.id] = r; });
   return incomingArr.map(inc => (inc && inc.id != null && byId[inc.id]) ? Object.assign({}, byId[inc.id], inc) : inc);
 }
-// ── Pilote sync (collection 'deliveries') : réconciliation par enregistrement + suppressions horodatées ──
-// Union par id en conservant, pour chaque id, la version au `updatedAt` le plus récent.
-// Un poste en retard qui repousse une vieille copie ne peut donc plus écraser une modif plus récente.
+// ── Sync : réconciliation par enregistrement + suppressions horodatées ──
+// Union par id en conservant, pour chaque id, la version au `updatedAt` le plus récent,
+// SANS perdre les enregistrements présents d'un seul côté et EN PRÉSERVANT l'ordre
+// (ordre de `existing` d'abord, puis les nouveaux de `incoming`). Un poste en retard qui
+// repousse une vieille copie ne peut donc plus écraser une modif plus récente d'un autre poste.
 function mergeById(existingArr, incomingArr) {
-  const map = {};
-  if (Array.isArray(existingArr)) existingArr.forEach(r => { if (r && r.id != null) map[r.id] = r; });
-  if (Array.isArray(incomingArr)) incomingArr.forEach(r => {
-    if (!r || r.id == null) return;
-    const cur = map[r.id];
-    if (!cur || (r.updatedAt || 0) >= (cur.updatedAt || 0)) map[r.id] = r;
+  const inc = {};
+  if (Array.isArray(incomingArr)) incomingArr.forEach(r => { if (r && r.id != null) inc[r.id] = r; });
+  const seen = {};
+  const out = [];
+  if (Array.isArray(existingArr)) existingArr.forEach(r => {
+    if (!r || r.id == null) { out.push(r); return; }
+    if (seen[r.id]) return; seen[r.id] = 1;
+    const i = inc[r.id];
+    out.push((i && (i.updatedAt || 0) >= (r.updatedAt || 0)) ? i : r);
   });
-  return Object.values(map).sort((a, b) => (b.id || 0) - (a.id || 0));
+  if (Array.isArray(incomingArr)) incomingArr.forEach(r => {
+    if (!r || r.id == null) { out.push(r); return; }
+    if (seen[r.id]) return; seen[r.id] = 1;
+    out.push(r);
+  });
+  return out;
 }
 // Fusion des tombstones (suppressions horodatées) par collection+id, en gardant la date la plus récente.
 // Purge des tombstones de plus de 90 j pour ne pas gonfler le blob indéfiniment.
@@ -316,17 +326,27 @@ function applyTombstones(arr, tombs, coll) {
   return arr.filter(r => !(r && r.id != null && byId[r.id] != null && (r.updatedAt || 0) <= byId[r.id]));
 }
 
+// Collections synchronisées « à id » : réconciliation par enregistrement + tombstones.
+// (patients/medecins exclus : pas d'id stable — traités séparément par clé naturelle.)
+const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives'];
+
 function mergeState(existing, incoming) {
   const merged = Object.assign({}, existing, incoming);
-  if (Array.isArray(existing.staffDB) && Array.isArray(incoming.staffDB)) {
-    merged.staffDB = mergeStaff(existing.staffDB, incoming.staffDB);
-  }
-  // ── Pilote horodatage/tombstones : collection 'deliveries' ──
+  // Suppressions horodatées, communes à toutes les collections
   merged.tombstones = mergeTombstones(existing.tombstones, incoming.tombstones);
-  if (Array.isArray(existing.deliveries) || Array.isArray(incoming.deliveries)) {
-    const rec = mergeById(existing.deliveries, incoming.deliveries);
-    merged.deliveries = applyTombstones(rec, merged.tombstones, 'deliveries');
-  }
+  SYNCED_COLLS.forEach(n => {
+    if (!Array.isArray(existing[n]) && !Array.isArray(incoming[n])) return; // rubrique inutilisée : ne pas créer de tableau vide
+    let arr;
+    if (n === 'staffDB') {
+      // staffDB : on conserve la fusion AU CHAMP par id (préserve signatures/RPPS/PIN) puis on applique les tombstones.
+      arr = (Array.isArray(existing.staffDB) && Array.isArray(incoming.staffDB))
+        ? mergeStaff(existing.staffDB, incoming.staffDB)
+        : (incoming.staffDB || existing.staffDB);
+    } else {
+      arr = mergeById(existing[n], incoming[n]);
+    }
+    merged[n] = applyTombstones(arr, merged.tombstones, n);
+  });
   return merged;
 }
 

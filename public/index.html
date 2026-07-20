@@ -1849,13 +1849,28 @@ let _saveTimer=null;
 let _loadedOK=false;    // passe à true UNIQUEMENT après lecture réussie de l'état serveur (anti-écrasement)
 let _suppressSave=false; // true pendant un rafraîchissement : on ne ré-écrit pas ce qu'on vient de lire
 let _savePending=false;  // true tant qu'une modif locale n'est pas persistée : la synchro ne doit pas l'écraser
-let tombstones=[];       // pilote sync : suppressions horodatées (collection 'deliveries')
+let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
+// Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives'];
+function _collRef(n){ switch(n){
+  case 'deliveries':return deliveries; case 'staffDB':return staffDB; case 'threads':return threads;
+  case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
+  case 'credits':return credits; case 'controles':return controles; case 'retours':return retours;
+  case 'renouvellements':return renouvellements; case 'renouvArchives':return renouvArchives; } return null; }
+function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
+let _idSnap={};
+// Photographie des ids présents (appelée après chaque lecture serveur) — sert de référence pour détecter les suppressions.
+function snapIds(){ SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); }
+// Détection centrale des suppressions : tout id présent à la dernière lecture et absent maintenant = tombstone.
+function diffTombstones(){ const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); }
 function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
 async function saveAll(){
   try{
+    diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,tombstones,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+    snapIds();          // envoi réussi : la nouvelle référence = l'état qu'on vient de persister
   }catch(e){console.warn('Sauvegarde:',e.message);}
   finally{ _savePending=false; }
 }
@@ -1883,6 +1898,7 @@ async function loadAll(){
     if(data.renouvArchives)renouvArchives=data.renouvArchives;
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
+    snapIds();   // référence initiale des ids après lecture serveur
   }catch(e){console.warn('Chargement:',e.message);}
 }
 setInterval(async()=>{
@@ -1911,6 +1927,7 @@ setInterval(async()=>{
         if(d.staffDB){ staffDB=d.staffDB; if(currentUser){ const u=staffDB.find(x=>x.id===currentUser.id); if(u)currentUser=u; } }
         if(d.labo)labo=d.labo;
         if(d.ADMIN)Object.assign(ADMIN,d.ADMIN);
+        snapIds();   // resynchro : nouvelle référence des ids (une suppression venue d'un autre poste n'est pas re-signalée comme locale)
         _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} } finally { _suppressSave=false; }
       }
     }catch(e){ _loadedOK=false; }
