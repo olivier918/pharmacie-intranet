@@ -1757,6 +1757,7 @@ function ico(n){return '<svg class="ico"><use href="#ic-'+n+'"></use></svg>';}
 // ═══════════ STATE ═══════════
 const ADMIN = {mail:'admin@pharmacie-mondeville.fr', pw:'pharma2026'};
 let labo = {nom:'Kerangal Normandie', adr:'Caen', tel:'0231000000', mail:'preparations@kerangal.fr'};
+let banque = {nom:'', mail:''};   // sous-traitant « banque » pour la commande de monnaie
 
 let staffDB = [
   {id:'AF',nom:'FERRAN',prenom:'Anouck',poste:'Pharmacien',pin:'1111',col:'#1D5C3A'},
@@ -1869,7 +1870,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,tombstones,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     snapIds();          // envoi réussi : la nouvelle référence = l'état qu'on vient de persister
   }catch(e){console.warn('Sauvegarde:',e.message);}
   finally{ _savePending=false; }
@@ -1897,6 +1898,7 @@ async function loadAll(){
     if(data.renouvellements)renouvellements=data.renouvellements;
     if(data.renouvArchives)renouvArchives=data.renouvArchives;
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
+    if(data.banque)banque=data.banque;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
     snapIds();   // référence initiale des ids après lecture serveur
   }catch(e){console.warn('Chargement:',e.message);}
@@ -1922,6 +1924,7 @@ setInterval(async()=>{
         if(d.renouvellements)renouvellements=d.renouvellements;
         if(d.renouvArchives)renouvArchives=d.renouvArchives;
         if(d.bluestone&&d.bluestone.mail)BLUESTONE.mail=d.bluestone.mail;
+        if(d.banque)banque=d.banque;
         // Rafraîchir aussi staffDB / labo / ADMIN pour éviter qu'un onglet resté ouvert
         // ne réécrive d'anciennes valeurs (ex. PIN) par-dessus la base.
         if(d.staffDB){ staffDB=d.staffDB; if(currentUser){ const u=staffDB.find(x=>x.id===currentUser.id); if(u)currentUser=u; } }
@@ -6172,5 +6175,6 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 </script>
 <script src="rn-module.js"></script>
 <script src="fc-module.js"></script>
+<script src="cm-module.js"></script>
 </body>
 </html>
