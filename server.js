@@ -271,6 +271,27 @@ async function snapshotCurrent() {
   }
 }
 
+// ─── Fusion d'état ───
+// Par rubrique : une rubrique absente de l'envoi n'est pas effacée (comportement existant).
+// En plus, pour staffDB : fusion AU CHAMP par identifiant. Ainsi un poste qui renvoie un
+// collaborateur sans sa signature (parce qu'il ne l'a pas encore reçue) n'écrase pas la
+// signature (ni le RPPS, ni le PIN) enregistrée par un autre poste — la valeur existante
+// est conservée quand l'envoi ne contient pas ce champ.
+function mergeStaff(existingArr, incomingArr) {
+  if (!Array.isArray(existingArr)) return incomingArr;
+  if (!Array.isArray(incomingArr)) return existingArr;
+  const byId = {};
+  existingArr.forEach(r => { if (r && r.id != null) byId[r.id] = r; });
+  return incomingArr.map(inc => (inc && inc.id != null && byId[inc.id]) ? Object.assign({}, byId[inc.id], inc) : inc);
+}
+function mergeState(existing, incoming) {
+  const merged = Object.assign({}, existing, incoming);
+  if (Array.isArray(existing.staffDB) && Array.isArray(incoming.staffDB)) {
+    merged.staffDB = mergeStaff(existing.staffDB, incoming.staffDB);
+  }
+  return merged;
+}
+
 // ─── Load all data ───
 app.get('/api/data', async (req, res) => {
   try {
@@ -307,7 +328,7 @@ app.post('/api/data', async (req, res) => {
       // contrôles, crédits…), ne doit PAS les effacer de la base.
       const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
       const existing = (cur.rows[0] && cur.rows[0].data) || {};
-      const merged = maint.pruneRetention(Object.assign({}, existing, incoming));
+      const merged = maint.pruneRetention(mergeState(existing, incoming));
       await db.query(
         'UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1',
         [JSON.stringify(merged)]
@@ -318,7 +339,7 @@ app.post('/api/data', async (req, res) => {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       let existing = {};
       if (fs.existsSync(DATA_FILE)) { try { existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {} }
-      const merged = maint.pruneRetention(Object.assign({}, existing, incoming));
+      const merged = maint.pruneRetention(mergeState(existing, incoming));
       fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf8');
       // Backup quotidien
       const today = new Date().toISOString().split('T')[0];

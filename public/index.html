@@ -1848,12 +1848,14 @@ const NORMANDIE_LOGO = (typeof window!=='undefined'&&window.NORMANDIE_LOGO)||'da
 let _saveTimer=null;
 let _loadedOK=false;    // passe à true UNIQUEMENT après lecture réussie de l'état serveur (anti-écrasement)
 let _suppressSave=false; // true pendant un rafraîchissement : on ne ré-écrit pas ce qu'on vient de lire
-function schedSave(){ if(!_loadedOK||_suppressSave) return; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
+let _savePending=false;  // true tant qu'une modif locale n'est pas persistée : la synchro ne doit pas l'écraser
+function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
 async function saveAll(){
   try{
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
   }catch(e){console.warn('Sauvegarde:',e.message);}
+  finally{ _savePending=false; }
 }
 async function loadAll(){
   try{
@@ -1881,7 +1883,7 @@ async function loadAll(){
   }catch(e){console.warn('Chargement:',e.message);}
 }
 setInterval(async()=>{
-  if(document.getElementById('app').style.display!=='none'){
+  if(document.getElementById('app').style.display!=='none' && !_savePending){
     try{const r=await fetch('/api/data');const d=await r.json();
       _loadedOK=true;
       if(d){
@@ -1909,7 +1911,7 @@ setInterval(async()=>{
       }
     }catch(e){ _loadedOK=false; }
   }
-},30000);
+},8000);
 
 // ═══════════ AUTO-MISE À JOUR (nouveau déploiement) ═══════════
 // Chaque poste interroge /api/version. Si le serveur a été redéployé (nouveau
