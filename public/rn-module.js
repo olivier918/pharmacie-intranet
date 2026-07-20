@@ -219,7 +219,7 @@
       const b = document.createElement('button');
       b.className = 'sb-item'; b.setAttribute('data-sec', 'renouvellement');
       b.setAttribute('onclick', "showSec('renouvellement',this)");
-      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-preparation"></use></svg><span class="sb-label">Renouvellement</span>';
+      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-renouvellement"></use></svg><span class="sb-label">Renouvellement</span>';
       navRef.insertAdjacentElement('afterend', b);
     }
     // section
