@@ -20,7 +20,7 @@ const COOKIE = 'phc_session';
 const MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 h
 const SECURE = process.env.NODE_ENV === 'production' || !!process.env.DATABASE_URL;
 
-const ALLOW = new Set(['/api/login', '/api/logout', '/api/health', '/login']);
+const ALLOW = new Set(['/api/login', '/api/logout', '/api/health', '/api/version', '/login']);
 
 function b64url(buf) { return Buffer.from(buf).toString('base64url'); }
 

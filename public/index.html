@@ -1897,17 +1897,54 @@ setInterval(async()=>{
         if(d.controles)controles=d.controles;
         if(d.controlesMail)controlesMail=d.controlesMail;
         if(d.retours)retours=d.retours;
+        if(d.renouvellements)renouvellements=d.renouvellements;
+        if(d.renouvArchives)renouvArchives=d.renouvArchives;
         if(d.bluestone&&d.bluestone.mail)BLUESTONE.mail=d.bluestone.mail;
         // Rafraîchir aussi staffDB / labo / ADMIN pour éviter qu'un onglet resté ouvert
         // ne réécrive d'anciennes valeurs (ex. PIN) par-dessus la base.
         if(d.staffDB){ staffDB=d.staffDB; if(currentUser){ const u=staffDB.find(x=>x.id===currentUser.id); if(u)currentUser=u; } }
         if(d.labo)labo=d.labo;
         if(d.ADMIN)Object.assign(ADMIN,d.ADMIN);
-        _suppressSave=true; try{ renderAll(); } finally { _suppressSave=false; }
+        _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} } finally { _suppressSave=false; }
       }
     }catch(e){ _loadedOK=false; }
   }
 },30000);
+
+// ═══════════ AUTO-MISE À JOUR (nouveau déploiement) ═══════════
+// Chaque poste interroge /api/version. Si le serveur a été redéployé (nouveau
+// code après un push), le poste se recharge tout seul — sans qu'on ait à vider
+// le cache. Recharge direct si le poste est inactif ; sinon propose un bandeau
+// pour ne jamais couper une saisie en cours.
+let _appVersion=null;
+function _posteBusy(){
+  const ae=document.activeElement;
+  if(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)) return true;
+  return [...document.querySelectorAll('.overlay,.rn-ov')].some(el=>el.offsetParent!==null&&getComputedStyle(el).display!=='none');
+}
+function _showUpdateBar(){
+  if(document.getElementById('vupd')) return;
+  const b=document.createElement('div'); b.id='vupd';
+  b.style.cssText='position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1D5C3A;color:#fff;padding:10px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.28);z-index:99999;font-size:14px;display:flex;gap:12px;align-items:center';
+  b.innerHTML='<span>🔄 Nouvelle version disponible.</span>';
+  const btn=document.createElement('button'); btn.textContent='Recharger maintenant';
+  btn.style.cssText='background:#fff;color:#1D5C3A;border:none;border-radius:7px;padding:6px 12px;font-weight:700;cursor:pointer';
+  btn.onclick=()=>location.reload(); b.appendChild(btn); document.body.appendChild(b);
+}
+async function checkVersion(){
+  try{
+    const r=await fetch('/api/version',{cache:'no-store'}); if(!r.ok) return;
+    const v=(await r.json()).version; if(!v) return;
+    if(_appVersion===null){ _appVersion=v; return; }      // première mesure : on mémorise
+    if(v!==_appVersion){                                   // le serveur a été redéployé
+      if(_posteBusy()) _showUpdateBar();                   // saisie en cours : on propose
+      else location.reload();                              // poste libre : on recharge
+    }
+  }catch(e){}
+}
+setInterval(checkVersion, 20000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkVersion(); });
+checkVersion();
 
 // ═══════════ AUTH ═══════════
 // Session logic:

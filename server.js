@@ -6,6 +6,10 @@ const maint = require('./maintenance');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// Identifiant de version : change à chaque déploiement Railway (commit) ou,
+// en local, à chaque redémarrage du serveur. Sert à l'auto-rafraîchissement
+// des postes (voir /api/version).
+const BUILD_ID = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.BUILD_ID || String(Date.now());
 const DATA_FILE = path.join(__dirname, 'data', 'pharmacie-data.json');
 const HISTORY_DIR = path.join(__dirname, 'data', 'history');
 const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de données)
@@ -25,7 +29,14 @@ console.log(auth.AUTH_DISABLED
   : '  🔒 Portail d\'accès ACTIF');
 
 // Serve the frontend
-app.use(express.static(path.join(__dirname, 'public')));
+// Fichiers statiques. Le HTML et le JS sont servis en "no-cache" : le
+// navigateur revalide à chaque chargement (304 si inchangé, code frais après
+// un déploiement). Combiné à /api/version, aucun poste ne reste sur du vieux code.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (/\.(html|js)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
 
 // ─── DATABASE SETUP ───
 let db = null;
@@ -158,6 +169,12 @@ async function initDB() {
     db = null;
   }
 }
+
+// ─── Version déployée (pour l'auto-rafraîchissement des postes) ───
+app.get('/api/version', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ version: BUILD_ID });
+});
 
 // ─── Diagnostic : mode réel + éventuelle erreur de connexion DB ───
 app.get('/api/health', (req, res) => {
