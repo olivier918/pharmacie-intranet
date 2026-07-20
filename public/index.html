@@ -1852,7 +1852,7 @@ function schedSave(){ if(!_loadedOK||_suppressSave) return; clearTimeout(_saveTi
 async function saveAll(){
   try{
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
   }catch(e){console.warn('Sauvegarde:',e.message);}
 }
 async function loadAll(){
@@ -1874,6 +1874,8 @@ async function loadAll(){
     if(data.controles)controles=data.controles;
     if(data.controlesMail)controlesMail=data.controlesMail;
     if(data.retours)retours=data.retours;
+    if(data.renouvellements)renouvellements=data.renouvellements;
+    if(data.renouvArchives)renouvArchives=data.renouvArchives;
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
   }catch(e){console.warn('Chargement:',e.message);}
@@ -1913,7 +1915,7 @@ setInterval(async()=>{
 // - On inactivity (5 min), only PIN required to resume
 // - Full logout clears day session
 
-let currentUser=null, delivView='jour', currentThread=null, bpmFilter=null;
+let currentUser=null, delivView='jour', currentThread=null, bpmFilter=null, renouvellements=[], renouvArchives=[];
 let timerSec=300, timerInt=null;
 let selId='', pinStr='';
 
@@ -2070,6 +2072,7 @@ document.addEventListener('keydown', e => {
 // ═══════════ NAV / SIDEBAR ═══════════
 const SEC_LABEL = {
   livraisons:'Livraisons',
+  renouvellement:'Renouvellement',
   messagerie:'Messagerie',
   preparations:'Préparations officinales',
   bpm:'Bilans Partagés de Médication',
@@ -2106,6 +2109,7 @@ function showSec(name,btn){
   if(name==='credits'){renderCreds();document.getElementById('cred-form-card').style.display='none';}
   if(name==='caisse')renderCaisse();
   if(name==='backoffice'){renderStaff();renderPatients();applyAdminUI();}
+  if(name==='renouvellement'&&window.rnRender)rnRender();
 }
 
 // Bascule le volet : desktop = collapse/expand persistant ; mobile = drawer open/close
@@ -6105,5 +6109,6 @@ function buildBonPdfHtml(rec){
 // ═══════════ INIT ═══════════
 document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 </script>
+<script src="rn-module.js"></script>
 </body>
 </html>
