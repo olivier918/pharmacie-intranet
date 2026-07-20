@@ -15,18 +15,47 @@
       id: 'aod', label: 'Entretiens AOD', sub: 'Anticoagulant oral direct',
       serie: 'documents/fiches/aod-entretiens.pdf',
       fiches: [
-        { n: '1', titre: 'Évaluation et observance', desc: 'Prise du traitement, carte anticoagulant, vigilance au quotidien.', file: 'documents/fiches/aod-1.pdf', tone: 'green' },
-        { n: '2', titre: 'Effets du traitement', desc: 'Signes de sur et sous-dosage, risque hémorragique, alerte 15.', file: 'documents/fiches/aod-2.pdf', tone: 'amber' },
-        { n: '3', titre: 'Surveillance et vie quotidienne', desc: 'Fonction rénale, poids, déshydratation, points de vigilance.', file: 'documents/fiches/aod-3.pdf', tone: 'blue' }
+        { n: '1', titre: 'Évaluation et observance', file: 'documents/fiches/aod-1.pdf', tone: 'green' },
+        { n: '2', titre: 'Effets du traitement', file: 'documents/fiches/aod-2.pdf', tone: 'amber' },
+        { n: '3', titre: 'Surveillance et vie quotidienne', file: 'documents/fiches/aod-3.pdf', tone: 'blue' }
+      ]
+    },
+    {
+      id: 'avk', label: 'Entretiens AVK', sub: 'Anti-vitamine K',
+      serie: 'documents/fiches/avk-entretiens.pdf',
+      fiches: [
+        { n: '1', titre: 'Prise du traitement', file: 'documents/fiches/avk-1.pdf', tone: 'green' },
+        { n: '2', titre: 'Surveillance et INR', file: 'documents/fiches/avk-2.pdf', tone: 'amber' },
+        { n: '3', titre: "Signes d'alerte", file: 'documents/fiches/avk-3.pdf', tone: 'blue' }
+      ]
+    },
+    {
+      id: 'asthme', label: 'Asthme', sub: "Traitement de l'asthme",
+      serie: 'documents/fiches/asthme-serie.pdf',
+      fiches: [
+        { n: '1', titre: 'Comprendre mon traitement', file: 'documents/fiches/asthme-1.pdf', tone: 'green' },
+        { n: '2', titre: 'Utiliser mon inhalateur', file: 'documents/fiches/asthme-2.pdf', tone: 'amber' },
+        { n: '3', titre: 'Surveillance et vie quotidienne', file: 'documents/fiches/asthme-3.pdf', tone: 'blue' }
+      ]
+    },
+    {
+      id: 'contraception', label: "Contraception d'urgence", sub: 'Dispensation',
+      fiches: [
+        { n: '1', titre: 'Fiche de dispensation', file: 'documents/fiches/contraception-urgence.pdf', tone: 'pink' }
+      ]
+    },
+    {
+      id: 'fievre', label: "Fièvre de l'enfant", sub: 'Conduite à tenir',
+      fiches: [
+        { n: '1', titre: 'Conseils et signes d\'alerte', file: 'documents/fiches/fievre-enfant.pdf', tone: 'amber' }
       ]
     }
-    // À venir : Entretiens AVK · Entretiens Asthme · Relevé de mesure tensionnelle
-    //           · Fiches allaitement · Fièvre de l'enfant …
+    // À venir : Relevé de mesure tensionnelle · Fiches allaitement …
   ];
+  // couleur de la pastille-numéro de chaque fiche (fond plein, chiffre blanc)
   const FC_TONES = {
-    green: { bg: '#EAF3DE', fg: '#3B6D11' }, amber: { bg: '#FAEEDA', fg: '#854F0B' },
-    blue: { bg: '#E6F1FB', fg: '#185FA5' }, teal: { bg: '#E1F5EE', fg: '#0F6E56' },
-    pink: { bg: '#FBEAF0', fg: '#993556' }, purple: { bg: '#EEEDFE', fg: '#534AB7' }
+    green: '#2E7D54', amber: '#E4791C', blue: '#1E71C2',
+    teal: '#0F8C74', pink: '#C2447A', purple: '#6A54C0'
   };
 
   // ---------- CSS (scopé fc-) ----------
@@ -43,20 +72,21 @@
   .fc-tlabel{font-weight:700;font-size:15px;color:#1D5C3A}
   .fc-tsub{font-size:12.5px;color:#6b7a72;margin-top:2px}
   .fc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:12px}
-  .fc-card{background:#fff;border:1px solid #e2ebe5;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-  .fc-thumb{padding:12px}
-  .fc-page{background:#fff;border-radius:6px;padding:10px 11px;min-height:82px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-  .fc-pn{font-size:10px;font-weight:700;letter-spacing:.4px}
-  .fc-pt{font-size:11.5px;font-weight:600;color:#37413d;margin-top:3px}
-  .fc-body{padding:11px 13px;display:flex;flex-direction:column;gap:8px;flex:1}
-  .fc-ft{font-size:14px;font-weight:700;color:#222}
-  .fc-fd{font-size:12.5px;color:#6b7a72;line-height:1.45;flex:1}
+  .fc-grid{align-items:stretch}
+  .fc-card{background:#fff;border:1px solid #e7ece9;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;box-shadow:0 1px 2px rgba(0,0,0,.03);transition:box-shadow .15s,border-color .15s}
+  .fc-card:hover{border-color:#cdd8d1;box-shadow:0 3px 10px rgba(0,0,0,.07)}
+  .fc-head{display:flex;gap:11px;align-items:flex-start;flex:1}
+  .fc-num{flex-shrink:0;width:30px;height:30px;border-radius:9px;color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .fc-txt{min-width:0;flex:1}
+  .fc-pt{font-size:15px;font-weight:700;color:#1f2a24;line-height:1.25}
+  .fc-meta{font-size:11.5px;color:#8a968f;margin-top:3px}
   .fc-acts{display:flex;gap:7px}
-  .fc-btn{border:none;border-radius:8px;font-family:inherit;font-size:12.8px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 11px}
+  .fc-btn{border:none;border-radius:8px;font-family:inherit;font-size:12.8px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 11px;min-height:40px}
   .fc-btn .ico{width:16px;height:16px}
+  .fc-btn:focus-visible{outline:2px solid #1D5C3A;outline-offset:2px}
   .fc-pri{background:#1D5C3A;color:#fff;flex:1}
   .fc-pri:hover{background:#164a2f}
-  .fc-gh{background:#fff;border:1px solid #dfe8e2;color:#333;padding:8px 10px}
+  .fc-gh{background:#fff;border:1px solid #d7ded9;color:#3a4640}
   .fc-gh:hover{background:#f2f6f3}
   .fc-serie{background:#1D5C3A;color:#fff}
   .fc-serie:hover{background:#164a2f}
@@ -82,16 +112,16 @@
   // ---------- rendu ----------
   function fcCard(f) {
     const c = FC_TONES[f.tone] || FC_TONES.green;
+    const lbl = 'Aperçu de la fiche ' + f.titre;
     return '<div class="fc-card">' +
-      '<div class="fc-thumb" style="background:' + c.bg + '">' +
-      '<div class="fc-page"><div class="fc-pn" style="color:' + c.fg + '">FICHE CONSEIL N°' + fcEsc(f.n) + '</div>' +
-      '<div class="fc-pt">Mon traitement par AOD</div></div></div>' +
-      '<div class="fc-body"><div class="fc-ft">' + fcEsc(f.titre) + '</div>' +
-      '<div class="fc-fd">' + fcEsc(f.desc) + '</div>' +
+      '<div class="fc-head">' +
+      '<span class="fc-num" style="background:' + c + '">' + fcEsc(f.n) + '</span>' +
+      '<div class="fc-txt"><div class="fc-pt">' + fcEsc(f.titre) + '</div>' +
+      '<div class="fc-meta">Fiche conseil · PDF A4</div></div></div>' +
       '<div class="fc-acts">' +
       '<button class="fc-btn fc-pri" onclick="fcPrint(\'' + f.file + '\')"><svg class="ico"><use href="#ic-imprimer"></use></svg> Imprimer</button>' +
-      '<button class="fc-btn fc-gh" title="Aperçu" onclick="fcView(\'' + f.file + '\')"><svg class="ico"><use href="#ic-voir"></use></svg></button>' +
-      '</div></div></div>';
+      '<button class="fc-btn fc-gh" title="Aperçu" aria-label="' + fcEsc(lbl) + '" onclick="fcView(\'' + f.file + '\')"><svg class="ico"><use href="#ic-voir"></use></svg></button>' +
+      '</div></div>';
   }
   function fcThemeHtml(t) {
     return '<div class="fc-theme"><div class="fc-thead">' +
