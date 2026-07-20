@@ -41,14 +41,23 @@
 
   // ─── Injection de l'interface ───
   function cmInject() {
-    // 1) Carte « Commande de monnaie » dans l'écran Caisse
+    // 1) Bouton d'entrée dans l'écran Caisse + modale (masquée par défaut)
     const sec = document.getElementById('sec-caisse');
-    if (sec && !document.getElementById('cm-card')) {
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.id = 'cm-card';
-      card.innerHTML = cmCardHTML();
-      sec.appendChild(card);
+    if (sec && !document.getElementById('cm-entry')) {
+      const stats = document.getElementById('caisse-stats');
+      const entry = document.createElement('div');
+      entry.id = 'cm-entry';
+      entry.style.margin = '0 0 1.1rem';
+      entry.innerHTML = '<button class="btn bp" onclick="cmOpen()"><svg class="ico"><use href="#ic-euro"></use></svg> Commande de monnaie</button>';
+      if (stats && stats.parentNode === sec) stats.insertAdjacentElement('afterend', entry);
+      else sec.insertBefore(entry, sec.firstChild);
+    }
+    if (!document.getElementById('cm-modal')) {
+      const mod = document.createElement('div');
+      mod.className = 'overlay';
+      mod.id = 'cm-modal';
+      mod.innerHTML = '<div class="mbox" id="cm-card" style="max-width:780px">' + cmCardHTML() + '</div>';
+      document.body.appendChild(mod);
     }
     // 2) Carte « Banque » dans l'onglet Sous-traitants
     const bo = document.getElementById('bo-labo');
@@ -93,7 +102,9 @@
       + '#cm-card .cm-foot td{font-weight:800;border-top:2px solid var(--gray-200);border-bottom:none}'
       + '</style>'
       + '<div class="ch"><span class="ct"><svg class="ico"><use href="#ic-euro"></use></svg> Commande de monnaie</span>'
-      + '<button class="btn bs sm" id="cm-fond-edit-btn" onclick="cmToggleFond()">Modifier le fond cible</button></div>'
+      + '<span style="display:flex;gap:6px">'
+      + '<button class="btn bs sm" id="cm-fond-edit-btn" onclick="cmToggleFond()">Modifier le fond cible</button>'
+      + '<button class="btn bs sm" onclick="cmClose()">Fermer</button></span></div>'
       + '<div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.7rem;line-height:1.5">Saisissez l\'état actuel du fond de caisse (nombre de rouleaux/billets restants). Le besoin pour reconstituer le fond fixe et la valeur à commander se calculent automatiquement.</div>'
       + '<div class="twrap"><table class="cm-tbl">'
       + '<thead><tr><th>Devise</th><th style="text-align:right">Valeur unité</th><th style="text-align:center">Fond cible</th><th style="text-align:center">État actuel</th><th style="text-align:center">À commander</th><th style="text-align:right">Valeur</th></tr></thead>'
@@ -327,19 +338,25 @@
   window.cmCloseInfo = function () { const m = document.getElementById('cm-info-modal'); if (typeof closeModal === 'function') closeModal('cm-info-modal'); else if (m) m.style.display = 'none'; };
 
   // ─── Hooks : injecter au chargement, rendre à l'ouverture de la Caisse et des Sous-traitants ───
+  // Ouverture / fermeture de la modale
+  window.cmOpen = function () {
+    cmInject();
+    cmRender();
+    if (typeof openModal === 'function') openModal('cm-modal');
+    else { const m = document.getElementById('cm-modal'); if (m) m.classList.add('open'); }
+  };
+  window.cmClose = function () {
+    if (typeof closeModal === 'function') closeModal('cm-modal');
+    else { const m = document.getElementById('cm-modal'); if (m) m.classList.remove('open'); }
+  };
+
   function cmInit() {
     cmInject();
-    // rendre la carte à chaque render caisse
-    if (typeof window.renderCaisse === 'function') {
-      const orig = window.renderCaisse;
-      window.renderCaisse = function () { orig.apply(this, arguments); try { cmRender(); } catch (e) { console.warn('cm', e); } };
-    }
     // repeupler le formulaire banque quand on ouvre l'onglet Sous-traitants
     if (typeof window.boTab === 'function') {
       const ob = window.boTab;
       window.boTab = function (t) { ob.apply(this, arguments); if (t === 'labo') { cmInject(); cmFillBanque(); } };
     }
-    cmRender();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', cmInit);
