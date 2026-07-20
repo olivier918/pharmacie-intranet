@@ -357,7 +357,7 @@
     if (x.undo.delivId && typeof deliveries !== 'undefined' && Array.isArray(deliveries)) {
       const d = deliveries.find(dd => dd.id === x.undo.delivId);
       if (d && d.status === 'done') { note = ' (livraison déjà effectuée : conservée)'; }
-      else if (d) { window.deliveries = deliveries.filter(dd => dd.id !== x.undo.delivId); note = ' (livraison retirée)'; try { if (typeof renderD === 'function') renderD(); } catch (e) {} }
+      else if (d) { if (typeof markDeleted === 'function') markDeleted('deliveries', x.undo.delivId); window.deliveries = deliveries.filter(dd => dd.id !== x.undo.delivId); note = ' (livraison retirée)'; try { if (typeof renderD === 'function') renderD(); } catch (e) {} }
     }
     // 2. restaurer l'ordonnance active à sa date d'origine
     const src = Object.assign({}, x.undo.src); src.date = x.undo.prevDate || src.date; src.needsNewOrdo = false;
@@ -494,7 +494,7 @@
           montant: parseFloat(document.getElementById('rn-l-montant').value) || 0, date: rnIso(rnToday()),
           frigo: document.getElementById('rn-l-frigo').checked, promis: true, ordo: true,
           notes: 'Renouvellement — ' + it.lib + (document.getElementById('rn-l-notes').value.trim() ? ' · ' + document.getElementById('rn-l-notes').value.trim() : ''),
-          status: 'prep', prepBy: u.id, livrBy: null, cold: document.getElementById('rn-l-frigo').checked
+          status: 'prep', prepBy: u.id, livrBy: null, cold: document.getElementById('rn-l-frigo').checked, updatedAt: Date.now()
         });
         it._delivId = dId; // pour pouvoir retirer cette livraison si on annule la préparation
       }

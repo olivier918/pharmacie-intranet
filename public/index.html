@@ -1849,11 +1849,13 @@ let _saveTimer=null;
 let _loadedOK=false;    // passe à true UNIQUEMENT après lecture réussie de l'état serveur (anti-écrasement)
 let _suppressSave=false; // true pendant un rafraîchissement : on ne ré-écrit pas ce qu'on vient de lire
 let _savePending=false;  // true tant qu'une modif locale n'est pas persistée : la synchro ne doit pas l'écraser
+let tombstones=[];       // pilote sync : suppressions horodatées (collection 'deliveries')
+function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
 async function saveAll(){
   try{
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,tombstones,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
   }catch(e){console.warn('Sauvegarde:',e.message);}
   finally{ _savePending=false; }
 }
@@ -1866,6 +1868,7 @@ async function loadAll(){
     if(data.patients)patients=data.patients;
     if(data.medecins)medecins=data.medecins;
     if(data.deliveries)deliveries=data.deliveries;
+    if(data.tombstones)tombstones=data.tombstones;
     if(data.threads)threads=data.threads;
     if(data.preps)preps=data.preps;
     if(data.bpmList)bpmList=data.bpmList;
@@ -1888,6 +1891,7 @@ setInterval(async()=>{
       _loadedOK=true;
       if(d){
         if(d.deliveries)deliveries=d.deliveries;
+        if(d.tombstones)tombstones=d.tombstones;
         if(d.threads)threads=d.threads;
         if(d.preps)preps=d.preps;
         if(d.bpmList)bpmList=d.bpmList;
@@ -2420,6 +2424,7 @@ function doStatus(id,ns){
     if(ns==='wait'){d.prepBy=null;d.prepAt=null;d.livrBy=null;d.livrAt=null;}
     if(ns==='prep'){d.livrBy=null;d.livrAt=null;}
   }
+  d.updatedAt=Date.now();
   d.status=ns;
 
   // Animate transition if jumping multiple steps
@@ -2489,7 +2494,7 @@ function nowStamp(){
 function askDelete(id){
   document.getElementById('conf-title').textContent='Supprimer la livraison';
   document.getElementById('conf-msg').textContent='Cette action est irréversible.';
-  pendingAction=()=>{deliveries=deliveries.filter(x=>x.id!==id);renderD();closeModal('confirm-modal')};
+  pendingAction=()=>{markDeleted('deliveries',id);deliveries=deliveries.filter(x=>x.id!==id);renderD();closeModal('confirm-modal')};
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
 }
@@ -2554,9 +2559,9 @@ function saveD(){
   };
   if(editId){
     const d=deliveries.find(x=>x.id===parseInt(editId));
-    if(d)Object.assign(d,obj);
+    if(d){Object.assign(d,obj);d.updatedAt=Date.now();}
   } else {
-    deliveries.unshift({id:Date.now(),...obj,status:'wait',prepBy:null,livrBy:null});
+    deliveries.unshift({id:Date.now(),...obj,status:'wait',prepBy:null,livrBy:null,updatedAt:Date.now()});
   }
   // Always update patient record with latest address/commune/tel
   upsertPatient({nom,prenom,adresse:obj.adresse,commune:obj.commune,tel:obj.tel});

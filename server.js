@@ -284,10 +284,48 @@ function mergeStaff(existingArr, incomingArr) {
   existingArr.forEach(r => { if (r && r.id != null) byId[r.id] = r; });
   return incomingArr.map(inc => (inc && inc.id != null && byId[inc.id]) ? Object.assign({}, byId[inc.id], inc) : inc);
 }
+// ── Pilote sync (collection 'deliveries') : réconciliation par enregistrement + suppressions horodatées ──
+// Union par id en conservant, pour chaque id, la version au `updatedAt` le plus récent.
+// Un poste en retard qui repousse une vieille copie ne peut donc plus écraser une modif plus récente.
+function mergeById(existingArr, incomingArr) {
+  const map = {};
+  if (Array.isArray(existingArr)) existingArr.forEach(r => { if (r && r.id != null) map[r.id] = r; });
+  if (Array.isArray(incomingArr)) incomingArr.forEach(r => {
+    if (!r || r.id == null) return;
+    const cur = map[r.id];
+    if (!cur || (r.updatedAt || 0) >= (cur.updatedAt || 0)) map[r.id] = r;
+  });
+  return Object.values(map).sort((a, b) => (b.id || 0) - (a.id || 0));
+}
+// Fusion des tombstones (suppressions horodatées) par collection+id, en gardant la date la plus récente.
+// Purge des tombstones de plus de 90 j pour ne pas gonfler le blob indéfiniment.
+const TOMB_TTL_MS = 90 * 24 * 3600 * 1000;
+function mergeTombstones(a, b) {
+  const m = {};
+  const add = t => { if (t && t.id != null && t.c) { const k = t.c + '|' + t.id; if (!m[k] || (t.t || 0) > (m[k].t || 0)) m[k] = t; } };
+  if (Array.isArray(a)) a.forEach(add);
+  if (Array.isArray(b)) b.forEach(add);
+  const cutoff = Date.now() - TOMB_TTL_MS;
+  return Object.values(m).filter(t => (t.t || 0) >= cutoff);
+}
+// Retire d'une collection tout enregistrement couvert par un tombstone au moins aussi récent que sa dernière modif.
+function applyTombstones(arr, tombs, coll) {
+  if (!Array.isArray(arr) || !Array.isArray(tombs)) return arr;
+  const byId = {};
+  tombs.forEach(t => { if (t && t.c === coll && t.id != null) byId[t.id] = Math.max(byId[t.id] || 0, t.t || 0); });
+  return arr.filter(r => !(r && r.id != null && byId[r.id] != null && (r.updatedAt || 0) <= byId[r.id]));
+}
+
 function mergeState(existing, incoming) {
   const merged = Object.assign({}, existing, incoming);
   if (Array.isArray(existing.staffDB) && Array.isArray(incoming.staffDB)) {
     merged.staffDB = mergeStaff(existing.staffDB, incoming.staffDB);
+  }
+  // ── Pilote horodatage/tombstones : collection 'deliveries' ──
+  merged.tombstones = mergeTombstones(existing.tombstones, incoming.tombstones);
+  if (Array.isArray(existing.deliveries) || Array.isArray(incoming.deliveries)) {
+    const rec = mergeById(existing.deliveries, incoming.deliveries);
+    merged.deliveries = applyTombstones(rec, merged.tombstones, 'deliveries');
   }
   return merged;
 }
