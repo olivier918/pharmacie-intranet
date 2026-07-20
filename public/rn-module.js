@@ -98,6 +98,7 @@
       <button class="rn-btn rn-pri" onclick="rnOpenForm()">＋ Nouvelle ordonnance</button>
       <div class="rn-tabs">
         <button class="rn-tab rn-act" id="rn-tab-todo" onclick="rnSetView('todo')">À préparer</button>
+        <button class="rn-tab" id="rn-tab-all" onclick="rnSetView('all')">Programmés</button>
         <button class="rn-tab" id="rn-tab-arch" onclick="rnSetView('arch')">Archives</button>
       </div>
       <span class="rn-count" id="rn-count"></span>
@@ -237,12 +238,14 @@
   window.rnSetView = function (v) {
     rnView = v;
     document.getElementById('rn-tab-todo').classList.toggle('rn-act', v === 'todo');
+    document.getElementById('rn-tab-all').classList.toggle('rn-act', v === 'all');
     document.getElementById('rn-tab-arch').classList.toggle('rn-act', v === 'arch');
     rnRender();
   };
   window.rnRender = function () {
     rnInject();
     if (rnView === 'arch') return rnRenderArch();
+    if (rnView === 'all') return rnRenderAll();
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
     const visible = rnList()
       .filter(it => rnDayDiff(it.date) <= 7)
@@ -264,23 +267,65 @@
     html += '</div>';
     wrap.innerHTML = html;
   };
-  function rnCard(it) {
-    const diff = rnDayDiff(it.date); const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
-    const badges =
-      (it.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
+  function rnBadges(it) {
+    return (it.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
       (it.needsNewOrdo ? ' <span class="rn-badge rn-b-newordo">Nouvelle ordo à fournir</span>' : '') +
       (it.dernier && !it.needsNewOrdo ? ' <span class="rn-badge rn-b-last">Dernier renouv.</span>' : '') +
       (/frigo/i.test(it.notes || '') ? ' <span class="rn-badge rn-b-frigo">Frigo</span>' : '');
-    return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' +
-      '<div class="rn-who">' + rnEsc(it.nom) + ' ' + rnEsc(it.prenom) + '<span class="rn-dob">' + rnFmtFr(it.dob) + '</span></div>' +
+  }
+  function rnMainHtml(it) {
+    return '<div class="rn-who">' + rnEsc(it.nom) + ' ' + rnEsc(it.prenom) + '<span class="rn-dob">' + rnFmtFr(it.dob) + '</span></div>' +
       '<div class="rn-lib">' + rnEsc(it.lib) + '</div>' +
-      '<div class="rn-meta">' + (it.presc ? '<span>👨‍⚕️ ' + rnEsc(it.presc) + '</span>' : '') + (it.tel ? '<span>📞 ' + rnEsc(it.tel) + '</span>' : '') + (it.notes ? '<span>📝 ' + rnEsc(it.notes) + '</span>' : '') + '<span>' + badges + '</span></div>' +
+      '<div class="rn-meta">' + (it.presc ? '<span>👨‍⚕️ ' + rnEsc(it.presc) + '</span>' : '') + (it.tel ? '<span>📞 ' + rnEsc(it.tel) + '</span>' : '') + (it.notes ? '<span>📝 ' + rnEsc(it.notes) + '</span>' : '') + '<span>' + rnBadges(it) + '</span></div>';
+  }
+  function rnCard(it) {
+    const diff = rnDayDiff(it.date); const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
+    return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' + rnMainHtml(it) +
       '</div><div class="rn-acts">' +
       '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter / Annuler</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
       '</div></div>';
   }
+  // Vue « Programmés » : TOUS les renouvellements, sans filtre de date,
+  // avec modification / report / suppression possibles à tout moment.
+  function rnRenderAll() {
+    const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
+    const all = rnList()
+      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q))
+      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    document.getElementById('rn-count').textContent = all.length ? all.length + ' renouvellement' + (all.length > 1 ? 's' : '') + ' programmé' + (all.length > 1 ? 's' : '') : '';
+    const wrap = document.getElementById('rn-listwrap');
+    if (!all.length) { wrap.innerHTML = '<div class="rn-empty">Aucun renouvellement programmé.</div>'; return; }
+    let html = '', last = null;
+    for (const it of all) {
+      if (it.date !== last) {
+        last = it.date; const diff = rnDayDiff(it.date);
+        const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
+        const lbl = diff < 0 ? 'En retard' : diff === 0 ? "Aujourd'hui" : 'Dans ' + diff + ' j';
+        html += '<div class="rn-daygroup"><div class="rn-dayhead"><span class="rn-d">' + rnFmtFr(it.date) + '</span><span class="rn-taglbl rn-t-' + cls + '">' + lbl + '</span></div>';
+      }
+      html += rnCardAll(it);
+    }
+    html += '</div>';
+    wrap.innerHTML = html;
+  }
+  function rnCardAll(it) {
+    const diff = rnDayDiff(it.date); const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
+    return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' + rnMainHtml(it) +
+      '</div><div class="rn-acts">' +
+      '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" style="color:#c62828;border-color:#f0cccc" onclick="rnDelete(' + it.id + ')">🗑 Supprimer</button>' +
+      '</div></div>';
+  }
+  window.rnDelete = function (id) {
+    const it = rnList().find(x => x.id === id); if (!it) return;
+    if (!confirm('Supprimer définitivement le renouvellement programmé de ' + it.nom + ' ' + it.prenom + ' ?')) return;
+    window.renouvellements = rnList().filter(x => x.id !== id);
+    rnToast('Renouvellement supprimé.'); rnPersist(); rnRender();
+  };
   function rnRenderArch() {
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
     const a = rnArch().filter(x => !q || (x.nom + ' ' + x.prenom).toLowerCase().includes(q));
@@ -297,8 +342,33 @@
       '<span>👤 <span class="rn-chip" style="background:' + (x.byCol || '#777') + '">' + rnEsc(x.byName) + '</span></span>' +
       (x.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
       '<span style="color:#6b7a72">' + rnEsc(x.outcome) + '</span></div>' +
-      '</div></div>';
+      '</div>' +
+      (x.undo ? '<div class="rn-acts"><button class="rn-btn rn-ghost rn-mini" onclick="rnUnprepare(' + x.id + ')">↩ Repasser en « à préparer »</button></div>' : '') +
+      '</div>';
   }
+  // Annule une préparation : ré-active l'ordonnance à sa date d'origine
+  // et retire la livraison créée (si elle n'a pas déjà été livrée).
+  window.rnUnprepare = function (archId) {
+    const x = rnArch().find(a => a.id === archId); if (!x) return;
+    if (!x.undo) { rnToast('Préparation trop ancienne pour être annulée automatiquement.'); return; }
+    if (!confirm('Repasser l’ordonnance de ' + x.nom + ' ' + x.prenom + ' en « à préparer » ? La livraison créée sera retirée.')) return;
+    // 1. retirer la livraison liée (sauf si déjà livrée)
+    let note = '';
+    if (x.undo.delivId && typeof deliveries !== 'undefined' && Array.isArray(deliveries)) {
+      const d = deliveries.find(dd => dd.id === x.undo.delivId);
+      if (d && d.status === 'done') { note = ' (livraison déjà effectuée : conservée)'; }
+      else if (d) { window.deliveries = deliveries.filter(dd => dd.id !== x.undo.delivId); note = ' (livraison retirée)'; try { if (typeof renderD === 'function') renderD(); } catch (e) {} }
+    }
+    // 2. restaurer l'ordonnance active à sa date d'origine
+    const src = Object.assign({}, x.undo.src); src.date = x.undo.prevDate || src.date; src.needsNewOrdo = false;
+    const existing = rnList().find(it => it.id === src.id);
+    if (existing) { existing.date = src.date; existing.needsNewOrdo = false; }
+    else rnList().push(src);
+    // 3. retirer l'entrée d'archive
+    window.renouvArchives = rnArch().filter(a => a.id !== archId);
+    rnPersist(); rnSetView('todo');
+    rnToast('Repassée en « à préparer »' + note + '.');
+  };
 
   // ---------- saisie ----------
   window.rnOpenForm = function (id) {
@@ -417,14 +487,16 @@
     // bascule dans le module Livraisons à l'état « préparé »
     try {
       if (typeof deliveries !== 'undefined' && Array.isArray(deliveries)) {
+        const dId = Date.now();
         deliveries.unshift({
-          id: Date.now(), nom: it.nom, prenom: it.prenom, adresse: document.getElementById('rn-l-adr').value.trim(), commune: it.commune || '',
+          id: dId, nom: it.nom, prenom: it.prenom, adresse: document.getElementById('rn-l-adr').value.trim(), commune: it.commune || '',
           tel: document.getElementById('rn-l-tel').value.trim(), lieu: document.getElementById('rn-l-lieu').value,
           montant: parseFloat(document.getElementById('rn-l-montant').value) || 0, date: rnIso(rnToday()),
           frigo: document.getElementById('rn-l-frigo').checked, promis: true, ordo: true,
           notes: 'Renouvellement — ' + it.lib + (document.getElementById('rn-l-notes').value.trim() ? ' · ' + document.getElementById('rn-l-notes').value.trim() : ''),
           status: 'prep', prepBy: u.id, livrBy: null, cold: document.getElementById('rn-l-frigo').checked
         });
+        it._delivId = dId; // pour pouvoir retirer cette livraison si on annule la préparation
       }
     } catch (e) { console.warn('rn->deliveries', e); }
     rnClose('rn-ov-liv'); rnFinish('livraison');
@@ -432,16 +504,19 @@
   };
 
   // ---------- finalisation + archivage ----------
-  function rnArchive(it, outcome, mode) {
+  function rnArchive(it, outcome, mode, undo) {
     const u = rnUser();
-    rnArch().unshift({ id: rnNewId(), nom: it.nom, prenom: it.prenom, dob: it.dob, lib: it.lib, remise: mode || it.remise, prepDate: rnIso(rnToday()), byName: (u.prenom + ' ' + u.nom).trim() || u.id, byCol: u.col, outcome });
+    rnArch().unshift({ id: rnNewId(), nom: it.nom, prenom: it.prenom, dob: it.dob, lib: it.lib, remise: mode || it.remise, prepDate: rnIso(rnToday()), byName: (u.prenom + ' ' + u.nom).trim() || u.id, byCol: u.col, outcome, undo: undo || null });
   }
   window.rnFinish = function (mode) {
     const it = rnList().find(x => x.id === rnCurId); if (!it) return;
+    // Instantané de l'ordonnance AVANT préparation, pour pouvoir revenir en arrière.
+    const src = Object.assign({}, it); delete src._close; delete src._newOrdo; delete src._delivId;
+    const undo = { src: src, prevDate: it.date, closed: !!it._close, delivId: it._delivId || null };
     let base;
     if (it._close) { window.renouvellements = rnList().filter(x => x.id !== rnCurId); base = 'clôturée — plus de renouvellement'; }
-    else { it.date = rnPendingNext; it.needsNewOrdo = !!it._newOrdo; base = (it._newOrdo ? 'dernier de l’ordonnance (nouvelle ordonnance à fournir) — ' : '') + 'prochain renouvellement le ' + rnFmtFr(rnPendingNext); }
-    rnArchive(it, (mode === 'livraison' ? 'Livraison — ' : 'Comptoir — ') + base, mode);
+    else { it.date = rnPendingNext; it.needsNewOrdo = !!it._newOrdo; base = (it._newOrdo ? 'dernier de l’ordonnance (nouvelle ordonnance à fournir) — ' : '') + 'prochain renouvellement le ' + rnFmtFr(rnPendingNext); delete it._delivId; }
+    rnArchive(it, (mode === 'livraison' ? 'Livraison — ' : 'Comptoir — ') + base, mode, undo);
     rnCurId = null; rnPendingNext = null; rnPersist(); rnRender();
   };
 
