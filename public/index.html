@@ -877,7 +877,7 @@ tr:hover td{background:#fafffe}
               <button class="btn bs sm" type="button" onclick="openBillCounter()" title="Compter billets et pièces"><svg class="ico"><use href="#ic-euro"></use></svg> Compter</button>
             </div>
           </div>
-          <div class="fg"><label>Écart du jour <span style="font-weight:400;font-size:.72rem;color:var(--gray-500)">(positif = espèces manquantes)</span></label><input type="text" id="ca-ecart" readonly style="background:var(--gray-100);font-weight:700"></div>
+          <div class="fg"><label>Écart du jour</label><input type="text" id="ca-ecart" readonly style="background:var(--gray-100);font-weight:700"></div>
           <div class="fg" style="grid-column:1/-1"><label>Commentaire</label><input type="text" id="ca-comment" placeholder="Motif éventuel de l'écart…"></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
@@ -5025,11 +5025,10 @@ function caisseNum(v){ const n=parseFloat(String(v==null?'':v).replace(',','.'))
 function euro(n){ return (Math.round(n*100)/100).toFixed(2).replace('.',',')+' €'; }
 function euroSigned(n){ const r=Math.round(n*100)/100; const sign=r>0?'+':(r<0?'−':''); return sign+Math.abs(r).toFixed(2).replace('.',',')+' €'; }
 function billKey(v){ return String(v).replace('.','_'); }
-// Écart du jour = espèces manquantes. Fond de caisse FIXE : prélever MOINS que ce que le
-// logiciel annonce ⇒ il manque des espèces ⇒ écart POSITIF = anomalie (rouge). Prélever
-// PLUS ⇒ surplus ⇒ écart négatif = OK (vert). Recalculé depuis logiciel/prélevé pour que
-// l'historique déjà saisi suive la même convention, quel que soit le signe stocké.
-function caisseEcart(r){ return caisseNum(r&&r.logiciel) - caisseNum(r&&r.preleve); }
+// Écart du jour = prélevé − logiciel. Fond de caisse FIXE : prélever MOINS que le logiciel
+// ⇒ écart NÉGATIF = il manque des espèces (rouge) ; prélever plus ⇒ écart positif = surplus (OK, vert).
+// Recalculé depuis logiciel/prélevé pour que l'historique déjà saisi suive la même convention.
+function caisseEcart(r){ return caisseNum(r&&r.preleve) - caisseNum(r&&r.logiciel); }
 
 function caisseTimeline(){
   const ORD={releve:0,ajustement:1,remise:2};
@@ -5044,7 +5043,7 @@ function caisseTimeline(){
     if(e.t==='releve'){
       cumEsp+=caisseNum(e.ref.preleve);
       cumEcart+=caisseEcart(e.ref);
-      if(cumEcart>seuil){ if(streak===0) streakStart=e.ref.date; streak++; }
+      if(cumEcart < -seuil){ if(streak===0) streakStart=e.ref.date; streak++; }
       else { streak=0; streakStart=null; }
       e.cumEsp=cumEsp; e.cumEcart=cumEcart; e.streak=streak; e.streakStart=streakStart; e.alert=streak>duree;
     } else if(e.t==='ajustement'){
@@ -5074,7 +5073,7 @@ function updEcartPreview(){
   const log=caisseNum(document.getElementById('ca-logiciel')?.value);
   const pre=caisseNum(document.getElementById('ca-preleve')?.value);
   const el=document.getElementById('ca-ecart');
-  if(el){ const ec=log-pre; el.value=euroSigned(ec); el.style.color = ec>0?'var(--red)':(ec<0?'var(--g-dark)':'var(--gray-700)'); }
+  if(el){ const ec=pre-log; el.value=euroSigned(ec); el.style.color = ec<0?'var(--red)':(ec>0?'var(--g-dark)':'var(--gray-700)'); }
 }
 
 function renderCaisse(){
@@ -5086,17 +5085,17 @@ function renderCaisse(){
   const st=caisseState();
   const statsEl=document.getElementById('caisse-stats');
   if(statsEl){
-    const ecartColor = st.cumEcart>st.seuil ? 'var(--red)' : 'var(--g-dark)';
+    const ecartColor = st.cumEcart < -st.seuil ? 'var(--red)' : 'var(--g-dark)';
     statsEl.innerHTML=`
       <div class="scard"><div class="slabel">Espèces en caisse</div><div class="sval" style="font-size:1.5rem;color:var(--g-dark)">${euro(st.cumEsp)}</div></div>
-      <div class="scard"><div class="slabel">Écart cumulé (manque si +)</div><div class="sval" style="font-size:1.5rem;color:${ecartColor}">${euroSigned(st.cumEcart)}</div></div>
+      <div class="scard"><div class="slabel">Écart cumulé</div><div class="sval" style="font-size:1.5rem;color:${ecartColor}">${euroSigned(st.cumEcart)}</div></div>
       <div class="scard"><div class="slabel">Jours au-dessus du seuil</div><div class="sval" style="color:${st.streak>st.duree?'var(--red)':'var(--gray-700)'}">${st.streak}</div></div>`;
   }
   const al=document.getElementById('caisse-alert');
   if(al){
     if(st.alert){
       al.style.display='block';
-      al.innerHTML=`<div style="background:var(--red-pale);border:1px solid #ffcdd2;border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.2rem;display:flex;gap:10px;align-items:flex-start">${ico('alerte')}<div><strong style="color:var(--red)">Alerte écart — espèces manquantes</strong><div style="font-size:.85rem;color:var(--gray-700);margin-top:2px">Il manque des espèces : l'écart cumulé (${euroSigned(st.cumEcart)}) dépasse le seuil de ${euro(st.seuil)} depuis ${st.streak} relevés consécutifs${st.streakStart?` (depuis le ${new Date(st.streakStart).toLocaleDateString('fr-FR')})`:''}. À contrôler, ou justifier via « Remettre l'écart à 0 ».</div></div></div>`;
+      al.innerHTML=`<div style="background:var(--red-pale);border:1px solid #ffcdd2;border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.2rem;display:flex;gap:10px;align-items:flex-start">${ico('alerte')}<div><strong style="color:var(--red)">Alerte écart</strong><div style="font-size:.85rem;color:var(--gray-700);margin-top:2px">L'écart cumulé (${euroSigned(st.cumEcart)}) dépasse le seuil de ${euro(st.seuil)} depuis ${st.streak} relevés consécutifs${st.streakStart?` (depuis le ${new Date(st.streakStart).toLocaleDateString('fr-FR')})`:''}. À contrôler, ou justifier via « Remettre l'écart à 0 ».</div></div></div>`;
     } else { al.style.display='none'; al.innerHTML=''; }
   }
   const ci=document.getElementById('caisse-cycle-info');
@@ -5138,15 +5137,15 @@ function saveReleve(){
   const comment=document.getElementById('ca-comment').value||'';
   if(caEditId){
     const r=(caisse.releves||[]).find(x=>x.id===caEditId);
-    if(r){ r.date=date; r.logiciel=log; r.preleve=pre; r.ecart=log-pre; r.commentaire=comment; r.operateur=currentUser?.id||r.operateur||'?'; r.updatedAt=Date.now(); }
+    if(r){ r.date=date; r.logiciel=log; r.preleve=pre; r.ecart=pre-log; r.commentaire=comment; r.operateur=currentUser?.id||r.operateur||'?'; r.updatedAt=Date.now(); }
     caEditId=null;
     document.getElementById('ca-save-lbl').textContent='Enregistrer le relevé';
     document.getElementById('ca-cancel-btn').style.display='none';
   } else {
     const existing=(caisse.releves||[]).find(r=>r.date===date);
     if(existing && !confirm('Un relevé existe déjà pour le '+new Date(date).toLocaleDateString('fr-FR')+'. Le remplacer ?')) return;
-    if(existing){ existing.logiciel=log; existing.preleve=pre; existing.ecart=log-pre; existing.commentaire=comment; existing.operateur=currentUser?.id||existing.operateur||'?'; existing.updatedAt=Date.now(); }
-    else caisse.releves.push({id:Date.now(),date,logiciel:log,preleve:pre,ecart:log-pre,commentaire:comment,operateur:currentUser?.id||'?',updatedAt:Date.now()});
+    if(existing){ existing.logiciel=log; existing.preleve=pre; existing.ecart=pre-log; existing.commentaire=comment; existing.operateur=currentUser?.id||existing.operateur||'?'; existing.updatedAt=Date.now(); }
+    else caisse.releves.push({id:Date.now(),date,logiciel:log,preleve:pre,ecart:pre-log,commentaire:comment,operateur:currentUser?.id||'?',updatedAt:Date.now()});
   }
   logEl.value=''; preEl.value=''; document.getElementById('ca-comment').value='';
   updEcartPreview(); schedSave(); renderCaisse();
@@ -5250,9 +5249,9 @@ function renderCaisseTable(){
       return `<tr style="background:#f3eefb"><td style="white-space:nowrap">${d}</td><td colspan="3" style="font-weight:600;color:#5E35B1">${ico('alerte')} Écart remis à 0${(typeof e.ecartAvant==='number')?` (était ${euroSigned(e.ecartAvant)})`:''}${e.ref.motif?` — ${e.ref.motif}`:''}</td><td style="text-align:right">${euro(e.cumEsp)}</td><td style="text-align:right">${euroSigned(0)}</td><td style="font-size:.78rem;color:var(--gray-500)">${staffName(e.ref.operateur)}</td><td class="no-print"><button class="btn bd btn-ico" onclick="deleteAdjust(${e.ref.id})" title="Supprimer">${ico('supprimer')}</button></td></tr>`;
     }
     tLog+=caisseNum(e.ref.logiciel); tPre+=caisseNum(e.ref.preleve); tEc+=caisseEcart(e.ref);
-    const ecCss = e.cumEcart>seuil?'color:var(--red);font-weight:700':'';
+    const ecCss = e.cumEcart < -seuil?'color:var(--red);font-weight:700':'';
     const ecJour=caisseEcart(e.ref);
-    const ecJourCss = ecJour>0?'color:var(--red)':(ecJour<0?'color:var(--g-dark)':'');
+    const ecJourCss = ecJour<0?'color:var(--red)':(ecJour>0?'color:var(--g-dark)':'');
     return `<tr${e.alert?' style="background:var(--amber-pale)"':''}>
       <td style="white-space:nowrap">${d}</td>
       <td style="text-align:right">${euro(e.ref.logiciel)}</td>
@@ -5268,7 +5267,7 @@ function renderCaisseTable(){
     </tr>`;
   }).join('');
   el.innerHTML=`<table>
-    <thead><tr><th>Date</th><th style="text-align:right">Logiciel</th><th style="text-align:right">Prélevé</th><th style="text-align:right">Écart jour<br><span style="font-weight:400;font-size:.68rem;color:var(--gray-500)">manque si +</span></th><th style="text-align:right">Cumul esp.</th><th style="text-align:right">Écart cum.</th><th>Détail</th><th class="no-print">Actions</th></tr></thead>
+    <thead><tr><th>Date</th><th style="text-align:right">Logiciel</th><th style="text-align:right">Prélevé</th><th style="text-align:right">Écart jour</th><th style="text-align:right">Cumul esp.</th><th style="text-align:right">Écart cum.</th><th>Détail</th><th class="no-print">Actions</th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr style="font-weight:700;border-top:2px solid var(--gray-200)"><td>Total du mois</td><td style="text-align:right">${euro(tLog)}</td><td style="text-align:right">${euro(tPre)}</td><td style="text-align:right">${euroSigned(tEc)}</td><td colspan="4"></td></tr></tfoot>
   </table>`;
@@ -5291,7 +5290,7 @@ function printCaisseMonth(){
       return `<tr style="background:#f3eefb"><td>${d}</td><td colspan="3" style="font-weight:bold">Écart remis à 0${(typeof e.ecartAvant==='number')?` (était ${euroSigned(e.ecartAvant)})`:''}${e.ref.motif?` — ${e.ref.motif}`:''}</td><td style="text-align:right">${euro(e.cumEsp)}</td><td style="text-align:right">${euroSigned(0)}</td></tr>`;
     }
     tLog+=caisseNum(e.ref.logiciel); tPre+=caisseNum(e.ref.preleve); tEc+=caisseEcart(e.ref);
-    const ecCss = e.cumEcart>seuil?';color:#c62828;font-weight:bold':'';
+    const ecCss = e.cumEcart < -seuil?';color:#c62828;font-weight:bold':'';
     return `<tr><td>${d}</td><td style="text-align:right">${euro(e.ref.logiciel)}</td><td style="text-align:right">${euro(e.ref.preleve)}</td><td style="text-align:right">${euroSigned(caisseEcart(e.ref))}</td><td style="text-align:right">${euro(e.cumEsp)}</td><td style="text-align:right${ecCss}">${euroSigned(e.cumEcart)}</td></tr>`;
   }).join('');
   const html=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Caisse — ${monthLbl}</title>
@@ -5299,11 +5298,11 @@ function printCaisseMonth(){
 <body>
 <h1>PHARMACIE DU CENTRE — MONDEVILLE</h1>
 <div class="sub">Suivi de caisse — ${monthLbl}</div>
-<table><thead><tr><th>Date</th><th>Logiciel</th><th>Prélevé</th><th>Écart jour (manque si +)</th><th>Cumul esp.</th><th>Écart cum.</th></tr></thead>
+<table><thead><tr><th>Date</th><th>Logiciel</th><th>Prélevé</th><th>Écart jour</th><th>Cumul esp.</th><th>Écart cum.</th></tr></thead>
 <tbody>${rows||'<tr><td colspan="6" style="text-align:center">Aucun relevé</td></tr>'}</tbody>
 <tfoot><tr><td style="text-align:left">Total</td><td style="text-align:right">${euro(tLog)}</td><td style="text-align:right">${euro(tPre)}</td><td style="text-align:right">${euroSigned(tEc)}</td><td colspan="2"></td></tr></tfoot>
 </table>
-<p style="margin-top:14px;font-size:10px;color:#777">Édité le ${new Date().toLocaleDateString('fr-FR')} · Écart = logiciel − prélevé (positif = espèces manquantes). Alerte si l'écart cumulé (manque) dépasse ${euro(seuil)} pendant plus de ${caisse.dureeAlerteJours||3} jours.</p>
+<p style="margin-top:14px;font-size:10px;color:#777">Édité le ${new Date().toLocaleDateString('fr-FR')} · Alerte si l'écart cumulé dépasse ${euro(seuil)} pendant plus de ${caisse.dureeAlerteJours||3} jours.</p>
 </body></html>`;
   const w=window.open('','_blank'); if(!w){alert('Autorisez les fenêtres pop-up pour imprimer.');return;}
   w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
