@@ -1853,18 +1853,25 @@ let _savePending=false;  // true tant qu'une modif locale n'est pas persistée :
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins'];
 function _collRef(n){ switch(n){
   case 'deliveries':return deliveries; case 'staffDB':return staffDB; case 'threads':return threads;
   case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
   case 'credits':return credits; case 'controles':return controles; case 'retours':return retours;
-  case 'renouvellements':return renouvellements; case 'renouvArchives':return renouvArchives; } return null; }
+  case 'renouvellements':return renouvellements; case 'renouvArchives':return renouvArchives;
+  case 'patients':return patients; case 'medecins':return medecins; } return null; }
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
+// patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle
+// (patient = nom|prénom, médecin = nom), identique sur tous les postes. Sans écraser un id déjà présent.
+function ensureNatIds(){
+  if(Array.isArray(patients)) patients.forEach(p=>{ if(p&&p.id==null) p.id='pt:'+(p.nom||'')+'|'+(p.prenom||''); });
+  if(Array.isArray(medecins)) medecins.forEach(m=>{ if(m&&m.id==null) m.id='md:'+(m.nom||''); });
+}
 // Photographie des ids présents (appelée après chaque lecture serveur) — sert de référence pour détecter les suppressions.
-function snapIds(){ SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); }
+function snapIds(){ ensureNatIds(); SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); }
 // Détection centrale des suppressions : tout id présent à la dernière lecture et absent maintenant = tombstone.
-function diffTombstones(){ const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); }
+function diffTombstones(){ ensureNatIds(); const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); }
 function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
 async function saveAll(){
   try{
@@ -3360,7 +3367,7 @@ function upsertPatient(p){
     if(p.tel)ex.tel=p.tel;
     if(p.mail)ex.mail=p.mail;
   } else {
-    patients.push({nom:p.nom,prenom:p.prenom,dob:p.dob||'',adresse:p.adresse||'',commune:p.commune||'',tel:p.tel||'',mail:p.mail||''});
+    patients.push({id:'pt:'+(p.nom||'')+'|'+(p.prenom||''),nom:p.nom,prenom:p.prenom,dob:p.dob||'',adresse:p.adresse||'',commune:p.commune||'',tel:p.tel||'',mail:p.mail||''});
   }
 }
 
@@ -3373,7 +3380,7 @@ function upsertMedecin(m){
     if(m.tel)ex.tel=m.tel;
     if(m.adresse)ex.adresse=m.adresse;
   } else {
-    medecins.push({nom:m.nom,prenom:m.prenom||'',spec:m.spec||'',cabinet:m.cabinet||'',tel:m.tel||'',adresse:m.adresse||''});
+    medecins.push({id:'md:'+(m.nom||''),nom:m.nom,prenom:m.prenom||'',spec:m.spec||'',cabinet:m.cabinet||'',tel:m.tel||'',adresse:m.adresse||''});
   }
 }
 

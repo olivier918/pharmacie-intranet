@@ -327,8 +327,22 @@ function applyTombstones(arr, tombs, coll) {
 }
 
 // Collections synchronisées « à id » : réconciliation par enregistrement + tombstones.
-// (patients/medecins exclus : pas d'id stable — traités séparément par clé naturelle.)
-const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives'];
+const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives', 'patients', 'medecins'];
+
+// patients/medecins n'ont pas d'id stocké : on leur en assigne un DÉTERMINISTE par clé naturelle
+// (patient = nom|prénom, médecin = nom), identique sur tous les postes. Idempotent, et sans écraser
+// un id déjà présent (un patient renommé garde son id d'origine).
+function ensureNatIds(coll, arr) {
+  if (!Array.isArray(arr)) return arr;
+  arr.forEach(r => {
+    if (r && r.id == null) {
+      r.id = (coll === 'patients')
+        ? ('pt:' + (r.nom || '') + '|' + (r.prenom || ''))
+        : ('md:' + (r.nom || ''));
+    }
+  });
+  return arr;
+}
 
 function mergeState(existing, incoming) {
   const merged = Object.assign({}, existing, incoming);
@@ -343,6 +357,7 @@ function mergeState(existing, incoming) {
         ? mergeStaff(existing.staffDB, incoming.staffDB)
         : (incoming.staffDB || existing.staffDB);
     } else {
+      if (n === 'patients' || n === 'medecins') { ensureNatIds(n, existing[n]); ensureNatIds(n, incoming[n]); }
       arr = mergeById(existing[n], incoming[n]);
     }
     merged[n] = applyTombstones(arr, merged.tombstones, n);

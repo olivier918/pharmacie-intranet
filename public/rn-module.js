@@ -323,7 +323,7 @@
   window.rnDelete = function (id) {
     const it = rnList().find(x => x.id === id); if (!it) return;
     if (!confirm('Supprimer définitivement le renouvellement programmé de ' + it.nom + ' ' + it.prenom + ' ?')) return;
-    window.renouvellements = rnList().filter(x => x.id !== id);
+    { const _l = rnList(), _i = _l.findIndex(x => x.id === id); if (_i >= 0) _l.splice(_i, 1); }
     rnToast('Renouvellement supprimé.'); rnPersist(); rnRender();
   };
   function rnRenderArch() {
@@ -357,15 +357,16 @@
     if (x.undo.delivId && typeof deliveries !== 'undefined' && Array.isArray(deliveries)) {
       const d = deliveries.find(dd => dd.id === x.undo.delivId);
       if (d && d.status === 'done') { note = ' (livraison déjà effectuée : conservée)'; }
-      else if (d) { if (typeof markDeleted === 'function') markDeleted('deliveries', x.undo.delivId); window.deliveries = deliveries.filter(dd => dd.id !== x.undo.delivId); note = ' (livraison retirée)'; try { if (typeof renderD === 'function') renderD(); } catch (e) {} }
+      else if (d) { if (typeof markDeleted === 'function') markDeleted('deliveries', x.undo.delivId); const _i = deliveries.findIndex(dd => dd.id === x.undo.delivId); if (_i >= 0) deliveries.splice(_i, 1); note = ' (livraison retirée)'; try { if (typeof renderD === 'function') renderD(); } catch (e) {} }
     }
     // 2. restaurer l'ordonnance active à sa date d'origine
     const src = Object.assign({}, x.undo.src); src.date = x.undo.prevDate || src.date; src.needsNewOrdo = false;
     const existing = rnList().find(it => it.id === src.id);
-    if (existing) { existing.date = src.date; existing.needsNewOrdo = false; }
-    else rnList().push(src);
-    // 3. retirer l'entrée d'archive
-    window.renouvArchives = rnArch().filter(a => a.id !== archId);
+    // updatedAt = maintenant : une réactivation (désarchivage) doit battre un éventuel ancien tombstone de clôture.
+    if (existing) { existing.date = src.date; existing.needsNewOrdo = false; existing.updatedAt = Date.now(); }
+    else { src.updatedAt = Date.now(); rnList().push(src); }
+    // 3. retirer l'entrée d'archive (mutation en place pour mettre à jour le binding lu par la sauvegarde/détection)
+    { const _a = rnArch(), _i = _a.findIndex(a => a.id === archId); if (_i >= 0) _a.splice(_i, 1); }
     rnPersist(); rnSetView('todo');
     rnToast('Repassée en « à préparer »' + note + '.');
   };
@@ -514,7 +515,7 @@
     const src = Object.assign({}, it); delete src._close; delete src._newOrdo; delete src._delivId;
     const undo = { src: src, prevDate: it.date, closed: !!it._close, delivId: it._delivId || null };
     let base;
-    if (it._close) { window.renouvellements = rnList().filter(x => x.id !== rnCurId); base = 'clôturée — plus de renouvellement'; }
+    if (it._close) { const _l = rnList(), _i = _l.findIndex(x => x.id === rnCurId); if (_i >= 0) _l.splice(_i, 1); base = 'clôturée — plus de renouvellement'; }
     else { it.date = rnPendingNext; it.needsNewOrdo = !!it._newOrdo; base = (it._newOrdo ? 'dernier de l’ordonnance (nouvelle ordonnance à fournir) — ' : '') + 'prochain renouvellement le ' + rnFmtFr(rnPendingNext); delete it._delivId; }
     rnArchive(it, (mode === 'livraison' ? 'Livraison — ' : 'Comptoir — ') + base, mode, undo);
     rnCurId = null; rnPendingNext = null; rnPersist(); rnRender();
@@ -535,7 +536,7 @@
   window.rnCancelOrdo = function () {
     const it = rnList().find(x => x.id === rnCurId);
     if (!confirm('Annuler (supprimer) l\'ordonnance de ' + it.nom + ' ' + it.prenom + ' ?')) return;
-    window.renouvellements = rnList().filter(x => x.id !== rnCurId);
+    { const _l = rnList(), _i = _l.findIndex(x => x.id === rnCurId); if (_i >= 0) _l.splice(_i, 1); }
     rnClose('rn-ov-report'); rnToast('Ordonnance annulée (supprimée).'); rnCurId = null; rnPersist(); rnRender();
   };
 
