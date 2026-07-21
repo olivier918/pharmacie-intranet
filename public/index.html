@@ -1854,6 +1854,10 @@ let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
 const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins'];
+// Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
+// Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
+// retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
+const CAISSE_SUBS=['releves','remises','ajustements','commandesMonnaie'];
 function _collRef(n){ switch(n){
   case 'deliveries':return deliveries; case 'staffDB':return staffDB; case 'threads':return threads;
   case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
@@ -1869,9 +1873,9 @@ function ensureNatIds(){
   if(Array.isArray(medecins)) medecins.forEach(m=>{ if(m&&m.id==null) m.id='md:'+(m.nom||''); });
 }
 // Photographie des ids présents (appelée après chaque lecture serveur) — sert de référence pour détecter les suppressions.
-function snapIds(){ ensureNatIds(); SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); }
+function snapIds(){ ensureNatIds(); SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); CAISSE_SUBS.forEach(s=>{ _idSnap['caisse.'+s]=_idsOf(caisse&&caisse[s]); }); }
 // Détection centrale des suppressions : tout id présent à la dernière lecture et absent maintenant = tombstone.
-function diffTombstones(){ ensureNatIds(); const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); }
+function diffTombstones(){ ensureNatIds(); const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); CAISSE_SUBS.forEach(s=>{ const prev=_idSnap['caisse.'+s]; if(!prev)return; const cur=_idsOf(caisse&&caisse[s]); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:'caisse.'+s,id:id,t:now}); }); }); }
 function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
 async function saveAll(){
   try{
@@ -5129,15 +5133,15 @@ function saveReleve(){
   const comment=document.getElementById('ca-comment').value||'';
   if(caEditId){
     const r=(caisse.releves||[]).find(x=>x.id===caEditId);
-    if(r){ r.date=date; r.logiciel=log; r.preleve=pre; r.ecart=pre-log; r.commentaire=comment; r.operateur=currentUser?.id||r.operateur||'?'; }
+    if(r){ r.date=date; r.logiciel=log; r.preleve=pre; r.ecart=pre-log; r.commentaire=comment; r.operateur=currentUser?.id||r.operateur||'?'; r.updatedAt=Date.now(); }
     caEditId=null;
     document.getElementById('ca-save-lbl').textContent='Enregistrer le relevé';
     document.getElementById('ca-cancel-btn').style.display='none';
   } else {
     const existing=(caisse.releves||[]).find(r=>r.date===date);
     if(existing && !confirm('Un relevé existe déjà pour le '+new Date(date).toLocaleDateString('fr-FR')+'. Le remplacer ?')) return;
-    if(existing){ existing.logiciel=log; existing.preleve=pre; existing.ecart=pre-log; existing.commentaire=comment; existing.operateur=currentUser?.id||existing.operateur||'?'; }
-    else caisse.releves.push({id:Date.now(),date,logiciel:log,preleve:pre,ecart:pre-log,commentaire:comment,operateur:currentUser?.id||'?'});
+    if(existing){ existing.logiciel=log; existing.preleve=pre; existing.ecart=pre-log; existing.commentaire=comment; existing.operateur=currentUser?.id||existing.operateur||'?'; existing.updatedAt=Date.now(); }
+    else caisse.releves.push({id:Date.now(),date,logiciel:log,preleve:pre,ecart:pre-log,commentaire:comment,operateur:currentUser?.id||'?',updatedAt:Date.now()});
   }
   logEl.value=''; preEl.value=''; document.getElementById('ca-comment').value='';
   updEcartPreview(); schedSave(); renderCaisse();
@@ -5204,7 +5208,7 @@ function openRemise(){
 function confirmRemise(){
   const date=document.getElementById('rb-date').value||todayStr();
   const montant=caisseNum(document.getElementById('rb-montant').value);
-  caisse.remises.push({id:Date.now(),date,montant,operateur:currentUser?.id||'?'});
+  caisse.remises.push({id:Date.now(),date,montant,operateur:currentUser?.id||'?',updatedAt:Date.now()});
   closeModal('remise-modal'); schedSave(); renderCaisse();
 }
 
@@ -5220,7 +5224,7 @@ function confirmAdjust(){
   const date=document.getElementById('adj-date').value||todayStr();
   const motif=document.getElementById('adj-motif').value||'';
   const st=caisseState();
-  caisse.ajustements.push({id:Date.now(),date,ecartAvant:st.cumEcart,motif,operateur:currentUser?.id||'?'});
+  caisse.ajustements.push({id:Date.now(),date,ecartAvant:st.cumEcart,motif,operateur:currentUser?.id||'?',updatedAt:Date.now()});
   closeModal('adjust-modal'); schedSave(); renderCaisse();
 }
 

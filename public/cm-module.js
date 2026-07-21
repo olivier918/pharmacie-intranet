@@ -276,7 +276,8 @@
         id: Date.now(), date: (typeof todayStr === 'function' ? todayStr() : new Date().toISOString().slice(0, 10)),
         operateur: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : '?',
         lignes: items.map(l => ({ k: l.k, lbl: l.lbl, cible: l.cible, etat: l.etat, cmd: l.cmd, val: l.val })),
-        total: m._ctx.total, banqueNom: banque.nom || '', banqueMail: banque.mail, mailSent: new Date().toISOString()
+        total: m._ctx.total, banqueNom: banque.nom || '', banqueMail: banque.mail, mailSent: new Date().toISOString(),
+        updatedAt: Date.now()
       });
       if (typeof schedSave === 'function') schedSave();
       cmCloseMail(); cmResetEtat(); cmRenderHist();

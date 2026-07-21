@@ -329,6 +329,28 @@ function applyTombstones(arr, tombs, coll) {
 // Collections synchronisées « à id » : réconciliation par enregistrement + tombstones.
 const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives', 'patients', 'medecins'];
 
+// ── caisse : conteneur (réglages + sous-listes à id) ──
+// La caisse n'est pas une collection plate : c'est un objet qui contient des
+// réglages scalaires (seuils), un fond de monnaie (monnaie.fond) ET plusieurs
+// journaux à id : relevés du soir, remises en banque, ajustements d'écart,
+// commandes de monnaie. Avant, la caisse entière était remplacée par le dernier
+// envoi (dernier-écrit-gagne) → un poste en retard écrasait les écritures d'un
+// autre (relevé qui « disparaît » d'un poste à l'autre). On fusionne désormais
+// FINEMENT chaque journal par id (union + updatedAt le plus récent), comme les
+// autres collections. Les réglages et monnaie.fond restent en dernier-écrit-gagne
+// (faible fréquence, valeur d'officine et non par-enregistrement).
+const CAISSE_SUBS = ['releves', 'remises', 'ajustements', 'commandesMonnaie'];
+function mergeCaisse(existing, incoming) {
+  if (!existing || typeof existing !== 'object') return incoming;
+  if (!incoming || typeof incoming !== 'object') return existing;
+  const out = Object.assign({}, existing, incoming); // réglages + monnaie.fond : dernier envoi
+  CAISSE_SUBS.forEach(sub => {
+    if (!Array.isArray(existing[sub]) && !Array.isArray(incoming[sub])) return;
+    out[sub] = mergeById(existing[sub], incoming[sub]);
+  });
+  return out;
+}
+
 // patients/medecins n'ont pas d'id stocké : on leur en assigne un DÉTERMINISTE par clé naturelle
 // (patient = nom|prénom, médecin = nom), identique sur tous les postes. Idempotent, et sans écraser
 // un id déjà présent (un patient renommé garde son id d'origine).
@@ -362,6 +384,16 @@ function mergeState(existing, incoming) {
     }
     merged[n] = applyTombstones(arr, merged.tombstones, n);
   });
+  // caisse : fusion fine des journaux + suppressions horodatées (clé 'caisse.<sub>')
+  if (existing.caisse || incoming.caisse) {
+    const c = mergeCaisse(existing.caisse, incoming.caisse);
+    if (c && typeof c === 'object') {
+      CAISSE_SUBS.forEach(sub => {
+        if (Array.isArray(c[sub])) c[sub] = applyTombstones(c[sub], merged.tombstones, 'caisse.' + sub);
+      });
+    }
+    merged.caisse = c;
+  }
   return merged;
 }
 
@@ -501,4 +533,8 @@ async function start() {
   });
 }
 
-start();
+// Démarrage uniquement en exécution directe (`node server.js`). En require (tests),
+// on n'ouvre ni port ni connexion : on expose les fonctions de fusion pour les vérifier.
+if (require.main === module) start();
+
+module.exports = { mergeState, mergeCaisse, mergeById, mergeTombstones, applyTombstones, mergeStaff, ensureNatIds };
