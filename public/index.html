@@ -2830,7 +2830,7 @@ function finishSendPrep(p,today,heure,operateur){
   if(p.med){const parts=p.med.replace(/^Dr\.?\s*/i,'').trim().split(' ');
     const mn=parts[parts.length-1].toUpperCase();const mp=parts.slice(0,-1).join(' ');
     if(mn) upsertMedecin({nom:mn,prenom:mp});}
-  preps.unshift(p);currentMailPrepId=p.id;
+  p.updatedAt=Date.now();preps.unshift(p);currentMailPrepId=p.id;
   st.textContent='📧 Ouverture de l\'envoi…';
   setTimeout(()=>{
     ['p-nom','p-prenom','p-dob','p-med','p-prep'].forEach(i=>document.getElementById(i).value='');
@@ -2898,6 +2898,7 @@ async function confirmSendMail(){
     if(d.ok){
       p.mailSent=new Date().toISOString(); p.mailSentBy=op;
       p.mailLog=p.mailLog||[]; p.mailLog.push({at:p.mailSent,by:op,to:labo.mail});
+      p.updatedAt=Date.now();
       schedSave(); renderPreps();
       document.getElementById('mail-confirm-text').textContent='Envoi confirmé ! Le bon de commande et l\'ordonnance ont été transmis à '+labo.nom+'.';
       document.getElementById('mail-confirm-bar').style.display='block';
@@ -3046,7 +3047,7 @@ function sendPrepMailForPrep(p){
   const heure=now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
   const op=currentUser?`${currentUser.prenom} ${currentUser.nom}`:'Opérateur';
   if(!p.bonPdfHtml){p.bonPdfHtml=buildPrepPdfHtml(p,today,heure,op);
-    p.pdfVersions=p.pdfVersions||[];p.pdfVersions.push({html:p.bonPdfHtml,date:today,heure,operateur:op,version:(p.pdfVersions.length||0)+1});}
+    p.pdfVersions=p.pdfVersions||[];p.pdfVersions.push({html:p.bonPdfHtml,date:today,heure,operateur:op,version:(p.pdfVersions.length||0)+1});p.updatedAt=Date.now();}
   currentMailPrepId=p.id;
   const body=buildPrepMailBody(p.nom,p.prenom,p.dob,p.med,p.type,p.prep,p.scan,today);
   document.getElementById('mail-modal-title').textContent=p.type==='devis'?'💰 Demande de devis — Envoi':'🔬 Commande — Envoi';
@@ -3157,7 +3158,7 @@ function askPrepStep(id, targetStep){
   document.getElementById('conf-title').textContent='Changer le statut';
   document.getElementById('conf-msg').textContent=`Passer "${p.nom} ${p.prenom}" en : ${ns} ?`;
   pendingAction=()=>{
-    p.status=ns;
+    p.status=ns;p.updatedAt=Date.now();
     if(ns==='délivrée') p.delivAt=new Date().toLocaleDateString('fr-FR');
     closeModal('confirm-modal');renderPreps();
   };
@@ -3168,13 +3169,13 @@ function askPrepStep(id, targetStep){
 function abandonPrep(id){
   const p=preps.find(x=>x.id===id);if(!p)return;
   if(confirm('Abandonner la préparation pour '+p.nom+' '+p.prenom+' ?')){
-    p.status='abandonnée';renderPreps();
+    p.status='abandonnée';p.updatedAt=Date.now();renderPreps();
   }
 }
 
 function updPrep(id,s){
   const p=preps.find(x=>x.id===id);if(!p)return;
-  p.status=s;
+  p.status=s;p.updatedAt=Date.now();
   if(s==='délivrée') p.delivAt=new Date().toLocaleDateString('fr-FR');
   if(PREP_ARCHIVED.includes(s)&&!showPrepArchives){setTimeout(()=>renderPreps(),800);}else{renderPreps();}
 }
@@ -3184,7 +3185,7 @@ function convertDevisToRealisation(id){
   document.getElementById('conf-title').textContent='Devis accepté — Convertir en Réalisation';
   document.getElementById('conf-msg').textContent=`Passer ${p.nom} ${p.prenom} en RÉALISATION et envoyer au préparatoire ?`;
   pendingAction=()=>{
-    p.type='realisation';p.status='en préparation';
+    p.type='realisation';p.status='en préparation';p.updatedAt=Date.now();
     closeModal('confirm-modal');renderPreps();
     sendPrepMailForPrep(p);
   };
