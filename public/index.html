@@ -4623,9 +4623,9 @@ function saveCred(){
   };
   upsertPatient({nom,prenom,tel:obj.tel,mail:obj.mail,adresse:obj.adresse,commune:obj.commune});
   if(credEditId){
-    const c=credits.find(x=>x.id===credEditId); if(c) Object.assign(c,obj);
+    const c=credits.find(x=>x.id===credEditId); if(c){ Object.assign(c,obj); c.updatedAt=Date.now(); }
   } else {
-    credits.unshift({id:Date.now(),...obj,status:'en cours',relances:[],createdBy:currentUser?.id||'?',createdAt:new Date().toISOString().split('T')[0]});
+    credits.unshift({id:Date.now(),...obj,status:'en cours',relances:[],createdBy:currentUser?.id||'?',createdAt:new Date().toISOString().split('T')[0],updatedAt:Date.now()});
   }
   toggleCredForm();
   renderCreds();
@@ -4665,6 +4665,7 @@ function saveCredRelance(){
     notes:document.getElementById('crel-notes').value.trim(),
     by:currentUser?.id||'?'
   });
+  c.updatedAt=Date.now();
   closeModal('cred-rel-modal');
   renderCreds();
 }
@@ -4687,6 +4688,7 @@ function saveCredSolder(){
   c.paidAt=date;
   c.paidBy=currentUser?.id||'?';
   c.paidNotes=document.getElementById('cpay-notes').value.trim();
+  c.updatedAt=Date.now();
   closeModal('cred-pay-modal');
   closeModal('cred-detail-modal');
   renderCreds();
@@ -4696,7 +4698,7 @@ function markCredIrrecouvrable(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   document.getElementById('conf-title').textContent='Crédit irrécouvrable';
   document.getElementById('conf-msg').textContent=`Marquer le crédit de ${c.nom} ${c.prenom} comme irrécouvrable ? Cette action peut être annulée depuis le détail.`;
-  pendingAction=()=>{c.status='perdu'; renderCreds(); closeModal('confirm-modal'); closeModal('cred-detail-modal');};
+  pendingAction=()=>{c.status='perdu'; c.updatedAt=Date.now(); renderCreds(); closeModal('confirm-modal'); closeModal('cred-detail-modal');};
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
 }
@@ -4704,6 +4706,7 @@ function reopenCred(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   c.status='en cours';
   delete c.paidAt; delete c.paidBy; delete c.paidMode; delete c.paidNotes;
+  c.updatedAt=Date.now();
   renderCreds();
   closeModal('cred-detail-modal');
 }
@@ -4892,6 +4895,7 @@ function confirmCredMsg(){
     notes:`Relance ${CRED_NIVEAU_LBL[niv]} — ${channel} envoyé(e)`,
     by:currentUser?.id||'?'
   });
+  c.updatedAt=Date.now();
   document.getElementById('cmsg-confirm').style.display='block';
   document.getElementById('cmsg-confirm-btn').style.display='none';
   renderCreds();
@@ -6183,7 +6187,7 @@ function buildBonPdfHtml(rec){
 
 // ═══════════ AUTO-SAVE HOOKS ═══════════
 // Wrap all render functions so every data change triggers a server save
-['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins','renderControles','renderForms'].forEach(fn=>{
+['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins','renderControles','renderForms','renderCreds','renderRetours'].forEach(fn=>{
   const orig=window[fn];
   if(orig) window[fn]=function(){orig.apply(this,arguments);schedSave();};
 });

@@ -393,8 +393,9 @@
       lib: g('rn-lib').value.trim(), date: g('rn-date').value, cycle: parseInt(g('rn-cycle').value || '28', 10),
       presc: g('rn-presc').value.trim(), remise: g('rn-remise').value, notes: g('rn-notes').value.trim(), dernier: g('rn-flast').checked
     };
-    if (rnEditId) { Object.assign(rnList().find(x => x.id === rnEditId), obj); rnToast('Ordonnance modifiée.'); }
-    else { obj.id = rnNewId(); rnList().push(obj); rnToast('Ordonnance ajoutée.'); }
+    // updatedAt : indispensable pour que la fusion serveur (mergeById) sache quelle version est la plus récente.
+    if (rnEditId) { const _it = rnList().find(x => x.id === rnEditId); if (_it) { Object.assign(_it, obj); _it.updatedAt = Date.now(); } rnToast('Ordonnance modifiée.'); }
+    else { obj.id = rnNewId(); obj.updatedAt = Date.now(); rnList().push(obj); rnToast('Ordonnance ajoutée.'); }
     // enregistrement dans l'annuaire patients central
     try { if (typeof upsertPatient === 'function') upsertPatient({ nom: obj.nom, prenom: obj.prenom, dob: obj.dob, adresse: obj.adresse, tel: obj.tel, mail: obj.mail }); } catch (e) {}
     rnClose('rn-ov-form'); rnPersist(); rnRender();
@@ -453,7 +454,7 @@
   window.rnUseNewMail = function () {
     const it = rnList().find(x => x.id === rnCurId); const m = document.getElementById('rn-mail-new').value.trim();
     if (!m) { rnToast('Saisir un email ou choisir « Pas de mail ».'); return; }
-    it.mail = m;
+    it.mail = m; it.updatedAt = Date.now();
     try { if (typeof upsertPatient === 'function') upsertPatient({ nom: it.nom, prenom: it.prenom, dob: it.dob, mail: m }); } catch (e) {}
     rnOpenMail(it);
   };
@@ -507,7 +508,7 @@
   // ---------- finalisation + archivage ----------
   function rnArchive(it, outcome, mode, undo) {
     const u = rnUser();
-    rnArch().unshift({ id: rnNewId(), nom: it.nom, prenom: it.prenom, dob: it.dob, lib: it.lib, remise: mode || it.remise, prepDate: rnIso(rnToday()), byName: (u.prenom + ' ' + u.nom).trim() || u.id, byCol: u.col, outcome, undo: undo || null });
+    rnArch().unshift({ id: rnNewId(), nom: it.nom, prenom: it.prenom, dob: it.dob, lib: it.lib, remise: mode || it.remise, prepDate: rnIso(rnToday()), byName: (u.prenom + ' ' + u.nom).trim() || u.id, byCol: u.col, outcome, undo: undo || null, updatedAt: Date.now() });
   }
   window.rnFinish = function (mode) {
     const it = rnList().find(x => x.id === rnCurId); if (!it) return;
@@ -516,7 +517,7 @@
     const undo = { src: src, prevDate: it.date, closed: !!it._close, delivId: it._delivId || null };
     let base;
     if (it._close) { const _l = rnList(), _i = _l.findIndex(x => x.id === rnCurId); if (_i >= 0) _l.splice(_i, 1); base = 'clôturée — plus de renouvellement'; }
-    else { it.date = rnPendingNext; it.needsNewOrdo = !!it._newOrdo; base = (it._newOrdo ? 'dernier de l’ordonnance (nouvelle ordonnance à fournir) — ' : '') + 'prochain renouvellement le ' + rnFmtFr(rnPendingNext); delete it._delivId; }
+    else { it.date = rnPendingNext; it.needsNewOrdo = !!it._newOrdo; it.updatedAt = Date.now(); base = (it._newOrdo ? 'dernier de l’ordonnance (nouvelle ordonnance à fournir) — ' : '') + 'prochain renouvellement le ' + rnFmtFr(rnPendingNext); delete it._delivId; }
     rnArchive(it, (mode === 'livraison' ? 'Livraison — ' : 'Comptoir — ') + base, mode, undo);
     rnCurId = null; rnPendingNext = null; rnPersist(); rnRender();
   };
@@ -531,7 +532,7 @@
   window.rnConfirmReport = function () {
     const it = rnList().find(x => x.id === rnCurId); const d = document.getElementById('rn-rep-date').value;
     if (!d) { rnToast('Choisir une date.'); return; }
-    it.date = d; rnClose('rn-ov-report'); rnToast('Reporté au ' + rnFmtFr(d) + '.'); rnCurId = null; rnPersist(); rnRender();
+    it.date = d; it.updatedAt = Date.now(); rnClose('rn-ov-report'); rnToast('Reporté au ' + rnFmtFr(d) + '.'); rnCurId = null; rnPersist(); rnRender();
   };
   window.rnCancelOrdo = function () {
     const it = rnList().find(x => x.id === rnCurId);
