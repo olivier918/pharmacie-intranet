@@ -170,6 +170,8 @@ main{grid-area:main;padding:1.2rem;min-width:0}
 .dc-lieu{font-size:.75rem;color:var(--gray-500);white-space:nowrap}
 .dc-row2{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
 .dc-notes-inline{font-size:.76rem;color:var(--gray-700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
+.dc-prep-inline{font-size:.76rem;color:#8A6D00;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
+.fg label .hint{font-weight:500;color:var(--gray-400);text-transform:none;letter-spacing:0}
 .dc-track{font-size:.68rem;color:var(--gray-400)}
 .dc-right{display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:nowrap;justify-content:flex-end}
 @media(max-width:920px){
@@ -550,7 +552,8 @@ tr:hover td{background:#fafffe}
             <label class="cbl"><input type="checkbox" id="d-ordo"> <svg class="ico"><use href="#ic-ordonnance"></use></svg> Ordonnance à récupérer</label>
           </div>
         </div>
-        <div class="fg" style="margin-top:.9rem"><label>Informations / Produits</label><textarea id="d-notes" placeholder="Produits à livrer, informations…"></textarea></div>
+        <div class="fg" style="margin-top:.9rem"><label>Informations préparation <span class="hint">— interne, non imprimé sur le ticket</span></label><textarea id="d-prepnotes" placeholder="Produits à préparer, stock, commande en cours, à vérifier…"></textarea></div>
+        <div class="fg" style="margin-top:.9rem"><label>Informations de livraison <span class="hint">— imprimé sur le ticket remis au patient</span></label><textarea id="d-notes" placeholder="Produits livrés, message ou consigne pour le patient…"></textarea></div>
         <div style="display:flex;gap:8px;margin-top:1rem">
           <button class="btn bp" onclick="saveD()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
           <button class="btn bs" onclick="closeDForm()">Annuler</button>
@@ -2495,6 +2498,7 @@ function dCard(d){
         <span class="dc-lieu">${ico('lieu')} ${d.lieu}${d.adresse?' · '+d.adresse:''}</span>
         ${icons}
       </div>
+      ${d.prepNotes?`<div class="dc-row2"><span class="dc-prep-inline">${ico('realisation')} ${d.prepNotes}</span></div>`:''}
       ${d.notes?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${d.notes}</span></div>`:''}
       <div class="dc-row2 no-print" style="margin-top:1px">
         <span class="dc-track">Préparé : ${prep} · Livré : ${livr}</span>
@@ -2666,7 +2670,8 @@ function openDForm(id){
     document.getElementById('d-frigo').checked=d.frigo;
     document.getElementById('d-promis').checked=d.promis;
     document.getElementById('d-ordo').checked=d.ordo;
-    document.getElementById('d-notes').value=d.notes;
+    document.getElementById('d-notes').value=d.notes||'';
+    document.getElementById('d-prepnotes').value=d.prepNotes||'';
     form.dataset.editId=id;
   } else {
     document.getElementById('dform-title').textContent='Nouvelle livraison';
@@ -2681,6 +2686,7 @@ function openDForm(id){
     document.getElementById('d-promis').checked=false;
     document.getElementById('d-ordo').checked=false;
     document.getElementById('d-notes').value='';
+    document.getElementById('d-prepnotes').value='';
     delete form.dataset.editId;
   }
   form.style.display='block';
@@ -2704,6 +2710,7 @@ function saveD(){
     promis:document.getElementById('d-promis').checked,
     ordo:document.getElementById('d-ordo').checked,
     notes:document.getElementById('d-notes').value.trim(),
+    prepNotes:document.getElementById('d-prepnotes').value.trim(),
     cold:document.getElementById('d-frigo').checked,
   };
   if(editId){
@@ -2762,7 +2769,7 @@ function ticketHTML(d,today){
     ${d.ordo?'<div style="margin-top:5px;font-weight:700">⚠️ Ordonnance à récupérer</div>':''}
     ${d.frigo?'<div style="margin-top:5px;font-weight:700;color:#1565C0">❄️ PRODUIT FRIGO — Conserver au réfrigérateur</div>':''}
     ${d.notes?`<div class="ticket-sep"></div>
-    <div style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.4px">Informations / Produits</div>
+    <div style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.4px">Informations de livraison</div>
     <div style="white-space:pre-wrap;font-weight:600">${d.notes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`:''}
     <div class="ticket-sep"></div>
     <div style="text-align:center;font-size:.73rem;color:#777">Merci de votre confiance<br>contact@pharmacie-mondeville.fr</div>`;
