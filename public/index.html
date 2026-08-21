@@ -1031,6 +1031,14 @@ tr:hover td{background:#fafffe}
           <button class="btn bp sm" onclick="window.open('/compression.html','_blank','noopener')" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-modifier"></use></svg> Remplir en ligne</button>
           <a class="btn bs sm" href="/documents/releve-compression-medicale.pdf" target="_blank" rel="noopener" style="text-decoration:none"><svg class="ico"><use href="#ic-imprimer"></use></svg> Vierge (PDF)</a>
         </div>
+        <div class="frm-choice" style="margin-top:10px">
+          <div class="ic"><svg class="ico" style="color:var(--g-dark);width:22px;height:22px"><use href="#ic-valider"></use></svg></div>
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;color:var(--gray-900)">Questionnaire d'observance — Girerd</div>
+            <div style="font-size:.78rem;color:var(--gray-500)">6 questions · score /6 · fiche conseils personnalisée à remettre au patient</div>
+          </div>
+          <button class="btn bp sm" onclick="openGirerdForm()" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-modifier"></use></svg> Remplir le questionnaire</button>
+        </div>
       </div>
       <div class="card" style="margin-bottom:1.1rem">
         <div class="ch"><span class="ct">Documents à imprimer</span></div>
@@ -1673,6 +1681,36 @@ tr:hover td{background:#fafffe}
       <button class="btn bs" onclick="closeModal('bon-form-modal')">Annuler</button>
       <button class="btn bp" onclick="validateBon()"><svg class="ico"><use href="#ic-valider"></use></svg> Générer le bon</button>
     </div>
+  </div>
+</div>
+
+<!-- Questionnaire d'observance de Girerd -->
+<div class="overlay" id="gir-form-modal">
+  <div class="mbox" style="max-width:720px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-valider"></use></svg> Questionnaire d'observance — Girerd</span>
+      <button class="btn bs sm" onclick="closeModal('gir-form-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.6rem" id="gir-meta"></div>
+    <div class="fgrid">
+      <div class="fg" style="position:relative"><label>Nom <span class="req">*</span></label>
+        <input type="text" id="gir-nom" placeholder="Rechercher ou saisir NOM…" autocomplete="off" oninput="girPatientSearch()" onblur="setTimeout(()=>{const e=document.getElementById('gir-psugg');if(e)e.style.display='none'},150)">
+        <div id="gir-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
+      </div>
+      <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="gir-prenom" placeholder="Prénom"></div>
+      <div class="fg"><label>Date de naissance</label><input type="date" id="gir-dob"></div>
+      <div class="fg"><label>Date de passation</label><input type="date" id="gir-date"></div>
+    </div>
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1.1rem 0 .2rem">Les 6 questions</div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.65rem">À poser au patient telles quelles. Chaque « oui » compte 1 point de non-observance.</div>
+    <div id="gir-questions"></div>
+    <div id="gir-score-box" style="border-radius:12px;padding:13px 16px;margin-top:.9rem;border:1px solid var(--gray-200);background:var(--gray-50,#fafafa)"></div>
+    <div id="gir-form-error" style="display:none;color:var(--red);font-size:.82rem;font-weight:600;margin-top:.8rem"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+      <button class="btn bs" onclick="closeModal('gir-form-modal')">Annuler</button>
+      <button class="btn bp" onclick="validateGirerd()"><svg class="ico"><use href="#ic-imprimer"></use></svg> Générer la fiche patient (PDF)</button>
+    </div>
+    <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Aucune réponse n'est conservée dans l'intranet : la fiche est générée à la demande, imprimée puis remise au patient.</div>
   </div>
 </div>
 
@@ -5833,6 +5871,320 @@ function deleteBon(id){
   document.getElementById('conf-msg').textContent='Supprimer définitivement le bon '+(b.num||'')+' — '+((b.benef&&b.benef.nom)||'')+' ? Cette action est irréversible.';
   document.getElementById('conf-ok').onclick=()=>{ bons=bons.filter(x=>x.id!==id); renderForms(); schedSave(); closeModal('confirm-modal'); };
   openModal('confirm-modal');
+}
+
+// ═══════════ FORMULAIRES — Questionnaire d'observance de Girerd ═══════════
+// Test d'évaluation de l'observance (X. Girerd) — 6 questions.
+// Chaque « oui » = 1 point de non-observance. 0 = bonne observance ;
+// 1 ou 2 = minime problème d'observance ; 3 et plus = mauvaise observance.
+// (Équivalent au score /6 utilisé dans les BPM, qui compte les « non ».)
+// Rien n'est archivé : la fiche est générée puis remise au patient.
+let girDraft=null;
+
+const GIRERD_Q=[
+  {k:'q1',t:'Ce matin, avez-vous oublié de prendre votre médicament ?'},
+  {k:'q2',t:'Depuis la dernière consultation, avez-vous été en panne de médicament ?'},
+  {k:'q3',t:'Vous est-il arrivé de prendre votre traitement avec retard par rapport à l’heure habituelle ?'},
+  {k:'q4',t:'Vous est-il arrivé de ne pas prendre votre traitement parce que, certains jours, votre mémoire vous fait défaut ?'},
+  {k:'q5',t:'Vous est-il arrivé de ne pas prendre votre traitement parce que, certains jours, vous avez l’impression que votre traitement vous fait plus de mal que de bien ?'},
+  {k:'q6',t:'Pensez-vous que vous avez trop de comprimés à prendre ?'}
+];
+
+// Conseils déclenchés par un « oui » à la question correspondante
+const GIRERD_ADVICE={
+  q1:{t:'Éviter l’oubli du matin',d:'Accrochez la prise à un geste que vous faites tous les jours sans y penser : le café du matin, le brossage des dents. Rangez la boîte à cet endroit précis, bien en vue. Un pilulier semainier permet ensuite de vérifier d’un coup d’œil si la prise du matin a bien été faite.'},
+  q2:{t:'Ne plus tomber en panne de médicament',d:'Ne repartez pas de la pharmacie avec le strict nécessaire : commandez votre renouvellement dès qu’il vous reste environ une semaine de traitement. Nous pouvons préparer vos médicaments à l’avance et vous prévenir dès qu’ils sont prêts — demandez-nous d’inscrire votre ordonnance au suivi des renouvellements.'},
+  q3:{t:'Prendre le traitement à heure régulière',d:'Un décalage d’une heure ou deux est rarement grave, mais certains traitements (cœur, tension, thyroïde, Parkinson, antibiotiques…) supportent mal les horaires irréguliers. Programmez une alarme sur votre téléphone à l’heure de chaque prise. En cas d’oubli, ne doublez jamais la dose suivante : demandez-nous la conduite à tenir.'},
+  q4:{t:'Quand la mémoire fait défaut',d:'Le pilulier semainier est la solution la plus efficace : préparé une fois par semaine, il montre immédiatement les prises faites et celles oubliées. Nous pouvons le préparer avec vous à la pharmacie. Un calendrier à cocher après chaque prise, ou l’aide d’un proche, complètent utilement le dispositif.'},
+  q5:{t:'Quand le traitement semble faire plus de mal que de bien',d:'N’arrêtez jamais un médicament de votre propre initiative : l’arrêt brutal est parfois plus risqué que l’effet qui vous gêne. Beaucoup d’effets indésirables s’atténuent en quelques semaines ; d’autres disparaissent en changeant l’heure de prise, la forme ou la dose. Notez ce qui vous gêne et quand cela survient, puis parlez-en à votre pharmacien ou à votre médecin : une solution existe presque toujours.'},
+  q6:{t:'Trop de comprimés à prendre',d:'Le nombre de comprimés peut souvent être réduit : deux principes actifs réunis dans un seul comprimé, formes à libération prolongée en une prise par jour, arrêt de médicaments devenus inutiles. Le bilan partagé de médication, entièrement pris en charge par l’Assurance Maladie, sert exactement à cela : demandez-en un à votre pharmacien.'}
+};
+const GIRERD_OK={t:'Continuez ainsi',d:'Aucune difficulté n’a été repérée aujourd’hui : votre traitement est pris régulièrement, tel qu’il vous a été prescrit. C’est le meilleur moyen d’en tirer tout le bénéfice. En cas de voyage, d’hospitalisation ou de changement d’ordonnance, n’hésitez pas à refaire le point avec nous.'};
+
+function girLevel(nOui){
+  if(nOui===0) return {lbl:'Bonne observance',rgb:[46,125,84],bg:[245,250,247],bd:[207,230,216],
+    msg:'Votre traitement est pris régulièrement, tel qu’il vous a été prescrit. Continuez ainsi.'};
+  if(nOui<=2) return {lbl:'Minime problème d’observance',rgb:[176,106,0],bg:[255,248,235],bd:[245,220,170],
+    msg:'Quelques écarts ont été repérés. Des ajustements simples suffisent le plus souvent à les corriger.'};
+  return {lbl:'Mauvaise observance',rgb:[193,42,42],bg:[253,242,242],bd:[246,205,205],
+    msg:'Plusieurs difficultés ont été repérées. Elles peuvent réduire l’efficacité de votre traitement : parlons-en ensemble.'};
+}
+function girRgbCss(a){ return 'rgb('+a[0]+','+a[1]+','+a[2]+')'; }
+
+function girerdNextNum(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return 'OBS-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes());
+}
+
+function girRenderQuestions(){
+  const host=document.getElementById('gir-questions'); if(!host)return;
+  host.innerHTML=GIRERD_Q.map((q,i)=>
+    '<div style="display:flex;align-items:flex-start;gap:11px;border:1px solid var(--gray-200);border-radius:11px;padding:11px 13px;margin-bottom:8px;background:#fff;flex-wrap:wrap">'
+    +'<div style="width:23px;height:23px;border-radius:8px;background:var(--g-pale);border:1px solid var(--g-border);color:var(--g-dark);font-weight:800;font-size:.76rem;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px">'+(i+1)+'</div>'
+    +'<div style="flex:1;min-width:170px;font-size:.86rem;color:var(--gray-900);line-height:1.45">'+ctlEsc(q.t)+'</div>'
+    +'<div style="display:flex;gap:12px;flex:none;align-items:center">'
+    +'<label class="cbl" style="margin:0"><input type="radio" name="gir-'+q.k+'" value="oui" onchange="girUpdateScore()"> Oui</label>'
+    +'<label class="cbl" style="margin:0"><input type="radio" name="gir-'+q.k+'" value="non" onchange="girUpdateScore()"> Non</label>'
+    +'</div></div>').join('');
+}
+
+function girAnswers(){
+  return GIRERD_Q.map(q=>{ const el=document.querySelector('input[name="gir-'+q.k+'"]:checked'); return el?el.value:null; });
+}
+
+function girUpdateScore(){
+  const box=document.getElementById('gir-score-box'); if(!box)return;
+  const ans=girAnswers();
+  const done=ans.filter(a=>a!==null).length;
+  if(done<GIRERD_Q.length){
+    box.style.background='#fafafa'; box.style.borderColor='var(--gray-200)';
+    box.innerHTML='<div style="font-size:.85rem;color:var(--gray-500)">'+done+' / '+GIRERD_Q.length+' question(s) renseignée(s) — le score s’affichera une fois les 6 réponses saisies.</div>';
+    return;
+  }
+  const nOui=ans.filter(a=>a==='oui').length, L=girLevel(nOui);
+  box.style.background=girRgbCss(L.bg); box.style.borderColor=girRgbCss(L.bd);
+  box.innerHTML='<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+    +'<div style="font-size:1.6rem;font-weight:800;color:'+girRgbCss(L.rgb)+';line-height:1">'+nOui+'<span style="font-size:.9rem;font-weight:700"> / 6</span></div>'
+    +'<div style="flex:1;min-width:180px">'
+    +'<div style="font-weight:800;color:'+girRgbCss(L.rgb)+';font-size:.95rem">'+ctlEsc(L.lbl)+'</div>'
+    +'<div style="font-size:.78rem;color:var(--gray-500);margin-top:2px">'+nOui+' réponse'+(nOui>1?'s':'')+' « oui » · score d’observance '+(6-nOui)+'/6</div>'
+    +'</div></div>';
+}
+
+function openGirerdForm(){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  girDraft={patientRef:null};
+  ['gir-nom','gir-prenom'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  document.getElementById('gir-dob').value='';
+  document.getElementById('gir-date').value=todayStr();
+  document.getElementById('gir-form-error').style.display='none';
+  const sug=document.getElementById('gir-psugg'); if(sug)sug.style.display='none';
+  const now=new Date();
+  document.getElementById('gir-meta').textContent='N° '+girerdNextNum()+' · '+now.toLocaleDateString('fr-FR')+' · Opérateur : '+currentUser.prenom+' '+currentUser.nom;
+  girRenderQuestions();
+  girUpdateScore();
+  openModal('gir-form-modal');
+  const box=document.querySelector('#gir-form-modal .mbox'); if(box)box.scrollTop=0;
+}
+
+function girPatientSearch(){
+  const q=(document.getElementById('gir-nom').value||'').toLowerCase().trim();
+  const el=document.getElementById('gir-psugg');
+  if(girDraft)girDraft.patientRef=null;
+  if(q.length<2){el.style.display='none';return;}
+  const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
+  if(!m.length){el.style.display='none';return;}
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  el.style.display='block';
+  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="girFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.dob||'')+'\')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
+    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?ctlEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
+}
+function girFillPatient(nom,prenom,dob){
+  document.getElementById('gir-nom').value=nom;
+  document.getElementById('gir-prenom').value=prenom;
+  if(dob)document.getElementById('gir-dob').value=dob;
+  document.getElementById('gir-psugg').style.display='none';
+  if(girDraft)girDraft.patientRef={nom,prenom};
+}
+
+function validateGirerd(){
+  const err=document.getElementById('gir-form-error');
+  const nom=document.getElementById('gir-nom').value.trim().toUpperCase();
+  const prenom=document.getElementById('gir-prenom').value.trim();
+  if(!nom||!prenom){ err.textContent='Le nom et le prénom du patient sont obligatoires.'; err.style.display='block'; return; }
+  const ans=girAnswers();
+  const miss=ans.map((a,i)=>a===null?(i+1):0).filter(Boolean);
+  if(miss.length){ err.textContent='Réponse manquante à la question '+miss.join(', ')+'.'; err.style.display='block'; return; }
+  err.style.display='none';
+  const w=window.open('','_blank'); // onglet ouvert dans le geste du clic (évite le blocage des pop-ups)
+  const now=new Date();
+  const dob=document.getElementById('gir-dob').value;
+  const dpass=document.getElementById('gir-date').value||todayStr();
+  const nOui=ans.filter(a=>a==='oui').length;
+  const rec={
+    num:girerdNextNum(),
+    dateFr:dpass?new Date(dpass).toLocaleDateString('fr-FR'):now.toLocaleDateString('fr-FR'),
+    heure:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+    operateur:currentUser.prenom+' '+currentUser.nom,
+    patient:{nom,prenom,dob,dobFr:dob?new Date(dob).toLocaleDateString('fr-FR'):''},
+    answers:GIRERD_Q.map((q,i)=>({k:q.k,t:q.t,a:ans[i]})),
+    oui:nOui, scoreNon:6-nOui, level:girLevel(nOui)
+  };
+  closeModal('gir-form-modal');
+  openGirerdPdf(w, rec);
+}
+
+// Génère un vrai PDF A4 (jsPDF), texte sélectionnable/copiable
+function buildGirerdPdfDoc(rec){
+  const JP = window.jspdf && window.jspdf.jsPDF; if(!JP) return null;
+  const d=new JP({unit:'mm',format:'a4'});
+  let FONT='helvetica';
+  try{ if(window.GOTHAM_FONT_B64){ d.addFileToVFS('Gotham.ttf', window.GOTHAM_FONT_B64); ['normal','bold','italic','bolditalic'].forEach(st=>d.addFont('Gotham.ttf','gotham',st)); FONT='gotham'; } }catch(e){}
+  const M=16, R=210-16, W=R-M, L=rec.level;
+  let y=0;
+  function header(){
+    try{ const _hasL=(typeof window!=='undefined'&&window.NORMANDIE_LOGO); const _lw=_hasL?40:52, _lr=_hasL?682/1385:55/420; d.addImage(NORMANDIE_LOGO,'PNG',M,13,_lw,_lw*_lr); }catch(e){}
+    d.setFont(FONT,'bold'); d.setFontSize(12.5); d.setTextColor(29,92,58);
+    d.text(OFFICINE.nom, R, 18, {align:'right'});
+    d.setFont(FONT,'normal'); d.setFontSize(8.5); d.setTextColor(107,107,107);
+    d.text(OFFICINE.adresse+' · '+OFFICINE.cp+' '+OFFICINE.ville, R, 23, {align:'right'});
+    d.text(OFFICINE.tel+' · '+OFFICINE.mail, R, 27, {align:'right'});
+    d.setDrawColor(46,125,84); d.setLineWidth(0.6); d.line(M,33,R,33);
+    d.setDrawColor(207,230,216); d.setLineWidth(0.3); d.line(M,34.4,R,34.4);
+    y=41;
+  }
+  function footer(){
+    d.setDrawColor(236,236,236); d.setLineWidth(0.2); d.line(M,280,R,280);
+    d.setFont(FONT,'normal'); d.setFontSize(7); d.setTextColor(176,176,176);
+    d.text(OFFICINE.nom+' · '+OFFICINE.adresse+', '+OFFICINE.cp+' '+OFFICINE.ville+' · Tél. '+OFFICINE.tel, M, 285);
+    d.text(rec.num||'', R, 285, {align:'right'});
+    d.setFontSize(6.6); d.setTextColor(190,190,190);
+    const men=d.splitTextToSize('Document d’accompagnement établi à partir du test d’évaluation de l’observance de X. Girerd. Il ne remplace pas l’avis de votre médecin et ne modifie pas votre ordonnance. Aucune de vos réponses n’est conservée par la pharmacie.', W);
+    d.text(men, M, 289);
+  }
+  function need(h){ if(y+h>274){ footer(); d.addPage(); header(); } }
+
+  header();
+  // Titre
+  d.setFont(FONT,'bold'); d.setFontSize(17); d.setTextColor(29,92,58);
+  d.text('Votre traitement au quotidien', M, y); y+=2.4;
+  d.setFillColor(46,125,84); d.rect(M,y,24,1.1,'F'); y+=5.6;
+  d.setFont(FONT,'italic'); d.setFontSize(9.5); d.setTextColor(140,140,140);
+  d.text('Questionnaire d’observance de X. Girerd (6 questions) · '+(rec.num||''), M, y); y+=8.5;
+
+  // Patient
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(138,168,154);
+  d.text('PATIENT', M, y); y+=6;
+  d.setFont(FONT,'bold'); d.setFontSize(15); d.setTextColor(26,26,26);
+  d.text((rec.patient.nom||'—')+' '+(rec.patient.prenom||''), M, y); y+=5.6;
+  d.setFont(FONT,'normal'); d.setFontSize(9.5); d.setTextColor(100,100,100);
+  d.text((rec.patient.dobFr?'Né(e) le '+rec.patient.dobFr+'   ·   ':'')+'Questionnaire rempli le '+rec.dateFr+' à la pharmacie', M, y); y+=8.5;
+
+  // Résultat
+  const bh=26;
+  d.setFillColor(L.bg[0],L.bg[1],L.bg[2]); d.setDrawColor(L.bd[0],L.bd[1],L.bd[2]); d.setLineWidth(0.3);
+  d.roundedRect(M,y,W,bh,2.5,2.5,'FD');
+  d.setFont(FONT,'bold'); d.setFontSize(22); d.setTextColor(L.rgb[0],L.rgb[1],L.rgb[2]);
+  d.text(String(rec.oui), M+11, y+15, {align:'center'});
+  d.setFont(FONT,'normal'); d.setFontSize(8); d.setTextColor(L.rgb[0],L.rgb[1],L.rgb[2]);
+  d.text('/ 6', M+11, y+20.5, {align:'center'});
+  d.setDrawColor(L.bd[0],L.bd[1],L.bd[2]); d.setLineWidth(0.3); d.line(M+22,y+5,M+22,y+bh-5);
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(L.rgb[0],L.rgb[1],L.rgb[2]);
+  d.text('RÉSULTAT', M+28, y+8);
+  d.setFont(FONT,'bold'); d.setFontSize(14); d.setTextColor(26,26,26);
+  d.text(L.lbl, M+28, y+15);
+  d.setFont(FONT,'normal'); d.setFontSize(8.2); d.setTextColor(110,110,110);
+  d.text(rec.oui+' réponse'+(rec.oui>1?'s':'')+' « oui » sur 6  ·  score d’observance '+rec.scoreNon+'/6', M+28, y+21);
+  y+=bh+5;
+  d.setFont(FONT,'normal'); d.setFontSize(9.4); d.setTextColor(70,70,70);
+  const msgL=d.splitTextToSize(L.msg, W); d.text(msgL, M, y); y+=msgL.length*4.4+7;
+
+  // Vos réponses
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(138,168,154);
+  d.text('VOS RÉPONSES', M, y); y+=5.8;
+  rec.answers.forEach((a,i)=>{
+    const lines=d.splitTextToSize((i+1)+'. '+a.t, W-16);
+    need(lines.length*3.8+7);
+    d.setFont(FONT,'normal'); d.setFontSize(8.2); d.setTextColor(75,75,75);
+    d.text(lines, M, y);
+    d.setFont(FONT,'bold'); d.setFontSize(8.2);
+    if(a.a==='oui'){ d.setTextColor(193,42,42); } else { d.setTextColor(46,125,84); }
+    d.text(a.a==='oui'?'OUI':'NON', R, y, {align:'right'});
+    y+=lines.length*3.8+2.2;
+    d.setDrawColor(238,238,238); d.setLineWidth(0.2); d.line(M,y,R,y); y+=3.4;
+  });
+  y+=4;
+
+  // Conseils
+  const tips=rec.answers.filter(a=>a.a==='oui').map(a=>GIRERD_ADVICE[a.k]).filter(Boolean);
+  if(!tips.length) tips.push(GIRERD_OK);
+  need(14);
+  d.setFont(FONT,'bold'); d.setFontSize(8); d.setTextColor(138,168,154);
+  d.text('VOS CONSEILS PERSONNALISÉS', M, y); y+=6.5;
+  tips.forEach(t=>{
+    const body=d.splitTextToSize(t.d, W-6);
+    const blockH=5.2+body.length*3.9;
+    need(blockH+5);
+    d.setFillColor(46,125,84); d.rect(M, y-3.2, 1.6, blockH, 'F');
+    d.setFont(FONT,'bold'); d.setFontSize(9.8); d.setTextColor(29,92,58);
+    d.text(t.t, M+5.5, y);
+    d.setFont(FONT,'normal'); d.setFontSize(8.4); d.setTextColor(70,70,70);
+    d.text(body, M+5.5, y+5.2);
+    y+=blockH+5;
+  });
+
+  // Encadré final
+  need(21);
+  y+=1.5;
+  d.setFillColor(245,250,247); d.setDrawColor(207,230,216); d.setLineWidth(0.3);
+  d.roundedRect(M,y,W,18,2.5,2.5,'FD');
+  d.setFont(FONT,'bold'); d.setFontSize(9.2); d.setTextColor(29,92,58);
+  d.text('Une question sur votre traitement ?', M+6, y+7);
+  d.setFont(FONT,'normal'); d.setFontSize(8.4); d.setTextColor(80,80,80);
+  d.text('Votre pharmacien est là pour y répondre, sans rendez-vous — '+OFFICINE.nom+', '+OFFICINE.tel+'.', M+6, y+13);
+  y+=22;
+
+  footer();
+  return d;
+}
+
+function openGirerdPdf(w, rec){
+  try{
+    const d=buildGirerdPdfDoc(rec);
+    if(d){ const url=URL.createObjectURL(d.output('blob')); if(w){ w.location.href=url; } else { window.open(url,'_blank'); } return; }
+  }catch(e){ console.warn('PDF Girerd jsPDF:', e && e.message); }
+  // Repli : page HTML imprimable si jsPDF indisponible
+  if(w){ w.document.write(buildGirerdPdfHtml(rec)); w.document.close(); w.focus(); }
+  else { const w2=window.open('','_blank'); if(w2){ w2.document.write(buildGirerdPdfHtml(rec)); w2.document.close(); } }
+}
+
+function buildGirerdPdfHtml(rec){
+  const e=s=>ctlEsc(s), L=rec.level, c=girRgbCss(L.rgb);
+  const tips=rec.answers.filter(a=>a.a==='oui').map(a=>GIRERD_ADVICE[a.k]).filter(Boolean);
+  if(!tips.length) tips.push(GIRERD_OK);
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Observance '+e(rec.num)+'</title>'
+  +'<style>@page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}'
+  +'body{font-family:\'Segoe UI\',Arial,sans-serif;color:#111;margin:0;padding:22px;font-size:13px;line-height:1.5}'
+  +'.sheet{max-width:720px;margin:0 auto}'
+  +'.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2E7D54;padding-bottom:10px}'
+  +'.hd .off{text-align:right;font-size:11px;color:#6b6b6b}.hd .off b{display:block;font-size:15px;color:#1D5C3A}'
+  +'h1{font-size:21px;color:#1D5C3A;margin:20px 0 2px}.sub{color:#8c8c8c;font-style:italic;font-size:12px;margin-bottom:18px}'
+  +'.lbl{font-size:10px;letter-spacing:.08em;color:#8AA89A;font-weight:700;margin-top:16px}'
+  +'.pname{font-size:18px;font-weight:800;margin-top:4px}.pmeta{color:#666;font-size:12px}'
+  +'.res{display:flex;gap:16px;align-items:center;border-radius:12px;padding:14px 18px;margin:16px 0 10px}'
+  +'.res .n{font-size:30px;font-weight:800;line-height:1}.res .n small{font-size:13px}'
+  +'table{width:100%;border-collapse:collapse;margin-top:6px}'
+  +'td{border-bottom:1px solid #eee;padding:7px 0;font-size:12px;color:#4b4b4b;vertical-align:top}'
+  +'td.a{text-align:right;font-weight:800;width:44px}'
+  +'.tip{border-left:3px solid #2E7D54;padding:2px 0 2px 12px;margin:12px 0}'
+  +'.tip b{color:#1D5C3A;font-size:14px}.tip p{margin:3px 0 0;color:#464646;font-size:12px}'
+  +'.box{background:#F5FAF7;border:1px solid #CFE6D8;border-radius:10px;padding:12px 16px;margin-top:18px}'
+  +'.ft{margin-top:18px;border-top:1px solid #ececec;padding-top:8px;color:#b0b0b0;font-size:9px}'
+  +'.no-print{text-align:center;margin-top:18px}'
+  +'.pbtn{background:#2E7D54;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer}'
+  +'@media print{body{padding:0}.no-print{display:none}}</style></head><body><div class="sheet">'
+  +'<div class="hd"><div></div><div class="off"><b>'+e(OFFICINE.nom)+'</b>'+e(OFFICINE.adresse)+' · '+e(OFFICINE.cp)+' '+e(OFFICINE.ville)+'<br>'+e(OFFICINE.tel)+' · '+e(OFFICINE.mail)+'</div></div>'
+  +'<h1>Votre traitement au quotidien</h1>'
+  +'<div class="sub">Questionnaire d’observance de X. Girerd (6 questions) · '+e(rec.num)+'</div>'
+  +'<div class="lbl">PATIENT</div>'
+  +'<div class="pname">'+e(rec.patient.nom)+' '+e(rec.patient.prenom)+'</div>'
+  +'<div class="pmeta">'+(rec.patient.dobFr?'Né(e) le '+e(rec.patient.dobFr)+' · ':'')+'Questionnaire rempli le '+e(rec.dateFr)+' à la pharmacie</div>'
+  +'<div class="res" style="background:'+girRgbCss(L.bg)+';border:1px solid '+girRgbCss(L.bd)+'">'
+  +'<div class="n" style="color:'+c+'">'+rec.oui+'<small> / 6</small></div>'
+  +'<div><div style="font-weight:800;font-size:16px;color:'+c+'">'+e(L.lbl)+'</div>'
+  +'<div style="color:#6e6e6e;font-size:12px">'+rec.oui+' réponse'+(rec.oui>1?'s':'')+' « oui » sur 6 · score d’observance '+rec.scoreNon+'/6</div></div></div>'
+  +'<div style="color:#464646">'+e(L.msg)+'</div>'
+  +'<div class="lbl">VOS RÉPONSES</div><table>'
+  +rec.answers.map((a,i)=>'<tr><td>'+(i+1)+'. '+e(a.t)+'</td><td class="a" style="color:'+(a.a==='oui'?'#C12A2A':'#2E7D54')+'">'+(a.a==='oui'?'OUI':'NON')+'</td></tr>').join('')
+  +'</table>'
+  +'<div class="lbl">VOS CONSEILS PERSONNALISÉS</div>'
+  +tips.map(t=>'<div class="tip"><b>'+e(t.t)+'</b><p>'+e(t.d)+'</p></div>').join('')
+  +'<div class="box"><b style="color:#1D5C3A">Une question sur votre traitement ?</b><br>Votre pharmacien est là pour y répondre, sans rendez-vous — '+e(OFFICINE.nom)+', '+e(OFFICINE.tel)+'.</div>'
+  +'<div class="ft">'+e(OFFICINE.nom)+' · '+e(OFFICINE.adresse)+', '+e(OFFICINE.cp)+' '+e(OFFICINE.ville)+' · '+e(rec.num)+'<br>'
+  +'Document d’accompagnement établi à partir du test d’évaluation de l’observance de X. Girerd. Il ne remplace pas l’avis de votre médecin et ne modifie pas votre ordonnance. Aucune de vos réponses n’est conservée par la pharmacie.</div>'
+  +'<div class="no-print"><button class="pbtn" onclick="window.print()">Imprimer</button></div>'
+  +'</div></body></html>';
 }
 
 // ═══════════ RETOURS MATÉRIEL — BLUESTONE ═══════════
