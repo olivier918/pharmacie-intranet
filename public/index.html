@@ -1039,6 +1039,14 @@ tr:hover td{background:#fafffe}
           </div>
           <button class="btn bp sm" onclick="openGirerdForm()" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-modifier"></use></svg> Remplir le questionnaire</button>
         </div>
+        <div class="frm-choice" style="margin-top:10px">
+          <div class="ic"><svg class="ico" style="color:var(--g-dark);width:22px;height:22px"><use href="#ic-collaborateurs"></use></svg></div>
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;color:var(--gray-900)">Autorisation parentale — Vaccination d'un mineur</div>
+            <div style="font-size:.78rem;color:var(--gray-500)">Formulaire pré-rempli à faire signer par le(s) titulaire(s) de l'autorité parentale</div>
+          </div>
+          <button class="btn bp sm" onclick="openApForm()" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)"><svg class="ico"><use href="#ic-modifier"></use></svg> Nouvelle autorisation</button>
+        </div>
       </div>
       <div class="card" style="margin-bottom:1.1rem">
         <div class="ch"><span class="ct">Documents à imprimer</span></div>
@@ -1711,6 +1719,78 @@ tr:hover td{background:#fafffe}
       <button class="btn bp" onclick="validateGirerd()"><svg class="ico"><use href="#ic-imprimer"></use></svg> Générer la fiche patient (PDF)</button>
     </div>
     <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Aucune réponse n'est conservée dans l'intranet : la fiche est générée à la demande, imprimée puis remise au patient.</div>
+  </div>
+</div>
+
+<!-- Autorisation parentale à la vaccination d'un mineur -->
+<div class="overlay" id="ap-form-modal">
+  <div class="mbox" style="max-width:700px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Autorisation parentale — Vaccination d'un mineur</span>
+      <button class="btn bs sm" onclick="closeModal('ap-form-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.5rem" id="ap-meta"></div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.45">Les champs laissés vides sont imprimés en pointillés, à compléter à la main par le parent.</div>
+
+    <div class="fgrid">
+      <div class="fg" style="grid-column:1/-1"><label>Vaccination contre <span class="req">*</span></label><input type="text" id="ap-vaccin" placeholder="Ex. Papillomavirus (HPV), dTP, Méningocoque ACWY…"></div>
+    </div>
+
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1rem 0 .5rem">Enfant</div>
+    <div class="fgrid">
+      <div class="fg" style="position:relative"><label>Nom <span class="req">*</span></label>
+        <input type="text" id="ap-nom" placeholder="Rechercher ou saisir NOM…" autocomplete="off" oninput="apPatientSearch()" onblur="setTimeout(()=>{const e=document.getElementById('ap-psugg');if(e)e.style.display='none'},150)">
+        <div id="ap-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
+      </div>
+      <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="ap-prenom" placeholder="Prénom"></div>
+      <div class="fg"><label>Date de naissance</label><input type="date" id="ap-dob"></div>
+    </div>
+    <div class="fgrid" style="margin-top:.9rem">
+      <div class="fg" style="grid-column:1/-1"><label>Sexe</label>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-top:4px">
+          <label class="cbl" style="margin:0"><input type="radio" name="ap-sexe" value="F"> Fille</label>
+          <label class="cbl" style="margin:0"><input type="radio" name="ap-sexe" value="G"> Garçon</label>
+          <label class="cbl" style="margin:0"><input type="radio" name="ap-sexe" value="" checked> Non précisé</label>
+        </div>
+      </div>
+    </div>
+    <div class="fgrid" style="margin-top:.9rem">
+      <div class="fg"><label>N° de sécurité sociale de rattachement</label><input type="text" id="ap-ss" placeholder="1 85 05 14 XXX XXX XX (ou n° AME)" inputmode="numeric"></div>
+      <div class="fg"><label>Code postal de résidence</label><input type="text" id="ap-cp" placeholder="14120" inputmode="numeric" maxlength="5"></div>
+    </div>
+
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1.1rem 0 .5rem">Titulaires de l'autorité parentale</div>
+    <div class="fgrid">
+      <div class="fg"><label>Responsable légal 1 <span class="req">*</span></label><input type="text" id="ap-p1" placeholder="NOM Prénom"></div>
+      <div class="fg"><label>Téléphone</label><input type="text" id="ap-t1" placeholder="06 XX XX XX XX" inputmode="tel"></div>
+    </div>
+    <div class="fgrid" style="margin-top:.9rem">
+      <div class="fg"><label>Responsable légal 2</label><input type="text" id="ap-p2" placeholder="NOM Prénom"></div>
+      <div class="fg"><label>Téléphone</label><input type="text" id="ap-t2" placeholder="06 XX XX XX XX" inputmode="tel"></div>
+    </div>
+
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1.1rem 0 .5rem">Situation</div>
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <label class="cbl" style="margin:0"><input type="radio" name="ap-sit" value="deux" checked onchange="apToggleSit()"> Les deux responsables légaux signent</label>
+      <label class="cbl" style="margin:0"><input type="radio" name="ap-sit" value="seul" onchange="apToggleSit()"> Le signataire est le seul responsable légal</label>
+      <label class="cbl" style="margin:0"><input type="radio" name="ap-sit" value="empeche" onchange="apToggleSit()"> Le second responsable légal est matériellement empêché de signer</label>
+    </div>
+    <div class="fgrid" id="ap-emp-wrap" style="display:none;margin-top:.6rem">
+      <div class="fg" style="grid-column:1/-1"><label>Nom du second responsable légal empêché</label><input type="text" id="ap-emp" placeholder="M./Mme NOM Prénom"></div>
+    </div>
+
+    <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1.1rem 0 .5rem">Accompagnement (facultatif)</div>
+    <div class="fgrid">
+      <div class="fg"><label>Tiers autorisé à accompagner l'enfant</label><input type="text" id="ap-acc" placeholder="M./Mme NOM Prénom (si un tiers accompagne)"></div>
+      <div class="fg"><label>Date du document</label><input type="date" id="ap-date"></div>
+    </div>
+
+    <div id="ap-form-error" style="display:none;color:var(--red);font-size:.82rem;font-weight:600;margin-top:.8rem"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+      <button class="btn bs" onclick="closeModal('ap-form-modal')">Annuler</button>
+      <button class="btn bp" onclick="validateAp()"><svg class="ico"><use href="#ic-imprimer"></use></svg> Générer l'autorisation (PDF)</button>
+    </div>
+    <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Rien n'est conservé dans l'intranet : le document est généré à la demande, imprimé, signé par le(s) parent(s) puis conservé selon vos procédures.</div>
   </div>
 </div>
 
@@ -6183,6 +6263,270 @@ function buildGirerdPdfHtml(rec){
   +'<div class="box"><b style="color:#1D5C3A">Une question sur votre traitement ?</b><br>Votre pharmacien est là pour y répondre, sans rendez-vous — '+e(OFFICINE.nom)+', '+e(OFFICINE.tel)+'.</div>'
   +'<div class="ft">'+e(OFFICINE.nom)+' · '+e(OFFICINE.adresse)+', '+e(OFFICINE.cp)+' '+e(OFFICINE.ville)+' · '+e(rec.num)+'<br>'
   +'Document d’accompagnement établi à partir du test d’évaluation de l’observance de X. Girerd. Il ne remplace pas l’avis de votre médecin et ne modifie pas votre ordonnance. Aucune de vos réponses n’est conservée par la pharmacie.</div>'
+  +'<div class="no-print"><button class="pbtn" onclick="window.print()">Imprimer</button></div>'
+  +'</div></body></html>';
+}
+
+// ═══════════ FORMULAIRES — Autorisation parentale à la vaccination d'un mineur ═══════════
+// Reprise du formulaire officiel : le document est pré-rempli avec les données saisies,
+// les champs laissés vides sont imprimés en pointillés (à compléter à la main).
+// Rien n'est archivé : généré à la demande, imprimé, signé par le(s) parent(s).
+let apDraft=null;
+
+function apNextNum(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return 'AP-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes());
+}
+
+function apToggleSit(){
+  const v=document.querySelector('input[name="ap-sit"]:checked')?.value||'deux';
+  const w=document.getElementById('ap-emp-wrap'); if(w)w.style.display=(v==='empeche')?'':'none';
+}
+
+function openApForm(){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  apDraft={patientRef:null};
+  ['ap-vaccin','ap-nom','ap-prenom','ap-ss','ap-cp','ap-p1','ap-t1','ap-p2','ap-t2','ap-emp','ap-acc'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  document.getElementById('ap-dob').value='';
+  document.getElementById('ap-date').value=todayStr();
+  const sx=document.querySelector('input[name="ap-sexe"][value=""]'); if(sx)sx.checked=true;
+  const st=document.querySelector('input[name="ap-sit"][value="deux"]'); if(st)st.checked=true;
+  apToggleSit();
+  document.getElementById('ap-form-error').style.display='none';
+  const sug=document.getElementById('ap-psugg'); if(sug)sug.style.display='none';
+  const now=new Date();
+  document.getElementById('ap-meta').textContent='N° '+apNextNum()+' · '+now.toLocaleDateString('fr-FR')+' · Opérateur : '+currentUser.prenom+' '+currentUser.nom;
+  openModal('ap-form-modal');
+  const box=document.querySelector('#ap-form-modal .mbox'); if(box)box.scrollTop=0;
+}
+
+function apPatientSearch(){
+  const q=(document.getElementById('ap-nom').value||'').toLowerCase().trim();
+  const el=document.getElementById('ap-psugg');
+  if(apDraft)apDraft.patientRef=null;
+  if(q.length<2){el.style.display='none';return;}
+  const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
+  if(!m.length){el.style.display='none';return;}
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  el.style.display='block';
+  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="apFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.dob||'')+'\')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
+    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?ctlEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
+}
+function apFillPatient(nom,prenom,dob){
+  document.getElementById('ap-nom').value=nom;
+  document.getElementById('ap-prenom').value=prenom;
+  if(dob)document.getElementById('ap-dob').value=dob;
+  document.getElementById('ap-psugg').style.display='none';
+  if(apDraft)apDraft.patientRef={nom,prenom};
+}
+
+function validateAp(){
+  const err=document.getElementById('ap-form-error');
+  const V=id=>(document.getElementById(id).value||'').trim();
+  const nom=V('ap-nom').toUpperCase(), prenom=V('ap-prenom'), vaccin=V('ap-vaccin'), p1=V('ap-p1');
+  if(!vaccin){ err.textContent='La vaccination concernée est obligatoire.'; err.style.display='block'; return; }
+  if(!nom||!prenom){ err.textContent='Le nom et le prénom de l\'enfant sont obligatoires.'; err.style.display='block'; return; }
+  if(!p1){ err.textContent='Le nom du premier responsable légal est obligatoire.'; err.style.display='block'; return; }
+  const sit=document.querySelector('input[name="ap-sit"]:checked')?.value||'deux';
+  if(sit==='empeche' && !V('ap-emp')){ err.textContent='Indiquez le nom du second responsable légal empêché de signer.'; err.style.display='block'; return; }
+  err.style.display='none';
+  const w=window.open('','_blank'); // onglet ouvert dans le geste du clic (évite le blocage des pop-ups)
+  const dob=V('ap-dob'), dat=V('ap-date')||todayStr();
+  const rec={
+    num:apNextNum(),
+    dateFr:dat?new Date(dat).toLocaleDateString('fr-FR'):new Date().toLocaleDateString('fr-FR'),
+    operateur:currentUser.prenom+' '+currentUser.nom,
+    vaccin,
+    enfant:{ nom, prenom, sexe:(document.querySelector('input[name="ap-sexe"]:checked')?.value||''),
+      dobFr:dob?new Date(dob).toLocaleDateString('fr-FR'):'', ss:V('ap-ss'), cp:V('ap-cp') },
+    p1:{nom:p1, tel:V('ap-t1')},
+    p2:{nom:V('ap-p2'), tel:V('ap-t2')},
+    sit, empeche:V('ap-emp'), accompagnant:V('ap-acc'),
+    pharmacie:OFFICINE.nom
+  };
+  closeModal('ap-form-modal');
+  openApPdf(w, rec);
+}
+
+// Génère un vrai PDF A4 (jsPDF), texte sélectionnable/copiable
+function buildApPdfDoc(rec){
+  const JP = window.jspdf && window.jspdf.jsPDF; if(!JP) return null;
+  const d=new JP({unit:'mm',format:'a4'});
+  let FONT='helvetica';
+  try{ if(window.GOTHAM_FONT_B64){ d.addFileToVFS('Gotham.ttf', window.GOTHAM_FONT_B64); ['normal','bold','italic','bolditalic'].forEach(st=>d.addFont('Gotham.ttf','gotham',st)); FONT='gotham'; } }catch(e){}
+  const M=16, R=210-16, W=R-M, MID=(M+R)/2;
+  const e=rec.enfant||{};
+
+  // — helpers —
+  function lab(x,y,txt,size){ d.setFont(FONT,'normal'); d.setFontSize(size||9.3); d.setTextColor(85,85,85); d.text(txt,x,y); return x+d.getTextWidth(txt)+2; }
+  function fld(x,y,w,val){
+    if(val){ d.setFont(FONT,'bold'); d.setFontSize(10); d.setTextColor(17,17,17); d.text(String(val),x,y); }
+    else { d.setDrawColor(160,160,160); d.setLineWidth(0.25); try{d.setLineDashPattern([0.8,0.8],0);}catch(_){}
+           d.line(x,y+1.3,x+w,y+1.3); try{d.setLineDashPattern([],0);}catch(_){} }
+  }
+  function chk(x,y,on){
+    d.setDrawColor(70,70,70); d.setLineWidth(0.35); d.setFillColor(255,255,255);
+    d.rect(x,y-3.3,3.8,3.8,'S');
+    if(on){ d.setDrawColor(29,92,58); d.setLineWidth(0.7); d.line(x+0.8,y-1.6,x+1.6,y-0.5); d.line(x+1.6,y-0.5,x+3.2,y-3); }
+  }
+  function para(x,y,txt,w,size){
+    d.setFont(FONT,'normal'); d.setFontSize(size||9.3); d.setTextColor(45,45,45);
+    const L=d.splitTextToSize(txt,w); d.text(L,x,y); return y+L.length*(size&&size<8?3.2:4.2);
+  }
+  const or=(v,ph)=>v?v:ph;
+
+  // — en-tête —
+  try{ const _hasL=(typeof window!=='undefined'&&window.NORMANDIE_LOGO); const _lw=_hasL?40:52, _lr=_hasL?682/1385:55/420; d.addImage(NORMANDIE_LOGO,'PNG',M,13,_lw,_lw*_lr); }catch(_){}
+  d.setFont(FONT,'bold'); d.setFontSize(12.5); d.setTextColor(29,92,58);
+  d.text(OFFICINE.nom, R, 18, {align:'right'});
+  d.setFont(FONT,'normal'); d.setFontSize(8.5); d.setTextColor(107,107,107);
+  d.text(OFFICINE.adresse+' · '+OFFICINE.cp+' '+OFFICINE.ville, R, 23, {align:'right'});
+  d.text('FINESS '+OFFICINE.finess+' · '+OFFICINE.tel, R, 27, {align:'right'});
+  d.setDrawColor(46,125,84); d.setLineWidth(0.6); d.line(M,33,R,33);
+  d.setDrawColor(207,230,216); d.setLineWidth(0.3); d.line(M,34.4,R,34.4);
+
+  // — titre —
+  let y=44;
+  d.setFont(FONT,'bold'); d.setFontSize(13); d.setTextColor(29,92,58);
+  d.text("AUTORISATION PARENTALE À LA VACCINATION D'UN MINEUR", MID, y, {align:'center'});
+  y+=4;
+  d.setDrawColor(46,125,84); d.setLineWidth(0.5); d.line(M+22,y,R-22,y);
+  y+=4.5;
+  d.setFont(FONT,'italic'); d.setFontSize(7.8); d.setTextColor(150,150,150);
+  d.text('Réf. '+(rec.num||'')+' · établi le '+(rec.dateFr||''), MID, y, {align:'center'});
+
+  // — vaccination concernée —
+  y+=11;
+  let x=lab(M,y,'Autorisation à la vaccination contre :',10);
+  fld(x,y,R-x,rec.vaccin);
+
+  // — bloc enfant —
+  y+=7;
+  const boxTop=y, boxH=32;
+  d.setFillColor(250,252,251); d.setDrawColor(207,230,216); d.setLineWidth(0.3);
+  d.roundedRect(M,boxTop,W,boxH,2.5,2.5,'FD');
+  let iy=boxTop+9, ix=M+6;
+  x=lab(ix,iy,"Nom et prénom de l'enfant :"); fld(x,iy,105-(x-ix),((e.nom||'')+' '+(e.prenom||'')).trim());
+  let sx=M+118; sx=lab(sx,iy,'Sexe :');
+  chk(sx,iy,e.sexe==='F'); d.setFont(FONT,'normal'); d.setFontSize(9.3); d.setTextColor(60,60,60); d.text('F',sx+5.2,iy);
+  chk(sx+12,iy,e.sexe==='G'); d.text('G',sx+17.2,iy);
+  iy+=9;
+  x=lab(ix,iy,"N° de sécurité sociale auquel est rattaché l'enfant (1) :"); fld(x,iy,R-6-x,e.ss);
+  iy+=9;
+  x=lab(ix,iy,'Date de naissance :'); fld(x,iy,34,e.dobFr);
+  let cx=M+108; cx=lab(cx,iy,'Code postal de résidence :'); fld(cx,iy,R-6-cx,e.cp);
+
+  // — responsables légaux —
+  y=boxTop+boxH+10;
+  d.setFont(FONT,'italic'); d.setFontSize(10); d.setTextColor(45,45,45);
+  d.text('Je soussigné(e),', M, y);
+  y+=9;
+  x=lab(M,y,'Parent / responsable légal 1 :'); fld(x,y,M+112-x,rec.p1.nom);
+  let tx=M+118; tx=lab(tx,y,'Téléphone :'); fld(tx,y,R-tx,rec.p1.tel);
+  y+=9;
+  x=lab(M,y,'Parent / responsable légal 2 :'); fld(x,y,M+112-x,rec.p2.nom);
+  tx=M+118; tx=lab(tx,y,'Téléphone :'); fld(tx,y,R-tx,rec.p2.tel);
+
+  // — déclarations —
+  y+=12;
+  d.setFont(FONT,'bold'); d.setFontSize(9.3); d.setTextColor(29,92,58); d.text('–', M+2, y);
+  y=para(M+7,y,'autorise la '+(/^pharmacie/i.test(rec.pharmacie||'')?'':'pharmacie ')+or(rec.pharmacie,'…………………………')+' à vacciner contre '+or(rec.vaccin,'…………………………')+", l'enfant ci-dessus désigné.", W-7)+3;
+  d.setFont(FONT,'bold'); d.setFontSize(9.3); d.setTextColor(29,92,58); d.text('–', M+2, y);
+  y=para(M+7,y,'autorise '+(rec.accompagnant?rec.accompagnant:'M./Mme ……………………………………')+" (2) à accompagner mon enfant pour la vaccination.", W-7)+9;
+
+  // — cas d'un seul signataire —
+  d.setFont(FONT,'bold'); d.setFontSize(9.5); d.setTextColor(29,92,58);
+  d.text("À compléter en cas de signature d'un seul responsable légal :", M, y);
+  y+=8;
+  chk(M,y,rec.sit==='seul');
+  y=para(M+6.5,y,"Je déclare être le seul responsable légal de l'enfant ci-dessus désigné.", W-6.5)+4;
+  chk(M,y,rec.sit==='empeche');
+  y=para(M+6.5,y,"Je déclare sur l'honneur que le second responsable légal de l'enfant "+(rec.empeche?rec.empeche:'M., Mme ……………………………………')+", est matériellement empêché de signer le présent formulaire mais a donné son autorisation pour le vaccin indiqué ci-dessus (3).", W-6.5)+10;
+
+  // — date et signatures —
+  x=lab(M,y,'Date :',10); fld(x,y,42,rec.dateFr);
+  y+=8;
+  d.setFont(FONT,'normal'); d.setFontSize(9.3); d.setTextColor(85,85,85);
+  d.text('Signature(s) :', M, y);
+  y+=2.5;
+  const two=!!(rec.p2&&rec.p2.nom)&&rec.sit==='deux';
+  const bw=two?(W-8)/2:W;
+  d.setDrawColor(200,200,200); d.setLineWidth(0.3);
+  d.roundedRect(M,y,bw,26,2,2,'S');
+  d.setFont(FONT,'normal'); d.setFontSize(7.4); d.setTextColor(150,150,150);
+  d.text(two?(rec.p1.nom||'Responsable légal 1'):'Responsable(s) légal(aux)', M+3, y+23);
+  if(two){ d.roundedRect(M+bw+8,y,bw,26,2,2,'S'); d.text(rec.p2.nom, M+bw+11, y+23); }
+
+  // — notes de bas de page —
+  let ny=252;
+  d.setDrawColor(230,230,230); d.setLineWidth(0.2); d.line(M,ny-4,M+60,ny-4);
+  d.setFont(FONT,'normal'); d.setFontSize(6.6); d.setTextColor(120,120,120);
+  const notes=[
+    "(1) Le cas échéant, indiquer le numéro Aide médicale de l'État (numéro de sécurité sociale temporaire).",
+    "(2) À compléter uniquement en cas d'accompagnement de l'enfant par un tiers n'exerçant pas l'autorité parentale / tuteur légal.",
+    "(3) La vaccination des mineurs nécessite l'autorisation des deux titulaires de l'autorité parentale. Ainsi, en cas de signature d'un seul parent pour cause d'impossibilité matérielle de signer pour l'autre parent, le signataire s'engage sur l'honneur à ce que la personne co-titulaire de l'autorité parentale ait donné son autorisation. Toute déclaration ou information qui s'avèrerait inexacte ou falsifiée engage sa seule responsabilité et pourra être punie d'un an d'emprisonnement et de 15 000 euros d'amende (article 441-7 du code pénal)."
+  ];
+  notes.forEach(n=>{ const L=d.splitTextToSize(n,W); d.text(L,M,ny); ny+=L.length*2.9+1.6; });
+
+  // — pied de page —
+  d.setDrawColor(236,236,236); d.setLineWidth(0.2); d.line(M,283,R,283);
+  d.setFont(FONT,'normal'); d.setFontSize(7); d.setTextColor(176,176,176);
+  d.text(OFFICINE.nom+' · '+OFFICINE.adresse+', '+OFFICINE.cp+' '+OFFICINE.ville+' · FINESS '+OFFICINE.finess, M, 288);
+  d.text(rec.num||'', R, 288, {align:'right'});
+  return d;
+}
+
+function openApPdf(w, rec){
+  try{
+    const d=buildApPdfDoc(rec);
+    if(d){ const url=URL.createObjectURL(d.output('blob')); if(w){ w.location.href=url; } else { window.open(url,'_blank'); } return; }
+  }catch(err){ console.warn('PDF autorisation parentale jsPDF:', err && err.message); }
+  if(w){ w.document.write(buildApPdfHtml(rec)); w.document.close(); w.focus(); }
+  else { const w2=window.open('','_blank'); if(w2){ w2.document.write(buildApPdfHtml(rec)); w2.document.close(); } }
+}
+
+function buildApPdfHtml(rec){
+  const q=s=>ctlEsc(s), e=rec.enfant||{};
+  const v=(x,n)=>x?'<b>'+q(x)+'</b>':'<span class="dot">'+'&nbsp;'.repeat(n||24)+'</span>';
+  const cb=on=>'<span class="cb">'+(on?'✕':'&nbsp;&nbsp;')+'</span>';
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Autorisation parentale '+q(rec.num)+'</title>'
+  +'<style>@page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}'
+  +'body{font-family:\'Segoe UI\',Arial,sans-serif;color:#111;margin:0;padding:22px;font-size:13px;line-height:1.6}'
+  +'.sheet{max-width:720px;margin:0 auto}'
+  +'.hd{text-align:right;border-bottom:2px solid #2E7D54;padding-bottom:8px;font-size:11px;color:#6b6b6b}.hd b{display:block;font-size:15px;color:#1D5C3A}'
+  +'h1{font-size:16px;color:#1D5C3A;text-align:center;margin:18px 0 2px}'
+  +'.ref{text-align:center;color:#999;font-style:italic;font-size:10px;margin-bottom:16px}'
+  +'.box{border:1px solid #CFE6D8;background:#FAFCFB;border-radius:8px;padding:12px 16px;margin:12px 0}'
+  +'.dot{border-bottom:1px dotted #999;display:inline-block;min-width:120px}'
+  +'.cb{display:inline-block;width:14px;height:14px;border:1px solid #444;text-align:center;line-height:13px;font-size:11px;vertical-align:-2px;margin-right:5px;color:#1D5C3A;font-weight:800}'
+  +'.sig{border:1px solid #ccc;border-radius:6px;height:80px;margin-top:6px}'
+  +'.ft{margin-top:22px;border-top:1px solid #ececec;padding-top:8px;color:#8a8a8a;font-size:9px;line-height:1.45}'
+  +'.no-print{text-align:center;margin-top:18px}'
+  +'.pbtn{background:#2E7D54;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer}'
+  +'@media print{body{padding:0}.no-print{display:none}}</style></head><body><div class="sheet">'
+  +'<div class="hd"><b>'+q(OFFICINE.nom)+'</b>'+q(OFFICINE.adresse)+' · '+q(OFFICINE.cp)+' '+q(OFFICINE.ville)+' · FINESS '+q(OFFICINE.finess)+' · '+q(OFFICINE.tel)+'</div>'
+  +'<h1>AUTORISATION PARENTALE À LA VACCINATION D’UN MINEUR</h1>'
+  +'<div class="ref">Réf. '+q(rec.num)+' · établi le '+q(rec.dateFr)+'</div>'
+  +'<div>Autorisation à la vaccination contre : '+v(rec.vaccin,40)+'</div>'
+  +'<div class="box">'
+  +'<div>Nom et prénom de l’enfant : '+v((e.nom+' '+e.prenom).trim(),36)+' &nbsp;&nbsp; Sexe : '+cb(e.sexe==='F')+'F &nbsp; '+cb(e.sexe==='G')+'G</div>'
+  +'<div>N° de sécurité sociale auquel est rattaché l’enfant <sup>(1)</sup> : '+v(e.ss,30)+'</div>'
+  +'<div>Date de naissance : '+v(e.dobFr,18)+' &nbsp;&nbsp; Code postal de résidence : '+v(e.cp,10)+'</div>'
+  +'</div>'
+  +'<p><i>Je soussigné(e),</i></p>'
+  +'<div>Parent / responsable légal 1 : '+v(rec.p1.nom,30)+' &nbsp;&nbsp; Téléphone : '+v(rec.p1.tel,18)+'</div>'
+  +'<div>Parent / responsable légal 2 : '+v(rec.p2.nom,30)+' &nbsp;&nbsp; Téléphone : '+v(rec.p2.tel,18)+'</div>'
+  +'<ul><li>autorise la pharmacie '+v(rec.pharmacie,26)+' à vacciner contre '+v(rec.vaccin,26)+', l’enfant ci-dessus désigné.</li>'
+  +'<li>autorise '+(rec.accompagnant?'<b>'+q(rec.accompagnant)+'</b>':'M./Mme '+v('',26))+' <sup>(2)</sup> à accompagner mon enfant pour la vaccination.</li></ul>'
+  +'<p><b style="color:#1D5C3A">À compléter en cas de signature d’un seul responsable légal :</b></p>'
+  +'<div>'+cb(rec.sit==='seul')+'Je déclare être le seul responsable légal de l’enfant ci-dessus désigné.</div>'
+  +'<div style="margin-top:6px">'+cb(rec.sit==='empeche')+'Je déclare sur l’honneur que le second responsable légal de l’enfant '+(rec.empeche?'<b>'+q(rec.empeche)+'</b>':'M., Mme '+v('',26))+', est matériellement empêché de signer le présent formulaire mais a donné son autorisation pour le vaccin indiqué ci-dessus <sup>(3)</sup>.</div>'
+  +'<p style="margin-top:22px">Date : '+v(rec.dateFr,16)+'</p>'
+  +'<div>Signature(s) :<div class="sig"></div></div>'
+  +'<div class="ft">(1) Le cas échéant, indiquer le numéro Aide médicale de l’État (numéro de sécurité sociale temporaire).<br>'
+  +'(2) À compléter uniquement en cas d’accompagnement de l’enfant par un tiers n’exerçant pas l’autorité parentale / tuteur légal.<br>'
+  +'(3) La vaccination des mineurs nécessite l’autorisation des deux titulaires de l’autorité parentale. Ainsi, en cas de signature d’un seul parent pour cause d’impossibilité matérielle de signer pour l’autre parent, le signataire s’engage sur l’honneur à ce que la personne co-titulaire de l’autorité parentale ait donné son autorisation. Toute déclaration ou information qui s’avèrerait inexacte ou falsifiée engage sa seule responsabilité et pourra être punie d’un an d’emprisonnement et de 15 000 euros d’amende (article 441-7 du code pénal).</div>'
   +'<div class="no-print"><button class="pbtn" onclick="window.print()">Imprimer</button></div>'
   +'</div></body></html>';
 }
