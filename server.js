@@ -84,6 +84,12 @@ function initMail() {
   console.log('  ✉️  Aucun service d\'envoi configuré (ni Brevo ni SMTP)');
 }
 
+function logSmsStatus() {
+  if (smsConfigured()) console.log('  📱 Envoi SMS via Brevo configuré (expéditeur « ' + smsSender() + ' »)');
+  else if (process.env.BREVO_API_KEY) console.log('  📱 Envoi SMS inactif : définir BREVO_SMS_SENDER (11 caractères max, validé côté Brevo)');
+  else console.log('  📱 Envoi SMS inactif (pas de BREVO_API_KEY)');
+}
+
 // Envoi via l'API HTTPS de Brevo
 function sendViaBrevo({ to, cc, subject, text, from, attachments }) {
   return new Promise((resolve, reject) => {
@@ -224,6 +230,94 @@ app.post('/api/send-mail', async (req, res) => {
     return res.json({ ok: true, id: info.messageId });
   } catch (err) {
     console.error('Envoi mail:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─── ENVOI DE SMS (Brevo, API HTTPS) ───
+// Même clé API que les e-mails (BREVO_API_KEY). L'expéditeur alphanumérique
+// (11 caractères max) doit être déclaré et validé côté Brevo : BREVO_SMS_SENDER.
+// SMS « transactionnels » uniquement : rappels sur un dossier ouvert du patient.
+function smsSender() {
+  const v = (process.env.BREVO_SMS_SENDER || '').trim();
+  return v ? v.slice(0, 11) : null;
+}
+function smsConfigured() { return !!process.env.BREVO_API_KEY && !!smsSender(); }
+
+// 06 12 34 56 78 · +33 6 12 … · 0033612345678 → 33612345678.
+// Renvoie null pour un fixe, un numéro étranger ou un numéro incomplet.
+function toMsisdnFR(raw) {
+  let n = String(raw || '').replace(/[^\d+]/g, '');
+  if (n.startsWith('+')) n = n.slice(1);
+  else if (n.startsWith('00')) n = n.slice(2);
+  if (/^0[67]\d{8}$/.test(n)) n = '33' + n.slice(1);
+  return /^33[67]\d{8}$/.test(n) ? n : null;
+}
+
+function sendSmsViaBrevo({ to, text, tag }) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const payload = JSON.stringify({
+      sender: smsSender(),
+      recipient: to,
+      content: text,
+      type: 'transactional',
+      tag: tag || undefined
+    });
+    const req = https.request({
+      hostname: 'api.brevo.com', path: '/v3/transactionalSMS/send', method: 'POST',
+      headers: {
+        'api-key': process.env.BREVO_API_KEY,
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        'content-length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', (c) => body += c);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          let id = null, credits = null;
+          try { const j = JSON.parse(body); id = j.messageId || j.reference || null; credits = j.remainingCredits; } catch (e) {}
+          resolve({ id, credits });
+        } else {
+          let msg = body; try { msg = JSON.parse(body).message || body; } catch (e) {}
+          reject(new Error('Brevo SMS ' + res.statusCode + ' : ' + msg));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(new Error('Délai dépassé (Brevo SMS)')); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ─── Statut SMS (le front active/désactive le bouton « Envoyer le SMS ») ───
+app.get('/api/sms-status', (req, res) => {
+  res.json({
+    configured: smsConfigured(),
+    sender: smsSender(),
+    error: !process.env.BREVO_API_KEY ? 'Clé API Brevo absente (BREVO_API_KEY).'
+         : !smsSender() ? 'Expéditeur SMS non configuré (BREVO_SMS_SENDER).'
+         : null
+  });
+});
+
+// ─── Envoi d'un SMS, déclenché par l'utilisateur depuis l'appli ───
+app.post('/api/send-sms', async (req, res) => {
+  if (!smsConfigured()) return res.status(400).json({ ok: false, error: 'Service SMS non configuré sur le serveur (BREVO_API_KEY + BREVO_SMS_SENDER).' });
+  const { to, text, tag } = req.body || {};
+  const msisdn = toMsisdnFR(to);
+  if (!msisdn) return res.status(400).json({ ok: false, error: 'Numéro de mobile invalide (attendu : 06…, 07… ou +33…).' });
+  const body = String(text || '').trim();
+  if (!body) return res.status(400).json({ ok: false, error: 'Le message est vide.' });
+  if (body.length > 640) return res.status(400).json({ ok: false, error: 'Message trop long (640 caractères maximum, soit 4 SMS).' });
+  try {
+    const r = await sendSmsViaBrevo({ to: msisdn, text: body, tag: tag || 'intranet' });
+    return res.json({ ok: true, id: r.id, credits: r.credits, to: msisdn });
+  } catch (err) {
+    console.error('Envoi SMS:', err.message);
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -498,6 +592,7 @@ app.get('/api/backups/:id', async (req, res) => {
 async function start() {
   await initDB();
   initMail();
+  logSmsStatus();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {
     console.log('  🧹 Rétention : anciennes livraisons (>' + maint.DELIV_DAYS + 'j) / préparations (>' + maint.PREPS_DAYS + 'j) purgées au démarrage');
@@ -537,4 +632,4 @@ async function start() {
 // on n'ouvre ni port ni connexion : on expose les fonctions de fusion pour les vérifier.
 if (require.main === module) start();
 
-module.exports = { mergeState, mergeCaisse, mergeById, mergeTombstones, applyTombstones, mergeStaff, ensureNatIds };
+module.exports = { mergeState, mergeCaisse, mergeById, mergeTombstones, applyTombstones, mergeStaff, ensureNatIds, toMsisdnFR, smsSender, smsConfigured };

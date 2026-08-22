@@ -1807,6 +1807,34 @@ tr:hover td{background:#fafffe}
   </div>
 </div>
 
+<!-- Envoi d'un SMS au patient (crédits, livraisons, renouvellements) -->
+<div class="overlay" id="sms-modal">
+  <div class="mbox" style="max-width:600px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-messagerie"></use></svg> <span id="sms-title">Envoyer un SMS</span></span>
+      <button class="btn bs sm" onclick="closeModal('sms-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div id="sms-info" style="background:var(--g-pale);padding:.8rem 1rem;border-radius:8px;margin-bottom:.9rem;font-size:.85rem;line-height:1.45"></div>
+    <div class="fgrid">
+      <div class="fg"><label>Numéro de mobile <span class="req">*</span></label><input type="tel" id="sms-tel" placeholder="06 12 34 56 78" inputmode="tel" oninput="updSmsPreview()"></div>
+      <div class="fg" id="sms-tpl-wrap"><label>Modèle</label><select id="sms-tpl" onchange="applySmsTemplate()"></select></div>
+    </div>
+    <div class="fg" style="margin-top:.9rem">
+      <label style="display:flex;justify-content:space-between;align-items:center;gap:10px">Message <span id="sms-count" class="hint"></span></label>
+      <textarea id="sms-text" rows="5" oninput="updSmsPreview()"></textarea>
+    </div>
+    <div id="sms-warn" style="display:none;font-size:.78rem;border-radius:8px;padding:8px 11px;margin-top:.6rem;line-height:1.45"></div>
+    <div id="sms-done" style="display:none;background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7;border-radius:8px;padding:9px 12px;margin-top:.6rem;font-size:.83rem;font-weight:600"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+      <button class="btn bp" id="sms-send-btn" onclick="doSendSms()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Envoyer le SMS</button>
+      <button class="btn bw" onclick="copySmsText(this)"><svg class="ico"><use href="#ic-joindre"></use></svg> Copier le texte</button>
+      <button class="btn bs" onclick="smsMarkSent(true)">Noter comme envoyé</button>
+      <button class="btn bs" onclick="closeModal('sms-modal')">Fermer</button>
+    </div>
+    <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Expéditeur : <strong id="sms-sender">—</strong>. Le patient ne peut pas répondre à ce SMS — le numéro de la pharmacie figure dans le texte.</div>
+  </div>
+</div>
+
 <!-- Retour matériel Bluestone -->
 <div class="overlay" id="ret-form-modal">
   <div class="mbox" style="max-width:620px">
@@ -2511,11 +2539,12 @@ function dCard(d){
       ${d.prepNotes?`<div class="dc-row2"><span class="dc-prep-inline">${ico('realisation')} ${d.prepNotes}</span></div>`:''}
       ${d.notes?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${d.notes}</span></div>`:''}
       <div class="dc-row2 no-print" style="margin-top:1px">
-        <span class="dc-track">Préparé : ${prep} · Livré : ${livr}</span>
+        <span class="dc-track">Préparé : ${prep} · Livré : ${livr}${d.smsAt?` · SMS envoyé le ${new Date(d.smsAt).toLocaleDateString('fr-FR')} par ${staffName(d.smsBy)}`:''}</span>
       </div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
+      <button class="btn bs btn-ico" onclick="openDelivSms(${d.id})" title="${d.smsAt?'SMS déjà envoyé le '+new Date(d.smsAt).toLocaleDateString('fr-FR'):'Prévenir le patient par SMS'}"${d.smsAt?' style="border-color:#A5D6A7;background:#E8F5E9"':''}>${ico('messagerie')}</button>
       <button class="btn bs btn-ico" onclick="openDForm(${d.id})" title="Modifier">${ico('modifier')}</button>
       <button class="btn bs btn-ico" onclick="openTicket(${d.id})" title="Ticket">${ico('ticket')}</button>
       <button class="btn bd btn-ico" onclick="askDelete(${d.id})" title="Supprimer">${ico('corbeille')}</button>
@@ -4987,8 +5016,13 @@ function saveCredRelance(){
   const etape=parseInt(document.getElementById('crel-etape').value||'1');
   const canal=document.getElementById('crel-type').value;
   const notes=document.getElementById('crel-notes').value.trim();
-  // Canaux écrits : on passe à la rédaction du message, la relance sera écrite à la confirmation d'envoi.
-  if(canal==='sms'||canal==='mail'||canal==='courrier'){
+  // Canaux écrits : on passe à la rédaction, la relance n'est écrite qu'à l'envoi.
+  if(canal==='sms'){
+    closeModal('cred-rel-modal');
+    openCredSms(c.id, etape, date, notes);
+    return;
+  }
+  if(canal==='mail'||canal==='courrier'){
     closeModal('cred-rel-modal');
     openCredMsgModal(c.id, etape, canal, date, notes);
     return;
@@ -7072,6 +7106,230 @@ function buildBonPdfHtml(rec){
     +'<div class="mentions">Conformément au Règlement européen n°2016/679/UE du 27 avril 2016 et à la loi « informatique et libertés » du 6 janvier 1978 modifiée, le bénéficiaire dispose d\'un droit d\'accès et de rectification aux données le concernant auprès du Directeur de son organisme d\'assurance maladie ou de son Délégué à la Protection des Données. En cas de difficultés, une réclamation peut être introduite auprès de la CNIL. Quiconque se rend coupable de fraude ou de fausse déclaration est passible de pénalités financières, d\'amende et/ou d\'emprisonnement (Articles 313-1 à 313-3, 433-19, 441-1 et suivants du Code pénal, article L.114-17-1 du Code de la sécurité sociale).</div>'
     +'<div class="foot"><span>'+ctlEsc(OFFICINE.nom)+' · '+ctlEsc(OFFICINE.adresse)+', '+ctlEsc(OFFICINE.cp)+' '+ctlEsc(OFFICINE.ville)+' · FINESS '+ctlEsc(OFFICINE.finess)+'</span><span>Réf. 611 CNAM - 09/2023 · '+ctlEsc(rec.num||'')+'</span></div>'
     +'</body></html>';
+}
+
+// ═══════════ SMS PATIENT (Brevo) ═══════════
+// Brique partagée : crédits, livraisons, renouvellements passent tous par cette modale.
+// Le serveur expose /api/sms-status et /api/send-sms (mêmes identifiants Brevo que les mails).
+let smsStatus={configured:false,sender:null,error:'Statut non chargé'};
+let smsCtx=null;   // {titre, info, tel, templates:[{lbl,text}], tag, onSent(res)}
+
+function loadSmsStatus(){
+  fetch('/api/sms-status').then(r=>r.json()).then(j=>{ smsStatus=j||smsStatus; })
+    .catch(()=>{ smsStatus={configured:false,sender:null,error:'Serveur injoignable'}; });
+}
+loadSmsStatus();
+
+// 06 12 34 56 78 · +33 6 … · 0033… → 33612345678 ; null si ce n'est pas un mobile français
+function smsMsisdn(raw){
+  let n=String(raw||'').replace(/[^\d+]/g,'');
+  if(n.startsWith('+')) n=n.slice(1); else if(n.startsWith('00')) n=n.slice(2);
+  if(/^0[67]\d{8}$/.test(n)) n='33'+n.slice(1);
+  return /^33[67]\d{8}$/.test(n)?n:null;
+}
+// Remplace les caractères hors alphabet GSM-7 : sinon le SMS bascule en Unicode
+// et tombe à 70 caractères par segment (donc plus de crédits consommés).
+function smsPlain(t){
+  return String(t||'')
+    .replace(/[‘’‛]/g,"'").replace(/[“”„]/g,'"')
+    .replace(/…/g,'...').replace(/[–—]/g,'-')
+    .replace(/[   ]/g,' ')
+    .replace(/œ/g,'oe').replace(/Œ/g,'OE')
+    .replace(/[·•]/g,'-');
+}
+const SMS_GSM7='@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+const SMS_GSM7_EXT='^{}\\[~]|€';
+function smsSegments(t){
+  const s=String(t||'');
+  let uni=false, len=0;
+  for(const ch of s){
+    if(SMS_GSM7_EXT.indexOf(ch)>=0){ len+=2; }
+    else if(SMS_GSM7.indexOf(ch)>=0){ len+=1; }
+    else { uni=true; }
+  }
+  if(uni) len=[...s].length;
+  const single=uni?70:160, multi=uni?67:153;
+  return {len, uni, parts: len===0?0 : (len<=single?1:Math.ceil(len/multi))};
+}
+
+function openSmsModal(ctx){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  smsCtx=ctx||{};
+  document.getElementById('sms-title').textContent=smsCtx.titre||'Envoyer un SMS';
+  document.getElementById('sms-info').innerHTML=smsCtx.info||'';
+  document.getElementById('sms-tel').value=smsCtx.tel||'';
+  const tpls=smsCtx.templates||[];
+  const wrap=document.getElementById('sms-tpl-wrap'), sel=document.getElementById('sms-tpl');
+  if(tpls.length>1){
+    wrap.style.display='';
+    sel.innerHTML=tpls.map((t,i)=>`<option value="${i}">${ctlEsc(t.lbl)}</option>`).join('');
+    sel.value='0';
+  } else { wrap.style.display='none'; }
+  document.getElementById('sms-text').value=smsPlain(tpls.length?tpls[0].text:(smsCtx.text||''));
+  document.getElementById('sms-sender').textContent=smsStatus.sender||'non configuré';
+  const done=document.getElementById('sms-done'); if(done) done.style.display='none';
+  updSmsPreview();
+  openModal('sms-modal');
+  const box=document.querySelector('#sms-modal .mbox'); if(box)box.scrollTop=0;
+}
+
+function applySmsTemplate(){
+  const tpls=(smsCtx&&smsCtx.templates)||[];
+  const i=parseInt(document.getElementById('sms-tpl').value||'0');
+  if(tpls[i]) document.getElementById('sms-text').value=smsPlain(tpls[i].text);
+  updSmsPreview();
+}
+
+function updSmsPreview(){
+  const tel=document.getElementById('sms-tel').value;
+  const txt=document.getElementById('sms-text').value;
+  const seg=smsSegments(txt);
+  const num=smsMsisdn(tel);
+  document.getElementById('sms-count').textContent =
+    seg.parts ? `${seg.len} car. · ${seg.parts} SMS${seg.uni?' (Unicode)':''}` : '';
+  const warn=document.getElementById('sms-warn');
+  let msg='', tone='amber';
+  if(!smsStatus.configured){ msg='Envoi SMS non configuré sur le serveur ('+(smsStatus.error||'')+'). Vous pouvez copier le texte et l’envoyer depuis votre téléphone, puis noter la relance.'; }
+  else if(!tel.trim()){ msg='Aucun numéro de mobile : renseignez-le pour pouvoir envoyer.'; }
+  else if(!num){ msg='Ce numéro n’est pas un mobile français (06 ou 07). Impossible d’envoyer un SMS.'; }
+  else if(seg.uni){ msg='Le texte contient des caractères spéciaux : le SMS bascule en Unicode (70 caractères par SMS au lieu de 160).'; }
+  else if(seg.parts>2){ msg='Message long : il sera facturé '+seg.parts+' SMS.'; }
+  warn.textContent=msg;
+  warn.style.display=msg?'block':'none';
+  warn.style.background = msg ? '#FFF3E0' : '';
+  warn.style.border = msg ? '1px solid #FFCC80' : '';
+  warn.style.color = msg ? '#E65100' : '';
+  const btn=document.getElementById('sms-send-btn');
+  const can = smsStatus.configured && !!num && seg.parts>0;
+  btn.disabled=!can;
+  btn.style.opacity=can?'1':'.5';
+  btn.style.cursor=can?'pointer':'not-allowed';
+}
+
+function copySmsText(btn){
+  const t=document.getElementById('sms-text').value;
+  const done=()=>{ const o=btn.innerHTML; btn.textContent='Copié ✓'; setTimeout(()=>btn.innerHTML=o,1400); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,()=>{}); }
+  else { const a=document.getElementById('sms-text'); a.select(); try{document.execCommand('copy');done();}catch(_){} }
+}
+
+function smsMarkSent(manual){
+  const res={ text:document.getElementById('sms-text').value,
+              to:smsMsisdn(document.getElementById('sms-tel').value)||document.getElementById('sms-tel').value,
+              id:null, manual:!!manual };
+  if(smsCtx&&typeof smsCtx.onSent==='function'){ try{ smsCtx.onSent(res); }catch(e){ console.warn('SMS onSent:',e&&e.message); } }
+  const done=document.getElementById('sms-done');
+  done.textContent = manual ? 'Noté comme envoyé manuellement.' : 'SMS envoyé.';
+  done.style.display='block';
+  document.getElementById('sms-send-btn').disabled=true;
+  document.getElementById('sms-send-btn').style.opacity='.5';
+}
+
+function doSendSms(){
+  const btn=document.getElementById('sms-send-btn');
+  if(btn.disabled) return;
+  const to=document.getElementById('sms-tel').value;
+  const text=document.getElementById('sms-text').value;
+  btn.disabled=true; btn.style.opacity='.6';
+  const old=btn.innerHTML; btn.textContent='Envoi…';
+  fetch('/api/send-sms',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({to,text,tag:(smsCtx&&smsCtx.tag)||'intranet'})})
+    .then(r=>r.json().then(j=>({ok:r.ok,j})))
+    .then(({ok,j})=>{
+      btn.innerHTML=old;
+      if(!ok||!j.ok){ throw new Error((j&&j.error)||'Envoi refusé par le serveur'); }
+      const res={ text, to:j.to||to, id:j.id||null, manual:false };
+      if(smsCtx&&typeof smsCtx.onSent==='function'){ try{ smsCtx.onSent(res); }catch(e){ console.warn('SMS onSent:',e&&e.message); } }
+      const done=document.getElementById('sms-done');
+      done.textContent='SMS envoyé'+(typeof j.credits==='number'?` · ${j.credits} crédits restants`:'')+'.';
+      done.style.display='block';
+    })
+    .catch(err=>{
+      btn.innerHTML=old; btn.disabled=false; btn.style.opacity='1';
+      const warn=document.getElementById('sms-warn');
+      warn.textContent='Échec de l’envoi : '+(err&&err.message||'erreur inconnue');
+      warn.style.display='block';
+      warn.style.background='var(--red-pale)'; warn.style.border='1px solid #ffcdd2'; warn.style.color='var(--red)';
+    });
+}
+
+// ─── Crédits : relance par SMS ───
+function openCredSms(credId, etape, date, notes){
+  const c=credits.find(x=>x.id===credId); if(!c) return;
+  openSmsModal({
+    titre:`Relance par SMS — étape ${etape}`,
+    tel:c.tel||'',
+    tag:'credit-relance',
+    info:`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${credStepper(c)}<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}</div>
+          <div style="font-size:.78rem;color:var(--gray-500);margin-top:5px">${CRED_ETAPE_HINT[etape]||''}</div>`,
+    templates:[{lbl:`Étape ${etape}`, text:buildCredSmsBody(c, etape)}],
+    onSent:(r)=>{
+      const now=new Date();
+      credEnsureRelances(c);
+      c.relances.push({
+        date: date||now.toISOString().split('T')[0],
+        time: now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+        type:'sms', tpl:'sms', etape, body:r.text, smsId:r.id||null, smsTo:r.to||null,
+        notes: notes || (r.manual ? `Relance étape ${etape} — SMS envoyé manuellement`
+                                  : `Relance étape ${etape} — SMS envoyé depuis l'intranet`),
+        by: currentUser?.id||'?'
+      });
+      c.updatedAt=Date.now();
+      renderCreds();
+    }
+  });
+}
+
+// ─── Livraisons : prévenir le patient ───
+function openDelivSms(id){
+  const d=deliveries.find(x=>x.id===id); if(!d) return;
+  const montant=(d.montant&&d.montant>0)?` Montant a regler : ${d.montant.toFixed(2).replace('.',',')} EUR.`:'';
+  const ordo=d.ordo?' Merci de nous rapporter votre ordonnance.':'';
+  openSmsModal({
+    titre:'SMS au patient — livraison',
+    tel:d.tel||'',
+    tag:'livraison',
+    info:`<strong>${d.nom} ${d.prenom}</strong>${d.lieu?` · ${d.lieu}`:''}${d.adresse?` · ${d.adresse}`:''}
+          <div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">${d.date?new Date(d.date).toLocaleDateString('fr-FR'):''}${d.montant>0?` · ${d.montant.toFixed(2)} €`:''}</div>`,
+    templates:[
+      {lbl:'Commande prête à retirer',
+       text:`Bonjour, votre commande est prete a la Pharmacie du Centre. Vous pouvez venir la retirer aux heures d'ouverture.${montant}${ordo} 02 31 52 15 71.`},
+      {lbl:'Livraison prévue aujourd\'hui',
+       text:`Bonjour, votre livraison de la Pharmacie du Centre sera effectuee aujourd'hui a votre domicile.${montant}${ordo} 02 31 52 15 71.`},
+      {lbl:'Ordonnance manquante',
+       text:`Bonjour, la Pharmacie du Centre a besoin de votre ordonnance pour preparer votre commande. Merci de nous la transmettre. 02 31 52 15 71.`},
+      {lbl:'Produit non disponible',
+       text:`Bonjour, un produit de votre commande n'est pas disponible immediatement a la Pharmacie du Centre. Merci de nous rappeler au 02 31 52 15 71.`}
+    ],
+    onSent:(r)=>{
+      d.smsAt=new Date().toISOString();
+      d.smsBy=currentUser?.id||'?';
+      d.smsId=r.id||null;
+      d.updatedAt=Date.now();
+      renderD();
+    }
+  });
+}
+
+// ─── Renouvellements : appelé par rn-module.js ───
+function openRenouvSms(o){
+  o=o||{};
+  openSmsModal({
+    titre:'SMS au patient — renouvellement',
+    tel:o.tel||'',
+    tag:'renouvellement',
+    info:`<strong>${ctlEsc(o.nom||'')} ${ctlEsc(o.prenom||'')}</strong>${o.lib?` · ${ctlEsc(o.lib)}`:''}
+          ${o.dateFr?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">Échéance : ${ctlEsc(o.dateFr)}</div>`:''}`,
+    templates:[
+      {lbl:'Ordonnance prête',
+       text:`Bonjour, votre renouvellement est pret a la Pharmacie du Centre. Vous pouvez venir le retirer aux heures d'ouverture. 02 31 52 15 71.`},
+      {lbl:'Il est temps de renouveler',
+       text:`Bonjour, il est temps de renouveler votre traitement a la Pharmacie du Centre. Merci de nous deposer votre ordonnance ou de nous appeler au 02 31 52 15 71.`},
+      {lbl:'Nouvelle ordonnance nécessaire',
+       text:`Bonjour, votre ordonnance arrive a son terme. Merci de prendre rendez-vous avec votre medecin puis de nous transmettre la nouvelle ordonnance. Pharmacie du Centre, 02 31 52 15 71.`}
+    ],
+    onSent:(r)=>{ if(typeof o.onSent==='function') o.onSent(r); }
+  });
 }
 
 // ═══════════ AUTO-SAVE HOOKS ═══════════

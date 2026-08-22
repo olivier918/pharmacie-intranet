@@ -283,6 +283,7 @@
     return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' + rnMainHtml(it) +
       '</div><div class="rn-acts">' +
       '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter / Annuler</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
       '</div></div>';
@@ -315,6 +316,7 @@
     return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' + rnMainHtml(it) +
       '</div><div class="rn-acts">' +
       '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter</button>' +
       '<button class="rn-btn rn-ghost rn-mini" style="color:#c62828;border-color:#f0cccc" onclick="rnDelete(' + it.id + ')">🗑 Supprimer</button>' +
@@ -520,6 +522,24 @@
     else { it.date = rnPendingNext; it.needsNewOrdo = !!it._newOrdo; it.updatedAt = Date.now(); base = (it._newOrdo ? 'dernier de l’ordonnance (nouvelle ordonnance à fournir) — ' : '') + 'prochain renouvellement le ' + rnFmtFr(rnPendingNext); delete it._delivId; }
     rnArchive(it, (mode === 'livraison' ? 'Livraison — ' : 'Comptoir — ') + base, mode, undo);
     rnCurId = null; rnPendingNext = null; rnPersist(); rnRender();
+  };
+
+  // ---------- SMS au patient (brique partagée définie dans index.html) ----------
+  window.rnSms = function (id) {
+    const it = rnList().find(x => x.id === id); if (!it) return;
+    if (typeof window.openRenouvSms !== 'function') { rnToast('Module SMS indisponible.'); return; }
+    window.openRenouvSms({
+      nom: it.nom, prenom: it.prenom, tel: it.tel || '', lib: it.lib || '',
+      dateFr: rnFmtFr(it.date),
+      onSent: function (r) {
+        it.smsAt = new Date().toISOString();
+        it.smsBy = rnUser().id;
+        it.smsId = r && r.id || null;
+        it.updatedAt = Date.now();
+        rnToast('SMS noté sur le dossier de ' + it.nom + ' ' + it.prenom + '.');
+        rnPersist(); rnRender();
+      }
+    });
   };
 
   // ---------- report / annulation ----------
