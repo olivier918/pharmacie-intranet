@@ -822,6 +822,13 @@ tr:hover td{background:#fafffe}
               <option value="avance">Produit avancé non régularisé</option>
             </select>
           </div>
+          <div class="fg" style="grid-column:1/-1" id="cr-canal1-wrap">
+            <label>Relance n° 1 — orale <span class="hint">— la saisie du crédit vaut premier rappel</span></label>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-top:4px">
+              <label class="cbl" style="margin:0"><input type="radio" name="cr-canal1" value="sur place" checked> Au comptoir</label>
+              <label class="cbl" style="margin:0"><input type="radio" name="cr-canal1" value="tel"> Par téléphone</label>
+            </div>
+          </div>
           <div class="fg" style="grid-column:1/-1"><label>Produits avancés</label><textarea id="cr-produits" placeholder="Détail des produits remis…"></textarea></div>
           <div class="fg" style="grid-column:1/-1"><label>Notes internes</label><textarea id="cr-notes" placeholder="Contexte, engagement du patient…"></textarea></div>
         </div>
@@ -843,14 +850,20 @@ tr:hover td{background:#fafffe}
           <select id="cred-filter" onchange="renderCreds()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
             <option value="">Tous statuts</option>
             <option value="en cours">En cours</option>
+            <option value="huissier">Chez l'huissier</option>
             <option value="soldé">Clôturés</option>
             <option value="perdu">Irrécouvrables</option>
           </select>
-          <select id="cred-motif-filter" onchange="renderCreds()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
-            <option value="">Tous motifs</option>
-            <option value="comptoir">Crédit comptoir</option>
-            <option value="tp">Tiers payant</option>
-            <option value="avance">Produit avancé</option>
+          <select id="cred-etape-filter" onchange="renderCreds()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
+            <option value="">Toutes étapes</option>
+            <option value="1">Étape 1 — Orale</option>
+            <option value="2">Étape 2 — SMS / téléphone</option>
+            <option value="3">Étape 3 — Mail</option>
+            <option value="4">Étape 4 — Recommandé (LRAR)</option>
+            <option value="5">Étape 5 — Huissier</option>
+          </select>
+          <select id="cred-op-filter" onchange="renderCreds()" title="Opérateur ayant saisi la dernière relance" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
+            <option value="">Tous opérateurs</option>
           </select>
           <input type="text" id="cred-q" placeholder="Rechercher…" oninput="renderCreds()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem;flex:1;min-width:160px">
         </div>
@@ -1408,32 +1421,36 @@ tr:hover td{background:#fafffe}
 
 <!-- Saisie d'une relance manuelle (crédit) -->
 <div class="overlay" id="cred-rel-modal">
-  <div class="mbox">
-    <h3><svg class="ico"><use href="#ic-telephone"></use></svg> Enregistrer une relance</h3>
-    <div id="cred-rel-info" style="background:var(--g-pale);padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.85rem;line-height:1.45"></div>
-    <div class="fgrid" style="grid-template-columns:1fr 1fr 1fr">
-      <div class="fg"><label>Date <span class="req">*</span></label><input type="date" id="crel-date"></div>
-      <div class="fg"><label>Type</label>
-        <select id="crel-type">
+  <div class="mbox" style="max-width:620px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-relancer"></use></svg> <span id="crel-title">Relancer</span></span>
+      <button class="btn bs sm" onclick="closeModal('cred-rel-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div id="cred-rel-info" style="background:var(--g-pale);padding:.8rem 1rem;border-radius:8px;margin-bottom:.9rem;font-size:.85rem;line-height:1.45"></div>
+    <div class="fg"><label>Étape de la procédure</label>
+      <select id="crel-etape" onchange="updCredRelEtape()"></select>
+    </div>
+    <div id="crel-etape-hint" style="font-size:.78rem;color:var(--gray-600);line-height:1.45;background:var(--gray-100);border-radius:8px;padding:9px 12px;margin-top:.5rem"></div>
+    <div class="fgrid" style="margin-top:.9rem">
+      <div class="fg"><label>Canal</label>
+        <select id="crel-type" onchange="updCredRelCanal()">
+          <option value="sur place">Au comptoir</option>
           <option value="tel">Téléphone</option>
-          <option value="sur place">Sur place</option>
           <option value="sms">SMS</option>
           <option value="mail">Mail</option>
-          <option value="courrier">Courrier postal</option>
+          <option value="courrier">Courrier / recommandé</option>
+          <option value="huissier">Transmission huissier</option>
         </select>
       </div>
-      <div class="fg"><label>Niveau</label>
-        <select id="crel-niveau">
-          <option value="">— Non spécifié —</option>
-          <option value="1">Amical</option>
-          <option value="2">Ferme</option>
-          <option value="3">Recommandé / LRAR</option>
-        </select>
-      </div>
+      <div class="fg"><label>Date <span class="req">*</span></label><input type="date" id="crel-date"></div>
     </div>
-    <div class="fg" style="margin-top:.7rem"><label>Notes</label><textarea id="crel-notes" placeholder="Échange, engagement du patient…"></textarea></div>
-    <div style="display:flex;gap:8px;margin-top:1rem">
-      <button class="btn bp" onclick="saveCredRelance()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
+    <div id="crel-warn" style="display:none;font-size:.78rem;color:#E65100;background:#FFF3E0;border:1px solid #FFCC80;border-radius:8px;padding:8px 11px;margin-top:.6rem;line-height:1.45"></div>
+    <div class="fgrid" id="crel-huissier-wrap" style="display:none;margin-top:.9rem">
+      <div class="fg" style="grid-column:1/-1"><label>Huissier / cabinet de recouvrement</label><input type="text" id="crel-huissier" placeholder="Nom du cabinet"></div>
+    </div>
+    <div class="fg" style="margin-top:.9rem"><label>Notes</label><textarea id="crel-notes" placeholder="Échange, engagement du patient, délai annoncé…"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+      <button class="btn bp" onclick="saveCredRelance()"><svg class="ico"><use href="#ic-valider"></use></svg> <span id="crel-save-lbl">Enregistrer la relance</span></button>
       <button class="btn bs" onclick="closeModal('cred-rel-modal')">Annuler</button>
     </div>
   </div>
@@ -1460,18 +1477,9 @@ tr:hover td{background:#fafffe}
     <h3><svg class="ico"><use href="#ic-envoyer"></use></svg> Message de relance patient</h3>
     <div id="cred-msg-info" style="background:var(--g-pale);padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.85rem;line-height:1.45"></div>
     <div id="cmsg-niv-block" style="margin-bottom:.85rem">
-      <div style="font-size:.72rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.35rem">Niveau de relance</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <label class="cbl"><input type="radio" name="cmsg-niv" value="1" onchange="renderCredMsg()"> <svg class="ico"><use href="#ic-amical"></use></svg> Amical</label>
-        <label class="cbl"><input type="radio" name="cmsg-niv" value="2" onchange="renderCredMsg()"> <svg class="ico"><use href="#ic-ferme"></use></svg> Ferme</label>
-        <label class="cbl"><input type="radio" name="cmsg-niv" value="3" onchange="renderCredMsg()"> <svg class="ico"><use href="#ic-recommande"></use></svg> Recommandé / LRAR</label>
-      </div>
-      <div id="cmsg-niv-hint" style="font-size:.72rem;color:var(--gray-500);margin-top:5px;line-height:1.4">—</div>
+      <div id="cmsg-niv-hint" style="font-size:.76rem;color:var(--gray-600);line-height:1.45;background:var(--gray-100);border-radius:8px;padding:9px 12px">—</div>
     </div>
-    <div id="cmsg-tpl-block" style="display:flex;gap:8px;margin-bottom:.85rem;flex-wrap:wrap">
-      <label class="cbl" id="cmsg-tpl-sms-lbl"><input type="radio" name="cmsg-tpl" value="sms" checked onchange="renderCredMsg()"> SMS court</label>
-      <label class="cbl"><input type="radio" name="cmsg-tpl" value="courrier" onchange="renderCredMsg()"> <svg class="ico"><use href="#ic-document"></use></svg> Courrier / mail</label>
-    </div>
+    <div id="cmsg-tpl-block" style="display:none"></div>
     <div id="cmsg-subject-wrap" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
         <span style="font-size:.72rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px">Objet</span>
@@ -1501,10 +1509,12 @@ tr:hover td{background:#fafffe}
     <div style="display:flex;gap:8px;margin-bottom:.75rem;flex-wrap:wrap;align-items:center">
       <input type="text" id="carch-q" placeholder="Rechercher (patient, mots-clés)…" oninput="renderCredArchive()" style="flex:1;min-width:160px;border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
       <select id="carch-niveau" onchange="renderCredArchive()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
-        <option value="">Tous niveaux</option>
-        <option value="1">Amical</option>
-        <option value="2">Ferme</option>
-        <option value="3">Recommandé</option>
+        <option value="">Toutes étapes</option>
+        <option value="1">Étape 1 — Orale</option>
+        <option value="2">Étape 2 — SMS / téléphone</option>
+        <option value="3">Étape 3 — Mail</option>
+        <option value="4">Étape 4 — Recommandé (LRAR)</option>
+        <option value="5">Étape 5 — Huissier</option>
       </select>
       <select id="carch-type" onchange="renderCredArchive()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
         <option value="">Tous canaux</option>
@@ -3895,17 +3905,31 @@ let currentRelCredId=null;
 let currentPayCredId=null;
 let currentMsgCredId=null;
 let credQuickFilter='';
+let credPatientFilter='';
+let currentMsgEtape=2, currentMsgCanal='sms', currentMsgDate='', currentMsgNotes='';
 const CRED_MOTIF_LBL = {comptoir:'Crédit comptoir', tp:'Tiers payant', avance:'Produit avancé'};
-const CRED_REL_LBL   = {tel:'📞 Téléphone', 'sur place':'🏪 Sur place', sms:'💬 SMS', mail:'✉️ Mail', courrier:'📨 Courrier'};
-const CRED_STAT_COLOR = {'en cours':'background:var(--amber-pale);color:var(--amber)', 'soldé':'background:#E8F5E9;color:#2E7D32', 'perdu':'background:#FFEBEE;color:#C62828'};
-const CRED_STAT_LBL = {'en cours':'en cours', 'soldé':'clôturé', 'perdu':'irrécouvrable'};
+const CRED_REL_LBL   = {tel:'📞 Téléphone', 'sur place':'🏪 Au comptoir', sms:'💬 SMS', mail:'✉️ Mail', courrier:'📨 Courrier', huissier:'⚖️ Huissier'};
+const CRED_STAT_COLOR = {'en cours':'background:var(--amber-pale);color:var(--amber)', 'huissier':'background:#F3E5F5;color:#6A1B9A', 'soldé':'background:#E8F5E9;color:#2E7D32', 'perdu':'background:#FFEBEE;color:#C62828'};
+const CRED_STAT_LBL = {'en cours':'en cours', 'huissier':"chez l'huissier", 'soldé':'clôturé', 'perdu':'irrécouvrable'};
 const CRED_FOLLOWUP_DAYS = 14;
-const CRED_NIVEAU_LBL = {1:'🤝 Amical', 2:'⚠️ Ferme', 3:'📨 Recommandé (LRAR)'};
-const CRED_NIVEAU_COLOR = {
-  1:'background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7',
-  2:'background:#FFF3E0;color:#E65100;border:1px solid #FFCC80',
-  3:'background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A'
+// Procédure de relance en 5 étapes : le niveau se lit d'un coup d'œil, le canal reste modifiable.
+const CRED_ETAPE_MAX = 5;
+const CRED_ETAPES = {
+  1:{lbl:'Orale',              sub:'au comptoir ou par téléphone',     canal:'sur place', col:'#2E7D32', pale:'#E8F5E9', bd:'#A5D6A7'},
+  2:{lbl:'SMS / téléphone',    sub:'rappel écrit court',               canal:'sms',       col:'#0277BD', pale:'#E1F5FE', bd:'#81D4FA'},
+  3:{lbl:'Mail',               sub:'relance écrite avec délai',        canal:'mail',      col:'#E65100', pale:'#FFF3E0', bd:'#FFCC80'},
+  4:{lbl:'Recommandé (LRAR)',  sub:'mise en demeure avant huissier',   canal:'courrier',  col:'#C62828', pale:'#FFEBEE', bd:'#EF9A9A'},
+  5:{lbl:'Huissier',           sub:'dossier transmis au recouvrement', canal:'huissier',  col:'#6A1B9A', pale:'#F3E5F5', bd:'#CE93D8'}
 };
+const CRED_ETAPE_HINT = {
+  1:"Rappel oral, au comptoir ou par téléphone. Rien n'est envoyé : on note l'échange et l'engagement du patient.",
+  2:"Rappel écrit court par SMS (ou nouvel appel). Ton courtois — beaucoup de dossiers se règlent à ce stade.",
+  3:"Relance écrite par mail, ton ferme, avec un délai de quinze jours annoncé.",
+  4:"Mise en demeure, à envoyer en lettre recommandée avec accusé de réception. Elle annonce la transmission à un huissier.",
+  5:"Transmission du dossier à un huissier. Le dossier sort des relances : plus d'alerte à 14 jours."
+};
+// Conservé pour les messages archivés avant le passage à 5 étapes.
+const CRED_NIVEAU_LBL = {1:'🤝 Amical', 2:'⚠️ Ferme', 3:'📨 Recommandé (LRAR)'};
 
 function toggleLocForm(){
   const c=document.getElementById('loc-form-card');
@@ -4600,12 +4624,60 @@ ${[1,2].map(ex=>`
 function credAmountTxt(c){ return (c.montant && c.montant>0) ? `${c.montant.toFixed(2)} €` : 'À régulariser'; }
 function credAmountHtml(c){ return (c.montant && c.montant>0) ? `${c.montant.toFixed(2)} €` : '<span style="color:var(--gray-500);font-style:italic">À régulariser</span>'; }
 
-function credMaxNiveau(c){
-  return (c.relances||[]).reduce((m,r)=>Math.max(m, r.niveau||0), 0);
+// ─── Procédure de relance en 5 étapes ───
+// L'étape est DÉDUITE des relances, jamais migrée en base :
+//   nouvelles relances → champ `etape` (1..5)
+//   anciennes relances → champ `niveau` (1 amical, 2 ferme, 3 LRAR) → étapes 1, 2, 4
+// Un crédit sans aucune relance compte comme étape 1 (la saisie vaut relance orale).
+function credRelEtape(r){
+  if(!r) return 1;
+  if(r.etape) return Math.min(Math.max(parseInt(r.etape)||1,1),CRED_ETAPE_MAX);
+  return ({1:1,2:2,3:4})[r.niveau]||1;
 }
-function credSuggestedNiveau(c){
-  const max=credMaxNiveau(c);
-  return Math.min(Math.max(max+1, 1), 3);
+function credRelances(c){
+  const list=(c.relances||[]).slice();
+  if(list.length) return list;
+  return [{date:c.dateAvance||c.createdAt||'', type:'sur place', etape:1, by:c.createdBy||'?',
+           notes:'Saisie du crédit — relance orale au comptoir', _virtual:true}];
+}
+// Matérialise la relance orale implicite avant toute écriture (dossiers antérieurs).
+function credEnsureRelances(c){
+  if(!c.relances || !c.relances.length){
+    c.relances=credRelances(c).map(r=>{ const o=Object.assign({},r); delete o._virtual; return o; });
+  }
+  return c.relances;
+}
+function credEtape(c){ return credRelances(c).reduce((m,r)=>Math.max(m,credRelEtape(r)),1); }
+function credNextEtape(c){ return Math.min(credEtape(c)+1, CRED_ETAPE_MAX); }
+function credLastRelance(c){
+  return credRelances(c).slice().sort((a,b)=>
+    ((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||'')))[0];
+}
+function credOpen(c){ return c.status==='en cours' || c.status==='huissier'; }
+// Autres crédits non soldés du même patient (clé nom + prénom)
+function credSiblings(c){
+  return credits.filter(x=>x.nom===c.nom && x.prenom===c.prenom && credOpen(x));
+}
+// Ton du message : étapes 1-2 = courtois, 3 = ferme, 4-5 = mise en demeure
+function credTone(etape){ return ({1:1,2:1,3:2,4:3,5:3})[etape]||1; }
+
+function credStepper(c){
+  const cur=credEtape(c);
+  let h='<span style="display:inline-flex;align-items:center;flex:none">';
+  for(let i=1;i<=CRED_ETAPE_MAX;i++){
+    const E=CRED_ETAPES[i], on=i<=cur, isCur=i===cur;
+    const sz=isCur?20:15;
+    h+=`<span title="Étape ${i} — ${E.lbl}" style="width:${sz}px;height:${sz}px;border-radius:50%;`
+      +`background:${on?E.col:'#fff'};color:${on?'#fff':'var(--gray-400)'};border:1.5px solid ${on?E.col:'var(--gray-200)'};`
+      +`display:inline-flex;align-items:center;justify-content:center;font-size:${isCur?'.66rem':'.58rem'};font-weight:800;flex:none">${i}</span>`;
+    if(i<CRED_ETAPE_MAX) h+=`<span style="width:13px;height:2px;background:${i<cur?CRED_ETAPES[i].col:'var(--gray-200)'};flex:none"></span>`;
+  }
+  return h+'</span>';
+}
+function credEtapeBadge(e,small){
+  const E=CRED_ETAPES[e]||CRED_ETAPES[1];
+  return `<span class="badge" style="background:${E.pale};color:${E.col};border:1px solid ${E.bd};`
+    +`padding:${small?'1px 7px':'2px 9px'};font-size:${small?'.64rem':'.68rem'};font-weight:700">Étape ${e} · ${E.lbl}</span>`;
 }
 
 function updCredFormMotif(){
@@ -4643,14 +4715,23 @@ function setCredQuickFilter(k){
   renderCreds();
 }
 
+function setCredPatientFilter(id){
+  const c=credits.find(x=>x.id===id); if(!c) return;
+  const key=c.nom+'|'+c.prenom;
+  credPatientFilter=(credPatientFilter===key)?'':key;
+  renderCreds();
+}
+
 function renderCreds(){
   const sf=document.getElementById('cred-filter')?.value||'';
-  const mf=document.getElementById('cred-motif-filter')?.value||'';
+  const ef=document.getElementById('cred-etape-filter')?.value||'';
+  const opf=document.getElementById('cred-op-filter')?.value||'';
   const q=(document.getElementById('cred-q')?.value||'').toLowerCase();
 
-  let nEnCours=0, nSolde=0, nFollow=0, totalDu=0;
+  let nEnCours=0, nSolde=0, nFollow=0, nHuis=0, totalDu=0;
   credits.forEach(c=>{
     if(c.status==='en cours'){ nEnCours++; totalDu+=(c.montant||0); if(credNeedsFollowup(c)) nFollow++; }
+    else if(c.status==='huissier'){ nHuis++; totalDu+=(c.montant||0); }
     else if(c.status==='soldé') nSolde++;
   });
   const statsEl=document.getElementById('cred-stats');
@@ -4658,57 +4739,113 @@ function renderCreds(){
     const cardCss=(active,color)=>`cursor:pointer${active?`;outline:2px solid ${color};outline-offset:2px`:''}`;
     statsEl.innerHTML=`
       <div class="scard" style="${cardCss(credQuickFilter==='due','var(--b-mid)')}" onclick="setCredQuickFilter('due')" title="Crédits non soldés"><div class="slabel">Total dû</div><div class="sval" style="color:var(--b-mid);font-size:1.5rem">${totalDu.toFixed(2)} €</div></div>
-      <div class="scard" style="${cardCss(credQuickFilter==='encours','var(--amber)')}" onclick="setCredQuickFilter('encours')" title="Statut en cours"><div class="slabel">En cours</div><div class="sval" style="color:var(--amber)">${nEnCours}</div></div>
-      <div class="scard" style="${cardCss(credQuickFilter==='follow','var(--red)')}" onclick="setCredQuickFilter('follow')" title="Sans contact depuis ≥ ${CRED_FOLLOWUP_DAYS} jours"><div class="slabel">À relancer</div><div class="sval" style="color:var(--red)">${nFollow}</div></div>
+      <div class="scard" style="${cardCss(credQuickFilter==='encours','var(--amber)')}" onclick="setCredQuickFilter('encours')" title="Dossiers en cours de relance"><div class="slabel">En cours</div><div class="sval" style="color:var(--amber)">${nEnCours}</div></div>
+      <div class="scard" style="${cardCss(credQuickFilter==='follow','var(--red)')}" onclick="setCredQuickFilter('follow')" title="Sans contact depuis ≥ ${CRED_FOLLOWUP_DAYS} jours — vérifier si le patient est passé régler"><div class="slabel">À vérifier</div><div class="sval" style="color:var(--red)">${nFollow}</div></div>
+      <div class="scard" style="${cardCss(credQuickFilter==='huissier','#6A1B9A')}" onclick="setCredQuickFilter('huissier')" title="Dossiers transmis à l'huissier"><div class="slabel">Huissier</div><div class="sval" style="color:#6A1B9A">${nHuis}</div></div>
       <div class="scard" style="${cardCss(credQuickFilter==='solde','#2E7D32')}" onclick="setCredQuickFilter('solde')" title="Dossiers clôturés"><div class="slabel">Clôturés</div><div class="sval" style="color:#2E7D32">${nSolde}</div></div>`;
   }
 
+  // Liste des opérateurs = auteurs de la dernière relance de chaque dossier
+  const opSel=document.getElementById('cred-op-filter');
+  if(opSel){
+    const ops={};
+    credits.forEach(c=>{ const r=credLastRelance(c); if(r&&r.by) ops[r.by]=staffName(r.by); });
+    const cur=opSel.value;
+    opSel.innerHTML='<option value="">Tous opérateurs</option>'
+      +Object.keys(ops).sort((a,b)=>String(ops[a]).localeCompare(String(ops[b])))
+        .map(k=>`<option value="${k}">${ops[k]}</option>`).join('');
+    opSel.value=cur;
+  }
+
   let f=[...credits];
-  if(credQuickFilter==='due')         f=f.filter(c=>c.status==='en cours');
-  else if(credQuickFilter==='encours')f=f.filter(c=>c.status==='en cours');
-  else if(credQuickFilter==='follow') f=f.filter(c=>credNeedsFollowup(c));
-  else if(credQuickFilter==='solde')  f=f.filter(c=>c.status==='soldé');
-  if(sf) f=f.filter(c=>c.status===sf);
-  if(mf) f=f.filter(c=>c.motif===mf);
-  if(q)  f=f.filter(c=>(c.nom+' '+c.prenom+' '+(c.produits||'')).toLowerCase().includes(q));
+  if(credQuickFilter==='due'||credQuickFilter==='encours') f=f.filter(c=>c.status==='en cours');
+  else if(credQuickFilter==='follow')   f=f.filter(c=>credNeedsFollowup(c));
+  else if(credQuickFilter==='huissier') f=f.filter(c=>c.status==='huissier');
+  else if(credQuickFilter==='solde')    f=f.filter(c=>c.status==='soldé');
+  if(sf)  f=f.filter(c=>c.status===sf);
+  if(ef)  f=f.filter(c=>String(credEtape(c))===ef);
+  if(opf) f=f.filter(c=>{ const r=credLastRelance(c); return r && String(r.by)===opf; });
+  if(credPatientFilter) f=f.filter(c=>(c.nom+'|'+c.prenom)===credPatientFilter);
+  if(q)   f=f.filter(c=>(c.nom+' '+c.prenom+' '+(c.produits||'')+' '+(CRED_MOTIF_LBL[c.motif]||'')).toLowerCase().includes(q));
 
   f.sort((a,b)=>{
-    const w=s=>s==='en cours'?0:s==='soldé'?1:2;
+    const w=s=>s==='en cours'?0:s==='huissier'?1:s==='soldé'?2:3;
     const sw=w(a.status)-w(b.status); if(sw) return sw;
     const fw=(credNeedsFollowup(b)?1:0)-(credNeedsFollowup(a)?1:0); if(fw) return fw;
+    const ew=credEtape(b)-credEtape(a); if(ew) return ew;
     return (b.dateAvance||'').localeCompare(a.dateAvance||'');
   });
 
-  document.getElementById('cred-table').innerHTML=`<table>
-    <thead><tr><th>Patient</th><th>Date</th><th>Montant</th><th>Motif</th><th>Produits</th><th>Statut</th><th>Dernière relance</th><th class="no-print"></th></tr></thead>
-    <tbody>${f.map(c=>{
-      const lastRel=(c.relances||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
-      const days=credDaysSinceContact(c);
-      const followup=credNeedsFollowup(c);
-      const followupBadge=followup?`<div style="margin-top:3px"><span class="badge" style="background:var(--red-pale);color:var(--red);border:1px solid #ffcdd2;padding:2px 8px;font-size:.68rem">${ico('alerte')} ${days} j sans contact</span></div>`:'';
-      const paidLine=(c.status==='soldé'&&c.paidAt)?`<div style="font-size:.7rem;color:#2E7D32;margin-top:3px">${ico('valider')} Clôturé le ${new Date(c.paidAt).toLocaleDateString('fr-FR')}</div>`:'';
-      const lastRelText=lastRel
-        ? `${new Date(lastRel.date).toLocaleDateString('fr-FR')}${lastRel.niveau?` <span class="badge" style="${CRED_NIVEAU_COLOR[lastRel.niveau]||''};padding:1px 7px;font-size:.65rem;font-weight:600">${CRED_NIVEAU_LBL[lastRel.niveau]}</span>`:''}<div style="font-size:.7rem;color:var(--gray-500)">${CRED_REL_LBL[lastRel.type]||lastRel.type} · ${staffName(lastRel.by)}</div>`
-        : `<span style="color:var(--gray-400)">Aucune</span>`;
-      return `<tr>
-        <td><strong>${c.nom}</strong> ${c.prenom}${c.tel?`<div style="font-size:.7rem;color:var(--gray-500)">${ico('telephone')} ${c.tel}</div>`:''}</td>
-        <td style="white-space:nowrap">${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}</td>
-        <td style="white-space:nowrap;font-weight:700">${credAmountHtml(c)}</td>
-        <td>${CRED_MOTIF_LBL[c.motif]||c.motif||'—'}</td>
-        <td style="max-width:220px;font-size:.8rem;color:var(--gray-700)">${c.produits||'—'}</td>
-        <td><span class="badge" style="${CRED_STAT_COLOR[c.status]||''};padding:3px 9px">${CRED_STAT_LBL[c.status]||c.status}</span>${followupBadge}${paidLine}</td>
-        <td>${lastRelText}</td>
-        <td class="no-print">
-          <div style="display:flex;gap:5px;flex-wrap:wrap">
-            <button class="btn bs btn-ico" onclick="openCredDetail(${c.id})" title="Détail">${ico('voir')}</button>
-            ${c.status==='en cours'?`<button class="btn bs btn-ico" onclick="openCredRelanceModal(${c.id})" title="Enregistrer une relance">${ico('telephone')}</button>`:''}
-            ${c.status==='en cours'?`<button class="btn bs btn-ico" onclick="openCredMsgModal(${c.id})" title="Préparer un message">${ico('envoyer')}</button>`:''}
-            ${c.status==='en cours'?`<button class="btn bp btn-ico" onclick="openCredSolder(${c.id})" title="Clore le dossier" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)">${ico('clore-dossier')}</button>`:''}
-            <button class="btn bd btn-ico" onclick="deleteCred(${c.id})" title="Supprimer">${ico('corbeille')}</button>
+  const banner=credPatientFilter
+    ? `<div style="display:flex;align-items:center;gap:10px;background:#EDE7F6;border:1px solid #B39DDB;border-radius:9px;padding:8px 12px;margin-bottom:10px;font-size:.82rem;color:#4527A0">
+         ${ico('patients')} Filtré sur <strong>${credPatientFilter.replace('|',' ')}</strong>
+         <button class="btn bs sm" style="margin-left:auto" onclick="credPatientFilter='';renderCreds()">Retirer le filtre</button>
+       </div>` : '';
+
+  const host=document.getElementById('cred-table');
+  if(!f.length){
+    host.innerHTML=banner+'<div style="text-align:center;color:var(--gray-500);padding:1.8rem;font-size:.88rem">Aucun crédit pour ces critères.</div>';
+    return;
+  }
+
+  host.innerHTML=banner+f.map(c=>{
+    const e=credEtape(c), E=CRED_ETAPES[e];
+    const days=credDaysSinceContact(c);
+    const follow=credNeedsFollowup(c);
+    const last=credLastRelance(c);
+    const sib=credSiblings(c);
+    const sibBadge=(sib.length>1 && credOpen(c))
+      ? `<span class="badge" title="Ce patient a plusieurs crédits ouverts — cliquer pour les isoler" style="background:#EDE7F6;color:#4527A0;border:1px solid #B39DDB;padding:2px 8px;font-size:.67rem;font-weight:700;cursor:pointer" onclick="setCredPatientFilter(${c.id})">${sib.length} crédits · ${sib.reduce((s,x)=>s+(x.montant||0),0).toFixed(2)} €</span>`
+      : '';
+    const lastTxt=last
+      ? `Dernière relance : <strong>${last.date?new Date(last.date).toLocaleDateString('fr-FR'):'—'}</strong> · ${CRED_REL_LBL[last.type]||last.type||'—'} · ${staffName(last.by)}`
+      : 'Aucune relance';
+    const pastille=follow
+      ? `<span class="badge" style="background:var(--red);color:#fff;padding:3px 10px;font-size:.7rem;font-weight:700;margin-left:8px;display:inline-block">● ${days} j — à vérifier</span>`
+      : '';
+    const closed=(c.status==='soldé'&&c.paidAt)
+      ? `<div style="font-size:.74rem;color:#2E7D32;margin-top:3px">${ico('valider')} Clôturé le ${new Date(c.paidAt).toLocaleDateString('fr-FR')} par ${staffName(c.paidBy)}</div>` : '';
+    const huis=(c.status==='huissier'&&c.huissierAt)
+      ? `<div style="font-size:.74rem;color:#6A1B9A;margin-top:3px">${ico('securite')} Transmis le ${new Date(c.huissierAt).toLocaleDateString('fr-FR')}${c.huissierNom?' · '+c.huissierNom:''}</div>` : '';
+
+    let actions='';
+    if(c.status==='en cours'){
+      actions+=`<button class="btn bp sm" onclick="openCredRelanceModal(${c.id})" style="background:${E.col};border-color:${E.col}">${ico('relancer')} Relancer — étape ${credNextEtape(c)}</button>`;
+      actions+=`<button class="btn bs sm" onclick="openCredSolder(${c.id})">${ico('valider')} Réglé</button>`;
+    } else if(c.status==='huissier'){
+      actions+=`<button class="btn bs sm" onclick="openCredSolder(${c.id})">${ico('valider')} Réglé</button>`;
+    }
+    actions+=`<button class="btn bs sm" onclick="openCredDetail(${c.id})">${ico('voir')} Détail</button>`;
+
+    return `<div style="border:1px solid var(--gray-200);border-left:4px solid ${E.col};border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff;box-shadow:var(--shadow)">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:190px;flex:1">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:800;font-size:.95rem">${c.nom} ${c.prenom}</span>
+            <span class="badge" style="${CRED_STAT_COLOR[c.status]||''};padding:2px 9px;font-size:.67rem">${CRED_STAT_LBL[c.status]||c.status}</span>
+            ${sibBadge}
           </div>
-        </td>
-      </tr>`;
-    }).join('')||`<tr><td colspan="8" style="text-align:center;color:var(--gray-500);padding:1.5rem">Aucun crédit</td></tr>`}</tbody></table>`;
+          <div style="font-size:.75rem;color:var(--gray-500);margin-top:3px">
+            ${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avance du ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}
+          </div>
+          ${c.produits?`<div style="font-size:.75rem;color:var(--gray-700);margin-top:2px">${c.produits}</div>`:''}
+          ${closed}${huis}
+        </div>
+        <div style="flex:none;text-align:right">
+          <div style="font-weight:800;font-size:1.15rem;color:var(--b-mid)">${credAmountHtml(c)}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px">
+        ${credStepper(c)}
+        <span style="font-size:.8rem;font-weight:700;color:${E.col}">Étape ${e}/5 · ${E.lbl}</span>
+        <span style="font-size:.74rem;color:var(--gray-500)">${E.sub}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-top:9px;padding-top:9px;border-top:1px solid var(--gray-100)">
+        <div style="font-size:.76rem;color:var(--gray-600);line-height:1.7">${lastTxt}${pastille}</div>
+        <div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">${actions}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function toggleCredForm(){
@@ -4722,9 +4859,34 @@ function toggleCredForm(){
     document.getElementById('cr-date').value=new Date().toISOString().split('T')[0];
     document.getElementById('cr-montant').value='';
     document.getElementById('cr-motif').value='comptoir';
+    const r1=document.querySelector('input[name="cr-canal1"][value="sur place"]'); if(r1) r1.checked=true;
+    const w=document.getElementById('cr-canal1-wrap'); if(w) w.style.display='';
     updCredFormMotif();
     c.scrollIntoView({behavior:'smooth',block:'start'});
   }
+}
+
+function editCred(id){
+  const c=credits.find(x=>x.id===id); if(!c) return;
+  closeModal('cred-detail-modal');
+  const card=document.getElementById('cred-form-card');
+  card.style.display='block';
+  credEditId=id;
+  document.getElementById('cred-form-title').textContent='Modifier le crédit';
+  document.getElementById('cr-nom').value=c.nom||'';
+  document.getElementById('cr-prenom').value=c.prenom||'';
+  document.getElementById('cr-tel').value=c.tel||'';
+  document.getElementById('cr-mail').value=c.mail||'';
+  document.getElementById('cr-adresse').value=c.adresse||'';
+  document.getElementById('cr-commune').value=c.commune||'';
+  document.getElementById('cr-produits').value=c.produits||'';
+  document.getElementById('cr-notes').value=c.notes||'';
+  document.getElementById('cr-date').value=c.dateAvance||'';
+  document.getElementById('cr-montant').value=(c.montant&&c.montant>0)?c.montant:'';
+  document.getElementById('cr-motif').value=c.motif||'comptoir';
+  const w=document.getElementById('cr-canal1-wrap'); if(w) w.style.display='none';
+  updCredFormMotif();
+  card.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function saveCred(){
@@ -4750,7 +4912,12 @@ function saveCred(){
   if(credEditId){
     const c=credits.find(x=>x.id===credEditId); if(c){ Object.assign(c,obj); c.updatedAt=Date.now(); }
   } else {
-    credits.unshift({id:Date.now(),...obj,status:'en cours',relances:[],createdBy:currentUser?.id||'?',createdAt:new Date().toISOString().split('T')[0],updatedAt:Date.now()});
+    // La saisie du crédit VAUT relance n° 1 (orale, au comptoir ou par téléphone).
+    const canal1=document.querySelector('input[name="cr-canal1"]:checked')?.value||'sur place';
+    credits.unshift({id:Date.now(),...obj,status:'en cours',
+      relances:[{date:obj.dateAvance, type:canal1, etape:1, by:currentUser?.id||'?',
+        notes:'Relance orale '+(canal1==='tel'?'par téléphone':'au comptoir')+' à la saisie du crédit'}],
+      createdBy:currentUser?.id||'?',createdAt:new Date().toISOString().split('T')[0],updatedAt:Date.now()});
   }
   toggleCredForm();
   renderCreds();
@@ -4768,28 +4935,71 @@ function deleteCred(id){
 function openCredRelanceModal(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   currentRelCredId=id;
+  const cur=credEtape(c), next=credNextEtape(c);
+  const sel=document.getElementById('crel-etape');
+  sel.innerHTML=[1,2,3,4,5].map(k=>`<option value="${k}"${k<cur?' data-done="1"':''}>Étape ${k} — ${CRED_ETAPES[k].lbl}${k===cur?' (étape actuelle)':''}${k===next&&k!==cur?' (suggérée)':''}</option>`).join('');
+  sel.value=String(next);
   document.getElementById('crel-date').value=new Date().toISOString().split('T')[0];
-  document.getElementById('crel-type').value='tel';
-  document.getElementById('crel-niveau').value=String(credSuggestedNiveau(c));
   document.getElementById('crel-notes').value='';
-  const max=credMaxNiveau(c);
+  const h=document.getElementById('crel-huissier'); if(h) h.value=c.huissierNom||'';
+  const days=credDaysSinceContact(c);
+  const last=credLastRelance(c);
   document.getElementById('cred-rel-info').innerHTML=
-    `<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}<br>
-     <span style="font-size:.78rem;color:var(--gray-500)">Date avance : ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}${max?` · Dernier niveau atteint : ${CRED_NIVEAU_LBL[max]}`:''}</span>`;
+    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${credStepper(c)}<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}</div>
+     <div style="font-size:.78rem;color:var(--gray-500);margin-top:5px">Étape atteinte : ${cur}/5 — ${CRED_ETAPES[cur].lbl}${last&&last.date?` · dernière relance le ${new Date(last.date).toLocaleDateString('fr-FR')} par ${staffName(last.by)}`:''}${days!==null?` · ${days} j depuis le dernier contact`:''}</div>
+     <div style="font-size:.78rem;color:var(--gray-500);margin-top:2px">${c.tel?`${ico('telephone')} ${c.tel}`:'Pas de téléphone'}${c.mail?` · ${c.mail}`:' · pas d’e-mail'}</div>`;
+  updCredRelEtape();
   openModal('cred-rel-modal');
 }
+
+function updCredRelEtape(){
+  const e=parseInt(document.getElementById('crel-etape').value||'1');
+  const E=CRED_ETAPES[e];
+  document.getElementById('crel-type').value=E.canal;
+  const t=document.getElementById('crel-title'); if(t) t.textContent=`Relancer — étape ${e} : ${E.lbl}`;
+  const hint=document.getElementById('crel-etape-hint');
+  if(hint) hint.innerHTML=`<strong style="color:${E.col}">Étape ${e} — ${E.lbl}.</strong> ${CRED_ETAPE_HINT[e]||''}`;
+  updCredRelCanal();
+}
+
+function updCredRelCanal(){
+  const canal=document.getElementById('crel-type').value;
+  const w=document.getElementById('crel-huissier-wrap'); if(w) w.style.display=(canal==='huissier')?'':'none';
+  const written=(canal==='sms'||canal==='mail'||canal==='courrier');
+  const lbl=document.getElementById('crel-save-lbl');
+  if(lbl) lbl.textContent = written ? 'Rédiger le message' : 'Enregistrer la relance';
+  const c=credits.find(x=>x.id===currentRelCredId);
+  const warn=document.getElementById('crel-warn');
+  if(warn&&c){
+    let m='';
+    if(canal==='sms' && !c.tel)  m='Ce patient n’a pas de numéro de téléphone enregistré — complétez la fiche avant d’envoyer un SMS.';
+    if(canal==='mail' && !c.mail) m='Ce patient n’a pas d’adresse e-mail enregistrée — complétez la fiche, ou choisissez un autre canal.';
+    if(canal==='courrier' && !c.adresse) m='Aucune adresse postale enregistrée pour ce patient — elle devra être complétée à la main sur le courrier.';
+    warn.textContent=m;
+    warn.style.display=m?'block':'none';
+  }
+}
+
 function saveCredRelance(){
   const c=credits.find(x=>x.id===currentRelCredId); if(!c) return;
   const date=document.getElementById('crel-date').value;
   if(!date){alert('La date est obligatoire.');return}
-  const nivVal=document.getElementById('crel-niveau').value;
-  c.relances=c.relances||[];
-  c.relances.push({
-    date, type:document.getElementById('crel-type').value,
-    niveau: nivVal ? parseInt(nivVal) : null,
-    notes:document.getElementById('crel-notes').value.trim(),
-    by:currentUser?.id||'?'
-  });
+  const etape=parseInt(document.getElementById('crel-etape').value||'1');
+  const canal=document.getElementById('crel-type').value;
+  const notes=document.getElementById('crel-notes').value.trim();
+  // Canaux écrits : on passe à la rédaction du message, la relance sera écrite à la confirmation d'envoi.
+  if(canal==='sms'||canal==='mail'||canal==='courrier'){
+    closeModal('cred-rel-modal');
+    openCredMsgModal(c.id, etape, canal, date, notes);
+    return;
+  }
+  credEnsureRelances(c);
+  c.relances.push({date, type:canal, etape, notes, by:currentUser?.id||'?'});
+  if(canal==='huissier'||etape===5){
+    c.status='huissier';
+    c.huissierAt=date;
+    c.huissierNom=(document.getElementById('crel-huissier')?.value||'').trim();
+  }
   c.updatedAt=Date.now();
   closeModal('cred-rel-modal');
   renderCreds();
@@ -4819,47 +5029,39 @@ function saveCredSolder(){
   renderCreds();
 }
 
-function markCredIrrecouvrable(id){
-  const c=credits.find(x=>x.id===id); if(!c) return;
-  document.getElementById('conf-title').textContent='Crédit irrécouvrable';
-  document.getElementById('conf-msg').textContent=`Marquer le crédit de ${c.nom} ${c.prenom} comme irrécouvrable ? Cette action peut être annulée depuis le détail.`;
-  pendingAction=()=>{c.status='perdu'; c.updatedAt=Date.now(); renderCreds(); closeModal('confirm-modal'); closeModal('cred-detail-modal');};
-  document.getElementById('conf-ok').onclick=pendingAction;
-  openModal('confirm-modal');
-}
-function reopenCred(id){
-  const c=credits.find(x=>x.id===id); if(!c) return;
-  c.status='en cours';
-  delete c.paidAt; delete c.paidBy; delete c.paidMode; delete c.paidNotes;
-  c.updatedAt=Date.now();
-  renderCreds();
-  closeModal('cred-detail-modal');
-}
-
 function openCredDetail(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   document.getElementById('cred-detail-title').textContent=`${c.nom} ${c.prenom}`;
-  const rels=(c.relances||[]).map((r,i)=>({...r,_idx:i})).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const relsHtml=rels.length
-    ? rels.map(r=>`<div style="font-size:.8rem;padding:6px 10px;background:var(--gray-100);border-radius:6px;margin-bottom:4px">
-        <strong>${new Date(r.date).toLocaleDateString('fr-FR')}</strong>${r.time?` à ${r.time}`:''} · ${CRED_REL_LBL[r.type]||r.type}${r.niveau?` <span class="badge" style="${CRED_NIVEAU_COLOR[r.niveau]||''};padding:1px 7px;font-size:.65rem;font-weight:600">${CRED_NIVEAU_LBL[r.niveau]}</span>`:''} · par ${staffName(r.by)}
-        ${r.notes?`<div style="margin-top:2px;color:var(--gray-700)">${r.notes}</div>`:''}
-        ${r.body?`<div style="margin-top:5px"><button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="viewArchivedCredMsg(${c.id},${r._idx})">${ico('voir')} Voir le message archivé</button></div>`:''}
-      </div>`).join('')
-    : '<div style="font-size:.8rem;color:var(--gray-500)">Aucune relance enregistrée.</div>';
+  const rels=credRelances(c).map((r,i)=>({...r,_idx:i}))
+    .sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||'')));
+  const relsHtml=rels.map(r=>{
+    const e=credRelEtape(r), E=CRED_ETAPES[e];
+    return `<div style="font-size:.8rem;padding:8px 11px;background:var(--gray-100);border-left:3px solid ${E.col};border-radius:6px;margin-bottom:5px">
+      <strong>${r.date?new Date(r.date).toLocaleDateString('fr-FR'):'—'}</strong>${r.time?` à ${r.time}`:''} · ${CRED_REL_LBL[r.type]||r.type||'—'} ${credEtapeBadge(e,true)} · par ${staffName(r.by)}
+      ${r.notes?`<div style="margin-top:2px;color:var(--gray-700)">${r.notes}</div>`:''}
+      ${r.body?`<div style="margin-top:5px"><button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="viewArchivedCredMsg(${c.id},${r._idx})">${ico('voir')} Voir le message archivé</button></div>`:''}
+    </div>`;
+  }).join('');
+  const e=credEtape(c), E=CRED_ETAPES[e];
   const days=credDaysSinceContact(c);
   const followup=credNeedsFollowup(c);
+  const sib=credSiblings(c);
   document.getElementById('cred-detail-body').innerHTML=`
     <div style="background:var(--g-pale);padding:.9rem 1rem;border-radius:8px;margin-bottom:1rem">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
           <div style="font-weight:700;font-size:1.1rem">${credAmountHtml(c)}</div>
-          <div style="font-size:.76rem;color:var(--gray-500);margin-top:2px">${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avancé le ${new Date(c.dateAvance).toLocaleDateString('fr-FR')}</div>
+          <div style="font-size:.76rem;color:var(--gray-500);margin-top:2px">${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avancé le ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}</div>
         </div>
         <span class="badge" style="${CRED_STAT_COLOR[c.status]||''};padding:4px 11px;font-size:.78rem">${CRED_STAT_LBL[c.status]||c.status}</span>
       </div>
-      ${followup?`<div style="margin-top:8px"><span class="badge" style="background:var(--red-pale);color:var(--red);border:1px solid #ffcdd2;padding:3px 9px;font-size:.72rem">${ico('alerte')} ${days} j sans contact — à relancer</span></div>`:''}
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        ${credStepper(c)}<span style="font-size:.8rem;font-weight:700;color:${E.col}">Étape ${e}/5 · ${E.lbl}</span>
+      </div>
+      ${followup?`<div style="margin-top:8px"><span class="badge" style="background:var(--red);color:#fff;padding:3px 10px;font-size:.72rem;font-weight:700">● ${days} j sans contact — vérifier si le patient est passé régler</span></div>`:''}
+      ${sib.length>1?`<div style="margin-top:8px;font-size:.76rem;color:#4527A0">${ico('patients')} Ce patient a ${sib.length} crédits ouverts, pour un total de ${sib.reduce((s,x)=>s+(x.montant||0),0).toFixed(2)} €.</div>`:''}
       ${c.status==='soldé'&&c.paidAt?`<div style="margin-top:8px;font-size:.78rem;color:#2E7D32">${ico('valider')} Dossier clôturé le ${new Date(c.paidAt).toLocaleDateString('fr-FR')} par ${staffName(c.paidBy)}${c.paidNotes?` · ${c.paidNotes}`:''}</div>`:''}
+      ${c.status==='huissier'&&c.huissierAt?`<div style="margin-top:8px;font-size:.78rem;color:#6A1B9A">${ico('securite')} Transmis à l'huissier le ${new Date(c.huissierAt).toLocaleDateString('fr-FR')}${c.huissierNom?` · ${c.huissierNom}`:''}</div>`:''}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.85rem;margin-bottom:1rem">
@@ -4875,32 +5077,45 @@ function openCredDetail(id){
     ${relsHtml}
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:1.2rem">
-      ${c.status==='en cours'?`<button class="btn bs sm" onclick="closeModal('cred-detail-modal');openCredRelanceModal(${c.id})">${ico('telephone')} Saisir une relance</button>`:''}
-      ${c.status==='en cours'?`<button class="btn bs sm" onclick="closeModal('cred-detail-modal');openCredMsgModal(${c.id})">${ico('envoyer')} Préparer un message</button>`:''}
-      ${c.status==='en cours'?`<button class="btn bp sm" onclick="closeModal('cred-detail-modal');openCredSolder(${c.id})" style="background:var(--g-pale);color:var(--g-dark);border:1px solid var(--g-border)">${ico('clore-dossier')} Clore le dossier</button>`:''}
-      ${c.status==='en cours'?`<button class="btn bd sm" onclick="markCredIrrecouvrable(${c.id})">${ico('supprimer')} Irrécouvrable</button>`:''}
-      ${c.status!=='en cours'?`<button class="btn bs sm" onclick="reopenCred(${c.id})">${ico('renouveler')} Ré-ouvrir</button>`:''}
+      ${c.status==='en cours'?`<button class="btn bp sm" onclick="closeModal('cred-detail-modal');openCredRelanceModal(${c.id})">${ico('relancer')} Relancer — étape ${credNextEtape(c)}</button>`:''}
+      ${credOpen(c)?`<button class="btn bs sm" onclick="closeModal('cred-detail-modal');openCredSolder(${c.id})">${ico('valider')} Marquer réglé</button>`:''}
+      <button class="btn bs sm" onclick="editCred(${c.id})">${ico('modifier')} Modifier</button>
+      ${credOpen(c)?`<button class="btn bd sm" onclick="markCredIrrecouvrable(${c.id})">${ico('supprimer')} Irrécouvrable</button>`:''}
+      ${!credOpen(c)?`<button class="btn bs sm" onclick="reopenCred(${c.id})">${ico('renouveler')} Ré-ouvrir</button>`:''}
+      <button class="btn bd sm" onclick="deleteCred(${c.id})">${ico('corbeille')} Supprimer</button>
     </div>`;
   openModal('cred-detail-modal');
 }
 
-function openCredMsgModal(id){
+function markCredIrrecouvrable(id){
+  const c=credits.find(x=>x.id===id); if(!c) return;
+  document.getElementById('conf-title').textContent='Crédit irrécouvrable';
+  document.getElementById('conf-msg').textContent=`Marquer le crédit de ${c.nom} ${c.prenom} comme irrécouvrable ? Cette action peut être annulée depuis le détail.`;
+  pendingAction=()=>{c.status='perdu'; c.updatedAt=Date.now(); renderCreds(); closeModal('confirm-modal'); closeModal('cred-detail-modal');};
+  document.getElementById('conf-ok').onclick=pendingAction;
+  openModal('confirm-modal');
+}
+
+function reopenCred(id){
+  const c=credits.find(x=>x.id===id); if(!c) return;
+  c.status='en cours';
+  delete c.paidAt; delete c.paidBy; delete c.paidMode; delete c.paidNotes;
+  c.updatedAt=Date.now();
+  renderCreds();
+  closeModal('cred-detail-modal');
+}
+
+function openCredMsgModal(id, etape, canal, date, notes){
   const c=credits.find(x=>x.id===id); if(!c) return;
   currentMsgCredId=id;
   window._currentArchivedMsg=null;
-  const nivBlock=document.getElementById('cmsg-niv-block');
-  const tplBlock=document.getElementById('cmsg-tpl-block');
-  if(nivBlock) nivBlock.style.display='';
-  if(tplBlock) tplBlock.style.display='';
-  const suggested=credSuggestedNiveau(c);
-  const nivRadio=document.querySelector(`input[name="cmsg-niv"][value="${suggested}"]`);
-  if(nivRadio) nivRadio.checked=true;
-  const smsRadio=document.querySelector('input[name="cmsg-tpl"][value="sms"]');
-  if(smsRadio){ smsRadio.disabled=false; smsRadio.checked=true; }
-  const max=credMaxNiveau(c);
+  currentMsgEtape=etape||credNextEtape(c);
+  currentMsgCanal=canal||CRED_ETAPES[currentMsgEtape].canal;
+  currentMsgDate=date||new Date().toISOString().split('T')[0];
+  currentMsgNotes=notes||'';
   document.getElementById('cred-msg-info').innerHTML=
-    `<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}${c.mail?` · ${c.mail}`:''}<br>
-     <span style="font-size:.78rem;color:var(--gray-500)">Date avance : ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}${max?` · Dernier niveau atteint : ${CRED_NIVEAU_LBL[max]}`:' · Aucune relance précédente'}</span>`;
+    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${credStepper(c)}<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}</div>
+     <div style="font-size:.78rem;color:var(--gray-500);margin-top:5px">${c.tel?`${ico('telephone')} ${c.tel}`:''}${c.mail?` · ${c.mail}`:''} · avance du ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}</div>`;
   document.getElementById('cmsg-confirm').style.display='none';
   document.getElementById('cmsg-confirm-btn').style.display='';
   renderCredMsg();
@@ -4909,52 +5124,90 @@ function openCredMsgModal(id){
 
 function renderCredMsg(){
   const c=credits.find(x=>x.id===currentMsgCredId); if(!c) return;
-  const niv=parseInt(document.querySelector('input[name="cmsg-niv"]:checked')?.value||'1');
-  let tpl=document.querySelector('input[name="cmsg-tpl"]:checked')?.value||'sms';
-
-  const smsRadio=document.querySelector('input[name="cmsg-tpl"][value="sms"]');
-  const courrierRadio=document.querySelector('input[name="cmsg-tpl"][value="courrier"]');
-  const smsLbl=document.getElementById('cmsg-tpl-sms-lbl');
-  if(niv===3){
-    if(smsRadio){smsRadio.disabled=true; smsRadio.checked=false;}
-    if(courrierRadio) courrierRadio.checked=true;
-    if(smsLbl){smsLbl.style.opacity='.45'; smsLbl.title='Une mise en demeure doit être envoyée en LRAR.';}
-    tpl='courrier';
-  } else {
-    if(smsRadio){smsRadio.disabled=false;}
-    if(smsLbl){smsLbl.style.opacity='1'; smsLbl.removeAttribute('title');}
-  }
-
-  const max=credMaxNiveau(c);
-  const days=credDaysSinceContact(c);
-  const hints={
-    1:"1er rappel courtois, ton chaleureux et bienveillant.",
-    2:"2e relance, ton ferme avec délai imparti (15 j).",
-    3:"Mise en demeure : à envoyer exclusivement en lettre recommandée avec accusé de réception (LRAR). Mentionne la transmission éventuelle à un huissier."
-  };
-  let hint=hints[niv]||'';
-  if(max>0) hint+=` · Dernier niveau atteint : ${CRED_NIVEAU_LBL[max]}.`;
-  if(days!==null) hint+=` · ${days} j depuis le dernier contact.`;
-  document.getElementById('cmsg-niv-hint').textContent=hint;
-
-  if(tpl==='sms'){
+  const e=currentMsgEtape, canal=currentMsgCanal, E=CRED_ETAPES[e];
+  const hint=document.getElementById('cmsg-niv-hint');
+  if(hint) hint.innerHTML=`<strong style="color:${E.col}">Étape ${e}/5 — ${E.lbl} · ${CRED_REL_LBL[canal]||canal}.</strong> ${CRED_ETAPE_HINT[e]||''}`;
+  if(canal==='sms'){
     document.getElementById('cmsg-subject-wrap').style.display='none';
-    const txt=buildCredSmsBody(c, niv);
+    const txt=buildCredSmsBody(c, e);
     document.getElementById('cmsg-content').textContent=txt;
     document.getElementById('cmsg-len').textContent=`(${txt.length} car.)`;
   } else {
     document.getElementById('cmsg-subject-wrap').style.display='block';
-    const {subject, body}=buildCredLetterBody(c, niv);
-    document.getElementById('cmsg-subject').value=subject;
-    document.getElementById('cmsg-content').textContent=body;
+    const r=buildCredLetterBody(c, e);
+    document.getElementById('cmsg-subject').value=r.subject;
+    document.getElementById('cmsg-content').textContent=r.body;
     document.getElementById('cmsg-len').textContent='';
   }
   const printBtn=document.getElementById('cmsg-print-btn');
-  if(printBtn) printBtn.style.display=(tpl==='courrier')?'':'none';
+  if(printBtn) printBtn.style.display=(canal==='sms')?'none':'';
+}
+
+function confirmCredMsg(){
+  const c=credits.find(x=>x.id===currentMsgCredId); if(!c) return;
+  const e=currentMsgEtape, canal=currentMsgCanal;
+  const subject = canal==='sms' ? '' : (document.getElementById('cmsg-subject').value||'');
+  const body = document.getElementById('cmsg-content').textContent || '';
+  const now = new Date();
+  credEnsureRelances(c);
+  c.relances.push({
+    date: currentMsgDate || now.toISOString().split('T')[0],
+    time: now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+    type: canal, tpl: canal==='sms'?'sms':'courrier', etape:e, subject, body,
+    notes: currentMsgNotes || `Relance étape ${e} — ${CRED_ETAPES[e].lbl} (${CRED_REL_LBL[canal]||canal})`,
+    by: currentUser?.id||'?'
+  });
+  c.updatedAt=Date.now();
+  document.getElementById('cmsg-confirm').textContent='Relance enregistrée. Le message est archivé dans le dossier.';
+  document.getElementById('cmsg-confirm').style.display='block';
+  document.getElementById('cmsg-confirm-btn').style.display='none';
+  renderCreds();
+}
+
+function viewArchivedCredMsg(credId, relIdx){
+  const c=credits.find(x=>x.id===credId); if(!c) return;
+  const r=(c.relances||[])[relIdx]; if(!r) return;
+  if(!r.body && !r.subject){alert('Aucun contenu archivé pour ce message (relance saisie manuellement).');return}
+  currentMsgCredId=null;
+  const e=credRelEtape(r), E=CRED_ETAPES[e];
+  window._currentArchivedMsg={c, niv:e, tpl:r.tpl||'sms', subject:r.subject||'', body:r.body||''};
+  document.getElementById('cmsg-confirm-btn').style.display='none';
+  document.getElementById('cred-msg-info').innerHTML=
+    `<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}<br>
+     <span style="font-size:.78rem;color:var(--gray-500)">Avance du ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}</span>`;
+  const hint=document.getElementById('cmsg-niv-hint');
+  if(hint) hint.innerHTML=`<strong style="color:${E.col}">Message archivé — étape ${e}/5 · ${E.lbl}</strong>`;
+  if(r.subject){
+    document.getElementById('cmsg-subject-wrap').style.display='block';
+    document.getElementById('cmsg-subject').value=r.subject;
+  } else {
+    document.getElementById('cmsg-subject-wrap').style.display='none';
+  }
+  document.getElementById('cmsg-content').textContent=r.body||'';
+  document.getElementById('cmsg-len').textContent= r.tpl==='sms'?`(${(r.body||'').length} car.)`:'';
+  const banner=document.getElementById('cmsg-confirm');
+  banner.textContent=`Envoyé le ${new Date(r.date).toLocaleDateString('fr-FR')}${r.time?' à '+r.time:''} par ${staffName(r.by)} — étape ${e} · ${E.lbl}`;
+  banner.style.display='block';
+  const printBtn=document.getElementById('cmsg-print-btn');
+  if(printBtn) printBtn.style.display=(r.tpl==='sms')?'none':'';
+  closeModal('cred-archive-modal');
+  closeModal('cred-detail-modal');
+  openModal('cred-msg-modal');
+}
+
+function printCredLetterCurrent(){
+  if(window._currentArchivedMsg){
+    const a=window._currentArchivedMsg;
+    return printCredLetter(a.c, a.niv, a.subject, a.body);
+  }
+  const c=credits.find(x=>x.id===currentMsgCredId); if(!c) return;
+  const subject=document.getElementById('cmsg-subject').value||'';
+  const body=document.getElementById('cmsg-content').textContent||'';
+  printCredLetter(c, currentMsgEtape, subject, body);
 }
 
 function buildCredSmsBody(c, niv){
-  niv = niv || 1;
+  niv = credTone(niv||1);
   const dt=new Date(c.dateAvance).toLocaleDateString('fr-FR');
   const isAvance = c.motif==='avance' && !(c.montant&&c.montant>0);
   const sommeTxt = isAvance ? 'votre dossier' : `un solde de ${c.montant.toFixed(2).replace('.',',')} €`;
@@ -4970,7 +5223,7 @@ function buildCredSmsBody(c, niv){
 }
 
 function buildCredLetterBody(c, niv){
-  niv = niv || 1;
+  niv = credTone(niv||1);
   const dt=new Date(c.dateAvance).toLocaleDateString('fr-FR');
   const today=new Date().toLocaleDateString('fr-FR');
   const isAvance = c.motif==='avance' && !(c.montant&&c.montant>0);
@@ -5003,78 +5256,10 @@ function buildCredLetterBody(c, niv){
   return {subject, body};
 }
 
-function confirmCredMsg(){
-  const c=credits.find(x=>x.id===currentMsgCredId); if(!c) return;
-  const tpl=document.querySelector('input[name="cmsg-tpl"]:checked')?.value||'sms';
-  const niv=parseInt(document.querySelector('input[name="cmsg-niv"]:checked')?.value||'1');
-  const channel = tpl==='sms' ? 'SMS' : (niv===3 ? 'LRAR' : 'Courrier/mail');
-  const subject = tpl==='sms' ? '' : (document.getElementById('cmsg-subject').value||'');
-  const body = document.getElementById('cmsg-content').textContent || '';
-  const now = new Date();
-  c.relances=c.relances||[];
-  c.relances.push({
-    date:now.toISOString().split('T')[0],
-    time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
-    type:tpl==='sms'?'sms':'courrier',
-    tpl, niveau:niv, subject, body,
-    notes:`Relance ${CRED_NIVEAU_LBL[niv]} — ${channel} envoyé(e)`,
-    by:currentUser?.id||'?'
-  });
-  c.updatedAt=Date.now();
-  document.getElementById('cmsg-confirm').style.display='block';
-  document.getElementById('cmsg-confirm-btn').style.display='none';
-  renderCreds();
-}
-
-function viewArchivedCredMsg(credId, relIdx){
-  const c=credits.find(x=>x.id===credId); if(!c) return;
-  const r=(c.relances||[])[relIdx]; if(!r) return;
-  if(!r.body && !r.subject){alert('Aucun contenu archivé pour ce message (relance saisie manuellement).');return}
-  currentMsgCredId=null;
-  window._currentArchivedMsg={c, niv:r.niveau||1, tpl:r.tpl||'sms', subject:r.subject||'', body:r.body||''};
-  const nivBlock=document.getElementById('cmsg-niv-block');
-  const tplBlock=document.getElementById('cmsg-tpl-block');
-  if(nivBlock) nivBlock.style.display='none';
-  if(tplBlock) tplBlock.style.display='none';
-  document.getElementById('cmsg-confirm-btn').style.display='none';
-  document.getElementById('cred-msg-info').innerHTML=
-    `<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}<br>
-     <span style="font-size:.78rem;color:var(--gray-500)">Date avance : ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}</span>`;
-  if(r.subject){
-    document.getElementById('cmsg-subject-wrap').style.display='block';
-    document.getElementById('cmsg-subject').value=r.subject;
-  } else {
-    document.getElementById('cmsg-subject-wrap').style.display='none';
-  }
-  document.getElementById('cmsg-content').textContent=r.body||'';
-  document.getElementById('cmsg-len').textContent= r.tpl==='sms'?`(${(r.body||'').length} car.)`:'';
-  const dt=new Date(r.date).toLocaleDateString('fr-FR');
-  const banner=document.getElementById('cmsg-confirm');
-  banner.textContent=`Envoyé le ${dt}${r.time?' à '+r.time:''} par ${staffName(r.by)}${r.niveau?' — '+CRED_NIVEAU_LBL[r.niveau]:''}`;
-  banner.style.display='block';
-  const printBtn=document.getElementById('cmsg-print-btn');
-  if(printBtn) printBtn.style.display=(r.tpl==='courrier')?'':'none';
-  closeModal('cred-archive-modal');
-  closeModal('cred-detail-modal');
-  openModal('cred-msg-modal');
-}
-
-function printCredLetterCurrent(){
-  if(window._currentArchivedMsg){
-    const {c, niv, subject, body}=window._currentArchivedMsg;
-    return printCredLetter(c, niv, subject, body);
-  }
-  const c=credits.find(x=>x.id===currentMsgCredId); if(!c) return;
-  const niv=parseInt(document.querySelector('input[name="cmsg-niv"]:checked')?.value||'1');
-  const subject=document.getElementById('cmsg-subject').value||'';
-  const body=document.getElementById('cmsg-content').textContent||'';
-  printCredLetter(c, niv, subject, body);
-}
-
 function printCredLetter(c, niv, subject, body){
   if(!body){alert('Aucun contenu à imprimer.');return}
   const today=new Date().toLocaleDateString('fr-FR');
-  const isLRAR=niv===3;
+  const isLRAR=credTone(niv)===3;
   const p=patients.find(x=>x.nom===c.nom && x.prenom===c.prenom);
   const adresse=p?.adresse||'';
   const logoSrc=document.querySelector('header img')?.src||'';
@@ -5123,7 +5308,7 @@ function renderCredArchive(){
   const nf=document.getElementById('carch-niveau').value;
   const tf=document.getElementById('carch-type').value;
   let list=getAllArchivedMessages();
-  if(nf) list=list.filter(m=>String(m.niveau||'')===nf);
+  if(nf) list=list.filter(m=>String(credRelEtape(m))===nf);
   if(tf) list=list.filter(m=>m.tpl===tf);
   if(q) list=list.filter(m=>(m.patient+' '+(m.subject||'')+' '+(m.body||'')+' '+(m.notes||'')).toLowerCase().includes(q));
   const el=document.getElementById('carch-list');
@@ -5132,13 +5317,14 @@ function renderCredArchive(){
     return;
   }
   el.innerHTML=list.map(m=>{
-    const dt=new Date(m.date).toLocaleDateString('fr-FR');
+    const e=credRelEtape(m);
+    const dt=m.date?new Date(m.date).toLocaleDateString('fr-FR'):'—';
     const time=m.time?` à ${m.time}`:'';
-    const channel=m.tpl==='sms'?'SMS':(m.niveau===3?'LRAR':'Courrier');
+    const channel=CRED_REL_LBL[m.type]||(m.tpl==='sms'?'SMS':'Courrier');
     return `<div style="border:1px solid var(--gray-200);border-radius:8px;padding:.7rem 1rem;margin-bottom:.5rem;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
       <div style="min-width:0;flex:1">
         <div style="font-weight:600;color:var(--g-dark);font-size:.86rem">${m.patient}</div>
-        <div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">${dt}${time} · ${channel} · par ${staffName(m.by)}${m.niveau?` · <span class="badge" style="${CRED_NIVEAU_COLOR[m.niveau]||''};padding:1px 7px;font-size:.65rem;font-weight:600">${CRED_NIVEAU_LBL[m.niveau]}</span>`:''}</div>
+        <div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">${dt}${time} · ${channel} · par ${staffName(m.by)} · ${credEtapeBadge(e,true)}</div>
         ${m.subject?`<div style="font-size:.74rem;color:var(--gray-700);margin-top:3px;font-style:italic">${m.subject}</div>`:''}
       </div>
       <button class="btn bs sm" onclick="viewArchivedCredMsg(${m.credId},${m.relIdx})">${ico('voir')} Voir</button>
