@@ -161,7 +161,23 @@
     <div class="rn-foot" style="flex-wrap:wrap;gap:9px">
       <button class="rn-btn rn-ghost" onclick="rnClose('rn-ov-prep')">Annuler</button>
       <button class="rn-btn rn-blue" onclick="rnPrepDeliver()">🚚 Envoyer en livraison</button>
-      <button class="rn-btn rn-pri" onclick="rnPrepMail()">✉️ Prévenir le patient</button>
+      <button class="rn-btn rn-pri" onclick="rnPrepNotify()">📣 Prévenir le patient</button>
+    </div>
+  </div></div>
+
+  <div class="rn-ov" id="rn-ov-notify"><div class="rn-modal">
+    <h3>Prévenir le patient</h3>
+    <div class="rn-body">
+      <div id="rn-notify-who" style="font-weight:700"></div>
+      <div id="rn-notify-contact" style="font-size:13px;color:#6b7a72;margin:7px 0 15px;line-height:1.5"></div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <button class="rn-btn rn-pri" id="rn-notify-mail" onclick="rnNotifyMail()">✉️ Par email</button>
+        <button class="rn-btn rn-blue" id="rn-notify-sms" onclick="rnNotifySms()">💬 Par SMS</button>
+      </div>
+      <div class="rn-hint" style="margin-top:13px">La préparation est archivée une fois le message envoyé.</div>
+    </div>
+    <div class="rn-foot">
+      <button class="rn-btn rn-ghost" onclick="rnNotifyNone()">📵 Sans prévenir</button>
     </div>
   </div></div>
 
@@ -459,6 +475,45 @@
   }
   window.rnPrepMail = function () { const it = rnList().find(x => x.id === rnCurId); rnCompute(); rnClose('rn-ov-prep'); rnOpenMail(it); };
   window.rnPrepDeliver = function () { const it = rnList().find(x => x.id === rnCurId); rnCompute(); rnClose('rn-ov-prep'); rnOpenLiv(it); };
+
+  // ---------- prévenir le patient : choix du canal ----------
+  window.rnPrepNotify = function () {
+    const it = rnList().find(x => x.id === rnCurId); if (!it) return;
+    rnCompute(); rnClose('rn-ov-prep');
+    document.getElementById('rn-notify-who').textContent = it.nom + ' ' + it.prenom + (it.lib ? ' \u2014 ' + it.lib : '');
+    document.getElementById('rn-notify-contact').innerHTML =
+      (it.mail ? '\u2709\uFE0F ' + rnEsc(it.mail) : '\u2709\uFE0F <i>pas d\u2019email enregistr\u00e9</i>') + '<br>' +
+      (it.tel ? '\uD83D\uDCDE ' + rnEsc(it.tel) : '\uD83D\uDCDE <i>pas de t\u00e9l\u00e9phone enregistr\u00e9</i>');
+    rnOpen('rn-ov-notify');
+  };
+  window.rnNotifyMail = function () {
+    const it = rnList().find(x => x.id === rnCurId); if (!it) return;
+    rnClose('rn-ov-notify'); rnOpenMail(it);
+  };
+  window.rnNotifySms = function () {
+    const it = rnList().find(x => x.id === rnCurId); if (!it) return;
+    if (typeof window.openRenouvSms !== 'function') { rnToast('Module SMS indisponible.'); return; }
+    rnClose('rn-ov-notify');
+    window.openRenouvSms({
+      nom: it.nom, prenom: it.prenom, tel: it.tel || '', lib: it.lib || '', dateFr: rnFmtFr(it.date),
+      onSent: function (r) {
+        // Numéro saisi à la volée : on le garde sur l'ordonnance et dans la fiche patient.
+        const saisi = ((r && r.raw) || '').trim();
+        if (saisi && saisi !== (it.tel || '')) {
+          it.tel = saisi;
+          try { if (typeof upsertPatient === 'function') upsertPatient({ nom: it.nom, prenom: it.prenom, dob: it.dob, tel: saisi }); } catch (e) {}
+        }
+        it.smsAt = new Date().toISOString(); it.smsBy = rnUser().id; it.smsId = (r && r.id) || null;
+        it.updatedAt = Date.now();
+        rnFinish('comptoir');
+        rnToast((r && r.manual) ? 'SMS not\u00e9 \u2014 pr\u00e9paration archiv\u00e9e.' : 'SMS envoy\u00e9 \u2014 pr\u00e9paration archiv\u00e9e.');
+      }
+    });
+  };
+  window.rnNotifyNone = function () {
+    const u = rnUser(); rnClose('rn-ov-notify'); rnFinish('comptoir');
+    rnToast('Pr\u00e9par\u00e9e par ' + u.prenom + ' \u2014 sans notification, archiv\u00e9e.');
+  };
 
   // ---------- email ----------
   function rnMailBody(it, addNewOrdo) {

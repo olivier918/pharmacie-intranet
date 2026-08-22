@@ -7544,6 +7544,7 @@ function copySmsText(btn){
 function smsMarkSent(manual){
   const res={ text:document.getElementById('sms-text').value,
               to:smsMsisdn(document.getElementById('sms-tel').value)||document.getElementById('sms-tel').value,
+              raw:document.getElementById('sms-tel').value,
               id:null, manual:!!manual };
   if(smsCtx&&typeof smsCtx.onSent==='function'){ try{ smsCtx.onSent(res); }catch(e){ console.warn('SMS onSent:',e&&e.message); } }
   smsLogPush({nom:smsCtx&&smsCtx.nom, prenom:smsCtx&&smsCtx.prenom, tel:res.to, to:res.to, text:res.text, smsId:null, manual:true, source:(smsCtx&&smsCtx.source)||'module'});
@@ -7567,7 +7568,7 @@ function doSendSms(){
     .then(({ok,j})=>{
       btn.innerHTML=old;
       if(!ok||!j.ok){ throw new Error((j&&j.error)||'Envoi refusé par le serveur'); }
-      const res={ text, to:j.to||to, id:j.id||null, manual:false };
+      const res={ text, to:j.to||to, raw:to, id:j.id||null, manual:false };
       if(smsCtx&&typeof smsCtx.onSent==='function'){ try{ smsCtx.onSent(res); }catch(e){ console.warn('SMS onSent:',e&&e.message); } }
       smsLogPush({nom:smsCtx&&smsCtx.nom, prenom:smsCtx&&smsCtx.prenom, tel:to, to:res.to, text, smsId:res.id, source:(smsCtx&&smsCtx.source)||'module'});
       const done=document.getElementById('sms-done');
