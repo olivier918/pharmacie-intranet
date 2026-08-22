@@ -473,6 +473,7 @@ tr:hover td{background:#fafffe}
   <aside class="sidebar" id="sidebar">
     <button class="sb-item active" data-sec="livraisons" onclick="showSec('livraisons',this)"><svg class="ico sb-ico"><use href="#ic-livraison"></use></svg><span class="sb-label">Livraisons</span><span class="sb-badge" id="navb-liv" title="Livraisons à préparer"></span></button>
     <button class="sb-item" data-sec="messagerie" onclick="showSec('messagerie',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">Messagerie</span></button>
+    <button class="sb-item" data-sec="sms" onclick="showSec('sms',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">SMS patients</span></button>
     <button class="sb-item" data-sec="preparations" onclick="showSec('preparations',this)"><svg class="ico sb-ico"><use href="#ic-realisation"></use></svg><span class="sb-label">Préparations</span></button>
     <button class="sb-item" data-sec="bpm" onclick="showSec('bpm',this)"><svg class="ico sb-ico"><use href="#ic-ordonnance"></use></svg><span class="sb-label">BPM</span></button>
     <button class="sb-item" data-sec="locations" onclick="showSec('locations',this)"><svg class="ico sb-ico"><use href="#ic-location"></use></svg><span class="sb-label">Locations</span></button>
@@ -790,6 +791,53 @@ tr:hover td{background:#fafffe}
           <input type="text" id="loc-q" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem;flex:1;min-width:160px" oninput="renderLocs()">
         </div>
         <div class="twrap" id="loc-table"></div>
+      </div>
+    </div>
+
+    <!-- ═══ SMS PATIENTS ═══ -->
+    <div id="sec-sms" class="sec">
+      <p class="stitle"><svg class="ico"><use href="#ic-messagerie"></use></svg> SMS aux patients</p>
+      <div class="card" style="margin-bottom:1.1rem">
+        <div class="ch"><span class="ct">Nouveau message</span><span id="sms-mod-status" style="font-size:.78rem;color:var(--gray-500)"></span></div>
+        <div class="fgrid">
+          <div class="fg" style="position:relative">
+            <label>Nom du patient <span class="req">*</span></label>
+            <input type="text" id="smsm-nom" placeholder="Rechercher ou saisir NOM…" autocomplete="off" oninput="acPatient('smsm-nom','smsm-prenom',null,'smsm-ac','smsm-tel')">
+            <div id="smsm-ac" class="ac-drop"></div>
+          </div>
+          <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="smsm-prenom" placeholder="Prénom"></div>
+          <div class="fg"><label>Téléphone mobile <span class="req">*</span></label><input type="tel" id="smsm-tel" placeholder="06 12 34 56 78" inputmode="tel" oninput="updSmsModule()"></div>
+        </div>
+        <div class="fgrid" style="margin-top:.9rem">
+          <div class="fg" style="grid-column:1/-1"><label>Modèle</label><select id="smsm-tpl" onchange="applySmsModuleTemplate()"></select></div>
+        </div>
+        <div class="fg" style="margin-top:.9rem">
+          <label style="display:flex;justify-content:space-between;align-items:center;gap:10px">Message <span id="smsm-count" class="hint"></span></label>
+          <textarea id="smsm-text" rows="5" placeholder="Votre message…" oninput="updSmsModule()"></textarea>
+        </div>
+        <div id="smsm-warn" style="display:none;font-size:.78rem;border-radius:8px;padding:8px 11px;margin-top:.6rem;line-height:1.45"></div>
+        <div id="smsm-done" style="display:none;background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7;border-radius:8px;padding:9px 12px;margin-top:.6rem;font-size:.83rem;font-weight:600"></div>
+        <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+          <button class="btn bp" id="smsm-send" onclick="sendSmsModule()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Envoyer le SMS</button>
+          <button class="btn bw" onclick="copySmsModule(this)"><svg class="ico"><use href="#ic-joindre"></use></svg> Copier</button>
+          <button class="btn bs" onclick="resetSmsModule()">Effacer</button>
+        </div>
+        <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Le patient est créé dans la base s'il n'y est pas encore, ou complété de son numéro s'il existe déjà. Le patient ne peut pas répondre à ce SMS — le numéro de la pharmacie doit figurer dans le texte.</div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="ct">Historique des envois</span><span id="smsl-count" style="font-size:.78rem;color:var(--gray-500)"></span></div>
+        <div class="ctl-toolbar" style="margin-bottom:1rem;display:flex;gap:8px;flex-wrap:wrap">
+          <select id="smsl-src" onchange="renderSmsLog()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
+            <option value="">Tous les modules</option>
+            <option value="module">Module SMS</option>
+            <option value="credit">Relances crédit</option>
+            <option value="livraison">Livraisons</option>
+            <option value="renouvellement">Renouvellements</option>
+          </select>
+          <input type="text" id="smsl-q" class="ctl-search" placeholder="Rechercher (patient, numéro, texte…)" oninput="renderSmsLog()" style="flex:1;min-width:170px">
+        </div>
+        <div id="smsl-list"></div>
       </div>
     </div>
 
@@ -1119,6 +1167,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot5" onclick="boTab('medecins')"><svg class="ico"><use href="#ic-medecin"></use></svg> Médecins</button>
         <button class="btn bs" id="bot3" onclick="boTab('labo')"><svg class="ico"><use href="#ic-realisation"></use></svg> Sous-traitants</button>
         <button class="btn bs" id="bot4" onclick="boTab('compte')"><svg class="ico"><use href="#ic-securite"></use></svg> Compte admin</button>
+        <button class="btn bs" id="bot7" onclick="boTab('smstpl')"><svg class="ico"><use href="#ic-messagerie"></use></svg> Modèles SMS</button>
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
       </div>
 
@@ -1231,6 +1280,20 @@ tr:hover td{background:#fafffe}
       </div>
 
       <!-- SAUVEGARDES -->
+      <div id="bo-smstpl" style="display:none">
+        <div class="card">
+          <div class="ch">
+            <span class="ct">Modèles de SMS</span>
+            <div style="display:flex;gap:7px;flex-wrap:wrap">
+              <button class="btn bs sm" onclick="resetSmsTpl()"><svg class="ico"><use href="#ic-renouveler"></use></svg> Modèles par défaut</button>
+              <button class="btn bp sm" onclick="addSmsTpl()">+ Nouveau modèle</button>
+            </div>
+          </div>
+          <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:1rem;line-height:1.45">Ces modèles alimentent la liste déroulante du module SMS. Les modifications sont enregistrées en quittant le champ. Les caractères spéciaux (apostrophes typographiques, points de suspension) sont convertis automatiquement pour rester à 160 caractères par SMS.</div>
+          <div id="smstpl-list"></div>
+        </div>
+      </div>
+
       <div id="bo-backups" style="display:none">
         <div class="card">
           <div class="ch">
@@ -1994,6 +2057,9 @@ let controles = [];
 // Adresse fixe destinataire du rapport (préparé pour un futur envoi email — phase 2)
 let controlesMail = { dest:'contact@pharmacie-mondeville.fr' };
 
+// Module « SMS patients » — historique des envois et modèles de message (éditables en Back Office)
+let smsLog = [];
+let smsTemplates = [];   // valeurs par défaut posées plus bas, à la définition de SMS_TPL_DEFAULT
 // Module « Formulaires » — bons générés (ex. bon de prise en charge vaccination)
 let bons = [];
 // Module « Retours matériel — Bluestone Medical » (historique conservé)
@@ -2013,7 +2079,7 @@ let _savePending=false;  // true tant qu'une modif locale n'est pas persistée :
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2023,7 +2089,8 @@ function _collRef(n){ switch(n){
   case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
   case 'credits':return credits; case 'controles':return controles; case 'retours':return retours;
   case 'renouvellements':return renouvellements; case 'renouvArchives':return renouvArchives;
-  case 'patients':return patients; case 'medecins':return medecins; } return null; }
+  case 'patients':return patients; case 'medecins':return medecins;
+  case 'smsLog':return smsLog; case 'smsTemplates':return smsTemplates; } return null; }
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
 // patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle
@@ -2041,7 +2108,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     snapIds();          // envoi réussi : la nouvelle référence = l'état qu'on vient de persister
   }catch(e){console.warn('Sauvegarde:',e.message);}
   finally{ _savePending=false; }
@@ -2068,6 +2135,8 @@ async function loadAll(){
     if(data.retours)retours=data.retours;
     if(data.renouvellements)renouvellements=data.renouvellements;
     if(data.renouvArchives)renouvArchives=data.renouvArchives;
+    if(Array.isArray(data.smsLog))smsLog=data.smsLog;
+    if(Array.isArray(data.smsTemplates))smsTemplates=data.smsTemplates;
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.banque)banque=data.banque;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
@@ -2312,6 +2381,7 @@ const SEC_LABEL = {
   bpm:'Bilans Partagés de Médication',
   locations:'Locations de matériel',
   controles:'Contrôle annuel des lits médicalisés',
+  sms:'SMS aux patients',
   formulaires:'Formulaires',
   retours:'Retours matériel — Bluestone Medical',
   credits:'Crédits & produits avancés',
@@ -2338,6 +2408,7 @@ function showSec(name,btn){
   if(name==='bpm')renderBpm();
   if(name==='locations'){renderLocs();document.getElementById('loc-form-card').style.display='none';}
   if(name==='controles')renderControles();
+  if(name==='sms')renderSms();
   if(name==='formulaires')renderForms();
   if(name==='retours')renderRetours();
   if(name==='credits'){renderCreds();document.getElementById('cred-form-card').style.display='none';}
@@ -2366,7 +2437,7 @@ function restoreSidebarState(){
     }
   } catch(e){}
 }
-function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderControles==='function')renderControles();if(typeof renderForms==='function')renderForms();if(typeof renderRetours==='function')renderRetours();schedSave();}
+function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderSms==='function')renderSms();if(typeof renderControles==='function')renderControles();if(typeof renderForms==='function')renderForms();if(typeof renderRetours==='function')renderRetours();schedSave();}
 
 // Pastille bandeau : nombre de livraisons « à préparer » du jour
 function updateNavBadges(){
@@ -3422,17 +3493,18 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot4','bot6'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-compte','bo-backups'];
+const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups'];
 function boTab(t){
   if((t==='compte'||t==='backups') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,compte:4,backups:5};
+  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
   if(t==='patients')renderPatients();
   if(t==='medecins')renderMedecins();
   if(t==='labo'){loadLabo();loadBluestone();}
+  if(t==='smstpl')renderSmsTpl();
   if(t==='backups')renderBackups();
   applyAdminUI();
 }
@@ -7118,6 +7190,239 @@ function buildBonPdfHtml(rec){
     +'</body></html>';
 }
 
+// ═══════════ MODULE SMS PATIENT ═══════════
+// Envoi d'un SMS à un patient, avec création/complétion de la fiche patient.
+// Modèles éditables depuis le Back Office. Historique des envois conservé.
+const SMS_TPL_DEFAULT=[
+  {id:'tpl:libre',   lbl:'— Message libre —', text:''},
+  {id:'tpl:cmdprete',lbl:'Commande prête',    text:"Bonjour, votre commande est prete a la Pharmacie du Centre. Vous pouvez venir la retirer aux heures d'ouverture. 02 31 52 15 71."},
+  {id:'tpl:ordo',    lbl:'Ordonnance à rapporter', text:"Bonjour, la Pharmacie du Centre a besoin de votre ordonnance pour finaliser votre dossier. Merci de nous la transmettre. 02 31 52 15 71."},
+  {id:'tpl:dispo',   lbl:'Produit disponible', text:"Bonjour, le produit que vous attendiez est arrive a la Pharmacie du Centre. Vous pouvez venir le retirer. 02 31 52 15 71."},
+  {id:'tpl:rupture', lbl:'Produit non disponible', text:"Bonjour, un produit de votre commande n'est pas disponible immediatement a la Pharmacie du Centre. Merci de nous rappeler au 02 31 52 15 71."},
+  {id:'tpl:rdv',     lbl:'Rappel de rendez-vous', text:"Bonjour, nous vous rappelons votre rendez-vous a la Pharmacie du Centre. En cas d'empechement, merci de nous prevenir au 02 31 52 15 71."}
+];
+
+// Modèles fournis d'origine ; remplacés par ceux de la base dès la première lecture serveur.
+smsTemplates = SMS_TPL_DEFAULT.map(t => Object.assign({}, t, {updatedAt: 0}));
+
+// Journal central : TOUS les SMS de l'intranet y sont consignés, quel que soit le module d'origine.
+const SMS_SOURCE_LBL={module:'Module SMS', credit:'Relance crédit', livraison:'Livraison', renouvellement:'Renouvellement'};
+const SMS_SOURCE_COL={module:'#0277BD', credit:'#C62828', livraison:'#2E7D32', renouvellement:'#6A1B9A'};
+function smsNewId(){ let id=Date.now(); while(smsLog.some(x=>x.id===id)) id++; return id; }
+function smsLogPush(o){
+  o=o||{};
+  smsLog.unshift({
+    id:smsNewId(), date:new Date().toISOString(),
+    nom:o.nom||'', prenom:o.prenom||'', tel:o.tel||'', to:o.to||o.tel||'',
+    text:o.text||'', smsId:o.smsId||null, source:o.source||'module', manual:!!o.manual,
+    by:(currentUser&&currentUser.id)||'?', updatedAt:Date.now()
+  });
+}
+
+function renderSms(){
+  // Bandeau d'état du service
+  const st=document.getElementById('sms-mod-status');
+  if(st){
+    st.textContent = smsStatus.configured
+      ? 'Expéditeur : '+(smsStatus.sender||'—')
+      : 'Envoi SMS non configuré'+(smsStatus.error?' ('+smsStatus.error+')':'');
+    st.style.color = smsStatus.configured ? 'var(--gray-500)' : 'var(--red)';
+  }
+  // Liste des modèles (valeur courante préservée)
+  const sel=document.getElementById('smsm-tpl');
+  if(sel){
+    const cur=sel.value;
+    sel.innerHTML=smsTemplates.map(t=>`<option value="${ctlEsc(t.id)}">${ctlEsc(t.lbl)}</option>`).join('');
+    if(cur && smsTemplates.some(t=>t.id===cur)) sel.value=cur;
+  }
+  updSmsModule();
+  renderSmsLog();
+}
+
+function applySmsModuleTemplate(){
+  const id=document.getElementById('smsm-tpl').value;
+  const t=smsTemplates.find(x=>x.id===id);
+  if(t) document.getElementById('smsm-text').value=smsPlain(t.text||'');
+  updSmsModule();
+}
+
+function updSmsModule(){
+  const tel=(document.getElementById('smsm-tel')?.value)||'';
+  const txt=(document.getElementById('smsm-text')?.value)||'';
+  const seg=smsSegments(txt), num=smsMsisdn(tel);
+  const cnt=document.getElementById('smsm-count');
+  if(cnt) cnt.textContent = seg.parts ? `${seg.len} car. · ${seg.parts} SMS${seg.uni?' (Unicode)':''}` : '';
+  let msg='';
+  if(!smsStatus.configured) msg='Envoi SMS non configuré sur le serveur. Vous pouvez rédiger et copier le texte, mais pas envoyer depuis l’intranet.';
+  else if(!tel.trim()) msg='Renseignez le numéro de mobile du patient.';
+  else if(!num) msg='Ce numéro n’est pas un mobile français (06 ou 07).';
+  else if(seg.uni) msg='Le texte contient des caractères spéciaux : le SMS bascule en Unicode (70 caractères par SMS au lieu de 160).';
+  else if(seg.parts>2) msg='Message long : il sera facturé '+seg.parts+' SMS.';
+  const warn=document.getElementById('smsm-warn');
+  if(warn){
+    warn.textContent=msg; warn.style.display=msg?'block':'none';
+    warn.style.background=msg?'#FFF3E0':''; warn.style.border=msg?'1px solid #FFCC80':''; warn.style.color=msg?'#E65100':'';
+  }
+  const btn=document.getElementById('smsm-send');
+  if(btn){
+    const can=smsStatus.configured && !!num && seg.parts>0;
+    btn.disabled=!can; btn.style.opacity=can?'1':'.5'; btn.style.cursor=can?'pointer':'not-allowed';
+  }
+}
+
+function resetSmsModule(){
+  ['smsm-nom','smsm-prenom','smsm-tel','smsm-text'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  const d=document.getElementById('smsm-done'); if(d)d.style.display='none';
+  const sel=document.getElementById('smsm-tpl'); if(sel&&sel.options.length)sel.selectedIndex=0;
+  updSmsModule();
+}
+
+function copySmsModule(btn){
+  const t=document.getElementById('smsm-text').value;
+  const done=()=>{ const o=btn.innerHTML; btn.textContent='Copié ✓'; setTimeout(()=>btn.innerHTML=o,1400); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,()=>{}); }
+  else { const a=document.getElementById('smsm-text'); a.select(); try{document.execCommand('copy');done();}catch(_){} }
+}
+
+function sendSmsModule(){
+  const btn=document.getElementById('smsm-send');
+  if(!btn || btn.disabled) return;
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  const nom=document.getElementById('smsm-nom').value.trim().toUpperCase();
+  const prenom=document.getElementById('smsm-prenom').value.trim();
+  const tel=document.getElementById('smsm-tel').value.trim();
+  const text=document.getElementById('smsm-text').value;
+  const warn=document.getElementById('smsm-warn');
+  if(!nom||!prenom){
+    warn.textContent='Le nom et le prénom du patient sont obligatoires.';
+    warn.style.display='block'; warn.style.background='var(--red-pale)'; warn.style.border='1px solid #ffcdd2'; warn.style.color='var(--red)';
+    return;
+  }
+  btn.disabled=true; btn.style.opacity='.6';
+  const old=btn.innerHTML; btn.textContent='Envoi…';
+  fetch('/api/send-sms',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({to:tel,text,tag:'module-sms'})})
+    .then(r=>r.json().then(j=>({ok:r.ok,j})))
+    .then(({ok,j})=>{
+      btn.innerHTML=old;
+      if(!ok||!j.ok) throw new Error((j&&j.error)||'Envoi refusé par le serveur');
+      // Le patient est créé s'il n'existe pas, complété de son numéro s'il existe déjà.
+      upsertPatient({nom,prenom,tel});
+      smsLogPush({nom, prenom, tel, to:j.to||tel, text, smsId:j.id||null, source:'module'});
+      const done=document.getElementById('smsm-done');
+      done.textContent='SMS envoyé à '+nom+' '+prenom+(typeof j.credits==='number'?` · ${j.credits} crédits restants`:'')+'.';
+      done.style.display='block';
+      if(warn) warn.style.display='none';
+      document.getElementById('smsm-text').value='';
+      renderSms();
+      renderPatients();
+    })
+    .catch(err=>{
+      btn.innerHTML=old; btn.disabled=false; btn.style.opacity='1';
+      warn.textContent='Échec de l’envoi : '+(err&&err.message||'erreur inconnue');
+      warn.style.display='block'; warn.style.background='var(--red-pale)'; warn.style.border='1px solid #ffcdd2'; warn.style.color='var(--red)';
+    });
+}
+
+function renderSmsLog(){
+  const host=document.getElementById('smsl-list'); if(!host)return;
+  const q=(document.getElementById('smsl-q')?.value||'').toLowerCase().trim();
+  const src=document.getElementById('smsl-src')?.value||'';
+  let rows=smsLog.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(src) rows=rows.filter(r=>(r.source||'module')===src);
+  if(q) rows=rows.filter(r=>((r.nom||'')+' '+(r.prenom||'')+' '+(r.tel||'')+' '+(r.text||'')+' '+(SMS_SOURCE_LBL[r.source||'module']||'')).toLowerCase().includes(q));
+  const cnt=document.getElementById('smsl-count');
+  if(cnt) cnt.textContent=smsLog.length?smsLog.length+' SMS envoyé'+(smsLog.length>1?'s':'')+(rows.length!==smsLog.length?' · '+rows.length+' affiché'+(rows.length>1?'s':''):''):'';
+  if(!rows.length){
+    host.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.6rem;font-size:.88rem">'+(smsLog.length?'Aucun SMS ne correspond à la recherche.':'Aucun SMS envoyé pour le moment.')+'</div>';
+    return;
+  }
+  host.innerHTML=rows.map(r=>{
+    const d=r.date?new Date(r.date):null;
+    return `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:11px 14px;margin-bottom:8px;background:#fff">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:180px;flex:1">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;color:var(--gray-900)">${ctlEsc(r.nom||'')} ${ctlEsc(r.prenom||'')}</span>
+            <span class="badge" style="background:${SMS_SOURCE_COL[r.source||'module']}18;color:${SMS_SOURCE_COL[r.source||'module']};border:1px solid ${SMS_SOURCE_COL[r.source||'module']}55;padding:1px 8px;font-size:.65rem;font-weight:700">${SMS_SOURCE_LBL[r.source||'module']||'—'}</span>
+          </div>
+          <div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">${ico('telephone')} ${ctlEsc(r.tel||'')} · ${d?d.toLocaleDateString('fr-FR')+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'} · ${staffName(r.by)}${r.manual?' · noté manuellement':''}</div>
+        </div>
+        <button class="btn bd btn-ico no-print" onclick="deleteSmsLog(${r.id})" title="Supprimer de l'historique">${ico('corbeille')}</button>
+      </div>
+      <div style="font-size:.82rem;color:var(--gray-700);margin-top:7px;white-space:pre-wrap;background:var(--gray-100);border-radius:8px;padding:8px 11px">${ctlEsc(r.text||'')}</div>
+    </div>`;
+  }).join('');
+}
+
+function deleteSmsLog(id){
+  const r=smsLog.find(x=>x.id===id); if(!r)return;
+  document.getElementById('conf-title').textContent='Supprimer de l’historique';
+  document.getElementById('conf-msg').textContent='Retirer le SMS envoyé à '+(r.nom||'')+' '+(r.prenom||'')+' de l’historique ? Le message reste consultable dans votre compte Brevo.';
+  pendingAction=()=>{ smsLog=smsLog.filter(x=>x.id!==id); renderSmsLog(); schedSave(); closeModal('confirm-modal'); };
+  document.getElementById('conf-ok').onclick=pendingAction;
+  openModal('confirm-modal');
+}
+
+// ─── Back Office : modèles de SMS ───
+function renderSmsTpl(){
+  const host=document.getElementById('smstpl-list'); if(!host)return;
+  if(!smsTemplates.length){
+    host.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.6rem;font-size:.88rem">Aucun modèle. Ajoutez-en un, ou restaurez les modèles par défaut.</div>';
+    return;
+  }
+  host.innerHTML=smsTemplates.map(t=>{
+    const seg=smsSegments(t.text||'');
+    return `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:12px 14px;margin-bottom:9px;background:#fff">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" value="${ctlEsc(t.lbl||'')}" onchange="updSmsTpl('${ctlEsc(t.id)}','lbl',this.value)" placeholder="Nom du modèle"
+          style="flex:1;min-width:170px;border:1px solid var(--gray-200);border-radius:7px;padding:7px 10px;font-size:.86rem;font-weight:600;font-family:inherit">
+        <span style="font-size:.72rem;color:var(--gray-500)">${seg.parts?seg.len+' car. · '+seg.parts+' SMS':'vide'}</span>
+        <button class="btn bd btn-ico no-print" onclick="deleteSmsTpl('${ctlEsc(t.id)}')" title="Supprimer ce modèle">${ico('corbeille')}</button>
+      </div>
+      <textarea rows="3" onchange="updSmsTpl('${ctlEsc(t.id)}','text',this.value)" placeholder="Texte du modèle…"
+        style="width:100%;margin-top:8px;border:1px solid var(--gray-200);border-radius:7px;padding:8px 10px;font-size:.85rem;font-family:inherit">${ctlEsc(t.text||'')}</textarea>
+    </div>`;
+  }).join('');
+}
+
+function updSmsTpl(id, field, value){
+  const t=smsTemplates.find(x=>x.id===id); if(!t)return;
+  t[field]= field==='text' ? smsPlain(value) : value;
+  t.updatedAt=Date.now();
+  schedSave();
+  if(field==='text') renderSmsTpl();
+}
+
+function addSmsTpl(){
+  smsTemplates.push({id:'tpl:'+Date.now(), lbl:'Nouveau modèle', text:'', updatedAt:Date.now()});
+  renderSmsTpl();
+}
+
+function deleteSmsTpl(id){
+  const t=smsTemplates.find(x=>x.id===id); if(!t)return;
+  document.getElementById('conf-title').textContent='Supprimer ce modèle';
+  document.getElementById('conf-msg').textContent='Supprimer le modèle « '+(t.lbl||'')+' » ?';
+  pendingAction=()=>{ markDeleted('smsTemplates',id); smsTemplates=smsTemplates.filter(x=>x.id!==id); renderSmsTpl(); schedSave(); closeModal('confirm-modal'); };
+  document.getElementById('conf-ok').onclick=pendingAction;
+  openModal('confirm-modal');
+}
+
+function resetSmsTpl(){
+  document.getElementById('conf-title').textContent='Restaurer les modèles par défaut';
+  document.getElementById('conf-msg').textContent='Les modèles fournis avec l’intranet seront rétablis. Vos modèles personnalisés sont conservés.';
+  pendingAction=()=>{
+    SMS_TPL_DEFAULT.forEach(d=>{
+      const ex=smsTemplates.find(x=>x.id===d.id);
+      if(ex){ ex.lbl=d.lbl; ex.text=d.text; ex.updatedAt=Date.now(); }
+      else smsTemplates.push(Object.assign({}, d, {updatedAt:Date.now()}));
+    });
+    renderSmsTpl(); schedSave(); closeModal('confirm-modal');
+  };
+  document.getElementById('conf-ok').onclick=pendingAction;
+  openModal('confirm-modal');
+}
+
 // ═══════════ SMS PATIENT (Brevo) ═══════════
 // Brique partagée : crédits, livraisons, renouvellements passent tous par cette modale.
 // Le serveur expose /api/sms-status et /api/send-sms (mêmes identifiants Brevo que les mails).
@@ -7228,6 +7533,7 @@ function smsMarkSent(manual){
               to:smsMsisdn(document.getElementById('sms-tel').value)||document.getElementById('sms-tel').value,
               id:null, manual:!!manual };
   if(smsCtx&&typeof smsCtx.onSent==='function'){ try{ smsCtx.onSent(res); }catch(e){ console.warn('SMS onSent:',e&&e.message); } }
+  smsLogPush({nom:smsCtx&&smsCtx.nom, prenom:smsCtx&&smsCtx.prenom, tel:res.to, to:res.to, text:res.text, smsId:null, manual:true, source:(smsCtx&&smsCtx.source)||'module'});
   const done=document.getElementById('sms-done');
   done.textContent = manual ? 'Noté comme envoyé manuellement.' : 'SMS envoyé.';
   done.style.display='block';
@@ -7250,6 +7556,7 @@ function doSendSms(){
       if(!ok||!j.ok){ throw new Error((j&&j.error)||'Envoi refusé par le serveur'); }
       const res={ text, to:j.to||to, id:j.id||null, manual:false };
       if(smsCtx&&typeof smsCtx.onSent==='function'){ try{ smsCtx.onSent(res); }catch(e){ console.warn('SMS onSent:',e&&e.message); } }
+      smsLogPush({nom:smsCtx&&smsCtx.nom, prenom:smsCtx&&smsCtx.prenom, tel:to, to:res.to, text, smsId:res.id, source:(smsCtx&&smsCtx.source)||'module'});
       const done=document.getElementById('sms-done');
       done.textContent='SMS envoyé'+(typeof j.credits==='number'?` · ${j.credits} crédits restants`:'')+'.';
       done.style.display='block';
@@ -7268,7 +7575,7 @@ function openCredSms(credId, etape, date, notes){
   const c=credits.find(x=>x.id===credId); if(!c) return;
   openSmsModal({
     titre:`Relance par SMS — étape ${etape}`,
-    tel:c.tel||'',
+    tel:c.tel||'', nom:c.nom, prenom:c.prenom, source:'credit',
     tag:'credit-relance',
     info:`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${credStepper(c)}<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}</div>
           <div style="font-size:.78rem;color:var(--gray-500);margin-top:5px">${CRED_ETAPE_HINT[etape]||''}</div>`,
@@ -7297,7 +7604,7 @@ function openDelivSms(id){
   const ordo=d.ordo?' Merci de nous rapporter votre ordonnance.':'';
   openSmsModal({
     titre:'SMS au patient — livraison',
-    tel:d.tel||'',
+    tel:d.tel||'', nom:d.nom, prenom:d.prenom, source:'livraison',
     tag:'livraison',
     info:`<strong>${d.nom} ${d.prenom}</strong>${d.lieu?` · ${d.lieu}`:''}${d.adresse?` · ${d.adresse}`:''}
           <div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">${d.date?new Date(d.date).toLocaleDateString('fr-FR'):''}${d.montant>0?` · ${d.montant.toFixed(2)} €`:''}</div>`,
@@ -7326,7 +7633,7 @@ function openRenouvSms(o){
   o=o||{};
   openSmsModal({
     titre:'SMS au patient — renouvellement',
-    tel:o.tel||'',
+    tel:o.tel||'', nom:o.nom, prenom:o.prenom, source:'renouvellement',
     tag:'renouvellement',
     info:`<strong>${ctlEsc(o.nom||'')} ${ctlEsc(o.prenom||'')}</strong>${o.lib?` · ${ctlEsc(o.lib)}`:''}
           ${o.dateFr?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">Échéance : ${ctlEsc(o.dateFr)}</div>`:''}`,
@@ -7344,7 +7651,7 @@ function openRenouvSms(o){
 
 // ═══════════ AUTO-SAVE HOOKS ═══════════
 // Wrap all render functions so every data change triggers a server save
-['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins','renderControles','renderForms','renderCreds','renderRetours'].forEach(fn=>{
+['renderD','renderThreads','renderPreps','renderBpm','renderLocs','renderStaff','renderPatients','renderMedecins','renderControles','renderForms','renderCreds','renderRetours','renderSms','renderSmsTpl'].forEach(fn=>{
   const orig=window[fn];
   if(orig) window[fn]=function(){orig.apply(this,arguments);schedSave();};
 });
