@@ -68,6 +68,7 @@
   .rn-b-liv{background:#EDE7F6;color:#5E35B1}.rn-b-comp{background:#E0F2F1;color:#00695C}
   .rn-b-last{background:#FFF3E0;color:#E65100}.rn-b-frigo{background:#E1F5FE;color:#0277BD}
   .rn-b-newordo{background:#FFEBEE;color:#c62828}
+  .rn-b-due{background:#C62828;color:#fff;box-shadow:0 0 0 2px rgba(198,40,40,.14)}
   .rn-chip{color:#fff;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;display:inline-block}
   .rn-acts{display:flex;flex-direction:column;gap:6px;min-width:150px}
   .rn-empty{color:#6b7a72;text-align:center;padding:40px;background:#fff;border:1px dashed #dfe8e2;border-radius:12px}
@@ -220,7 +221,7 @@
       const b = document.createElement('button');
       b.className = 'sb-item'; b.setAttribute('data-sec', 'renouvellement');
       b.setAttribute('onclick', "showSec('renouvellement',this)");
-      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-renouvellement"></use></svg><span class="sb-label">Renouvellement</span>';
+      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-renouvellement"></use></svg><span class="sb-label">Renouvellement</span><span class="sb-badge" id="navb-rn" title="Ordonnances \u00e0 pr\u00e9parer"></span>';
       navRef.insertAdjacentElement('afterend', b);
     }
     // section
@@ -242,8 +243,13 @@
     document.getElementById('rn-tab-arch').classList.toggle('rn-act', v === 'arch');
     rnRender();
   };
+  // Ordonnances dont l'échéance est atteinte ou dépassée : ce sont celles « à préparer ».
+  window.rnDueCount = function () {
+    try { return rnList().filter(it => rnDayDiff(it.date) <= 0).length; } catch (e) { return 0; }
+  };
   window.rnRender = function () {
     rnInject();
+    if (typeof window.updateNavBadges === 'function') window.updateNavBadges();
     if (rnView === 'arch') return rnRenderArch();
     if (rnView === 'all') return rnRenderAll();
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
@@ -268,7 +274,9 @@
     wrap.innerHTML = html;
   };
   function rnBadges(it) {
-    return (it.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
+    const _d = rnDayDiff(it.date);
+    return (_d <= 0 ? '<span class="rn-badge rn-b-due">\u25CF ' + (_d < 0 ? 'En retard \u2014 \u00e0 pr\u00e9parer' : '\u00c0 pr\u00e9parer aujourd\'hui') + '</span> ' : '') +
+      (it.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
       (it.needsNewOrdo ? ' <span class="rn-badge rn-b-newordo">Nouvelle ordo à fournir</span>' : '') +
       (it.dernier && !it.needsNewOrdo ? ' <span class="rn-badge rn-b-last">Dernier renouv.</span>' : '') +
       (/frigo/i.test(it.notes || '') ? ' <span class="rn-badge rn-b-frigo">Frigo</span>' : '');

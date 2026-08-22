@@ -78,6 +78,7 @@ header{grid-area:hd;background:#fff;color:var(--gray-900);padding:0 1.5rem;displ
 .sb-label{overflow:hidden;text-overflow:ellipsis}
 .sb-badge{margin-left:auto;background:var(--amber);color:#fff;font-size:.66rem;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:none;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;line-height:1}
 .sb-badge.on{display:inline-flex}
+.sb-badge.red{background:var(--red)}
 #app.sb-collapsed .sb-item{position:relative}
 #app.sb-collapsed .sb-badge{position:absolute;top:5px;right:7px;margin:0;min-width:16px;height:16px;font-size:.58rem;padding:0 3px}
 #app.sb-collapsed .sb-label{display:none}
@@ -2369,11 +2370,20 @@ function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderS
 
 // Pastille bandeau : nombre de livraisons « à préparer » du jour
 function updateNavBadges(){
-  const el=document.getElementById('navb-liv'); if(!el)return;
-  const t=todayStr();
-  const n=deliveries.filter(d=>d.status==='wait' && d.date===t).length;
-  if(n>0){ el.textContent=n>99?'99+':String(n); el.classList.add('on'); }
-  else{ el.textContent=''; el.classList.remove('on'); }
+  const el=document.getElementById('navb-liv');
+  if(el){
+    const t=todayStr();
+    const n=deliveries.filter(d=>d.status==='wait' && d.date===t).length;
+    if(n>0){ el.textContent=n>99?'99+':String(n); el.classList.add('on'); }
+    else{ el.textContent=''; el.classList.remove('on'); }
+  }
+  // Renouvellements : pastille ROUGE = ordonnances dont l'échéance est atteinte ou dépassée.
+  const rn=document.getElementById('navb-rn');
+  if(rn){
+    const n=(typeof window.rnDueCount==='function')?window.rnDueCount():0;
+    if(n>0){ rn.textContent=n>99?'99+':String(n); rn.classList.add('on','red'); }
+    else{ rn.textContent=''; rn.classList.remove('on','red'); }
+  }
 }
 
 // ═══════════ DELIVERIES ═══════════
