@@ -3713,37 +3713,69 @@ function cancelEditMedecin(){
   document.getElementById('bm-cancel-btn').style.display='none';
 }
 
+// ─── Tri des tables du Back Office (patients / médecins) ───
+// Les en-têtes sont cliquables : 1er clic = A→Z, 2e clic = Z→A. Valeurs vides toujours en fin.
+let patSort={k:'nom',d:1}, medSort={k:'nom',d:1};
+const PAT_COLS=[{k:'nom',l:'Nom'},{k:'prenom',l:'Prénom'},{k:'dob',l:'DDN'},{k:'adresse',l:'Adresse'},{k:'commune',l:'Commune'},{k:'tel',l:'Téléphone'},{k:'mail',l:'E-mail'}];
+const MED_COLS=[{k:'nom',l:'Nom'},{k:'prenom',l:'Prénom'},{k:'spec',l:'Spécialité'},{k:'cabinet',l:'Cabinet'},{k:'tel',l:'Téléphone'},{k:'adresse',l:'Adresse'}];
+
+function boSortCmp(a,b,k,d){
+  const va=(a&&a[k])||'', vb=(b&&b[k])||'';
+  if(!va&&!vb) return 0;
+  if(!va) return 1;   // sans valeur : rejeté en fin de liste, quel que soit le sens du tri
+  if(!vb) return -1;
+  const c = (k==='dob')
+    ? String(va).localeCompare(String(vb))                                          // ISO : ordre chronologique
+    : String(va).localeCompare(String(vb),'fr',{sensitivity:'base',numeric:true});  // accents et casse ignorés
+  return c*d;
+}
+function boSortHead(cols,sort,fn){
+  return cols.map(c=>{
+    const on=sort.k===c.k, arrow=on?(sort.d>0?'▲':'▼'):'↕';
+    return `<th onclick="${fn}('${c.k}')" title="Trier par ${c.l}" style="cursor:pointer;user-select:none;white-space:nowrap${on?';color:var(--g-dark)':''}">${c.l} <span style="font-size:.72em;opacity:${on?'.9':'.3'}">${arrow}</span></th>`;
+  }).join('')+'<th></th>';
+}
+function sortPatients(k){ if(patSort.k===k) patSort.d=-patSort.d; else { patSort.k=k; patSort.d=1; } renderPatients(); }
+function sortMedecins(k){ if(medSort.k===k) medSort.d=-medSort.d; else { medSort.k=k; medSort.d=1; } renderMedecins(); }
+
 function renderMedecins(){
   const q=(document.getElementById('med-q')?.value||'').toLowerCase();
-  const f=medecins.filter(m=>(m.nom+' '+m.prenom+' '+(m.spec||'')).toLowerCase().includes(q));
+  // On garde l'index réel dans `medecins` : la ligne affichée peut être filtrée et triée.
+  const f=medecins.map((m,idx)=>({m,idx}))
+    .filter(o=>(o.m.nom+' '+o.m.prenom+' '+(o.m.spec||'')).toLowerCase().includes(q))
+    .sort((x,y)=>boSortCmp(x.m,y.m,medSort.k,medSort.d));
   document.getElementById('med-table').innerHTML=`<table>
-    <thead><tr><th>Nom</th><th>Prénom</th><th>Spécialité</th><th>Cabinet</th><th>Téléphone</th><th>Adresse</th><th></th></tr></thead>
-    <tbody>${f.map((m,i)=>`<tr>
+    <thead><tr>${boSortHead(MED_COLS,medSort,'sortMedecins')}</tr></thead>
+    <tbody>${f.map(({m,idx})=>`<tr>
       <td><strong>${m.nom}</strong></td><td>${m.prenom}</td>
       <td>${m.spec||'—'}</td><td>${m.cabinet||'—'}</td>
       <td>${m.tel||'—'}</td><td>${m.adresse||'—'}</td>
       <td style="white-space:nowrap">
-        <button class="btn bs btn-ico" onclick="editMedecin(${i})" title="Modifier">${ico('modifier')}</button>
-        <button class="btn bd btn-ico" onclick="deleteMedecin(${i})" title="Supprimer">${ico('corbeille')}</button>
+        <button class="btn bs btn-ico" onclick="editMedecin(${idx})" title="Modifier">${ico('modifier')}</button>
+        <button class="btn bd btn-ico" onclick="deleteMedecin(${idx})" title="Supprimer">${ico('corbeille')}</button>
       </td>
-    </tr>`).join('')}</tbody></table>`;
+    </tr>`).join('')||`<tr><td colspan="${MED_COLS.length+1}" style="text-align:center;color:var(--gray-500);padding:1.4rem">Aucun médecin${q?' ne correspond à la recherche':''}.</td></tr>`}</tbody></table>`;
 }
 function deleteMedecin(i){if(confirm('Supprimer ce médecin ?')){medecins.splice(i,1);renderMedecins();}}
 
 function renderPatients(){
   const q=(document.getElementById('pat-q')?.value||'').toLowerCase();
-  const f=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q));
+  // On garde l'index réel dans `patients` : sans cela, modifier ou supprimer depuis une
+  // liste filtrée ou triée agirait sur la mauvaise fiche.
+  const f=patients.map((p,idx)=>({p,idx}))
+    .filter(o=>(o.p.nom+' '+o.p.prenom).toLowerCase().includes(q))
+    .sort((x,y)=>boSortCmp(x.p,y.p,patSort.k,patSort.d));
   document.getElementById('pat-table').innerHTML=`<table>
-    <thead><tr><th>Nom</th><th>Prénom</th><th>DDN</th><th>Adresse</th><th>Commune</th><th>Téléphone</th><th>E-mail</th><th></th></tr></thead>
-    <tbody>${f.map((p,i)=>`<tr>
+    <thead><tr>${boSortHead(PAT_COLS,patSort,'sortPatients')}</tr></thead>
+    <tbody>${f.map(({p,idx})=>`<tr>
       <td><strong>${p.nom}</strong></td><td>${p.prenom}</td>
       <td style="white-space:nowrap">${p.dob?new Date(p.dob+'T12:00').toLocaleDateString('fr-FR'):'—'}</td>
       <td>${p.adresse||'—'}</td><td>${p.commune||'—'}</td><td>${p.tel||'—'}</td><td>${p.mail||'—'}</td>
       <td style="white-space:nowrap">
-        <button class="btn bs btn-ico" onclick="editPatient(${i})" title="Modifier">${ico('modifier')}</button>
-        <button class="btn bd btn-ico" onclick="deletePatient(${i})" title="Supprimer">${ico('corbeille')}</button>
+        <button class="btn bs btn-ico" onclick="editPatient(${idx})" title="Modifier">${ico('modifier')}</button>
+        <button class="btn bd btn-ico" onclick="deletePatient(${idx})" title="Supprimer">${ico('corbeille')}</button>
       </td>
-    </tr>`).join('')}</tbody></table>`;
+    </tr>`).join('')||`<tr><td colspan="${PAT_COLS.length+1}" style="text-align:center;color:var(--gray-500);padding:1.4rem">Aucun patient${q?' ne correspond à la recherche':''}.</td></tr>`}</tbody></table>`;
 }
 function deletePatient(i){if(confirm('Supprimer ce patient ?')){patients.splice(i,1);renderPatients();}}
 
