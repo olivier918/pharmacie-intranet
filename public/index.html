@@ -3821,6 +3821,8 @@ function applyAdminUI(){
   const b6=document.getElementById('bot6'); // onglet « Sauvegardes »
   if(b4) b4.style.display = admin ? '' : 'none';
   if(b6) b6.style.display = admin ? '' : 'none';
+  // Historique SMS : le bouton Supprimer n'apparaît que pour les administrateurs
+  if(document.getElementById('smsl-list') && typeof renderSmsLog==='function') renderSmsLog();
 }
 function toggleAdmin(id){
   if(!isAdmin()){ alert('Action réservée aux administrateurs.'); return; }
@@ -7348,7 +7350,7 @@ function renderSmsLog(){
           </div>
           <div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">${ico('telephone')} ${ctlEsc(r.tel||'')} · ${d?d.toLocaleDateString('fr-FR')+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'} · ${staffName(r.by)}${r.manual?' · noté manuellement':''}</div>
         </div>
-        <button class="btn bd btn-ico no-print" onclick="deleteSmsLog(${r.id})" title="Supprimer de l'historique">${ico('corbeille')}</button>
+        ${isAdmin()?`<button class="btn bd btn-ico no-print" onclick="deleteSmsLog(${r.id})" title="Supprimer de l'historique">${ico('corbeille')}</button>`:''}
       </div>
       <div style="font-size:.82rem;color:var(--gray-700);margin-top:7px;white-space:pre-wrap;background:var(--gray-100);border-radius:8px;padding:8px 11px">${ctlEsc(r.text||'')}</div>
     </div>`;
@@ -7356,6 +7358,8 @@ function renderSmsLog(){
 }
 
 function deleteSmsLog(id){
+  // Suppression de l'historique : réservée aux administrateurs.
+  if(!isAdmin()){ alert('Seuls les administrateurs peuvent supprimer un SMS de l’historique.'); return; }
   const r=smsLog.find(x=>x.id===id); if(!r)return;
   document.getElementById('conf-title').textContent='Supprimer de l’historique';
   document.getElementById('conf-msg').textContent='Retirer le SMS envoyé à '+(r.nom||'')+' '+(r.prenom||'')+' de l’historique ? Le message reste consultable dans votre compte Brevo.';
