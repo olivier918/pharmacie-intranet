@@ -810,7 +810,12 @@ tr:hover td{background:#fafffe}
           <div class="fg"><label>Téléphone mobile <span class="req">*</span></label><input type="tel" id="smsm-tel" placeholder="06 12 34 56 78" inputmode="tel" oninput="updSmsModule()"></div>
         </div>
         <div class="fgrid" style="margin-top:.9rem">
-          <div class="fg" style="grid-column:1/-1"><label>Modèle</label><select id="smsm-tpl" onchange="applySmsModuleTemplate()"></select></div>
+          <div class="fg" style="grid-column:1/-1">
+            <label style="display:flex;justify-content:space-between;align-items:center;gap:10px">Modèle
+              <span class="hint" style="text-decoration:underline;cursor:pointer" onclick="goSmsTplAdmin()">Gérer les modèles</span>
+            </label>
+            <select id="smsm-tpl" onchange="applySmsModuleTemplate()"></select>
+          </div>
         </div>
         <div class="fg" style="margin-top:.9rem">
           <label style="display:flex;justify-content:space-between;align-items:center;gap:10px">Message <span id="smsm-count" class="hint"></span></label>
@@ -821,6 +826,7 @@ tr:hover td{background:#fafffe}
         <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
           <button class="btn bp" id="smsm-send" onclick="sendSmsModule()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Envoyer le SMS</button>
           <button class="btn bw" onclick="copySmsModule(this)"><svg class="ico"><use href="#ic-joindre"></use></svg> Copier</button>
+          <button class="btn bs" onclick="openSmsTplSave()"><svg class="ico"><use href="#ic-document"></use></svg> Enregistrer comme modèle</button>
           <button class="btn bs" onclick="resetSmsModule()">Effacer</button>
         </div>
         <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Le patient est créé dans la base s'il n'y est pas encore, ou complété de son numéro s'il existe déjà. Le patient ne peut pas répondre à ce SMS — le numéro de la pharmacie doit figurer dans le texte.</div>
@@ -1897,6 +1903,28 @@ tr:hover td{background:#fafffe}
       <button class="btn bs" onclick="closeModal('sms-modal')">Fermer</button>
     </div>
     <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Expéditeur : <strong id="sms-sender">—</strong>. Le patient ne peut pas répondre à ce SMS — le numéro de la pharmacie figure dans le texte.</div>
+  </div>
+</div>
+
+<!-- Enregistrer le message courant comme modèle SMS -->
+<div class="overlay" id="smstpl-save-modal">
+  <div class="mbox" style="max-width:560px">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <span><svg class="ico"><use href="#ic-document"></use></svg> Enregistrer comme modèle</span>
+      <button class="btn bs sm" onclick="closeModal('smstpl-save-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
+    </h3>
+    <div class="fg"><label>Nom du modèle <span class="req">*</span></label><input type="text" id="smstpl-save-name" placeholder="Ex. Vaccin grippe disponible" maxlength="60"></div>
+    <div class="fg" style="margin-top:.9rem">
+      <label style="display:flex;justify-content:space-between;align-items:center;gap:10px">Texte enregistré <span id="smstpl-save-count" class="hint"></span></label>
+      <textarea id="smstpl-save-text" rows="5" readonly style="background:var(--gray-100)"></textarea>
+    </div>
+    <div id="smstpl-save-err" style="display:none;color:var(--red);font-size:.82rem;font-weight:600;margin-top:.7rem"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+      <button class="btn bp" onclick="saveSmsTplFromModule(false)"><svg class="ico"><use href="#ic-valider"></use></svg> Créer le modèle</button>
+      <button class="btn bs" id="smstpl-save-upd" style="display:none" onclick="saveSmsTplFromModule(true)"><svg class="ico"><use href="#ic-renouveler"></use></svg> <span id="smstpl-save-upd-lbl">Mettre à jour</span></button>
+      <button class="btn bs" onclick="closeModal('smstpl-save-modal')">Annuler</button>
+    </div>
+    <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Les modèles sont partagés entre les postes et restent modifiables dans Back Office → Modèles SMS.</div>
   </div>
 </div>
 
@@ -7375,6 +7403,56 @@ function deleteSmsLog(id){
   pendingAction=()=>{ smsLog=smsLog.filter(x=>x.id!==id); renderSmsLog(); schedSave(); closeModal('confirm-modal'); };
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
+}
+
+// ─── Créer / mettre à jour un modèle depuis le composeur ───
+function goSmsTplAdmin(){
+  const btn=document.querySelector('.sb-item[data-sec="backoffice"]');
+  showSec('backoffice', btn);
+  boTab('smstpl');
+}
+
+function openSmsTplSave(){
+  const text=smsPlain((document.getElementById('smsm-text').value||'').trim());
+  if(!text){ alert('Rédigez d’abord le message à enregistrer.'); return; }
+  const curId=document.getElementById('smsm-tpl').value;
+  const cur=smsTemplates.find(t=>t.id===curId && t.id!=='tpl:libre');
+  document.getElementById('smstpl-save-name').value = cur ? cur.lbl : '';
+  document.getElementById('smstpl-save-text').value = text;
+  const seg=smsSegments(text);
+  document.getElementById('smstpl-save-count').textContent = seg.len+' car. · '+seg.parts+' SMS';
+  const upd=document.getElementById('smstpl-save-upd');
+  if(cur){ upd.style.display=''; document.getElementById('smstpl-save-upd-lbl').textContent='Mettre à jour « '+cur.lbl+' »'; }
+  else { upd.style.display='none'; }
+  document.getElementById('smstpl-save-err').style.display='none';
+  openModal('smstpl-save-modal');
+  setTimeout(()=>{ const n=document.getElementById('smstpl-save-name'); if(n){ n.focus(); n.select(); } },80);
+}
+
+function saveSmsTplFromModule(update){
+  const err=document.getElementById('smstpl-save-err');
+  const lbl=(document.getElementById('smstpl-save-name').value||'').trim();
+  const text=smsPlain(document.getElementById('smstpl-save-text').value||'');
+  if(!lbl){ err.textContent='Donnez un nom au modèle.'; err.style.display='block'; return; }
+  if(!text){ err.textContent='Le texte du modèle est vide.'; err.style.display='block'; return; }
+  const curId=document.getElementById('smsm-tpl').value;
+  let target = update ? smsTemplates.find(t=>t.id===curId && t.id!=='tpl:libre') : null;
+  if(!target && smsTemplates.some(t=>t.lbl.trim().toLowerCase()===lbl.toLowerCase())){
+    err.textContent='Un modèle porte déjà ce nom. Changez le nom, ou utilisez « Mettre à jour ».';
+    err.style.display='block'; return;
+  }
+  if(target){ target.lbl=lbl; target.text=text; target.updatedAt=Date.now(); }
+  else { target={id:'tpl:'+Date.now(), lbl:lbl, text:text, updatedAt:Date.now()}; smsTemplates.push(target); }
+  closeModal('smstpl-save-modal');
+  renderSms();
+  const sel=document.getElementById('smsm-tpl'); if(sel) sel.value=target.id;
+  const done=document.getElementById('smsm-done');
+  if(done){
+    done.textContent = update ? 'Modèle « '+lbl+' » mis à jour.' : 'Modèle « '+lbl+' » enregistré — il est disponible sur tous les postes.';
+    done.style.display='block';
+  }
+  if(typeof renderSmsTpl==='function') renderSmsTpl();
+  schedSave();
 }
 
 // ─── Back Office : modèles de SMS ───
