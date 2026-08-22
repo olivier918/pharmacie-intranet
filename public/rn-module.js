@@ -13,6 +13,7 @@
   function rnToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
   function rnAddDays(base, n) { const d = new Date(base); d.setDate(d.getDate() + n); return d; }
   function rnFmtFr(iso) { if (!iso) return ''; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
+  const RN_SOON_DAYS = 7;   // fenêtre « à préparer » avant la date prévue
   function rnDayDiff(iso) { const d = new Date(String(iso).slice(0, 10) + 'T12:00'); d.setHours(0, 0, 0, 0); return Math.round((d - rnToday()) / 86400000); }
   function rnEsc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   window.rnOpen = function (id) { document.getElementById(id).classList.add('rn-on'); };
@@ -69,6 +70,7 @@
   .rn-b-last{background:#FFF3E0;color:#E65100}.rn-b-frigo{background:#E1F5FE;color:#0277BD}
   .rn-b-newordo{background:#FFEBEE;color:#c62828}
   .rn-b-due{background:#C62828;color:#fff;box-shadow:0 0 0 2px rgba(198,40,40,.14)}
+  .rn-b-soon{background:#EF6C00;color:#fff;box-shadow:0 0 0 2px rgba(239,108,0,.13)}
   .rn-chip{color:#fff;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;display:inline-block}
   .rn-acts{display:flex;flex-direction:column;gap:6px;min-width:150px}
   .rn-empty{color:#6b7a72;text-align:center;padding:40px;background:#fff;border:1px dashed #dfe8e2;border-radius:12px}
@@ -243,9 +245,20 @@
     document.getElementById('rn-tab-arch').classList.toggle('rn-act', v === 'arch');
     rnRender();
   };
-  // Ordonnances dont l'échéance est atteinte ou dépassée : ce sont celles « à préparer ».
+  // Une ordonnance passe « à préparer » 7 jours avant la date prévue.
+  // Compteur = tout ce qui est à préparer (retards inclus).
   window.rnDueCount = function () {
-    try { return rnList().filter(it => rnDayDiff(it.date) <= 0).length; } catch (e) { return 0; }
+    try { return rnList().filter(it => rnDayDiff(it.date) <= RN_SOON_DAYS).length; } catch (e) { return 0; }
+  };
+  // Niveau d'urgence de la pastille : 'red' dès qu'une ordonnance est due ou en retard,
+  // 'orange' si tout tombe dans les 7 jours à venir, '' s'il n'y a rien à préparer.
+  window.rnDueLevel = function () {
+    try {
+      const l = rnList();
+      if (l.some(it => rnDayDiff(it.date) <= 0)) return 'red';
+      if (l.some(it => rnDayDiff(it.date) <= RN_SOON_DAYS)) return 'orange';
+      return '';
+    } catch (e) { return ''; }
   };
   window.rnRender = function () {
     rnInject();
@@ -275,7 +288,10 @@
   };
   function rnBadges(it) {
     const _d = rnDayDiff(it.date);
-    return (_d <= 0 ? '<span class="rn-badge rn-b-due">\u25CF ' + (_d < 0 ? 'En retard \u2014 \u00e0 pr\u00e9parer' : '\u00c0 pr\u00e9parer aujourd\'hui') + '</span> ' : '') +
+    const _tag = _d < 0 ? '<span class="rn-badge rn-b-due">\u25CF En retard \u2014 \u00e0 pr\u00e9parer</span> '
+      : _d === 0 ? '<span class="rn-badge rn-b-due">\u25CF \u00c0 pr\u00e9parer aujourd\'hui</span> '
+      : _d <= RN_SOON_DAYS ? '<span class="rn-badge rn-b-soon">\u25CF \u00c0 pr\u00e9parer \u2014 dans ' + _d + ' j</span> ' : '';
+    return _tag +
       (it.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
       (it.needsNewOrdo ? ' <span class="rn-badge rn-b-newordo">Nouvelle ordo à fournir</span>' : '') +
       (it.dernier && !it.needsNewOrdo ? ' <span class="rn-badge rn-b-last">Dernier renouv.</span>' : '') +

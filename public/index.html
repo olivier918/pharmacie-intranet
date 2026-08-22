@@ -79,6 +79,7 @@ header{grid-area:hd;background:#fff;color:var(--gray-900);padding:0 1.5rem;displ
 .sb-badge{margin-left:auto;background:var(--amber);color:#fff;font-size:.66rem;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:none;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;line-height:1}
 .sb-badge.on{display:inline-flex}
 .sb-badge.red{background:var(--red)}
+.sb-badge.orange{background:#EF6C00}
 #app.sb-collapsed .sb-item{position:relative}
 #app.sb-collapsed .sb-badge{position:absolute;top:5px;right:7px;margin:0;min-width:16px;height:16px;font-size:.58rem;padding:0 3px}
 #app.sb-collapsed .sb-label{display:none}
@@ -2448,12 +2449,20 @@ function updateNavBadges(){
     if(n>0){ el.textContent=n>99?'99+':String(n); el.classList.add('on'); }
     else{ el.textContent=''; el.classList.remove('on'); }
   }
-  // Renouvellements : pastille ROUGE = ordonnances dont l'échéance est atteinte ou dépassée.
+  // Renouvellements : ORANGE dès qu'une ordonnance entre dans les 7 jours avant la date prévue,
+  // ROUGE dès qu'une ordonnance est due le jour même ou en retard. Le chiffre compte tout ce qui est à préparer.
   const rn=document.getElementById('navb-rn');
   if(rn){
     const n=(typeof window.rnDueCount==='function')?window.rnDueCount():0;
-    if(n>0){ rn.textContent=n>99?'99+':String(n); rn.classList.add('on','red'); }
-    else{ rn.textContent=''; rn.classList.remove('on','red'); }
+    const lvl=(typeof window.rnDueLevel==='function')?window.rnDueLevel():'';
+    rn.classList.remove('on','red','orange');
+    if(n>0 && lvl){
+      rn.textContent=n>99?'99+':String(n);
+      rn.classList.add('on', lvl==='red'?'red':'orange');
+      rn.title = lvl==='red'
+        ? 'Ordonnances à préparer — au moins une est due aujourd’hui ou en retard'
+        : 'Ordonnances à préparer dans les 7 prochains jours';
+    } else { rn.textContent=''; }
   }
 }
 
