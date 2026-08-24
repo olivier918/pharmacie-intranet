@@ -906,6 +906,7 @@ tr:hover td{background:#fafffe}
           <select id="cred-filter" onchange="renderCreds()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
             <option value="">Tous statuts</option>
             <option value="en cours">En cours</option>
+            <option value="payé">Payés — à saisir dans Winpharma</option>
             <option value="huissier">Chez l'huissier</option>
             <option value="soldé">Clôturés</option>
             <option value="perdu">Irrécouvrables</option>
@@ -4335,8 +4336,11 @@ let credPatientFilter='';
 let currentMsgEtape=2, currentMsgCanal='sms', currentMsgDate='', currentMsgNotes='';
 const CRED_MOTIF_LBL = {comptoir:'Crédit comptoir', tp:'Tiers payant', avance:'Produit avancé'};
 const CRED_REL_LBL   = {tel:'📞 Téléphone', 'sur place':'🏪 Au comptoir', sms:'💬 SMS', mail:'✉️ Mail', courrier:'📨 Courrier', huissier:'⚖️ Huissier'};
-const CRED_STAT_COLOR = {'en cours':'background:var(--amber-pale);color:var(--amber)', 'huissier':'background:#F3E5F5;color:#6A1B9A', 'soldé':'background:#E8F5E9;color:#2E7D32', 'perdu':'background:#FFEBEE;color:#C62828'};
-const CRED_STAT_LBL = {'en cours':'en cours', 'huissier':"chez l'huissier", 'soldé':'clôturé', 'perdu':'irrécouvrable'};
+// « payé » : l'argent est encaissé sur Stripe mais le crédit n'est pas encore
+// soldé dans Winpharma. État volontairement distinct de « clôturé » : sans lui,
+// le dossier quitterait la liste active et la saisie comptable serait oubliée.
+const CRED_STAT_COLOR = {'en cours':'background:var(--amber-pale);color:var(--amber)', 'payé':'background:#E1F5FE;color:#0277BD', 'huissier':'background:#F3E5F5;color:#6A1B9A', 'soldé':'background:#E8F5E9;color:#2E7D32', 'perdu':'background:#FFEBEE;color:#C62828'};
+const CRED_STAT_LBL = {'en cours':'en cours', 'payé':'payé — à saisir', 'huissier':"chez l'huissier", 'soldé':'clôturé', 'perdu':'irrécouvrable'};
 const CRED_FOLLOWUP_DAYS = 14;
 // Procédure de relance en 5 étapes : le niveau se lit d'un coup d'œil, le canal reste modifiable.
 const CRED_ETAPE_MAX = 5;
@@ -5080,6 +5084,10 @@ function credLastRelance(c){
     ((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||'')))[0];
 }
 function credOpen(c){ return c.status==='en cours' || c.status==='huissier'; }
+// Payé en ligne, en attente de saisie dans Winpharma. Ce n'est plus une créance
+// (l'argent est encaissé), mais le dossier reste actionnable tant que la vente
+// n'est pas soldée dans le logiciel métier.
+function credAttenteSaisie(c){ return c.status==='payé'; }
 // Autres crédits non soldés du même patient (clé nom + prénom)
 function credSiblings(c){
   return credits.filter(x=>x.nom===c.nom && x.prenom===c.prenom && credOpen(x));
@@ -5154,10 +5162,12 @@ function renderCreds(){
   const opf=document.getElementById('cred-op-filter')?.value||'';
   const q=(document.getElementById('cred-q')?.value||'').toLowerCase();
 
-  let nEnCours=0, nSolde=0, nFollow=0, nHuis=0, totalDu=0;
+  let nEnCours=0, nSolde=0, nFollow=0, nHuis=0, nSaisie=0, totalDu=0, totalSaisie=0;
   credits.forEach(c=>{
     if(c.status==='en cours'){ nEnCours++; totalDu+=(c.montant||0); if(credNeedsFollowup(c)) nFollow++; }
     else if(c.status==='huissier'){ nHuis++; totalDu+=(c.montant||0); }
+    // Payé en ligne : sort du total dû (l'argent est encaissé) mais reste à saisir.
+    else if(c.status==='payé'){ nSaisie++; totalSaisie+=((c.paiement&&c.paiement.montantPaye)||c.montant||0); }
     else if(c.status==='soldé') nSolde++;
   });
   const statsEl=document.getElementById('cred-stats');
@@ -5167,6 +5177,7 @@ function renderCreds(){
       <div class="scard" style="${cardCss(credQuickFilter==='due','var(--b-mid)')}" onclick="setCredQuickFilter('due')" title="Crédits non soldés"><div class="slabel">Total dû</div><div class="sval" style="color:var(--b-mid);font-size:1.5rem">${totalDu.toFixed(2)} €</div></div>
       <div class="scard" style="${cardCss(credQuickFilter==='encours','var(--amber)')}" onclick="setCredQuickFilter('encours')" title="Dossiers en cours de relance"><div class="slabel">En cours</div><div class="sval" style="color:var(--amber)">${nEnCours}</div></div>
       <div class="scard" style="${cardCss(credQuickFilter==='follow','var(--red)')}" onclick="setCredQuickFilter('follow')" title="Sans contact depuis ≥ ${CRED_FOLLOWUP_DAYS} jours — vérifier si le patient est passé régler"><div class="slabel">À vérifier</div><div class="sval" style="color:var(--red)">${nFollow}</div></div>
+      <div class="scard" style="${cardCss(credQuickFilter==='asaisir','#0277BD')}" onclick="setCredQuickFilter('asaisir')" title="Payés en ligne — le crédit reste à solder dans Winpharma"><div class="slabel">À saisir</div><div class="sval" style="color:#0277BD">${nSaisie}${nSaisie?`<span style="font-size:.8rem;font-weight:600"> · ${totalSaisie.toFixed(2)} €</span>`:''}</div></div>
       <div class="scard" style="${cardCss(credQuickFilter==='huissier','#6A1B9A')}" onclick="setCredQuickFilter('huissier')" title="Dossiers transmis à l'huissier"><div class="slabel">Huissier</div><div class="sval" style="color:#6A1B9A">${nHuis}</div></div>
       <div class="scard" style="${cardCss(credQuickFilter==='solde','#2E7D32')}" onclick="setCredQuickFilter('solde')" title="Dossiers clôturés"><div class="slabel">Clôturés</div><div class="sval" style="color:#2E7D32">${nSolde}</div></div>`;
   }
@@ -5186,6 +5197,7 @@ function renderCreds(){
   let f=[...credits];
   if(credQuickFilter==='due'||credQuickFilter==='encours') f=f.filter(c=>c.status==='en cours');
   else if(credQuickFilter==='follow')   f=f.filter(c=>credNeedsFollowup(c));
+  else if(credQuickFilter==='asaisir')  f=f.filter(c=>credAttenteSaisie(c));
   else if(credQuickFilter==='huissier') f=f.filter(c=>c.status==='huissier');
   else if(credQuickFilter==='solde')    f=f.filter(c=>c.status==='soldé');
   if(sf)  f=f.filter(c=>c.status===sf);
@@ -5195,7 +5207,8 @@ function renderCreds(){
   if(q)   f=f.filter(c=>(c.nom+' '+c.prenom+' '+(c.produits||'')+' '+(CRED_MOTIF_LBL[c.motif]||'')).toLowerCase().includes(q));
 
   f.sort((a,b)=>{
-    const w=s=>s==='en cours'?0:s==='huissier'?1:s==='soldé'?2:3;
+    // « payé » remonte en tête : c'est la seule ligne qui attend un geste immédiat.
+    const w=s=>s==='payé'?0:s==='en cours'?1:s==='huissier'?2:s==='soldé'?3:4;
     const sw=w(a.status)-w(b.status); if(sw) return sw;
     const fw=(credNeedsFollowup(b)?1:0)-(credNeedsFollowup(a)?1:0); if(fw) return fw;
     const ew=credEtape(b)-credEtape(a); if(ew) return ew;
@@ -5233,14 +5246,17 @@ function renderCreds(){
       ? `<div style="font-size:.74rem;color:#2E7D32;margin-top:3px">${ico('valider')} Clôturé le ${new Date(c.paidAt).toLocaleDateString('fr-FR')} par ${staffName(c.paidBy)}</div>` : '';
     const huis=(c.status==='huissier'&&c.huissierAt)
       ? `<div style="font-size:.74rem;color:#6A1B9A;margin-top:3px">${ico('securite')} Transmis le ${new Date(c.huissierAt).toLocaleDateString('fr-FR')}${c.huissierNom?' · '+c.huissierNom:''}</div>` : '';
-    const pay=(c.paiement&&c.paiement.url)
+    // En attente de saisie, l'information est déjà portée par le bandeau bleu plus bas.
+    const pay=(c.paiement&&c.paiement.url&&!credAttenteSaisie(c))
       ? (c.paiement.status==='paye'
           ? `<div style="font-size:.74rem;color:#2E7D32;margin-top:3px">${ico('euro')} Réglé en ligne${c.paiement.montantPaye?` · ${Number(c.paiement.montantPaye).toFixed(2)} €`:''}</div>`
           : `<div style="font-size:.74rem;color:#0277BD;margin-top:3px">${ico('euro')} Lien de paiement ${(c.paiement.envois||[]).length?'transmis':'créé'} · en attente de règlement</div>`)
       : '';
 
     let actions='';
-    if(c.status==='en cours'){
+    if(c.status==='payé'){
+      actions+=`<button class="btn bp sm" onclick="validerCredWinpharma(${c.id})" style="background:#0277BD;border-color:#0277BD">${ico('valider')} Validé dans Winpharma</button>`;
+    } else if(c.status==='en cours'){
       actions+=`<button class="btn bp sm" onclick="openCredRelanceModal(${c.id})" style="background:${E.col};border-color:${E.col}">${ico('relancer')} Relancer — étape ${credNextEtape(c)}</button>`;
       if(c.montant&&c.montant>0) actions+=`<button class="btn bs sm" onclick="openCredPayLink(${c.id})">${ico('euro')} ${(c.paiement&&c.paiement.url)?'Lien de paiement':'Créer un lien de paiement'}</button>`;
       actions+=`<button class="btn bs sm" onclick="openCredSolder(${c.id})">${ico('valider')} Réglé</button>`;
@@ -5267,11 +5283,20 @@ function renderCreds(){
           <div style="font-weight:800;font-size:1.15rem;color:var(--b-mid)">${credAmountHtml(c)}</div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px">
-        ${credStepper(c)}
-        <span style="font-size:.8rem;font-weight:700;color:${E.col}">Étape ${e}/5 · ${E.lbl}</span>
-        <span style="font-size:.74rem;color:var(--gray-500)">${E.sub}</span>
-      </div>
+      ${credAttenteSaisie(c)
+        // Dossier payé en ligne : la procédure de relance est terminée, la timeline
+        // n'a plus de sens. On la remplace par la seule chose qui reste à faire.
+        ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px;padding:9px 12px;background:#E1F5FE;border:1px solid #81D4FA;border-radius:9px">
+             <span style="font-size:.85rem;font-weight:700;color:#01579B">${ico('euro')} Payé en ligne${(c.paiement&&c.paiement.montantPaye)?` · ${Number(c.paiement.montantPaye).toFixed(2)} €`:''}</span>
+             <span style="font-size:.76rem;color:#0277BD">le ${(c.paiement&&c.paiement.paidAt)?new Date(c.paiement.paidAt).toLocaleString('fr-FR'):'—'} · reste à solder dans Winpharma</span>
+           </div>`
+        : (credOpen(c)
+          ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px">
+               ${credStepper(c)}
+               <span style="font-size:.8rem;font-weight:700;color:${E.col}">Étape ${e}/5 · ${E.lbl}</span>
+               <span style="font-size:.74rem;color:var(--gray-500)">${E.sub}</span>
+             </div>`
+          : '')}
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-top:9px;padding-top:9px;border-top:1px solid var(--gray-100)">
         <div style="font-size:.76rem;color:var(--gray-600);line-height:1.7">${lastTxt}${pastille}</div>
         <div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">${actions}</div>
@@ -5492,14 +5517,23 @@ function openCredDetail(id){
         </div>
         <span class="badge" style="${CRED_STAT_COLOR[c.status]||''};padding:4px 11px;font-size:.78rem">${CRED_STAT_LBL[c.status]||c.status}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
-        ${credStepper(c)}<span style="font-size:.8rem;font-weight:700;color:${E.col}">Étape ${e}/5 · ${E.lbl}</span>
-      </div>
+      ${credAttenteSaisie(c)
+        ? `<div style="margin-top:10px;padding:9px 12px;background:#E1F5FE;border:1px solid #81D4FA;border-radius:9px;font-size:.82rem;color:#01579B;line-height:1.5">
+             <strong>${ico('euro')} Payé en ligne${(c.paiement&&c.paiement.montantPaye!=null)?` · ${credPayEuro(c.paiement.montantPaye)} €`:''}</strong>
+             le ${(c.paiement&&c.paiement.paidAt)?new Date(c.paiement.paidAt).toLocaleString('fr-FR'):'—'}.
+             <div style="margin-top:3px;color:#0277BD">La procédure de relance est terminée. Il reste à solder le crédit dans Winpharma, puis à clôturer le dossier depuis la liste.</div>
+           </div>`
+        : (credOpen(c)
+          ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+               ${credStepper(c)}<span style="font-size:.8rem;font-weight:700;color:${E.col}">Étape ${e}/5 · ${E.lbl}</span>
+             </div>`
+          : '')}
       ${followup?`<div style="margin-top:8px"><span class="badge" style="background:var(--red);color:#fff;padding:3px 10px;font-size:.72rem;font-weight:700">● ${days} j sans contact — vérifier si le patient est passé régler</span></div>`:''}
       ${sib.length>1?`<div style="margin-top:8px;font-size:.76rem;color:#4527A0">${ico('patients')} Ce patient a ${sib.length} crédits ouverts, pour un total de ${sib.reduce((s,x)=>s+(x.montant||0),0).toFixed(2)} €.</div>`:''}
       ${c.status==='soldé'&&c.paidAt?`<div style="margin-top:8px;font-size:.78rem;color:#2E7D32">${ico('valider')} Dossier clôturé le ${new Date(c.paidAt).toLocaleDateString('fr-FR')} par ${staffName(c.paidBy)}${c.paidNotes?` · ${c.paidNotes}`:''}</div>`:''}
+      ${c.winpharmaAt?`<div style="margin-top:4px;font-size:.76rem;color:var(--gray-600)">${ico('valider')} Saisie Winpharma confirmée le ${new Date(c.winpharmaAt).toLocaleString('fr-FR')} par ${staffName(c.winpharmaBy)}</div>`:''}
       ${c.status==='huissier'&&c.huissierAt?`<div style="margin-top:8px;font-size:.78rem;color:#6A1B9A">${ico('securite')} Transmis à l'huissier le ${new Date(c.huissierAt).toLocaleDateString('fr-FR')}${c.huissierNom?` · ${c.huissierNom}`:''}</div>`:''}
-      ${(c.paiement&&c.paiement.url)?`<div style="margin-top:8px;font-size:.78rem;color:${c.paiement.status==='paye'?'#2E7D32':'#0277BD'}">${ico('euro')} Lien de paiement ${credPayEuro(c.paiement.montant)} € — ${c.paiement.status==='paye'?`réglé en ligne le ${c.paiement.paidAt?new Date(c.paiement.paidAt).toLocaleDateString('fr-FR'):'—'}`:`créé le ${c.paiement.createdAt?new Date(c.paiement.createdAt).toLocaleDateString('fr-FR'):'—'}, ${(c.paiement.envois||[]).length?`transmis ${(c.paiement.envois||[]).length} fois`:'pas encore transmis'}`}</div>`:''}
+      ${(c.paiement&&c.paiement.url&&!credAttenteSaisie(c))?`<div style="margin-top:8px;font-size:.78rem;color:${c.paiement.status==='paye'?'#2E7D32':'#0277BD'}">${ico('euro')} Lien de paiement ${credPayEuro(c.paiement.montant)} € — ${c.paiement.status==='paye'?`réglé en ligne le ${c.paiement.paidAt?new Date(c.paiement.paidAt).toLocaleDateString('fr-FR'):'—'}`:`créé le ${c.paiement.createdAt?new Date(c.paiement.createdAt).toLocaleDateString('fr-FR'):'—'}, ${(c.paiement.envois||[]).length?`transmis ${(c.paiement.envois||[]).length} fois`:'pas encore transmis'}`}</div>`:''}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.85rem;margin-bottom:1rem">
@@ -8173,6 +8207,35 @@ async function sendCredPayLinkMail(){
   btn.innerHTML=old; btn.disabled=false;
 }
 
+// Seconde étape de la clôture : l'argent est encaissé sur Stripe, l'opérateur
+// confirme avoir soldé la vente dans Winpharma. C'est seulement là que le dossier
+// se ferme. Confirmation demandée : le geste est irréversible d'un simple clic.
+function validerCredWinpharma(id){
+  const c=credits.find(x=>x.id===id); if(!c||!credAttenteSaisie(c)) return;
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  const p=c.paiement||{};
+  const somme=(p.montantPaye!=null)?credPayEuro(p.montantPaye)+' €':credAmountTxt(c);
+  document.getElementById('conf-title').textContent='Clôturer le dossier';
+  document.getElementById('conf-msg').textContent=
+    `Confirmez-vous avoir soldé le crédit de ${c.nom} ${c.prenom} (${somme}) dans Winpharma ? Le dossier sera clôturé.`;
+  pendingAction=()=>{
+    c.status='soldé';
+    c.paidAt=(p.paidAt||new Date().toISOString()).split('T')[0];
+    c.paidBy=currentUser.id;
+    c.paidMode='cb-lien';
+    c.winpharmaAt=new Date().toISOString();
+    c.winpharmaBy=currentUser.id;
+    c.paidNotes='Réglé en ligne'+(p.montantPaye!=null?` (${credPayEuro(p.montantPaye)} €)`:'')
+      +' — saisie Winpharma confirmée par '+staffName(currentUser.id)+'.';
+    c.updatedAt=Date.now();
+    renderCreds();
+    closeModal('confirm-modal');
+    closeModal('cred-detail-modal');
+  };
+  document.getElementById('conf-ok').onclick=pendingAction;
+  openModal('confirm-modal');
+}
+
 // Filet de sécurité si un webhook s'est perdu : on interroge Stripe à la demande.
 async function checkCredPayment(){
   const c=credits.find(x=>x.id===currentLinkCredId); if(!c||!c.paiement||!c.paiement.linkId) return;
@@ -8188,15 +8251,11 @@ async function checkCredPayment(){
     c.paiement.ref=reg.ref||null;
     c.paiement.paidAt=reg.at||new Date().toISOString();
     c.paiement.montantPaye=reg.montant;
-    c.status='soldé';
-    c.paidAt=(reg.at||new Date().toISOString()).split('T')[0];
-    c.paidBy='enligne';
-    c.paidMode='cb-lien';
-    c.paidNotes='Réglé en ligne par lien de paiement'+(reg.montant?` (${credPayEuro(reg.montant)} €)`:'')
-      +'. Saisie comptable à effectuer dans le logiciel métier.';
+    // On s'arrête à « payé » : la clôture attend la saisie dans Winpharma.
+    c.status='payé';
     c.updatedAt=Date.now();
     renderCreds();
-    sent.textContent='Règlement confirmé — dossier soldé.';
+    sent.textContent='Règlement confirmé — reste à solder le crédit dans Winpharma.';
   }catch(e){
     sent.textContent='Vérification impossible : '+(e.message||'erreur inconnue');
   }

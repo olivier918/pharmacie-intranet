@@ -65,11 +65,40 @@ confirmation reste manuelle (bouton « Vérifier le paiement »).
 2. Vérifier le montant et le libellé, puis **Créer le lien**.
 3. **Envoyer par SMS**, **Envoyer par mail**, ou **Copier** le lien pour le donner
    au comptoir.
-4. Dès que le patient règle, le dossier passe en « soldé » automatiquement, avec
-   la date et le montant encaissé. L'envoi est tracé dans l'historique des relances.
+4. Dès que le patient règle, le dossier passe automatiquement au statut
+   **« payé — à saisir »**. L'envoi est tracé dans l'historique des relances.
+5. Solder le crédit dans **Winpharma**, puis cliquer sur **Validé dans Winpharma**
+   sur la fiche : le dossier est alors clôturé.
 
 Le bouton **Vérifier le paiement** interroge Stripe à la demande : à utiliser si
 un doute subsiste, ou si le webhook n'est pas configuré.
+
+### Pourquoi deux étapes
+
+L'argent encaissé par Stripe n'entre pas dans la caisse : la vente doit être
+soldée à la main dans Winpharma. Si le dossier passait directement en « clôturé »,
+il quitterait la liste active et la saisie serait oubliée — le crédit resterait
+ouvert dans le logiciel de vente alors que le patient a payé.
+
+L'état intermédiaire empêche cet oubli :
+
+| Statut | Signification | Compteur |
+|---|---|---|
+| **en cours** | créance à recouvrer | Total dû |
+| **payé — à saisir** | argent encaissé, vente non soldée dans Winpharma | À saisir |
+| **clôturé** | saisie Winpharma confirmée, dossier fermé | Clôturés |
+
+Les dossiers « payé — à saisir » remontent **en tête de liste** et alimentent le
+compteur **À saisir**, cliquable, qui affiche aussi le montant total concerné.
+Ils sortent du « Total dû », puisque la somme est encaissée.
+
+Sur ces dossiers, la timeline de relance disparaît : la procédure est terminée,
+seule la saisie reste à faire. L'historique des relances demeure consultable dans
+le détail du dossier.
+
+Cette étape ne concerne **que les paiements en ligne**. Un règlement au comptoir
+continue de se clôturer directement par le bouton **Réglé** : la saisie Winpharma
+s'y fait naturellement en caisse.
 
 ---
 

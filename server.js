@@ -92,8 +92,16 @@ function initMail() {
 }
 
 function logSmsStatus() {
-  if (smsConfigured()) console.log('  📱 Envoi SMS via Brevo configuré (expéditeur « ' + smsSender() + ' »)');
-  else if (process.env.BREVO_API_KEY) console.log('  📱 Envoi SMS inactif : définir BREVO_SMS_SENDER (11 caractères max, validé côté Brevo)');
+  if (smsConfigured()) {
+    const brut = (process.env.BREVO_SMS_SENDER || '').trim();
+    const net = smsSender();
+    console.log('  📱 Envoi SMS via Brevo configuré (expéditeur « ' + net + ' »)');
+    if (net !== brut) {
+      console.log('  ⚠️  BREVO_SMS_SENDER « ' + brut + ' » n\'est pas conforme à la charte AF2M : envoyé sous « ' + net + ' ».');
+      console.log('     Alignez la variable sur cette valeur pour éviter toute ambiguïté.');
+    }
+  }
+  else if (process.env.BREVO_API_KEY) console.log('  📱 Envoi SMS inactif : définir BREVO_SMS_SENDER (lettres et chiffres uniquement, 11 caractères max, pas uniquement des chiffres)');
   else console.log('  📱 Envoi SMS inactif (pas de BREVO_API_KEY)');
 }
 
@@ -245,9 +253,23 @@ app.post('/api/send-mail', async (req, res) => {
 // Même clé API que les e-mails (BREVO_API_KEY). L'expéditeur alphanumérique
 // (11 caractères max) doit être déclaré et validé côté Brevo : BREVO_SMS_SENDER.
 // SMS « transactionnels » uniquement : rappels sur un dossier ouvert du patient.
+// Identifiant d'expéditeur alphanumérique, mis en conformité avec la charte
+// AF2M applicable en France depuis le 1er mars 2026 : uniquement des lettres
+// latines et des chiffres (ni accent, ni espace, ni caractère spécial), 11
+// caractères maximum, et jamais un identifiant purement numérique (il serait
+// pris pour un numéro de téléphone). Un expéditeur non conforme passe l'API
+// sans erreur puis se fait filtrer par l'opérateur : le SMS reste au statut
+// « sent » chez Brevo et n'arrive jamais. On nettoie donc avant d'envoyer.
 function smsSender() {
-  const v = (process.env.BREVO_SMS_SENDER || '').trim();
-  return v ? v.slice(0, 11) : null;
+  const brut = (process.env.BREVO_SMS_SENDER || '').trim();
+  if (!brut) return null;
+  const v = brut
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // é → e, à → a…
+    .replace(/[^A-Za-z0-9]/g, '')                        // espaces et ponctuation retirés
+    .slice(0, 11);
+  if (!v) return null;
+  if (/^\d+$/.test(v)) return null;                      // purement numérique : refusé par la charte
+  return v;
 }
 function smsConfigured() { return !!process.env.BREVO_API_KEY && !!smsSender(); }
 
@@ -350,13 +372,11 @@ async function marquerCreditPaye(creditId, info) {
       paidAt: info.at,
       montantPaye: info.montant
     });
-    c.status = 'soldé';
-    c.paidAt = String(info.at).split('T')[0];
-    c.paidBy = 'enligne';
-    c.paidMode = 'cb-lien';
-    c.paidNotes = 'Réglé en ligne par lien de paiement'
-      + (info.montant ? ` (${Number(info.montant).toFixed(2)} €)` : '')
-      + '. Saisie comptable à effectuer dans le logiciel métier.';
+    // On s'arrête à « payé » : l'argent est encaissé sur Stripe, mais la vente
+    // n'est pas soldée dans Winpharma. Passer directement à « soldé » ferait
+    // disparaître le dossier de la liste active et la saisie serait oubliée.
+    // La clôture est un geste humain, confirmé depuis l'intranet.
+    c.status = 'payé';
     c.updatedAt = Date.now();
     return true;
   };
