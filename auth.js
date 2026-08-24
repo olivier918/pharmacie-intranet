@@ -20,7 +20,12 @@ const COOKIE = 'phc_session';
 const MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 h
 const SECURE = process.env.NODE_ENV === 'production' || !!process.env.DATABASE_URL;
 
-const ALLOW = new Set(['/api/login', '/api/logout', '/api/health', '/api/version', '/login']);
+// Chemins joignables sans session. /api/paiement/webhook est appelé par Stripe,
+// qui n'a évidemment pas de cookie : cette route est authentifiée autrement, par
+// la signature cryptographique de chaque requête (voir paiement.js). Elle est de
+// toute façon déclarée avant ce portail dans server.js ; on l'inscrit ici aussi
+// pour que la règle reste vraie si l'ordre des middlewares changeait un jour.
+const ALLOW = new Set(['/api/login', '/api/logout', '/api/health', '/api/version', '/login', '/api/paiement/webhook']);
 
 function b64url(buf) { return Buffer.from(buf).toString('base64url'); }
 

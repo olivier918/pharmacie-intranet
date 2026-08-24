@@ -1572,6 +1572,59 @@ tr:hover td{background:#fafffe}
   </div>
 </div>
 
+<!-- Lien de paiement en ligne (Stripe) -->
+<div class="overlay" id="cred-link-modal">
+  <div class="mbox" style="max-width:640px">
+    <h3><svg class="ico"><use href="#ic-euro"></use></svg> Lien de paiement en ligne</h3>
+    <div id="clink-info" style="background:var(--g-pale);padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.85rem;line-height:1.45"></div>
+
+    <div id="clink-off" style="display:none;padding:10px 13px;background:#FFF3E0;border:1px solid #FFCC80;color:#E65100;border-radius:8px;font-size:.8rem;line-height:1.5;margin-bottom:.9rem"></div>
+
+    <div id="clink-form">
+      <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:start">
+        <div>
+          <div style="font-size:.72rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.3rem">Montant à régler</div>
+          <div style="position:relative">
+            <input type="number" id="clink-montant" step="0.01" min="1" oninput="updClinkPreview()" style="width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:8px 26px 8px 10px;font-size:.95rem;font-weight:700;font-family:inherit">
+            <span style="position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--gray-500);font-weight:700">€</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:.72rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.3rem">Libellé vu par le patient</div>
+          <input type="text" id="clink-libelle" maxlength="90" oninput="updClinkPreview()" style="width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:8px 10px;font-size:.88rem;font-family:inherit">
+        </div>
+      </div>
+
+      <div style="margin-top:.6rem;padding:9px 12px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;font-size:.76rem;color:#0D47A1;line-height:1.5">
+        <strong>Secret médical.</strong> Ce libellé apparaît sur le relevé bancaire du patient et dans l'espace Stripe de la pharmacie. N'y mettez jamais de nom de médicament, de pathologie ni d'information de santé — seulement une référence de dossier.
+      </div>
+      <div id="clink-warn" style="display:none;margin-top:.6rem;padding:9px 12px;border-radius:8px;font-size:.78rem;line-height:1.5"></div>
+
+      <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn bp" id="clink-create-btn" onclick="createCredPayLink()"><svg class="ico"><use href="#ic-valider"></use></svg> Créer le lien</button>
+        <button class="btn bs" onclick="closeModal('cred-link-modal')">Fermer</button>
+      </div>
+    </div>
+
+    <div id="clink-result" style="display:none">
+      <div style="font-size:.72rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.3rem">Lien à transmettre au patient</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" id="clink-url" readonly style="flex:1;border:1px solid var(--gray-200);border-radius:6px;padding:8px 10px;font-size:.8rem;background:var(--gray-100);font-family:'Courier New',monospace">
+        <button class="btn bs sm" onclick="copyCredPayLink(this)">Copier</button>
+      </div>
+      <div id="clink-recap" style="font-size:.76rem;color:var(--gray-600);margin-top:.5rem;line-height:1.5"></div>
+      <div id="clink-sent" style="display:none;margin-top:.6rem;padding:8px 12px;background:#E8F5E9;border:1px solid #81C784;color:#1D5C3A;font-weight:600;font-size:.82rem;border-radius:8px"></div>
+
+      <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn bs" onclick="checkCredPayment()"><svg class="ico"><use href="#ic-renouveler"></use></svg> Vérifier le paiement</button>
+        <button class="btn bs" id="clink-mail-btn" onclick="sendCredPayLinkMail()"><svg class="ico"><use href="#ic-document"></use></svg> Envoyer par mail</button>
+        <button class="btn bp" id="clink-sms-btn" onclick="sendCredPayLinkSms()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Envoyer par SMS</button>
+        <button class="btn bs" onclick="closeModal('cred-link-modal')">Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Archive globale des messages de relance -->
 <div class="overlay" id="cred-archive-modal">
   <div class="mbox" style="max-width:760px">
@@ -1995,7 +2048,14 @@ tr:hover td{background:#fafffe}
       <button class="btn bs sm" onclick="closeModal('photo-modal')"><svg class="ico"><use href="#ic-fermer"></use></svg></button>
     </h3>
     <div style="text-align:center;margin:.6rem 0 1rem">
-      <div id="photo-preview" style="width:120px;height:120px;border-radius:50%;margin:0 auto;border:1px solid var(--gray-200);background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.12)"></div>
+      <div style="width:210px;height:210px;margin:0 auto;position:relative">
+        <canvas id="photo-canvas" width="210" height="210" style="display:none;width:210px;height:210px;border-radius:50%;cursor:grab;touch-action:none;box-shadow:0 2px 8px rgba(0,0,0,.16)"></canvas>
+        <div id="photo-preview" style="width:210px;height:210px;border-radius:50%;border:1px solid var(--gray-200);background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:2.4rem;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.12)"></div>
+      </div>
+      <div id="photo-zoomwrap" style="display:none;margin-top:12px">
+        <input type="range" id="photo-zoom" min="100" max="400" value="100" oninput="onPhotoZoom()" style="width:210px;accent-color:var(--g-mid)">
+        <div style="font-size:.72rem;color:var(--gray-500);margin-top:2px">Faites glisser la photo pour centrer le visage · molette ou curseur pour zoomer</div>
+      </div>
       <div id="photo-state" style="font-size:.76rem;color:var(--gray-500);margin-top:9px"></div>
     </div>
     <input type="file" id="photo-file" accept="image/*" style="display:none" onchange="onStaffPhotoPick(this)">
@@ -3956,9 +4016,12 @@ function renderStaff(){
 }
 
 // ─── Photo de profil des collaborateurs ───
-// Stockée en data URL sur la fiche (staffDB.photo), recadrée en carré et réduite à 128 px
-// pour rester légère : l'état complet de l'appli est un seul document JSON.
+// Stockée en data URL sur la fiche (staffDB.photo). L'utilisateur cadre lui-même la photo
+// dans le rond (déplacement + zoom), puis l'image est exportée en 128 px JPEG : l'état
+// complet de l'appli est un seul document JSON, il doit rester léger.
 let _photoTargetId=null, _photoPending=null;   // null = inchangé, '' = suppression, sinon data URL
+let _photoImg=null, _photoZoom=1, _photoOx=0, _photoOy=0, _photoBase=1, _photoBound=false;
+const PHOTO_VIEW=210, PHOTO_OUT=128;
 
 // Applique la photo (ou les initiales) sur la pastille en haut de l'écran.
 function applyUserAvatar(s){
@@ -3975,57 +4038,115 @@ function applyUserAvatar(s){
   el.title = s ? (s.prenom+' '+s.nom) : '';
 }
 
-// Redimensionne et recadre l'image choisie, puis renvoie une data URL JPEG.
+// ── recadrage ──
+function photoClamp(){
+  const w=_photoImg.width*_photoBase*_photoZoom, h=_photoImg.height*_photoBase*_photoZoom;
+  _photoOx=Math.min(0, Math.max(PHOTO_VIEW-w, _photoOx));
+  _photoOy=Math.min(0, Math.max(PHOTO_VIEW-h, _photoOy));
+}
+function photoDraw(){
+  const cv=document.getElementById('photo-canvas'); if(!cv||!_photoImg) return;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,PHOTO_VIEW,PHOTO_VIEW);
+  const sc=_photoBase*_photoZoom;
+  ctx.drawImage(_photoImg,_photoOx,_photoOy,_photoImg.width*sc,_photoImg.height*sc);
+}
+function photoZoomAt(z){
+  const old=_photoBase*_photoZoom;
+  const cx=(PHOTO_VIEW/2-_photoOx)/old, cy=(PHOTO_VIEW/2-_photoOy)/old;   // point source au centre
+  _photoZoom=Math.min(4, Math.max(1, z));
+  const ns=_photoBase*_photoZoom;
+  _photoOx=PHOTO_VIEW/2-cx*ns; _photoOy=PHOTO_VIEW/2-cy*ns;
+  photoClamp(); photoDraw();
+}
+function onPhotoZoom(){ photoZoomAt(parseInt(document.getElementById('photo-zoom').value||'100')/100); }
+
+function photoBindPointer(){
+  if(_photoBound) return; _photoBound=true;
+  const cv=document.getElementById('photo-canvas'); if(!cv) return;
+  let dragging=false, lx=0, ly=0;
+  cv.addEventListener('pointerdown', e=>{ if(!_photoImg)return; dragging=true; lx=e.clientX; ly=e.clientY; cv.style.cursor='grabbing'; try{cv.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+  cv.addEventListener('pointermove', e=>{ if(!dragging)return; _photoOx+=e.clientX-lx; _photoOy+=e.clientY-ly; lx=e.clientX; ly=e.clientY; photoClamp(); photoDraw(); e.preventDefault(); });
+  const stop=()=>{ dragging=false; cv.style.cursor='grab'; };
+  cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop); cv.addEventListener('pointerleave', stop);
+  cv.addEventListener('wheel', e=>{
+    if(!_photoImg)return;
+    e.preventDefault();
+    const z=_photoZoom*(e.deltaY<0?1.12:1/1.12);
+    photoZoomAt(z);
+    const sl=document.getElementById('photo-zoom'); if(sl) sl.value=Math.round(_photoZoom*100);
+  }, {passive:false});
+}
+
+function photoStartCrop(dataUrl){
+  const img=new Image();
+  img.onerror=()=>alert('Ce fichier n’est pas une image exploitable.');
+  img.onload=()=>{
+    _photoImg=img;
+    _photoBase=Math.max(PHOTO_VIEW/img.width, PHOTO_VIEW/img.height);   // cadrage « cover »
+    _photoZoom=1;
+    _photoOx=(PHOTO_VIEW-img.width*_photoBase)/2;
+    _photoOy=(PHOTO_VIEW-img.height*_photoBase)/2;
+    document.getElementById('photo-preview').style.display='none';
+    document.getElementById('photo-canvas').style.display='block';
+    document.getElementById('photo-zoomwrap').style.display='';
+    const sl=document.getElementById('photo-zoom'); if(sl) sl.value=100;
+    photoBindPointer(); photoClamp(); photoDraw();
+    _photoPending='crop';
+    renderPhotoState();
+  };
+  img.src=dataUrl;
+}
+
+// Exporte la portion visible du rond en 128 px.
+function photoExport(){
+  if(!_photoImg) return '';
+  const k=PHOTO_OUT/PHOTO_VIEW;
+  const cv=document.createElement('canvas'); cv.width=PHOTO_OUT; cv.height=PHOTO_OUT;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,PHOTO_OUT,PHOTO_OUT);
+  const sc=_photoBase*_photoZoom*k;
+  ctx.drawImage(_photoImg,_photoOx*k,_photoOy*k,_photoImg.width*sc,_photoImg.height*sc);
+  return cv.toDataURL('image/jpeg',0.82);
+}
+
 function staffPhotoFromFile(file, cb){
   if(!file) return;
   if(!/^image\//.test(file.type||'')){ alert('Choisissez un fichier image (JPEG, PNG…).'); return; }
-  if(file.size > 8*1024*1024){ alert('Image trop lourde : 8 Mo maximum.'); return; }
+  if(file.size > 12*1024*1024){ alert('Image trop lourde : 12 Mo maximum.'); return; }
   const fr=new FileReader();
   fr.onerror=()=>alert('Impossible de lire ce fichier.');
-  fr.onload=()=>{
-    const img=new Image();
-    img.onerror=()=>alert('Ce fichier n’est pas une image exploitable.');
-    img.onload=()=>{
-      const S=128, cv=document.createElement('canvas');
-      cv.width=S; cv.height=S;
-      const ctx=cv.getContext('2d');
-      ctx.fillStyle='#fff'; ctx.fillRect(0,0,S,S);
-      const r=Math.max(S/img.width, S/img.height);       // recadrage « cover », centré
-      const w=img.width*r, h=img.height*r;
-      ctx.drawImage(img,(S-w)/2,(S-h)/2,w,h);
-      try{ cb(cv.toDataURL('image/jpeg',0.82)); }catch(e){ alert('Conversion impossible : '+e.message); }
-    };
-    img.src=fr.result;
-  };
+  fr.onload=()=>cb(fr.result);
   fr.readAsDataURL(file);
+}
+
+function renderPhotoState(){
+  const s=staffDB.find(x=>x.id===_photoTargetId);
+  const st=document.getElementById('photo-state');
+  if(st){
+    st.textContent = _photoPending==='crop' ? 'Cadrez le visage, puis cliquez sur Enregistrer'
+      : _photoPending==='' ? 'Photo retirée — cliquez sur Enregistrer'
+      : (s&&s.photo) ? 'Photo enregistrée' : 'Aucune photo — les initiales sont affichées';
+  }
+  const del=document.getElementById('photo-del');
+  if(del) del.style.display = (_photoPending==='crop' || (s&&s.photo&&_photoPending!=='')) ? '' : 'none';
 }
 
 function renderPhotoPreview(){
   const s=staffDB.find(x=>x.id===_photoTargetId);
-  const cur = _photoPending===null ? ((s&&s.photo)||'') : _photoPending;
+  const cur=(s&&s.photo)||'';
   const box=document.getElementById('photo-preview');
-  if(cur){
-    box.style.backgroundImage="url('"+cur+"')";
-    box.style.backgroundColor='#fff';
-    box.textContent='';
-  } else {
-    box.style.backgroundImage='none';
-    box.style.backgroundColor=(s&&s.col)||'var(--g-mid)';
-    box.textContent=(s&&s.id)||'';
-  }
-  const st=document.getElementById('photo-state');
-  if(st){
-    st.textContent = _photoPending===null
-      ? (cur ? 'Photo enregistrée' : 'Aucune photo — les initiales sont affichées')
-      : (_photoPending ? 'Nouvelle photo — cliquez sur Enregistrer' : 'Photo retirée — cliquez sur Enregistrer');
-  }
-  const del=document.getElementById('photo-del');
-  if(del) del.style.display = cur ? '' : 'none';
+  document.getElementById('photo-canvas').style.display='none';
+  document.getElementById('photo-zoomwrap').style.display='none';
+  box.style.display='flex';
+  if(cur){ box.style.backgroundImage="url('"+cur+"')"; box.style.backgroundColor='#fff'; box.textContent=''; }
+  else { box.style.backgroundImage='none'; box.style.backgroundColor=(s&&s.col)||'var(--g-mid)'; box.textContent=(s&&s.id)||''; }
+  renderPhotoState();
 }
 
 function openStaffPhoto(id){
   const s=staffDB.find(x=>x.id===id); if(!s) return;
-  _photoTargetId=id; _photoPending=null;
+  _photoTargetId=id; _photoPending=null; _photoImg=null;
   document.getElementById('photo-name').textContent=s.prenom+' '+s.nom;
   document.getElementById('photo-file').value='';
   renderPhotoPreview();
@@ -4035,18 +4156,18 @@ function openStaffPhoto(id){
 function onStaffPhotoPick(input){
   const f=input.files&&input.files[0];
   input.value='';
-  staffPhotoFromFile(f, dataUrl=>{ _photoPending=dataUrl; renderPhotoPreview(); });
+  staffPhotoFromFile(f, dataUrl=>photoStartCrop(dataUrl));
 }
 
-function markStaffPhotoRemoved(){ _photoPending=''; renderPhotoPreview(); }
+function markStaffPhotoRemoved(){ _photoPending=''; _photoImg=null; renderPhotoPreview(); }
 
 function saveStaffPhoto(){
   const s=staffDB.find(x=>x.id===_photoTargetId); if(!s) return;
-  if(_photoPending!==null){
+  if(_photoPending==='crop'){ s.photo=photoExport(); s.updatedAt=Date.now(); }
+  else if(_photoPending===''){
     // Toujours poser une chaîne vide plutôt que supprimer la clé : la fusion serveur
     // se fait au champ, une clé absente laisserait revenir l'ancienne photo.
-    s.photo=_photoPending;
-    s.updatedAt=Date.now();
+    s.photo=''; s.updatedAt=Date.now();
   }
   closeModal('photo-modal');
   renderStaff();
@@ -5112,10 +5233,16 @@ function renderCreds(){
       ? `<div style="font-size:.74rem;color:#2E7D32;margin-top:3px">${ico('valider')} Clôturé le ${new Date(c.paidAt).toLocaleDateString('fr-FR')} par ${staffName(c.paidBy)}</div>` : '';
     const huis=(c.status==='huissier'&&c.huissierAt)
       ? `<div style="font-size:.74rem;color:#6A1B9A;margin-top:3px">${ico('securite')} Transmis le ${new Date(c.huissierAt).toLocaleDateString('fr-FR')}${c.huissierNom?' · '+c.huissierNom:''}</div>` : '';
+    const pay=(c.paiement&&c.paiement.url)
+      ? (c.paiement.status==='paye'
+          ? `<div style="font-size:.74rem;color:#2E7D32;margin-top:3px">${ico('euro')} Réglé en ligne${c.paiement.montantPaye?` · ${Number(c.paiement.montantPaye).toFixed(2)} €`:''}</div>`
+          : `<div style="font-size:.74rem;color:#0277BD;margin-top:3px">${ico('euro')} Lien de paiement ${(c.paiement.envois||[]).length?'transmis':'créé'} · en attente de règlement</div>`)
+      : '';
 
     let actions='';
     if(c.status==='en cours'){
       actions+=`<button class="btn bp sm" onclick="openCredRelanceModal(${c.id})" style="background:${E.col};border-color:${E.col}">${ico('relancer')} Relancer — étape ${credNextEtape(c)}</button>`;
+      if(c.montant&&c.montant>0) actions+=`<button class="btn bs sm" onclick="openCredPayLink(${c.id})">${ico('euro')} ${(c.paiement&&c.paiement.url)?'Lien de paiement':'Créer un lien de paiement'}</button>`;
       actions+=`<button class="btn bs sm" onclick="openCredSolder(${c.id})">${ico('valider')} Réglé</button>`;
     } else if(c.status==='huissier'){
       actions+=`<button class="btn bs sm" onclick="openCredSolder(${c.id})">${ico('valider')} Réglé</button>`;
@@ -5134,7 +5261,7 @@ function renderCreds(){
             ${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avance du ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}
           </div>
           ${c.produits?`<div style="font-size:.75rem;color:var(--gray-700);margin-top:2px">${c.produits}</div>`:''}
-          ${closed}${huis}
+          ${closed}${huis}${pay}
         </div>
         <div style="flex:none;text-align:right">
           <div style="font-weight:800;font-size:1.15rem;color:var(--b-mid)">${credAmountHtml(c)}</div>
@@ -5372,6 +5499,7 @@ function openCredDetail(id){
       ${sib.length>1?`<div style="margin-top:8px;font-size:.76rem;color:#4527A0">${ico('patients')} Ce patient a ${sib.length} crédits ouverts, pour un total de ${sib.reduce((s,x)=>s+(x.montant||0),0).toFixed(2)} €.</div>`:''}
       ${c.status==='soldé'&&c.paidAt?`<div style="margin-top:8px;font-size:.78rem;color:#2E7D32">${ico('valider')} Dossier clôturé le ${new Date(c.paidAt).toLocaleDateString('fr-FR')} par ${staffName(c.paidBy)}${c.paidNotes?` · ${c.paidNotes}`:''}</div>`:''}
       ${c.status==='huissier'&&c.huissierAt?`<div style="margin-top:8px;font-size:.78rem;color:#6A1B9A">${ico('securite')} Transmis à l'huissier le ${new Date(c.huissierAt).toLocaleDateString('fr-FR')}${c.huissierNom?` · ${c.huissierNom}`:''}</div>`:''}
+      ${(c.paiement&&c.paiement.url)?`<div style="margin-top:8px;font-size:.78rem;color:${c.paiement.status==='paye'?'#2E7D32':'#0277BD'}">${ico('euro')} Lien de paiement ${credPayEuro(c.paiement.montant)} € — ${c.paiement.status==='paye'?`réglé en ligne le ${c.paiement.paidAt?new Date(c.paiement.paidAt).toLocaleDateString('fr-FR'):'—'}`:`créé le ${c.paiement.createdAt?new Date(c.paiement.createdAt).toLocaleDateString('fr-FR'):'—'}, ${(c.paiement.envois||[]).length?`transmis ${(c.paiement.envois||[]).length} fois`:'pas encore transmis'}`}</div>`:''}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.85rem;margin-bottom:1rem">
@@ -5388,6 +5516,7 @@ function openCredDetail(id){
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:1.2rem">
       ${c.status==='en cours'?`<button class="btn bp sm" onclick="closeModal('cred-detail-modal');openCredRelanceModal(${c.id})">${ico('relancer')} Relancer — étape ${credNextEtape(c)}</button>`:''}
+      ${(credOpen(c)&&c.montant&&c.montant>0)?`<button class="btn bs sm" onclick="closeModal('cred-detail-modal');openCredPayLink(${c.id})">${ico('euro')} ${(c.paiement&&c.paiement.url)?'Lien de paiement':'Créer un lien de paiement'}</button>`:''}
       ${credOpen(c)?`<button class="btn bs sm" onclick="closeModal('cred-detail-modal');openCredSolder(${c.id})">${ico('valider')} Marquer réglé</button>`:''}
       <button class="btn bs sm" onclick="editCred(${c.id})">${ico('modifier')} Modifier</button>
       ${credOpen(c)?`<button class="btn bd sm" onclick="markCredIrrecouvrable(${c.id})">${ico('supprimer')} Irrécouvrable</button>`:''}
@@ -7815,6 +7944,262 @@ function doSendSms(){
       warn.style.display='block';
       warn.style.background='var(--red-pale)'; warn.style.border='1px solid #ffcdd2'; warn.style.color='var(--red)';
     });
+}
+
+// ═══════════ CRÉDITS : LIEN DE PAIEMENT EN LIGNE (Stripe) ═══════════
+// Le serveur génère le lien (paiement.js) ; la confirmation d'encaissement
+// arrive par webhook et solde le dossier toute seule. Ici on ne fait que
+// composer la demande, envoyer le lien et refléter l'état.
+let payStatus={configured:false,mode:null,webhook:false,error:'Statut non chargé'};
+let currentLinkCredId=null;
+
+function loadPayStatus(){
+  fetch('/api/paiement/status').then(r=>r.json()).then(j=>{ payStatus=j||payStatus; })
+    .catch(()=>{ payStatus={configured:false,mode:null,webhook:false,error:'Serveur injoignable'}; });
+}
+loadPayStatus();
+
+// Référence courte, neutre, montrée au patient et à sa banque.
+function credDossierRef(c){ return 'PHC-'+String(c.id).slice(-6); }
+function credPayLibelleDefaut(c){ return 'Pharmacie du Centre - dossier '+credDossierRef(c); }
+function credPayEuro(v){ return Number(v||0).toFixed(2).replace('.',','); }
+
+// Garde-fou secret médical : alerte si le libellé reprend un mot des produits avancés.
+function clinkLibelleRisque(c, lib){
+  const mots=String(c.produits||'').toLowerCase().split(/[^0-9a-zàâäéèêëîïôöùûüç]+/).filter(m=>m.length>3);
+  const l=String(lib||'').toLowerCase();
+  return mots.find(m=>l.includes(m))||null;
+}
+
+function openCredPayLink(id){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  const c=credits.find(x=>x.id===id); if(!c) return;
+  currentLinkCredId=id;
+  const p=c.paiement||null;
+
+  document.getElementById('clink-info').innerHTML=
+    `<strong>${ctlEsc(c.nom)} ${ctlEsc(c.prenom)}</strong> · ${credAmountTxt(c)} · dossier ${credDossierRef(c)}
+     <div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">
+       ${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avance du ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}
+       ${c.tel?` · ${ico('telephone')} ${ctlEsc(c.tel)}`:''}${c.mail?` · ${ctlEsc(c.mail)}`:''}
+     </div>`;
+
+  const off=document.getElementById('clink-off');
+  if(!payStatus.configured){
+    off.style.display='block';
+    off.innerHTML='<strong>Paiement en ligne non configuré.</strong> '+(payStatus.error||'')+
+      ' Renseignez STRIPE_SECRET_KEY sur le serveur pour activer cette fonction.';
+  } else if(!payStatus.webhook){
+    off.style.display='block';
+    off.innerHTML='<strong>Confirmation automatique inactive.</strong> Le lien fonctionnera, mais le dossier ne se soldera pas tout seul : utilisez « Vérifier le paiement ». Renseignez STRIPE_WEBHOOK_SECRET pour l\'automatiser.';
+  } else if(payStatus.mode==='test'){
+    off.style.display='block';
+    off.innerHTML='<strong>Mode test.</strong> Aucun argent réel ne sera encaissé — les liens créés servent uniquement aux essais.';
+  } else off.style.display='none';
+
+  if(p && p.url && p.status!=='paye'){
+    showClinkResult(c);
+  } else {
+    document.getElementById('clink-form').style.display='';
+    document.getElementById('clink-result').style.display='none';
+    document.getElementById('clink-montant').value=(c.montant&&c.montant>0)?Number(c.montant).toFixed(2):'';
+    document.getElementById('clink-libelle').value=credPayLibelleDefaut(c);
+    document.getElementById('clink-sent').style.display='none';
+    updClinkPreview();
+  }
+  openModal('cred-link-modal');
+}
+
+function updClinkPreview(){
+  const c=credits.find(x=>x.id===currentLinkCredId); if(!c) return;
+  const m=parseFloat(document.getElementById('clink-montant').value);
+  const lib=document.getElementById('clink-libelle').value;
+  const warn=document.getElementById('clink-warn');
+  const btn=document.getElementById('clink-create-btn');
+  let msg='', grave=false;
+
+  const risque=clinkLibelleRisque(c, lib);
+  if(!payStatus.configured){ msg='Le serveur ne peut pas créer de lien tant que Stripe n\'est pas configuré.'; grave=true; }
+  else if(!isFinite(m)||m<1){ msg='Le montant doit être d\'au moins 1,00 €.'; grave=true; }
+  else if(m>5000){ msg='Montant au-delà du plafond de 5 000 € par lien.'; grave=true; }
+  else if(!lib.trim()){ msg='Le libellé est obligatoire.'; grave=true; }
+  else if(risque){ msg='⚠ Le libellé semble contenir « '+risque+' », repris des produits avancés. Retirez toute information de santé avant de créer le lien.'; grave=true; }
+  else if(c.montant&&Math.abs(m-c.montant)>0.005){ msg='Ce montant diffère du solde enregistré ('+credPayEuro(c.montant)+' €). Le dossier sera soldé en totalité au règlement.'; }
+
+  warn.textContent=msg;
+  warn.style.display=msg?'block':'none';
+  warn.style.background=msg?(grave?'var(--red-pale)':'#FFF3E0'):'';
+  warn.style.border=msg?(grave?'1px solid #ffcdd2':'1px solid #FFCC80'):'';
+  warn.style.color=msg?(grave?'var(--red)':'#E65100'):'';
+  btn.disabled=grave;
+  btn.style.opacity=grave?'.5':'1';
+  btn.style.cursor=grave?'not-allowed':'pointer';
+}
+
+function showClinkResult(c){
+  const p=c.paiement||{};
+  document.getElementById('clink-form').style.display='none';
+  document.getElementById('clink-result').style.display='';
+  document.getElementById('clink-url').value=p.url||'';
+  const envois=(p.envois||[]).length;
+  document.getElementById('clink-recap').innerHTML=
+    `Montant : <strong>${credPayEuro(p.montant)} €</strong> · libellé « ${ctlEsc(p.libelle||'')} »<br>
+     Créé le ${p.createdAt?new Date(p.createdAt).toLocaleString('fr-FR'):'—'} par ${staffName(p.createdBy)}
+     ${envois?` · déjà transmis ${envois} fois`:' · pas encore transmis'}`;
+  const sms=document.getElementById('clink-sms-btn');
+  const noMobile=!smsMsisdn(c.tel);
+  sms.disabled=noMobile||!smsStatus.configured;
+  sms.style.opacity=sms.disabled?'.5':'1';
+  sms.title=noMobile?'Aucun mobile français enregistré pour ce patient':'';
+  const mail=document.getElementById('clink-mail-btn');
+  mail.disabled=!c.mail;
+  mail.style.opacity=mail.disabled?'.5':'1';
+  mail.title=c.mail?'':'Aucune adresse mail enregistrée pour ce patient';
+}
+
+async function createCredPayLink(){
+  const c=credits.find(x=>x.id===currentLinkCredId); if(!c) return;
+  const btn=document.getElementById('clink-create-btn');
+  if(btn.disabled) return;
+  const montant=parseFloat(document.getElementById('clink-montant').value);
+  const libelle=document.getElementById('clink-libelle').value.trim();
+  const old=btn.innerHTML; btn.disabled=true; btn.textContent='Création…';
+  try{
+    const r=await fetch('/api/paiement/creer',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({creditId:c.id, montant, libelle, dossier:credDossierRef(c)})});
+    const j=await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||'Création refusée par le serveur');
+    c.paiement={
+      linkId:j.id, url:j.url, montant:j.montant, libelle:j.libelle,
+      mode:j.mode, status:'cree', envois:[],
+      createdAt:new Date().toISOString(), createdBy:currentUser?.id||'?'
+    };
+    c.updatedAt=Date.now();
+    renderCreds();
+    showClinkResult(c);
+  }catch(e){
+    const warn=document.getElementById('clink-warn');
+    warn.textContent='Échec de la création : '+(e.message||'erreur inconnue');
+    warn.style.display='block';
+    warn.style.background='var(--red-pale)'; warn.style.border='1px solid #ffcdd2'; warn.style.color='var(--red)';
+  }
+  btn.innerHTML=old; btn.disabled=false;
+  updClinkPreview();
+}
+
+function copyCredPayLink(btn){
+  const el=document.getElementById('clink-url');
+  const done=()=>{ const o=btn.innerHTML; btn.textContent='Copié ✓'; setTimeout(()=>btn.innerHTML=o,1400); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(el.value).then(done,()=>{}); }
+  else { el.select(); try{ document.execCommand('copy'); done(); }catch(_){} }
+  credPayNoteEnvoi(currentLinkCredId,'lien copié',null);
+}
+
+// Trace l'envoi dans le crédit + l'historique des relances (étape 2 : rappel écrit).
+function credPayNoteEnvoi(credId, canal, dest){
+  const c=credits.find(x=>x.id===credId); if(!c||!c.paiement) return;
+  const now=new Date();
+  c.paiement.envois=c.paiement.envois||[];
+  c.paiement.envois.push({canal, to:dest||null, at:now.toISOString(), by:currentUser?.id||'?'});
+  if(c.paiement.status==='cree') c.paiement.status='envoye';
+  c.updatedAt=Date.now();
+  renderCreds();
+  const sent=document.getElementById('clink-sent');
+  if(sent){ sent.textContent='Lien transmis ('+canal+(dest?' — '+dest:'')+').'; sent.style.display='block'; }
+}
+
+// Formulation volontairement courte : elle tient en UN seul SMS (≈141 caractères
+// avec un lien Stripe réel), lien compris. Elle nomme la pharmacie et rappelle le
+// numéro de l'officine : un SMS de paiement anonyme serait pris pour une arnaque.
+function credPaySmsBody(c){
+  const p=c.paiement||{};
+  return smsPlain(`Pharmacie du Centre : reglez en ligne votre dossier ${credDossierRef(c)} (${credPayEuro(p.montant)} EUR) : ${p.url} - Info 02 31 52 15 71.`);
+}
+
+function sendCredPayLinkSms(){
+  const c=credits.find(x=>x.id===currentLinkCredId); if(!c||!c.paiement) return;
+  openSmsModal({
+    titre:'Envoyer le lien de paiement',
+    tel:c.tel||'', nom:c.nom, prenom:c.prenom, source:'credit-paiement',
+    tag:'credit-paiement',
+    info:`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><strong>${ctlEsc(c.nom)} ${ctlEsc(c.prenom)}</strong> · ${credPayEuro(c.paiement.montant)} € · dossier ${credDossierRef(c)}</div>
+          <div style="font-size:.78rem;color:var(--gray-500);margin-top:5px">Le dossier se soldera automatiquement dès réception du règlement.</div>`,
+    templates:[{lbl:'Lien de paiement', text:credPaySmsBody(c)}],
+    onSent:(r)=>{
+      const now=new Date();
+      credEnsureRelances(c);
+      c.relances.push({
+        date:now.toISOString().split('T')[0],
+        time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+        type:'sms', tpl:'sms', etape:2, body:r.text, smsId:r.id||null, smsTo:r.to||null,
+        notes:'Lien de paiement en ligne envoyé par SMS ('+credPayEuro(c.paiement.montant)+' €)',
+        by:currentUser?.id||'?'
+      });
+      credPayNoteEnvoi(c.id,'SMS',r.to||null);
+    }
+  });
+}
+
+async function sendCredPayLinkMail(){
+  const c=credits.find(x=>x.id===currentLinkCredId); if(!c||!c.paiement||!c.mail) return;
+  const btn=document.getElementById('clink-mail-btn'); if(btn.disabled) return;
+  const p=c.paiement;
+  const subject='Règlement de votre dossier — Pharmacie du Centre';
+  const body=`Madame, Monsieur ${c.nom} ${c.prenom},\n\n`
+    +`Votre dossier ${credDossierRef(c)} à la Pharmacie du Centre présente un solde de ${credPayEuro(p.montant)} €.\n\n`
+    +`Vous pouvez le régler en ligne, par carte bancaire et en toute sécurité, en suivant ce lien :\n${p.url}\n\n`
+    +`Le paiement est traité par Stripe ; la pharmacie ne conserve aucune donnée de votre carte. Vous pouvez aussi régler directement à la pharmacie si vous le préférez.\n\n`
+    +`Pour toute question, nous restons joignables au 02 31 52 15 71.\n\nCordialement,\n\n`
+    +`Pharmacie du Centre — Mondeville\n48 Rue Chapron · 14120 Mondeville\nTél. 02 31 52 15 71`;
+  const old=btn.innerHTML; btn.disabled=true; btn.textContent='Envoi…';
+  try{
+    const r=await fetch('/api/send-mail',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({to:c.mail, subject, text:body})});
+    const j=await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||'Envoi refusé par le serveur');
+    const now=new Date();
+    credEnsureRelances(c);
+    c.relances.push({
+      date:now.toISOString().split('T')[0],
+      time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+      type:'mail', tpl:'courrier', etape:3, subject, body,
+      notes:'Lien de paiement en ligne envoyé par mail ('+credPayEuro(p.montant)+' €)',
+      by:currentUser?.id||'?'
+    });
+    credPayNoteEnvoi(c.id,'mail',c.mail);
+  }catch(e){
+    alert('Échec de l\'envoi : '+(e.message||'erreur inconnue'));
+  }
+  btn.innerHTML=old; btn.disabled=false;
+}
+
+// Filet de sécurité si un webhook s'est perdu : on interroge Stripe à la demande.
+async function checkCredPayment(){
+  const c=credits.find(x=>x.id===currentLinkCredId); if(!c||!c.paiement||!c.paiement.linkId) return;
+  const sent=document.getElementById('clink-sent');
+  sent.style.display='block'; sent.textContent='Vérification auprès de Stripe…';
+  try{
+    const r=await fetch('/api/paiement/verifier?linkId='+encodeURIComponent(c.paiement.linkId));
+    const j=await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||'Vérification impossible');
+    if(!j.paye){ sent.textContent='Aucun règlement enregistré pour l\'instant sur ce lien.'; return; }
+    const reg=j.reglement||{};
+    c.paiement.status='paye';
+    c.paiement.ref=reg.ref||null;
+    c.paiement.paidAt=reg.at||new Date().toISOString();
+    c.paiement.montantPaye=reg.montant;
+    c.status='soldé';
+    c.paidAt=(reg.at||new Date().toISOString()).split('T')[0];
+    c.paidBy='enligne';
+    c.paidMode='cb-lien';
+    c.paidNotes='Réglé en ligne par lien de paiement'+(reg.montant?` (${credPayEuro(reg.montant)} €)`:'')
+      +'. Saisie comptable à effectuer dans le logiciel métier.';
+    c.updatedAt=Date.now();
+    renderCreds();
+    sent.textContent='Règlement confirmé — dossier soldé.';
+  }catch(e){
+    sent.textContent='Vérification impossible : '+(e.message||'erreur inconnue');
+  }
 }
 
 // ─── Crédits : relance par SMS ───

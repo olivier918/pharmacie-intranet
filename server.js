@@ -14,6 +14,13 @@ const DATA_FILE = path.join(__dirname, 'data', 'pharmacie-data.json');
 const HISTORY_DIR = path.join(__dirname, 'data', 'history');
 const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de données)
 
+// ─── Webhook de paiement (Stripe) ───
+// DOIT être déclaré AVANT express.json() et AVANT le portail d'authentification :
+// la signature Stripe se vérifie sur le corps BRUT, et Stripe n'a pas de session.
+// La route est protégée par sa signature cryptographique, pas par le portail.
+const paiement = require('./paiement');
+paiement.installWebhook(app, express, { onPaid: marquerCreditPaye });
+
 // Parse JSON bodies up to 50MB (for base64 images in preps)
 app.use(express.json({ limit: '50mb' }));
 
@@ -322,6 +329,52 @@ app.post('/api/send-sms', async (req, res) => {
   }
 });
 
+// ─── Routes du paiement en ligne (protégées par le portail) ───
+paiement.installApi(app);
+
+// ─── Passage d'un crédit en « soldé » après encaissement en ligne ───
+// Appelé par le webhook Stripe (signature déjà vérifiée). Lecture-modification-
+// écriture sur l'état courant. `updatedAt` est réhaussé pour que la fusion par
+// enregistrement (mergeById) fasse gagner cette version sur la copie qu'un poste
+// resté ouvert pourrait renvoyer ensuite. Renvoie true si un dossier a été modifié.
+async function marquerCreditPaye(creditId, info) {
+  const appliquer = (data) => {
+    if (!data || !Array.isArray(data.credits)) return false;
+    const c = data.credits.find((x) => x && String(x.id) === String(creditId));
+    if (!c) return false;
+    const p = c.paiement || {};
+    if (p.status === 'paye' && p.ref === info.ref) return false;   // déjà encaissé (doublon d'événement)
+    c.paiement = Object.assign({}, p, {
+      status: 'paye',
+      ref: info.ref,
+      paidAt: info.at,
+      montantPaye: info.montant
+    });
+    c.status = 'soldé';
+    c.paidAt = String(info.at).split('T')[0];
+    c.paidBy = 'enligne';
+    c.paidMode = 'cb-lien';
+    c.paidNotes = 'Réglé en ligne par lien de paiement'
+      + (info.montant ? ` (${Number(info.montant).toFixed(2)} €)` : '')
+      + '. Saisie comptable à effectuer dans le logiciel métier.';
+    c.updatedAt = Date.now();
+    return true;
+  };
+
+  if (db) {
+    const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
+    const data = (cur.rows[0] && cur.rows[0].data) || {};
+    if (!appliquer(data)) return false;
+    await db.query('UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(data)]);
+    return true;
+  }
+  if (!fs.existsSync(DATA_FILE)) return false;
+  const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  if (!appliquer(data)) return false;
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+  return true;
+}
+
 // ─── Archive l'état ACTUEL avant qu'il ne soit remplacé (filet anti-écrasement) ───
 async function snapshotCurrent() {
   try {
@@ -593,6 +646,7 @@ async function start() {
   await initDB();
   initMail();
   logSmsStatus();
+  paiement.logStatus();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {
     console.log('  🧹 Rétention : anciennes livraisons (>' + maint.DELIV_DAYS + 'j) / préparations (>' + maint.PREPS_DAYS + 'j) purgées au démarrage');
