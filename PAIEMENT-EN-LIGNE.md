@@ -67,8 +67,8 @@ confirmation reste manuelle (bouton « Vérifier le paiement »).
    au comptoir.
 4. Dès que le patient règle, le dossier passe automatiquement au statut
    **« payé — à saisir »**. L'envoi est tracé dans l'historique des relances.
-5. Solder le crédit dans **Winpharma**, puis cliquer sur **Validé dans Winpharma**
-   sur la fiche : le dossier est alors clôturé.
+5. Solder le crédit dans **Winpharma**, puis cliquer sur **Clôturer sur Winpharma**
+   sur la fiche : le dossier est clôturé et archivé.
 
 Le bouton **Vérifier le paiement** interroge Stripe à la demande : à utiliser si
 un doute subsiste, ou si le webhook n'est pas configuré.
@@ -82,11 +82,25 @@ ouvert dans le logiciel de vente alors que le patient a payé.
 
 L'état intermédiaire empêche cet oubli :
 
-| Statut | Signification | Compteur |
-|---|---|---|
-| **en cours** | créance à recouvrer | Total dû |
-| **payé — à saisir** | argent encaissé, vente non soldée dans Winpharma | À saisir |
-| **clôturé** | saisie Winpharma confirmée, dossier fermé | Clôturés |
+| Statut | Signification | Compteur | Dans la liste |
+|---|---|---|---|
+| **en cours** | créance à recouvrer | Total dû | oui |
+| **payé — à saisir** | argent encaissé, vente non soldée dans Winpharma | À saisir | oui, en tête |
+| **clôturé** | saisie Winpharma confirmée, dossier archivé | Clôturés | non, archivé |
+
+### Archivage
+
+Un dossier clôturé quitte la liste de travail. Rien n'est supprimé : il reste
+consultable en cliquant sur le compteur **Clôturés**, en choisissant « Clôturés »
+dans le filtre de statut, en isolant le patient, ou tout simplement en le
+recherchant par son nom — une recherche affiche toujours les archives.
+
+Un rappel discret sous la liste indique combien de dossiers sont archivés, avec
+un bouton pour les afficher.
+
+Cette règle s'applique au statut, pas à un marqueur ajouté aux dossiers : vos
+crédits déjà clôturés sont donc archivés dès la mise à jour, sans aucune
+modification de vos données.
 
 Les dossiers « payé — à saisir » remontent **en tête de liste** et alimentent le
 compteur **À saisir**, cliquable, qui affiche aussi le montant total concerné.

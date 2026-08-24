@@ -5195,6 +5195,11 @@ function renderCreds(){
   }
 
   let f=[...credits];
+  // Archivage : un dossier clôturé sort de la liste de travail. Il reste accessible
+  // en cliquant sur le compteur « Clôturés », via le filtre de statut, en isolant un
+  // patient, ou par une recherche — chercher un nom doit toujours tout retrouver.
+  const voirArchives = credQuickFilter==='solde' || sf==='soldé' || !!q || !!credPatientFilter;
+  if(!voirArchives) f=f.filter(c=>c.status!=='soldé');
   if(credQuickFilter==='due'||credQuickFilter==='encours') f=f.filter(c=>c.status==='en cours');
   else if(credQuickFilter==='follow')   f=f.filter(c=>credNeedsFollowup(c));
   else if(credQuickFilter==='asaisir')  f=f.filter(c=>credAttenteSaisie(c));
@@ -5221,9 +5226,16 @@ function renderCreds(){
          <button class="btn bs sm" style="margin-left:auto" onclick="credPatientFilter='';renderCreds()">Retirer le filtre</button>
        </div>` : '';
 
+  // Rappel discret que des dossiers sont archivés, avec le moyen de les afficher.
+  const archiveNote=(!voirArchives && nSolde)
+    ? `<div style="display:flex;align-items:center;gap:8px;justify-content:center;margin-top:12px;padding:8px 12px;font-size:.78rem;color:var(--gray-500)">
+         ${ico('archives')} ${nSolde} dossier${nSolde>1?'s':''} clôturé${nSolde>1?'s':''} et archivé${nSolde>1?'s':''}
+         <button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="setCredQuickFilter('solde')">Afficher</button>
+       </div>` : '';
+
   const host=document.getElementById('cred-table');
   if(!f.length){
-    host.innerHTML=banner+'<div style="text-align:center;color:var(--gray-500);padding:1.8rem;font-size:.88rem">Aucun crédit pour ces critères.</div>';
+    host.innerHTML=banner+'<div style="text-align:center;color:var(--gray-500);padding:1.8rem;font-size:.88rem">Aucun crédit pour ces critères.</div>'+archiveNote;
     return;
   }
 
@@ -5255,7 +5267,7 @@ function renderCreds(){
 
     let actions='';
     if(c.status==='payé'){
-      actions+=`<button class="btn bp sm" onclick="validerCredWinpharma(${c.id})" style="background:#0277BD;border-color:#0277BD">${ico('valider')} Validé dans Winpharma</button>`;
+      actions+=`<button class="btn bp sm" onclick="cloturerCredWinpharma(${c.id})" style="background:#0277BD;border-color:#0277BD">${ico('clore-dossier')} Clôturer sur Winpharma</button>`;
     } else if(c.status==='en cours'){
       actions+=`<button class="btn bp sm" onclick="openCredRelanceModal(${c.id})" style="background:${E.col};border-color:${E.col}">${ico('relancer')} Relancer — étape ${credNextEtape(c)}</button>`;
       if(c.montant&&c.montant>0) actions+=`<button class="btn bs sm" onclick="openCredPayLink(${c.id})">${ico('euro')} ${(c.paiement&&c.paiement.url)?'Lien de paiement':'Créer un lien de paiement'}</button>`;
@@ -5302,7 +5314,7 @@ function renderCreds(){
         <div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">${actions}</div>
       </div>
     </div>`;
-  }).join('');
+  }).join('')+archiveNote;
 }
 
 function toggleCredForm(){
@@ -5521,7 +5533,7 @@ function openCredDetail(id){
         ? `<div style="margin-top:10px;padding:9px 12px;background:#E1F5FE;border:1px solid #81D4FA;border-radius:9px;font-size:.82rem;color:#01579B;line-height:1.5">
              <strong>${ico('euro')} Payé en ligne${(c.paiement&&c.paiement.montantPaye!=null)?` · ${credPayEuro(c.paiement.montantPaye)} €`:''}</strong>
              le ${(c.paiement&&c.paiement.paidAt)?new Date(c.paiement.paidAt).toLocaleString('fr-FR'):'—'}.
-             <div style="margin-top:3px;color:#0277BD">La procédure de relance est terminée. Il reste à solder le crédit dans Winpharma, puis à clôturer le dossier depuis la liste.</div>
+             <div style="margin-top:3px;color:#0277BD">La procédure de relance est terminée. Il reste à solder le crédit dans Winpharma, puis à utiliser « Clôturer sur Winpharma » depuis la liste pour archiver le dossier.</div>
            </div>`
         : (credOpen(c)
           ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
@@ -8210,14 +8222,14 @@ async function sendCredPayLinkMail(){
 // Seconde étape de la clôture : l'argent est encaissé sur Stripe, l'opérateur
 // confirme avoir soldé la vente dans Winpharma. C'est seulement là que le dossier
 // se ferme. Confirmation demandée : le geste est irréversible d'un simple clic.
-function validerCredWinpharma(id){
+function cloturerCredWinpharma(id){
   const c=credits.find(x=>x.id===id); if(!c||!credAttenteSaisie(c)) return;
   if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
   const p=c.paiement||{};
   const somme=(p.montantPaye!=null)?credPayEuro(p.montantPaye)+' €':credAmountTxt(c);
-  document.getElementById('conf-title').textContent='Clôturer le dossier';
+  document.getElementById('conf-title').textContent='Clôturer et archiver le dossier';
   document.getElementById('conf-msg').textContent=
-    `Confirmez-vous avoir soldé le crédit de ${c.nom} ${c.prenom} (${somme}) dans Winpharma ? Le dossier sera clôturé.`;
+    `Confirmez-vous avoir soldé le crédit de ${c.nom} ${c.prenom} (${somme}) dans Winpharma ? Le dossier sera clôturé et archivé — il restera consultable via le compteur « Clôturés ».`;
   pendingAction=()=>{
     c.status='soldé';
     c.paidAt=(p.paidAt||new Date().toISOString()).split('T')[0];
