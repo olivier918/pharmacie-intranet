@@ -235,9 +235,22 @@ app.get('/api/sonnette/stream', (req, res) => {
   });
 });
 
+// Trois natures d'appel. La sonnette du comptoir prévient les postes qui se sont
+// déclarés « récepteurs » ; un appel du comptoir avancé s'affiche sur TOUS les
+// postes connectés — c'est une personne qui demande du renfort, pas un client
+// qui patiente.
+const SONNETTE_TYPES = {
+  comptoir:     'Sonnette comptoir',
+  aide:         'Aide au comptoir avancé',
+  remplacement: 'Remplacement au comptoir avancé'
+};
+
 app.post('/api/sonnette', (req, res) => {
   const b = req.body || {};
+  const type = SONNETTE_TYPES[b.type] ? b.type : 'comptoir';
   const evt = {
+    id:    'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    type,
     par:   String(b.par || '').slice(0, 60) || 'Un poste',
     poste: String(b.poste || '').slice(0, 40),
     src:   String(b.src || '').slice(0, 40),
@@ -247,11 +260,30 @@ app.post('/api/sonnette', (req, res) => {
   const payload = 'event: ring\ndata: ' + JSON.stringify(evt) + '\n\n';
   let prevenus = 0;
   sonnetteClients.forEach((c, id) => {
-    if (!c.rx || id === evt.src) return;
+    if (id === evt.src) return;
+    if (type === 'comptoir' && !c.rx) return;
     try { c.res.write(payload); prevenus++; } catch (_) { sonnetteClients.delete(id); }
   });
-  console.log('  🔔 Sonnette comptoir par ' + evt.par + ' → ' + prevenus + ' poste(s)');
-  res.json({ ok: true, prevenus, recepteurs: sonnetteCount(), ts: evt.ts });
+  console.log('  🔔 ' + SONNETTE_TYPES[type] + ' par ' + evt.par + ' → ' + prevenus + ' poste(s)');
+  res.json({ ok: true, id: evt.id, type, prevenus, recepteurs: sonnetteCount(), postes: sonnetteClients.size, ts: evt.ts });
+});
+
+// « J'y vais » : referme l'alerte sur tous les postes et prévient l'appelant de
+// qui arrive, pour que deux personnes ne se déplacent pas en même temps.
+app.post('/api/sonnette/repondre', (req, res) => {
+  const b = req.body || {};
+  const evt = {
+    id:  String(b.id || '').slice(0, 40),
+    par: String(b.par || '').slice(0, 60) || 'Un collègue',
+    ts:  Date.now()
+  };
+  if (sonnetteLast && sonnetteLast.id === evt.id) sonnetteLast.repondu = evt;
+  const payload = 'event: answer\ndata: ' + JSON.stringify(evt) + '\n\n';
+  sonnetteClients.forEach((c, id) => {
+    try { c.res.write(payload); } catch (_) { sonnetteClients.delete(id); }
+  });
+  console.log('  ✅ ' + evt.par + ' répond à l\'appel ' + evt.id);
+  res.json({ ok: true });
 });
 
 // Repli : si le flux a été coupé (veille du poste, proxy), le poste interroge
