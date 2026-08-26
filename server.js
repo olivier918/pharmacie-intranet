@@ -197,6 +197,70 @@ app.get('/api/version', (req, res) => {
   res.json({ version: BUILD_ID });
 });
 
+// ─── SONNETTE COMPTOIR (temps réel, SSE) ───
+// Un poste appuie sur la sonnette → tous les postes « récepteurs » sonnent.
+// Technique : Server-Sent Events (flux HTTP maintenu ouvert). Aucune dépendance
+// supplémentaire, aucun port à ouvrir : le poste écoute /api/sonnette/stream et
+// reçoit l'événement dans la seconde.
+const sonnetteClients = new Map();   // id -> { res, nom, rx }
+let sonnetteLast = null;
+
+function sonnetteCount() { let n = 0; sonnetteClients.forEach(c => { if (c.rx) n++; }); return n; }
+
+app.get('/api/sonnette/stream', (req, res) => {
+  const id  = String(req.query.id || Math.random().toString(36).slice(2)).slice(0, 40);
+  const nom = String(req.query.nom || '').slice(0, 40);
+  const rx  = req.query.rx !== '0';
+  res.set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  if (res.flushHeaders) res.flushHeaders();
+  res.write('retry: 3000\n\n');
+  res.write('event: hello\ndata: ' + JSON.stringify({ id, recepteurs: sonnetteCount() }) + '\n\n');
+
+  // Un même poste qui se reconnecte remplace son ancien flux (pas de doublon).
+  const old = sonnetteClients.get(id);
+  if (old && old.res !== res) { try { old.res.end(); } catch (_) {} }
+  sonnetteClients.set(id, { res, nom, rx });
+
+  // Battement de cœur : empêche proxys et hébergeurs de couper le flux.
+  const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (_) {} }, 25000);
+  req.on('close', () => {
+    clearInterval(ping);
+    const cur = sonnetteClients.get(id);
+    if (cur && cur.res === res) sonnetteClients.delete(id);
+  });
+});
+
+app.post('/api/sonnette', (req, res) => {
+  const b = req.body || {};
+  const evt = {
+    par:   String(b.par || '').slice(0, 60) || 'Un poste',
+    poste: String(b.poste || '').slice(0, 40),
+    src:   String(b.src || '').slice(0, 40),
+    ts:    Date.now()
+  };
+  sonnetteLast = evt;
+  const payload = 'event: ring\ndata: ' + JSON.stringify(evt) + '\n\n';
+  let prevenus = 0;
+  sonnetteClients.forEach((c, id) => {
+    if (!c.rx || id === evt.src) return;
+    try { c.res.write(payload); prevenus++; } catch (_) { sonnetteClients.delete(id); }
+  });
+  console.log('  🔔 Sonnette comptoir par ' + evt.par + ' → ' + prevenus + ' poste(s)');
+  res.json({ ok: true, prevenus, recepteurs: sonnetteCount(), ts: evt.ts });
+});
+
+// Repli : si le flux a été coupé (veille du poste, proxy), le poste interroge
+// le dernier appel au réveil et rattrape une sonnerie manquée.
+app.get('/api/sonnette/last', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(sonnetteLast || {});
+});
+
 // ─── Diagnostic : mode réel + éventuelle erreur de connexion DB ───
 app.get('/api/health', (req, res) => {
   res.json({
