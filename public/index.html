@@ -2274,18 +2274,61 @@ function snapIds(){ ensureNatIds(); SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(
 // Détection centrale des suppressions : tout id présent à la dernière lecture et absent maintenant = tombstone.
 function diffTombstones(){ ensureNatIds(); const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); CAISSE_SUBS.forEach(s=>{ const prev=_idSnap['caisse.'+s]; if(!prev)return; const cur=_idsOf(caisse&&caisse[s]); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:'caisse.'+s,id:id,t:now}); }); }); }
 function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
+// fetch() ne lève PAS d'exception sur une réponse 401 ou 500 : sans vérifier
+// r.ok, un enregistrement refusé (session expirée, redéploiement en cours) était
+// compté comme réussi. La saisie restait à l'écran, n'était jamais persistée, et
+// disparaissait à la première synchro — sans le moindre message. D'où cette
+// vérification explicite, la réessaie, et le bandeau rouge.
+let _saveErrs=0;
 async function saveAll(){
+  let ok=false, motif='';
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
-    await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+    if(r.ok){
+      const j=await r.json().catch(function(){ return null; });
+      ok = !j || j.ok!==false;
+      if(!ok) motif=(j&&j.error)||'enregistrement refusé par le serveur';
+    } else if(r.status===401){ motif='session expirée — reconnectez-vous'; }
+    else { motif='erreur serveur ('+r.status+')'; }
+  }catch(e){ motif='serveur injoignable'; }
+
+  if(ok){
     snapIds();          // envoi réussi : la nouvelle référence = l'état qu'on vient de persister
-  }catch(e){console.warn('Sauvegarde:',e.message);}
-  finally{ _savePending=false; }
+    _saveErrs=0; alerteSauvegarde(null);
+    _savePending=false; // modifications persistées : la synchro peut reprendre
+    return;
+  }
+  // Échec : on GARDE _savePending à true (la synchro ne doit pas écraser la saisie
+  // non enregistrée), on prévient, et on réessaie avec un délai croissant.
+  _saveErrs++;
+  alerteSauvegarde(motif);
+  console.warn('Sauvegarde refusée:',motif);
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(saveAll, Math.min(30000, 3000*_saveErrs));
+}
+
+// Bandeau rouge permanent tant qu'une saisie n'est pas enregistrée.
+function alerteSauvegarde(motif){
+  let el=document.getElementById('save-alert');
+  if(!motif){ if(el) el.style.display='none'; return; }
+  if(!el){
+    el=document.createElement('div'); el.id='save-alert'; el.className='no-print';
+    el.style.cssText='position:fixed;left:0;right:0;top:0;z-index:13000;background:#C62828;color:#fff;'
+      +'padding:11px 16px;font-weight:700;font-size:.88rem;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='⚠ Modifications NON enregistrées ('+motif+'). Ne fermez pas cette page : '
+    +'l\u2019intranet réessaie automatiquement. Si le message persiste, rechargez la page pour vous reconnecter.';
+  el.style.display='block';
 }
 async function loadAll(){
   try{
-    const res=await fetch('/api/data');const data=await res.json();
+    const res=await fetch('/api/data');
+    if(!res.ok){ _loadedOK=false; console.warn('Chargement refusé:',res.status); return; }
+    const data=await res.json();
+    if(data && data.ok===false){ _loadedOK=false; console.warn('Chargement refusé:',data.error); return; }
     _loadedOK=true;   // serveur joignable et état lu : les sauvegardes sont désormais autorisées
     if(!data)return;
     if(data.staffDB)staffDB=data.staffDB;
@@ -2315,7 +2358,10 @@ async function loadAll(){
 }
 setInterval(async()=>{
   if(document.getElementById('app').style.display!=='none' && !_savePending){
-    try{const r=await fetch('/api/data');const d=await r.json();
+    try{const r=await fetch('/api/data');
+      if(!r.ok){ _loadedOK=false; if(r.status===401) alerteSauvegarde('session expirée — reconnectez-vous'); return; }
+      const d=await r.json();
+      if(d && d.ok===false){ _loadedOK=false; return; }
       _loadedOK=true;
       if(d){
         if(d.deliveries)deliveries=d.deliveries;
@@ -4004,8 +4050,19 @@ function addStaff(){
   if(!nom||!prenom){alert('Nom et prénom requis.');return}
   if(pin.length!==4||!/^\d+$/.test(pin)){alert('Le PIN doit être 4 chiffres.');return}
   const colors=['#1D5C3A','#1565C0','#6A1B9A','#00695C','#558B2F','#E65100','#4E342E','#AD1457','#2E7D32','#0277BD','#37474F','#880E4F'];
-  const id=(prenom[0]+(nom[0]||'X')).toUpperCase()+(staffDB.length%10);
-  staffDB.push({id,nom,prenom,poste:document.getElementById('st-poste').value,pin,col:colors[staffDB.length%colors.length],rpps:(document.getElementById('st-rpps')?document.getElementById('st-rpps').value.trim():''),sig:''});
+  // L'identifiant était « initiales + (nombre de collaborateurs % 10) » : deux
+  // personnes pouvaient recevoir le même, et un id se retrouvait réutilisé après
+  // une suppression — auquel cas le tombstone de l'ancien effaçait le nouveau.
+  // On prend donc le premier identifiant réellement libre, en excluant aussi
+  // ceux d'anciens collaborateurs supprimés.
+  const base=(prenom[0]+(nom[0]||'X')).toUpperCase();
+  const pris=new Set(staffDB.map(function(x){ return x&&x.id; }));
+  (tombstones||[]).forEach(function(t){ if(t&&t.c==='staffDB') pris.add(t.id); });
+  let id=base, n=1;
+  while(pris.has(id)){ id=base+n; n++; }
+  // updatedAt : sans lui, un vieux tombstone portant le même id supprimerait
+  // aussitôt le nouveau collaborateur (0 <= date de suppression).
+  staffDB.push({id,nom,prenom,poste:document.getElementById('st-poste').value,pin,col:colors[staffDB.length%colors.length],rpps:(document.getElementById('st-rpps')?document.getElementById('st-rpps').value.trim():''),sig:'',updatedAt:Date.now()});
   ['st-nom','st-prenom','st-pin','st-rpps'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
   renderStaff(); buildPinChips();
 }
