@@ -1194,6 +1194,7 @@ tr:hover td{background:#fafffe}
             <input type="checkbox" id="son-rx" style="width:18px;height:18px;cursor:pointer"> Ce poste sonne quand quelqu'un appelle
           </label>
           <div class="fgrid">
+            <div class="fg"><label>Sonnerie</label><select id="son-ton"></select></div>
             <div class="fg"><label>Nom de ce poste (facultatif)</label><input type="text" id="son-nom" placeholder="Ex. Préparatoire"></div>
             <div class="fg"><label>Volume (%)</label><input type="number" id="son-vol" min="0" max="100" step="5"></div>
             <div class="fg"><label>Répétitions du carillon</label><input type="number" id="son-rep" min="1" max="6"></div>
@@ -8420,7 +8421,9 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     set nom(v){ localStorage.setItem(LS+'nom', v||''); },
     get vol(){ const v=parseFloat(localStorage.getItem(LS+'vol')); return isNaN(v)?0.6:v; },
     set vol(v){ localStorage.setItem(LS+'vol', String(v)); },
-    get rep(){ const v=parseInt(localStorage.getItem(LS+'rep'),10); return isNaN(v)?3:v; },
+    get ton(){ return localStorage.getItem(LS+'ton')||'dingdong'; },
+    set ton(v){ localStorage.setItem(LS+'ton', v||'dingdong'); },
+    get rep(){ const v=parseInt(localStorage.getItem(LS+'rep'),10); return isNaN(v)?2:v; },
     set rep(v){ localStorage.setItem(LS+'rep', String(v)); }
   };
   let clientId=localStorage.getItem(LS+'id');
@@ -8437,25 +8440,93 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
   // le premier clic sur la page « débloque » l'audio pour la suite.
   document.addEventListener('click',function(){ ctx(); },{once:true});
 
-  function ding(t0,freq,dur,vol){
-    const a=ctx(); if(!a) return;
-    const o=a.createOscillator(), g=a.createGain();
-    o.type='sine'; o.frequency.setValueAtTime(freq,t0);
-    g.gain.setValueAtTime(0.0001,t0);
-    g.gain.exponentialRampToValueAtTime(Math.max(vol,0.001),t0+0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
-    o.connect(g); g.connect(a.destination); o.start(t0); o.stop(t0+dur+0.05);
-  }
-  function carillon(){
-    const a=ctx(); if(!a) return;
-    const v=cfg.vol, n=Math.max(1,Math.min(6,cfg.rep));
-    for(let i=0;i<n;i++){
-      const t=a.currentTime+0.02+i*0.85;
-      ding(t,987.77,0.5,v);       // Si5
-      ding(t+0.22,659.25,0.7,v);  // Mi5
+  /* ═══ SONNERIES DE PORTE — synthèse WebAudio, aucun fichier son à installer ═══ */
+  var SON_TONS={
+    dingdong:   {nom:'Ding-dong classique', int:2.4, desc:'Le carillon deux notes des sonnettes de maison. La valeur sûre.'},
+    westminster:{nom:'Westminster 4 notes', int:3.6, desc:'Le motif de Big Ben. Solennel, un peu plus long.'},
+    carillon3:  {nom:'Carillon 3 notes',    int:2.2, desc:'Bim-bam-boum descendant. Doux, ne fait pas sursauter.'},
+    grelot:     {nom:'Timbre de comptoir',  int:1.7, desc:'Le « ting ! » clair de la clochette d’accueil d’hôtel.'},
+    electrique: {nom:'Sonnette électrique', int:2.4, desc:'Le bourdonnement d’une vieille sonnette filaire. Impossible à rater.'},
+    moderne:    {nom:'Sonnette sans fil',   int:1.9, desc:'Deux notes rondes, façon carillon sans fil moderne.'}
+  };
+  /* Cloche tubulaire : partiels harmoniques, décroissance longue. */
+  var _TUB=[[1,1,1],[2,0.45,0.8],[2.99,0.22,0.62],[4.15,0.11,0.48],[5.43,0.06,0.36]];
+  /* Barre métallique frappée (clochette de comptoir) : partiels inharmoniques. */
+  var _BAR=[[1,1,1],[2.76,0.6,0.72],[5.40,0.32,0.5],[8.93,0.16,0.34],[13.34,0.07,0.24]];
+
+  function _bell(a,out,t0,f0,dur,vol,ratios){
+    for(var i=0;i<ratios.length;i++){
+      var r=ratios[i], o=a.createOscillator(), g=a.createGain();
+      o.type='sine'; o.frequency.setValueAtTime(f0*r[0],t0);
+      var amp=Math.max(vol*r[1],0.0002), d=dur*r[2];
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(amp,t0+0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+      o.connect(g); g.connect(out); o.start(t0); o.stop(t0+d+0.06);
     }
   }
-  window.sonTest=carillon;
+  function _strike(a,out,t0,vol,freq){
+    // Bruit de frappe du marteau : c'est lui qui donne le côté « vraie cloche ».
+    var n=Math.floor(a.sampleRate*0.05), b=a.createBuffer(1,n,a.sampleRate), d=b.getChannelData(0);
+    for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3);
+    var s=a.createBufferSource(); s.buffer=b;
+    var f=a.createBiquadFilter(); f.type='bandpass'; f.frequency.value=freq*2.5; f.Q.value=0.8;
+    var g=a.createGain(); g.gain.value=vol*0.22;
+    s.connect(f); f.connect(g); g.connect(out); s.start(t0);
+  }
+  function _buzz(a,out,t0,dur,vol){
+    var o=a.createOscillator(); o.type='sawtooth'; o.frequency.setValueAtTime(172,t0);
+    var f=a.createBiquadFilter(); f.type='lowpass'; f.frequency.setValueAtTime(1500,t0); f.Q.value=0.7;
+    var g=a.createGain(), amp=Math.max(vol*0.45,0.0002);
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.exponentialRampToValueAtTime(amp,t0+0.02);
+    g.gain.setValueAtTime(amp,t0+dur-0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    // Trembleur : le marteau qui vibre contre la coupelle (~24 fois par seconde).
+    var tr=a.createGain(); tr.gain.value=0.55;
+    var lfo=a.createOscillator(); lfo.type='square'; lfo.frequency.setValueAtTime(24,t0);
+    var lg=a.createGain(); lg.gain.value=0.45;
+    lfo.connect(lg); lg.connect(tr.gain);
+    o.connect(f); f.connect(g); g.connect(tr); tr.connect(out);
+    o.start(t0); o.stop(t0+dur+0.05); lfo.start(t0); lfo.stop(t0+dur+0.05);
+  }
+  function sonPlay(a,ton,vol,t0){
+    if(!a) return;
+    t0=t0||a.currentTime+0.02;
+    var out=a.destination, i;
+    if(ton==='westminster'){
+      var W=[659.25,587.33,523.25,392.00];
+      for(i=0;i<4;i++){ var tw=t0+i*0.46; _strike(a,out,tw,vol,W[i]); _bell(a,out,tw,W[i],i===3?4.2:2.2,vol*0.9,_TUB); }
+    } else if(ton==='carillon3'){
+      var C=[783.99,659.25,523.25];
+      for(i=0;i<3;i++){ var tc=t0+i*0.38; _strike(a,out,tc,vol*0.8,C[i]); _bell(a,out,tc,C[i],i===2?3.4:1.9,vol*0.85,_TUB); }
+    } else if(ton==='grelot'){
+      _strike(a,out,t0,vol,1046); _bell(a,out,t0,1046.5,3.0,vol*0.8,_BAR);
+    } else if(ton==='electrique'){
+      _buzz(a,out,t0,0.9,vol); _buzz(a,out,t0+1.15,0.55,vol);
+    } else if(ton==='moderne'){
+      var M=[[1,1,1],[2,0.3,0.7],[3,0.1,0.5]];
+      _bell(a,out,t0,880,1.6,vol*0.8,M); _bell(a,out,t0+0.5,698.46,2.6,vol*0.8,M);
+    } else {
+      _strike(a,out,t0,vol,659); _bell(a,out,t0,659.25,1.9,vol,_TUB);
+      _strike(a,out,t0+0.62,vol,523); _bell(a,out,t0+0.62,523.25,3.3,vol,_TUB);
+    }
+  }
+
+  function carillon(ton){
+    const a=ctx(); if(!a) return;
+    const t=ton||cfg.ton, v=cfg.vol, n=Math.max(1,Math.min(6,cfg.rep));
+    const it=(SON_TONS[t]||SON_TONS.dingdong).int;
+    for(let i=0;i<n;i++) sonPlay(a,t,v,a.currentTime+0.05+i*it);
+  }
+  // Bouton « Tester » : joue la sonnerie choisie dans la liste, avant enregistrement.
+  window.sonTest=function(){
+    const a=ctx(); if(!a) return;
+    const sel=document.getElementById('son-ton'), vo=document.getElementById('son-vol');
+    const t=(sel&&sel.value)||cfg.ton;
+    const v=vo?Math.max(0,Math.min(1,(parseInt(vo.value,10)||60)/100)):cfg.vol;
+    sonPlay(a,t,v);
+  };
 
   // ── Bandeau visuel ──
   let banner=null, hideT=null;
@@ -8522,6 +8593,13 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 
   // ── Réglages (Back Office → Sonnette), propres à CE poste ──
   window.sonRenderBO=function(){
+    const sel=document.getElementById('son-ton');
+    if(sel&&!sel.options.length){
+      Object.keys(SON_TONS).forEach(function(k){
+        const o=document.createElement('option'); o.value=k; o.textContent=SON_TONS[k].nom; sel.appendChild(o);
+      });
+    }
+    if(sel) sel.value=cfg.ton;
     const rx=document.getElementById('son-rx'); if(rx) rx.checked=cfg.rx;
     const nm=document.getElementById('son-nom'); if(nm) nm.value=cfg.nom;
     const vo=document.getElementById('son-vol'); if(vo) vo.value=String(Math.round(cfg.vol*100));
@@ -8530,6 +8608,8 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
   window.sonSaveBO=function(){
     const rx=document.getElementById('son-rx'), nm=document.getElementById('son-nom'),
           vo=document.getElementById('son-vol'), rp=document.getElementById('son-rep');
+    const sel=document.getElementById('son-ton');
+    if(sel&&sel.value) cfg.ton=sel.value;
     if(rx) cfg.rx=rx.checked;
     if(nm) cfg.nom=nm.value.trim();
     if(vo) cfg.vol=Math.max(0,Math.min(1,(parseInt(vo.value,10)||60)/100));
