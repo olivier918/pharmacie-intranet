@@ -95,10 +95,10 @@ const LOGIN_HTML = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
   button:disabled{opacity:.6;cursor:default}
   .err{color:#c62828;font-size:13px;margin-top:12px;min-height:18px}
 </style></head><body>
-<form class="card" id="f">
+<form class="card" id="f" method="post" action="/api/login">
   <h1>Pharmacie du Centre</h1>
   <p>Accès sécurisé — intranet</p>
-  <input type="password" id="pw" placeholder="Mot de passe d'accès" autocomplete="current-password" autofocus>
+  <input type="password" id="pw" name="password" placeholder="Mot de passe d'accès" autocomplete="current-password" autofocus>
   <button type="submit" id="b">Entrer</button>
   <div class="err" id="e"></div>
 </form>
