@@ -1203,21 +1203,25 @@ tr:hover td{background:#fafffe}
             <span style="font-weight:400;color:var(--gray-500);font-size:.8rem">(par défaut : pop-up silencieux)</span>
           </label>
           <div class="fgrid">
-            <div class="fg"><label>Sonnerie</label><select id="son-ton"></select></div>
+            <div class="fg"><label>Sonnerie — sonnette comptoir</label><select id="son-ton"></select></div>
+            <div class="fg"><label>Sonnerie — appel du comptoir avancé</label><select id="son-ton-aide"></select></div>
             <div class="fg"><label>Nom de ce poste (facultatif)</label><input type="text" id="son-nom" placeholder="Ex. Préparatoire"></div>
             <div class="fg"><label>Volume (%)</label><input type="number" id="son-vol" min="0" max="100" step="5"></div>
-            <div class="fg"><label>Répétitions du carillon</label><input type="number" id="son-rep" min="1" max="6"></div>
+            <div class="fg"><label>Répétitions (sonnette comptoir)</label><input type="number" id="son-rep" min="1" max="6"></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:1.1rem;flex-wrap:wrap;align-items:center">
             <button class="btn bp" onclick="sonSaveBO()">Enregistrer sur ce poste</button>
-            <button class="btn bs" onclick="sonTest()">Tester la sonnerie</button>
+            <button class="btn bs" onclick="sonTest()">Tester : sonnette comptoir</button>
+            <button class="btn bs" onclick="sonTest('aide')">Tester : comptoir avancé</button>
             <button class="btn bs" onclick="sonDemanderNotif()">Autoriser les notifications système</button>
             <span id="son-saved" style="display:none;color:#1D5C3A;font-weight:600;font-size:.85rem">Enregistré ✓</span>
           </div>
           <p id="son-notif-etat" style="color:var(--gray-600);font-size:.8rem;margin-top:.9rem;font-weight:600"></p>
           <p style="color:var(--gray-500);font-size:.78rem;margin-top:.6rem">
             Les appels du comptoir avancé (boutons <b>Aide</b> et <b>Remplacement</b> de l'en-tête) ouvrent un pop-up
-            sur <b>tous</b> les postes connectés, que ce poste soit récepteur de la sonnette ou non. Autoriser les
+            sur <b>tous</b> les postes connectés, que ce poste soit récepteur de la sonnette ou non. Ils ont leur propre
+            sonnerie, volontairement plus douce et jouée deux fois seulement : on doit reconnaître à l'oreille, sans
+            regarder l'écran, si c'est un client au comptoir ou une collègue qui appelle. Autoriser les
             notifications système permet en plus de faire apparaître l'appel par-dessus les autres logiciels
             (Winpharma, etc.) quand le navigateur est en arrière-plan.
           </p>
@@ -8550,6 +8554,8 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     set rxAide(v){ localStorage.setItem(LS+'rxAide', v?'1':'0'); },
     get ton(){ return localStorage.getItem(LS+'ton')||'dingdong'; },
     set ton(v){ localStorage.setItem(LS+'ton', v||'dingdong'); },
+    get tonAide(){ return localStorage.getItem(LS+'tonAide')||'marimba'; },
+    set tonAide(v){ localStorage.setItem(LS+'tonAide', v||'marimba'); },
     get rep(){ const v=parseInt(localStorage.getItem(LS+'rep'),10); return isNaN(v)?2:v; },
     set rep(v){ localStorage.setItem(LS+'rep', String(v)); }
   };
@@ -8574,20 +8580,25 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     carillon3:  {nom:'Carillon 3 notes',    int:2.2, desc:'Bim-bam-boum descendant. Doux, ne fait pas sursauter.'},
     grelot:     {nom:'Timbre de comptoir',  int:1.7, desc:'Le « ting ! » clair de la clochette d’accueil d’hôtel.'},
     electrique: {nom:'Sonnette électrique', int:2.4, desc:'Le bourdonnement d’une vieille sonnette filaire. Impossible à rater.'},
-    moderne:    {nom:'Sonnette sans fil',   int:1.9, desc:'Deux notes rondes, façon carillon sans fil moderne.'}
+    moderne:    {nom:'Sonnette sans fil',   int:1.9, desc:'Deux notes rondes, façon carillon sans fil moderne.'},
+    // Sonneries douces : pour l'appel d'un collègue, pas pour une porte.
+    // Attaque lente, aucun bruit de frappe — on les distingue au premier coup d'oreille.
+    doux:       {nom:'Deux notes feutrées',  int:1.8, doux:1, desc:'Deux notes montantes très douces. Discret, ne fait pas lever la tête aux clients.'},
+    marimba:    {nom:'Marimba',              int:1.6, doux:1, desc:'Trois notes de bois, chaudes et courtes. Impossible à confondre avec une sonnette.'},
+    harpe:      {nom:'Arpège de harpe',      int:2.0, doux:1, desc:'Quatre notes qui montent, feutrées. La plus douce des neuf.'}
   };
   /* Cloche tubulaire : partiels harmoniques, décroissance longue. */
   var _TUB=[[1,1,1],[2,0.45,0.8],[2.99,0.22,0.62],[4.15,0.11,0.48],[5.43,0.06,0.36]];
   /* Barre métallique frappée (clochette de comptoir) : partiels inharmoniques. */
   var _BAR=[[1,1,1],[2.76,0.6,0.72],[5.40,0.32,0.5],[8.93,0.16,0.34],[13.34,0.07,0.24]];
 
-  function _bell(a,out,t0,f0,dur,vol,ratios){
+  function _bell(a,out,t0,f0,dur,vol,ratios,atk){
     for(var i=0;i<ratios.length;i++){
       var r=ratios[i], o=a.createOscillator(), g=a.createGain();
       o.type='sine'; o.frequency.setValueAtTime(f0*r[0],t0);
       var amp=Math.max(vol*r[1],0.0002), d=dur*r[2];
       g.gain.setValueAtTime(0.0001,t0);
-      g.gain.exponentialRampToValueAtTime(amp,t0+0.008);
+      g.gain.exponentialRampToValueAtTime(amp,t0+(atk||0.008));
       g.gain.exponentialRampToValueAtTime(0.0001,t0+d);
       o.connect(g); g.connect(out); o.start(t0); o.stop(t0+d+0.06);
     }
@@ -8604,7 +8615,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
   function _buzz(a,out,t0,dur,vol){
     var o=a.createOscillator(); o.type='sawtooth'; o.frequency.setValueAtTime(172,t0);
     var f=a.createBiquadFilter(); f.type='lowpass'; f.frequency.setValueAtTime(1500,t0); f.Q.value=0.7;
-    var g=a.createGain(), amp=Math.max(vol*0.45,0.0002);
+    var g=a.createGain(), amp=Math.max(vol*0.85,0.0002);
     g.gain.setValueAtTime(0.0001,t0);
     g.gain.exponentialRampToValueAtTime(amp,t0+0.02);
     g.gain.setValueAtTime(amp,t0+dur-0.06);
@@ -8617,10 +8628,21 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     o.connect(f); f.connect(g); g.connect(tr); tr.connect(out);
     o.start(t0); o.stop(t0+dur+0.05); lfo.start(t0); lfo.stop(t0+dur+0.05);
   }
+  // Bus de sortie commun. Les partiels d'une cloche s'additionnent : sans cela
+  // le signal dépassait 1.0 sur les carillons, ce qui s'entend comme un
+  // grésillement. Le gain ramène le niveau, le compresseur rattrape les pics.
+  function _bus(a){
+    var g=a.createGain(); g.gain.value=0.5;
+    var c=a.createDynamicsCompressor();
+    c.threshold.value=-6; c.knee.value=10; c.ratio.value=12;
+    c.attack.value=0.002; c.release.value=0.15;
+    g.connect(c); c.connect(a.destination);
+    return g;
+  }
   function sonPlay(a,ton,vol,t0){
     if(!a) return;
     t0=t0||a.currentTime+0.02;
-    var out=a.destination, i;
+    var out=_bus(a), i;
     if(ton==='westminster'){
       var W=[659.25,587.33,523.25,392.00];
       for(i=0;i<4;i++){ var tw=t0+i*0.46; _strike(a,out,tw,vol,W[i]); _bell(a,out,tw,W[i],i===3?4.2:2.2,vol*0.9,_TUB); }
@@ -8631,6 +8653,18 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
       _strike(a,out,t0,vol,1046); _bell(a,out,t0,1046.5,3.0,vol*0.8,_BAR);
     } else if(ton==='electrique'){
       _buzz(a,out,t0,0.9,vol); _buzz(a,out,t0+1.15,0.55,vol);
+    } else if(ton==='doux'){
+      var D=[[1,1,1],[2,0.16,0.6],[3,0.05,0.4]];
+      _bell(a,out,t0,698.46,1.5,vol*0.75,D,0.07);        // Fa5
+      _bell(a,out,t0+0.34,880,2.0,vol*0.75,D,0.07);      // La5 — intervalle montant
+    } else if(ton==='marimba'){
+      var MB=[[1,1,1],[3.9,0.38,0.45],[10.5,0.1,0.28]];
+      var N=[523.25,659.25,783.99];                       // Do5 Mi5 Sol5
+      for(i=0;i<3;i++) _bell(a,out,t0+i*0.14,N[i],0.55,vol*0.8,MB,0.006);
+    } else if(ton==='harpe'){
+      var HP=[[1,1,1],[2,0.22,0.65],[4,0.05,0.35]];
+      var A4=[523.25,659.25,783.99,1046.5];               // Do Mi Sol Do
+      for(i=0;i<4;i++) _bell(a,out,t0+i*0.13,A4[i],1.5,vol*0.6,HP,0.05);
     } else if(ton==='moderne'){
       var M=[[1,1,1],[2,0.3,0.7],[3,0.1,0.5]];
       _bell(a,out,t0,880,1.6,vol*0.8,M); _bell(a,out,t0+0.5,698.46,2.6,vol*0.8,M);
@@ -8646,11 +8680,20 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     const it=(SON_TONS[t]||SON_TONS.dingdong).int;
     for(let i=0;i<n;i++) sonPlay(a,t,v,a.currentTime+0.05+i*it);
   }
-  // Bouton « Tester » : joue la sonnerie choisie dans la liste, avant enregistrement.
-  window.sonTest=function(){
+  // Appel du comptoir avancé : sonnerie distincte, jouée deux fois seulement —
+  // le pop-up reste à l'écran, le son n'a pas à insister.
+  function carillonAide(){
     const a=ctx(); if(!a) return;
-    const sel=document.getElementById('son-ton'), vo=document.getElementById('son-vol');
-    const t=(sel&&sel.value)||cfg.ton;
+    const t=cfg.tonAide, it=(SON_TONS[t]||SON_TONS.marimba).int;
+    for(let i=0;i<2;i++) sonPlay(a,t,cfg.vol,a.currentTime+0.05+i*it);
+  }
+  // Bouton « Tester » : joue la sonnerie choisie dans la liste, avant enregistrement.
+  // which vaut 'aide' pour la sonnerie du comptoir avancé.
+  window.sonTest=function(which){
+    const a=ctx(); if(!a) return;
+    const sel=document.getElementById(which==='aide'?'son-ton-aide':'son-ton');
+    const vo=document.getElementById('son-vol');
+    const t=(sel&&sel.value)||(which==='aide'?cfg.tonAide:cfg.ton);
     const v=vo?Math.max(0,Math.min(1,(parseInt(vo.value,10)||60)/100)):cfg.vol;
     sonPlay(a,t,v);
   };
@@ -8717,7 +8760,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     el.querySelector('.son-pop-t1').textContent=A.titre;
     el.querySelector('.son-pop-t2').textContent=(evt.par||'Un poste')+(evt.poste?' \u2014 '+evt.poste:'')+' \u00b7 '+hh;
     requestAnimationFrame(function(){ el.classList.add('on'); });
-    if(cfg.rxAide) carillon();
+    if(cfg.rxAide) carillonAide();
     flashTitre(A.titre);
     notifSysteme(A.titre,(evt.par||'Un poste')+' demande du renfort.');
   }
@@ -8834,13 +8877,20 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 
   // ── Réglages (Back Office → Sonnette), propres à CE poste ──
   window.sonRenderBO=function(){
+    ['son-ton','son-ton-aide'].forEach(function(id){
+      const s=document.getElementById(id);
+      if(s&&!s.options.length){
+        Object.keys(SON_TONS).forEach(function(k){
+          const o=document.createElement('option'); o.value=k;
+          o.textContent=SON_TONS[k].nom+(SON_TONS[k].doux?' (douce)':'');
+          s.appendChild(o);
+        });
+      }
+    });
     const sel=document.getElementById('son-ton');
-    if(sel&&!sel.options.length){
-      Object.keys(SON_TONS).forEach(function(k){
-        const o=document.createElement('option'); o.value=k; o.textContent=SON_TONS[k].nom; sel.appendChild(o);
-      });
-    }
     if(sel) sel.value=cfg.ton;
+    const selA=document.getElementById('son-ton-aide');
+    if(selA) selA.value=cfg.tonAide;
     const rx=document.getElementById('son-rx'); if(rx) rx.checked=cfg.rx;
     const rxa=document.getElementById('son-rx-aide'); if(rxa) rxa.checked=cfg.rxAide;
     const ne=document.getElementById('son-notif-etat'); if(ne) ne.textContent=notifEtat();
@@ -8853,6 +8903,8 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
           vo=document.getElementById('son-vol'), rp=document.getElementById('son-rep');
     const sel=document.getElementById('son-ton');
     if(sel&&sel.value) cfg.ton=sel.value;
+    const selA=document.getElementById('son-ton-aide');
+    if(selA&&selA.value) cfg.tonAide=selA.value;
     const rxa=document.getElementById('son-rx-aide');
     if(rxa) cfg.rxAide=rxa.checked;
     if(rx) cfg.rx=rx.checked;
