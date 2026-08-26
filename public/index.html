@@ -1600,9 +1600,12 @@ tr:hover td{background:#fafffe}
     </div>
     <div id="cmsg-content" style="background:var(--gray-100);border-radius:8px;padding:1rem;font-size:.82rem;line-height:1.65;white-space:pre-wrap;font-family:'Courier New',monospace;max-height:40vh;overflow-y:auto"></div>
     <div id="cmsg-confirm" style="display:none;margin-top:.6rem;padding:8px 12px;background:#E8F5E9;border:1px solid #81C784;color:#1D5C3A;font-weight:600;font-size:.85rem;border-radius:8px">Relance enregistrée dans l'historique du crédit.</div>
+    <div id="cmsg-mail-hint" style="display:none;font-size:.76rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45"></div>
     <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn bs" id="cmsg-mailto-btn" onclick="openCredMailto()" style="display:none"><svg class="ico"><use href="#ic-joindre"></use></svg> Ouvrir ma messagerie</button>
       <button class="btn bs" id="cmsg-print-btn" onclick="printCredLetterCurrent()" style="display:none"><svg class="ico"><use href="#ic-imprimer"></use></svg> Imprimer / PDF</button>
-      <button class="btn bp" id="cmsg-confirm-btn" onclick="confirmCredMsg()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Marquer comme envoyé</button>
+      <button class="btn bp" id="cmsg-mail-btn" onclick="sendCredRelanceMail()" style="display:none"><svg class="ico"><use href="#ic-envoyer"></use></svg> Envoyer le mail</button>
+      <button class="btn bp" id="cmsg-confirm-btn" onclick="confirmCredMsg()"><svg class="ico"><use href="#ic-valider"></use></svg> Marquer comme envoyé</button>
       <button class="btn bs" onclick="closeModal('cred-msg-modal')">Fermer</button>
     </div>
   </div>
@@ -5662,6 +5665,90 @@ function renderCredMsg(){
   }
   const printBtn=document.getElementById('cmsg-print-btn');
   if(printBtn) printBtn.style.display=(canal==='sms')?'none':'';
+  // Canal « mail » : envoi réel depuis l'intranet. Les autres canaux gardent
+  // l'impression + l'archivage manuel.
+  const mailBtn=document.getElementById('cmsg-mail-btn');
+  const mailtoBtn=document.getElementById('cmsg-mailto-btn');
+  const mailHint=document.getElementById('cmsg-mail-hint');
+  const cb=document.getElementById('cmsg-confirm-btn');
+  if(canal==='mail'){
+    if(mailBtn) mailBtn.style.display='';
+    if(mailtoBtn) mailtoBtn.style.display='';
+    if(cb) cb.className='btn bs';
+    updCredMailSendUI(c);
+  } else {
+    if(mailBtn) mailBtn.style.display='none';
+    if(mailtoBtn) mailtoBtn.style.display='none';
+    if(mailHint) mailHint.style.display='none';
+    if(cb) cb.className='btn bp';
+  }
+}
+
+// Le serveur sait-il envoyer un mail, et ce patient a-t-il une adresse ?
+async function updCredMailSendUI(c){
+  const btn=document.getElementById('cmsg-mail-btn'), hint=document.getElementById('cmsg-mail-hint');
+  if(!btn||!hint) return;
+  hint.style.display='block'; btn.disabled=true; btn.style.opacity='.5';
+  if(!c.mail){
+    hint.textContent='Ce patient n\u2019a pas d\u2019adresse e-mail dans sa fiche : compl\u00e9tez-la, ou imprimez le courrier.';
+    return;
+  }
+  hint.textContent='V\u00e9rification de la configuration d\u2019envoi\u2026';
+  try{
+    const r=await fetch('/api/mail-status'); const s=await r.json();
+    if(s.configured){
+      btn.disabled=false; btn.style.opacity='';
+      hint.textContent='Le mail partira de '+(s.from||'la messagerie de la pharmacie')+' vers '+c.mail+'. La relance sera archiv\u00e9e automatiquement dans le dossier.';
+    } else {
+      hint.textContent='Envoi automatique non configur\u00e9 sur le serveur (BREVO_API_KEY absente). Utilisez \u00ab Ouvrir ma messagerie \u00bb, puis \u00ab Marquer comme envoy\u00e9 \u00bb.';
+    }
+  }catch(e){ hint.textContent='Statut d\u2019envoi indisponible (serveur injoignable).'; }
+}
+
+// Repli : ouvre le client de messagerie du poste avec l'objet et le corps pré-remplis.
+function openCredMailto(){
+  const c=credits.find(x=>x.id===currentMsgCredId); if(!c) return;
+  const subject=document.getElementById('cmsg-subject').value||'';
+  const body=document.getElementById('cmsg-content').textContent||'';
+  window.location.href='mailto:'+encodeURIComponent(c.mail||'')
+    +'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+}
+
+// Envoi réel de la relance par mail (Brevo, via /api/send-mail), puis archivage.
+async function sendCredRelanceMail(){
+  const c=credits.find(x=>x.id===currentMsgCredId); if(!c||!c.mail) return;
+  const btn=document.getElementById('cmsg-mail-btn'); if(!btn||btn.disabled) return;
+  const e=currentMsgEtape;
+  const subject=document.getElementById('cmsg-subject').value||'';
+  const body=document.getElementById('cmsg-content').textContent||'';
+  const old=btn.innerHTML; btn.disabled=true; btn.textContent='Envoi\u2026';
+  try{
+    const r=await fetch('/api/send-mail',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({to:c.mail, subject, text:body})});
+    const j=await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||'Envoi refus\u00e9 par le serveur');
+    const now=new Date();
+    credEnsureRelances(c);
+    c.relances.push({
+      date: currentMsgDate || now.toISOString().split('T')[0],
+      time: now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+      type:'mail', tpl:'courrier', etape:e, subject, body, mailTo:c.mail,
+      notes: currentMsgNotes || ('Relance \u00e9tape '+e+' \u2014 mail envoy\u00e9 depuis l\u2019intranet'),
+      by: currentUser?.id||'?'
+    });
+    c.updatedAt=Date.now();
+    const ok=document.getElementById('cmsg-confirm');
+    ok.textContent='Mail envoy\u00e9 \u00e0 '+c.mail+'. La relance est archiv\u00e9e dans le dossier.';
+    ok.style.display='block';
+    document.getElementById('cmsg-confirm-btn').style.display='none';
+    btn.style.display='none';
+    const mt=document.getElementById('cmsg-mailto-btn'); if(mt) mt.style.display='none';
+    const hint=document.getElementById('cmsg-mail-hint'); if(hint) hint.style.display='none';
+    renderCreds();
+  }catch(err){
+    alert('\u00c9chec de l\u2019envoi : '+(err.message||'erreur inconnue'));
+    btn.innerHTML=old; btn.disabled=false;
+  }
 }
 
 function confirmCredMsg(){
@@ -5693,6 +5780,9 @@ function viewArchivedCredMsg(credId, relIdx){
   const e=credRelEtape(r), E=CRED_ETAPES[e];
   window._currentArchivedMsg={c, niv:e, tpl:r.tpl||'sms', subject:r.subject||'', body:r.body||''};
   document.getElementById('cmsg-confirm-btn').style.display='none';
+  ['cmsg-mail-btn','cmsg-mailto-btn','cmsg-mail-hint'].forEach(function(id){
+    const el=document.getElementById(id); if(el) el.style.display='none';
+  });
   document.getElementById('cred-msg-info').innerHTML=
     `<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}<br>
      <span style="font-size:.78rem;color:var(--gray-500)">Avance du ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}</span>`;
