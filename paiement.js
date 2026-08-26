@@ -31,7 +31,11 @@ function configured() { return !!secretKey(); }
 function mode() {
   const k = secretKey();
   if (!k) return null;
-  return k.startsWith('sk_live_') ? 'reel' : 'test';
+  // Stripe propose des clés standard (sk_live_…) et restreintes (rk_live_…) :
+  // les deux valent mode RÉEL. Tout le reste (sk_test_…, rk_test_…) est du test.
+  // Ne tester que 'sk_live_' afficherait à tort le bandeau « Mode test » sur une
+  // clé restreinte de production.
+  return /_live_/.test(k) ? 'reel' : 'test';
 }
 
 // ── Encodage form-urlencoded avec notation à crochets (format attendu par Stripe) ──
