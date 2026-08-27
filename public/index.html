@@ -709,13 +709,7 @@ tr:hover td{background:#fafffe}
           <div class="fg"><label>Date de début</label><input type="date" id="lc-date-debut"></div>
           <div class="fg"><label>Durée (semaines)</label><input type="number" id="lc-duree" placeholder="4" min="1"></div>
           <div class="fg"><label>Type d'appareil</label>
-            <select id="lc-type" onchange="updateLocSub()">
-              <option value="">— Choisir —</option>
-              <option value="fauteuil">Fauteuil roulant</option>
-              <option value="lit">Lit médicalisé</option>
-              <option value="aerosol">Aérosol</option>
-              <option value="tirelait">Tire-lait</option>
-            </select>
+            <select id="lc-type" onchange="updateLocSub()"></select>
           </div>
           <div class="fg"><label>N° d'appareil</label><input type="text" id="lc-num" placeholder="Numéro de série"></div>
         </div>
@@ -733,31 +727,10 @@ tr:hover td{background:#fafffe}
           </div>
         </div>
 
-        <!-- Options conditionnelles -->
-        <div id="lc-sub-fauteuil" style="display:none;margin-top:.9rem">
-          <div class="fg" style="margin-bottom:.6rem"><label>Options fauteuil roulant</label></div>
-          <div class="cbrow">
-            <label class="cbl"><input type="checkbox" id="lc-rj-g"> Relève jambe gauche</label>
-            <label class="cbl"><input type="checkbox" id="lc-rj-d"> Relève jambe droite</label>
-            <label class="cbl"><input type="checkbox" id="lc-rp-g"> Repose jambe gauche</label>
-            <label class="cbl"><input type="checkbox" id="lc-rp-d"> Repose jambe droit</label>
-          </div>
-        </div>
-        <div id="lc-sub-lit" style="display:none;margin-top:.9rem">
-          <div class="fg" style="margin-bottom:.6rem"><label>Options lit médicalisé</label></div>
-          <div class="cbrow">
-            <label class="cbl"><input type="checkbox" id="lc-bar-g"> Barrière gauche</label>
-            <label class="cbl"><input type="checkbox" id="lc-bar-d"> Barrière droite</label>
-            <label class="cbl"><input type="checkbox" id="lc-potence"> Potence</label>
-            <label class="cbl"><input type="checkbox" id="lc-table"> Table de lit</label>
-          </div>
-        </div>
-        <div id="lc-sub-tirelait" style="display:none;margin-top:.9rem">
-          <div class="fg" style="margin-bottom:.6rem"><label>Options tire-lait</label></div>
-          <div class="cbrow">
-            <label class="cbl"><input type="checkbox" id="lc-coffret"> Coffret</label>
-            <label class="cbl"><input type="checkbox" id="lc-chargeur"> Chargeur</label>
-          </div>
+        <!-- Accessoires : construits à partir de LOC_TYPES selon l'appareil choisi -->
+        <div id="lc-sub-dyn" style="display:none;margin-top:.9rem">
+          <div class="fg" style="margin-bottom:.6rem"><label id="lc-sub-title">Accessoires</label></div>
+          <div class="cbrow" id="lc-sub-row"></div>
         </div>
 
         <!-- Caution -->
@@ -785,13 +758,7 @@ tr:hover td{background:#fafffe}
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:.75rem;flex-wrap:wrap">
-          <select id="loc-filter" onchange="renderLocs()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
-            <option value="">Tous statuts</option>
-            <option value="en cours">En cours</option>
-            <option value="facturée">Facturée</option>
-            <option value="litige">En litige</option>
-            <option value="clôturée">Clôturée</option>
-          </select>
+          <div id="loc-status-filter" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;border:1px solid var(--gray-200);border-radius:7px;padding:5px 10px"></div>
           <select id="loc-med-filter" onchange="renderLocs()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
             <option value="">Tous prescripteurs</option>
           </select>
@@ -859,7 +826,7 @@ tr:hover td{background:#fafffe}
       <p class="stitle"><svg class="ico"><use href="#ic-euro"></use></svg> Crédits &amp; produits avancés</p>
       <div class="sgrid" id="cred-stats"></div>
 
-      <div class="card" id="cred-form-card" style="display:none">
+      <div class="card" id="cred-form-card" style="display:none;border:2px solid var(--g-mid);box-shadow:0 8px 26px rgba(29,92,58,.18)">
         <div class="ch">
           <span class="ct" id="cred-form-title">Nouveau crédit</span>
           <button class="btn bs sm" onclick="toggleCredForm()"><svg class="ico"><use href="#ic-fermer"></use></svg> Fermer</button>
@@ -1445,11 +1412,59 @@ tr:hover td{background:#fafffe}
           <option value="perdu">Perdu / non restitué</option>
         </select>
       </div>
+    </div>
+    <div id="ret-recap" style="margin-top:.2rem;margin-bottom:.9rem;border:1px solid var(--gray-200);border-radius:8px;padding:.7rem .9rem;font-size:.83rem;line-height:1.5"></div>
+    <div class="fg" style="margin-bottom:.9rem">
+      <label>Le matériel restitué est-il complet ? <span class="req">*</span></label>
+      <div class="cbrow">
+        <label class="cbl"><input type="radio" name="ret-complet" id="ret-complet-oui" value="oui" checked> Oui, tout est rendu</label>
+        <label class="cbl"><input type="radio" name="ret-complet" id="ret-complet-non" value="non"> Non, il manque quelque chose</label>
+      </div>
+    </div>
+    <div class="fg" id="ret-caution-wrap" style="margin-bottom:.9rem;display:none">
+      <label>Caution de 200 € restituée ?</label>
+      <div class="cbrow">
+        <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-oui" value="oui" checked> Oui, rendue au patient</label>
+        <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-non" value="non"> Non, conservée</label>
+      </div>
+    </div>
+    <div class="fgrid" style="grid-template-columns:1fr">
       <div class="fg"><label>Notes (optionnel)</label><textarea id="ret-notes" placeholder="Observations, accessoires manquants…"></textarea></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn bp" onclick="saveRetour()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer le retour</button>
       <button class="btn bs" onclick="closeModal('retour-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ordonnances archivées d'un dossier de location -->
+<div class="overlay" id="ordo-modal">
+  <div class="mbox" style="max-width:620px">
+    <h3><svg class="ico"><use href="#ic-ordonnance"></use></svg> Ordonnances du dossier</h3>
+    <div id="ordo-info" style="background:var(--g-pale);padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.85rem"></div>
+    <div id="ordo-list" style="max-height:52vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem;justify-content:flex-end">
+      <button class="btn bs" onclick="closeModal('ordo-modal')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Historique d'intervention d'un dossier de location -->
+<div class="overlay" id="loccom-modal">
+  <div class="mbox" style="max-width:620px">
+    <h3><svg class="ico"><use href="#ic-messagerie"></use></svg> Historique du dossier</h3>
+    <div id="loccom-info" style="background:var(--g-pale);padding:.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.85rem"></div>
+    <div class="fg">
+      <label>Nouveau commentaire</label>
+      <textarea id="loccom-text" rows="3" placeholder="Intervention, appel au patient, échange avec le prescripteur…"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin:.7rem 0 1rem">
+      <button class="btn bp" onclick="saveLocComment()"><svg class="ico"><use href="#ic-valider"></use></svg> Ajouter au dossier</button>
+    </div>
+    <div id="loccom-list" style="max-height:42vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:1rem;justify-content:flex-end">
+      <button class="btn bs" onclick="closeModal('loccom-modal')">Fermer</button>
     </div>
   </div>
 </div>
@@ -4494,17 +4509,27 @@ function toggleLocForm(){
 
 function updateLocSub(){
   const t=document.getElementById('lc-type').value;
-  ['fauteuil','lit','tirelait'].forEach(s=>{
-    document.getElementById('lc-sub-'+s).style.display=t===s?'block':'none';
-  });
+  const box=document.getElementById('lc-sub-dyn'), row=document.getElementById('lc-sub-row');
+  if(!box||!row) return;
+  const opts=(LOC_TYPES[t]&&LOC_TYPES[t].opts)||[];
+  if(!opts.length){ box.style.display='none'; row.innerHTML=''; return; }
+  document.getElementById('lc-sub-title').textContent=
+    (t==='accessoire'?'Accessoires prêtés':'Accessoires — '+LOC_TYPES[t].lbl);
+  row.innerHTML=opts.map(function(o){
+    return '<label class="cbl"><input type="checkbox" id="lc-opt-'+o[0]+'"> '+o[1]+'</label>';
+  }).join('');
+  box.style.display='block';
 }
 
 function getLocOpts(){
   const t=document.getElementById('lc-type').value;
-  if(t==='fauteuil') return {rjG:document.getElementById('lc-rj-g').checked,rjD:document.getElementById('lc-rj-d').checked,rpG:document.getElementById('lc-rp-g').checked,rpD:document.getElementById('lc-rp-d').checked};
-  if(t==='lit') return {barG:document.getElementById('lc-bar-g').checked,barD:document.getElementById('lc-bar-d').checked,potence:document.getElementById('lc-potence').checked,table:document.getElementById('lc-table').checked};
-  if(t==='tirelait') return {coffret:document.getElementById('lc-coffret').checked,chargeur:document.getElementById('lc-chargeur').checked};
-  return {};
+  const opts=(LOC_TYPES[t]&&LOC_TYPES[t].opts)||[];
+  const out={};
+  opts.forEach(function(o){
+    const el=document.getElementById('lc-opt-'+o[0]);
+    if(el&&el.checked) out[o[0]]=true;
+  });
+  return out;
 }
 
 function saveLoc(){
@@ -4525,7 +4550,7 @@ function saveLoc(){
     num:document.getElementById('lc-num').value,
     opts:getLocOpts(),
     caution:document.getElementById('lc-caut-oui').checked,
-    status:'en cours'
+    status:'nouveau'   // dossier débuté, pas encore saisi dans le logiciel de facturation
   };
   // Auto-upsert patient DB
   upsertPatient({nom,prenom,dob,tel,mail});
@@ -4536,18 +4561,47 @@ function saveLoc(){
     const medPren=parts.slice(0,-1).join(' ');
     if(medNom) upsertMedecin({nom:medNom,prenom:medPren});
   }
-  if(locEditId){
-    const l=locations.find(x=>x.id===locEditId);
-    if(l)Object.assign(l,obj);
-  } else {
-    locations.unshift({id:Date.now(),...obj});
-  }
-  toggleLocForm();
-  renderLocs();
+  // L'ordonnance initiale n'était pas conservée : seuls les renouvellements
+  // l'étaient. On la stocke désormais avec le dossier, comme eux.
+  const scanFile=document.getElementById('lc-scan').files[0];
+  const commit=(scanData)=>{
+    if(scanFile){ obj.scan=scanFile.name; obj.scanType=scanFile.type; obj.scanData=scanData||null; }
+    if(locEditId){
+      const l=locations.find(x=>x.id===locEditId);
+      if(l){ delete obj.status; Object.assign(l,obj); l.updatedAt=Date.now(); }   // ne pas réinitialiser le statut en modifiant
+    } else {
+      locations.unshift({id:Date.now(),...obj,updatedAt:Date.now()});
+    }
+    toggleLocForm();
+    renderLocs();
+  };
+  if(scanFile){
+    const rd=new FileReader();
+    rd.onload=e=>commit(e.target.result);
+    rd.onerror=()=>commit(null);
+    rd.readAsDataURL(scanFile);
+  } else commit(null);
 }
 
-function locTypeLabel(t){
-  return {fauteuil:'Fauteuil roulant',lit:'Lit médicalisé',aerosol:'Aérosol',tirelait:'Tire-lait'}[t]||t;
+// Catalogue : libellé de l'appareil + accessoires cochables à la sortie.
+// Une seule source de vérité — formulaire, contrat, fenêtre de retour et tableau
+// s'y réfèrent tous.
+const LOC_TYPES={
+  fauteuil:   {lbl:'Fauteuil roulant',    opts:[['rjG','Relève jambe gauche'],['rjD','Relève jambe droite'],['rpG','Repose jambe gauche'],['rpD','Repose jambe droit']]},
+  lit:        {lbl:'Lit médicalisé',      opts:[['barG','Barrière gauche'],['barD','Barrière droite'],['potence','Potence'],['table','Table de lit']]},
+  aerosol:    {lbl:'Aérosol',             opts:[]},
+  tirelait:   {lbl:'Tire-lait',           opts:[['coffret','Coffret'],['chargeur','Chargeur']]},
+  neurostim:  {lbl:'Neurostimulateur',    opts:[['boite','Boîte'],['chargeur','Chargeur']]},
+  potence:    {lbl:'Potence',             opts:[]},
+  levemalade: {lbl:'Lève-malade',         opts:[]},
+  aspirateur: {lbl:'Aspirateur trachéal', opts:[]},
+  accessoire: {lbl:'Accessoire prêté',    opts:[['pieds','Pied à sérum'],['tableLit','Table de lit'],['oxymetre','Oxymètre'],['tensio','Tensiomètre'],['pesebebe','Pèse-bébé']]}
+};
+function locTypeLabel(t){ return (LOC_TYPES[t]&&LOC_TYPES[t].lbl)||t||'—'; }
+function fillLocTypeSelect(){
+  const s=document.getElementById('lc-type'); if(!s||s.options.length) return;
+  s.innerHTML='<option value="">— Choisir —</option>'
+    +Object.keys(LOC_TYPES).map(function(k){ return '<option value="'+k+'">'+LOC_TYPES[k].lbl+'</option>'; }).join('');
 }
 
 function locTotalDuree(l){
@@ -4564,13 +4618,28 @@ function locDateFin(l){
   return d.toLocaleDateString('fr-FR');
 }
 
+// « Nouveau » = dossier débuté mais pas encore saisi dans le logiciel de
+// facturation. Il remplace l'ancien statut « Facturée ».
+const LOC_STATUSES=['nouveau','en cours','litige','clôturée'];
 function locStatColor(s){
   return {
+    'nouveau':'background:#FFF3E0;color:#E65100',
     'en cours':'background:#E3F2FD;color:#1565C0',
-    'facturée':'background:#E8F5E9;color:#2E7D32',
     'litige':'background:#FFEBEE;color:#C62828',
     'clôturée':'background:#f5f5f5;color:#777'
   }[s]||'';
+}
+// Un dossier « nouveau » a du matériel dehors au même titre qu'un « en cours » :
+// il compte dans les échéances et les retards.
+function locActif(l){ return (l.status==='nouveau'||l.status==='en cours') && !l.dateRetour; }
+// Reprise des dossiers créés avant la suppression du statut « facturée » :
+// rendus → clôturés, non rendus → en cours.
+function locMigrerStatuts(){
+  let n=0;
+  locations.forEach(function(l){
+    if(l && l.status==='facturée'){ l.status=l.dateRetour?'clôturée':'en cours'; l.updatedAt=Date.now(); n++; }
+  });
+  return n;
 }
 
 function locDaysLeft(l){
@@ -4581,7 +4650,7 @@ function locDaysLeft(l){
   return Math.round((fin-today)/86400000);
 }
 function locAlert(l){
-  if(l.dateRetour||l.status!=='en cours') return null;
+  if(!locActif(l)) return null;
   const d=locDaysLeft(l); if(d===null) return null;
   if(d<0)  return {kind:'late', days:-d, label:`En retard de ${-d} j`, color:'var(--red)',   bg:'background:var(--red-pale);color:var(--red);border:1px solid #ffcdd2'};
   if(d<=7) return {kind:'soon', days:d,  label:`${d===0?"Échéance aujourd'hui":`Échéance dans ${d} j`}`, color:'var(--amber)', bg:'background:var(--amber-pale);color:var(--amber);border:1px solid #ffe0b2'};
@@ -4613,9 +4682,22 @@ function openRetour(id){
   document.getElementById('ret-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('ret-etat').value='bon';
   document.getElementById('ret-notes').value='';
+  document.getElementById('ret-complet-oui').checked=true;
+  document.getElementById('ret-caut-oui').checked=true;
+  document.getElementById('ret-caution-wrap').style.display=l.caution?'block':'none';
   document.getElementById('retour-info').innerHTML=
     `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}<br>
      <span style="font-size:.78rem;color:var(--gray-500)">Début : ${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'} · Fin théorique : ${locDateFin(l)}</span>`;
+  // Rappel de ce qui est sorti : on ne peut pas vérifier ce dont on ne se souvient pas.
+  const acc=(LOC_TYPES[l.type]&&LOC_TYPES[l.type].opts)||[];
+  const coches=acc.filter(function(o){ return l.opts&&l.opts[o[0]]; });
+  document.getElementById('ret-recap').innerHTML=
+    '<div style="font-weight:700;margin-bottom:.35rem">À récupérer</div>'
+    +'<div>'+ico('location')+' <strong>'+locTypeLabel(l.type)+'</strong>'+(l.num?' — n° '+l.num:'')+'</div>'
+    +(coches.length
+        ? '<div style="margin-top:.3rem">Accessoires fournis : '+coches.map(function(o){ return o[1]; }).join(', ')+'</div>'
+        : '<div style="margin-top:.3rem;color:var(--gray-500)">Aucun accessoire enregistré à la sortie.</div>')
+    +(l.caution?'<div style="margin-top:.3rem;color:#E65100;font-weight:600">Caution de 200 € encaissée à la sortie.</div>':'');
   openModal('retour-modal');
 }
 function saveRetour(){
@@ -4625,8 +4707,17 @@ function saveRetour(){
   l.dateRetour=dt;
   l.etatRetour=document.getElementById('ret-etat').value;
   l.notesRetour=document.getElementById('ret-notes').value.trim();
+  l.retourComplet=document.getElementById('ret-complet-oui').checked;
+  l.cautionRendue=l.caution?document.getElementById('ret-caut-oui').checked:null;
   l.retourBy=currentUser?.id||null;
-  if(l.status==='en cours') l.status='clôturée';
+  l.updatedAt=Date.now();
+  // Trace automatique dans l'historique du dossier.
+  locAddComment(l, 'Retour enregistré le '+new Date(dt).toLocaleDateString('fr-FR')
+    +' — '+RET_ETAT_LBL[l.etatRetour]
+    +(l.retourComplet?', matériel complet':', MATÉRIEL INCOMPLET')
+    +(l.caution?(l.cautionRendue?', caution restituée':', caution CONSERVÉE'):'')
+    +(l.notesRetour?' — '+l.notesRetour:''), true);
+  if(l.status==='nouveau'||l.status==='en cours') l.status='clôturée';
   closeModal('retour-modal');
   renderLocs();
 }
@@ -4914,15 +5005,65 @@ function viewRenouvLogEntry(idx){
   openModal('renouv-mail-modal');
 }
 
+// Filtre de statuts à sélection multiple : tout est coché sauf « clôturée »,
+// pour que la liste de travail ne soit pas noyée par les dossiers terminés.
+let locStatusSel=null;
+function locStatusInit(){
+  if(locStatusSel) return;
+  locStatusSel=new Set(LOC_STATUSES.filter(function(s){ return s!=='clôturée'; }));
+}
+function locToggleStatus(s,on){
+  locStatusInit();
+  if(on) locStatusSel.add(s); else locStatusSel.delete(s);
+  renderLocs();
+}
+// Tri : un clic sur un en-tête trie, un second inverse le sens.
+let locSort={col:'debut',dir:-1};
+function setLocSort(col){
+  if(locSort.col===col) locSort.dir=-locSort.dir;
+  else locSort={col:col,dir:1};
+  renderLocs();
+}
+function locSortVal(l,col){
+  switch(col){
+    case 'patient':      return ((l.nom||'')+' '+(l.prenom||'')).toLowerCase();
+    case 'prescripteur': return (l.prescripteur||'').toLowerCase();
+    case 'materiel':     return locTypeLabel(l.type).toLowerCase();
+    case 'num':          return (l.num||'').toLowerCase();
+    case 'debut':        return l.dateDebut||'';
+    case 'fin':          { const d=locDaysLeft(l); return d===null?Number.POSITIVE_INFINITY:d; }
+    case 'caution':      return l.caution?1:0;
+    case 'statut':       return LOC_STATUSES.indexOf(l.status);
+    case 'commentaires': return (l.comments||[]).length;
+    default:             return '';
+  }
+}
+function locCompare(a,b){
+  const va=locSortVal(a,locSort.col), vb=locSortVal(b,locSort.col);
+  let c;
+  if(typeof va==='number'&&typeof vb==='number') c=va-vb;
+  else c=String(va).localeCompare(String(vb),'fr');
+  return c*locSort.dir;
+}
+function locTh(col,txt,extra){
+  const on=locSort.col===col;
+  const fleche=on?(locSort.dir>0?' ▲':' ▼'):'';
+  return '<th style="cursor:pointer;white-space:nowrap;'+(extra||'')+'" onclick="setLocSort(\''+col+'\')" title="Trier">'
+    +txt+'<span style="color:var(--g-mid);font-size:.7rem">'+fleche+'</span></th>';
+}
+
 function renderLocs(){
-  const sf=(document.getElementById('loc-filter')?.value||'');
+  fillLocTypeSelect();
+  locStatusInit();
+  locMigrerStatuts();
   const mf=(document.getElementById('loc-med-filter')?.value||'');
   const q=(document.getElementById('loc-q')?.value||'').toLowerCase();
 
-  let nEnCours=0,nSoon=0,nLate=0,nClos=0;
+  let nNouveau=0,nEnCours=0,nSoon=0,nLate=0,nClos=0;
   locations.forEach(l=>{
-    if(l.status==='clôturée'||l.status==='facturée') nClos++;
-    if(l.status==='en cours'&&!l.dateRetour){
+    if(l.status==='clôturée') nClos++;
+    if(l.status==='nouveau'&&!l.dateRetour) nNouveau++;
+    if(locActif(l)){
       nEnCours++;
       const a=locAlert(l);
       if(a?.kind==='late') nLate++;
@@ -4933,10 +5074,20 @@ function renderLocs(){
   if(statsEl){
     const cardCss=(active,outlineColor)=>`cursor:pointer${active?`;outline:2px solid ${outlineColor};outline-offset:2px`:''}`;
     statsEl.innerHTML=`
-      <div class="scard" style="${cardCss(locQuickFilter==='active','var(--b-mid)')}" onclick="setLocQuickFilter('active')" title="En cours (matériel non rendu)"><div class="slabel">En cours</div><div class="sval" style="color:var(--b-mid)">${nEnCours}</div></div>
+      <div class="scard" style="${cardCss(locQuickFilter==='nouveau','#E65100')}" onclick="setLocQuickFilter('nouveau')" title="Débutés, pas encore saisis en facturation"><div class="slabel">Nouveaux</div><div class="sval" style="color:#E65100">${nNouveau}</div></div>
+      <div class="scard" style="${cardCss(locQuickFilter==='active','var(--b-mid)')}" onclick="setLocQuickFilter('active')" title="Matériel non rendu"><div class="slabel">En cours</div><div class="sval" style="color:var(--b-mid)">${nEnCours}</div></div>
       <div class="scard" style="${cardCss(locQuickFilter==='soon','var(--amber)')}" onclick="setLocQuickFilter('soon')" title="Échéance ≤ 7 jours"><div class="slabel">Échéance ≤ 7j</div><div class="sval" style="color:var(--amber)">${nSoon}</div></div>
       <div class="scard" style="${cardCss(locQuickFilter==='late','var(--red)')}" onclick="setLocQuickFilter('late')" title="Date de fin dépassée"><div class="slabel">En retard</div><div class="sval" style="color:var(--red)">${nLate}</div></div>
-      <div class="scard" style="${cardCss(locQuickFilter==='closed','#2E7D32')}" onclick="setLocQuickFilter('closed')" title="Facturées ou clôturées"><div class="slabel">Clôturées</div><div class="sval" style="color:#2E7D32">${nClos}</div></div>`;
+      <div class="scard" style="${cardCss(locQuickFilter==='closed','#2E7D32')}" onclick="setLocQuickFilter('closed')" title="Dossiers clôturés"><div class="slabel">Clôturées</div><div class="sval" style="color:#2E7D32">${nClos}</div></div>`;
+  }
+
+  const fEl=document.getElementById('loc-status-filter');
+  if(fEl){
+    fEl.innerHTML='<span style="font-size:.78rem;font-weight:600;color:var(--gray-500)">Statuts</span>'
+      +LOC_STATUSES.map(function(s){
+        return '<label class="cbl" style="font-size:.8rem"><input type="checkbox"'+(locStatusSel.has(s)?' checked':'')
+          +' onchange="locToggleStatus(\''+s+'\',this.checked)"> '+s+'</label>';
+      }).join('');
   }
 
   const medSel=document.getElementById('loc-med-filter');
@@ -4947,56 +5098,158 @@ function renderLocs(){
   }
 
   let f=[...locations];
-  if(locQuickFilter==='active')      f=f.filter(l=>l.status==='en cours'&&!l.dateRetour);
+  if(locQuickFilter==='nouveau')     f=f.filter(l=>l.status==='nouveau'&&!l.dateRetour);
+  else if(locQuickFilter==='active') f=f.filter(locActif);
   else if(locQuickFilter==='soon')   f=f.filter(l=>locAlert(l)?.kind==='soon');
   else if(locQuickFilter==='late')   f=f.filter(l=>locAlert(l)?.kind==='late');
-  else if(locQuickFilter==='closed') f=f.filter(l=>l.status==='clôturée'||l.status==='facturée');
-  if(sf)f=f.filter(l=>l.status===sf);
+  else if(locQuickFilter==='closed') f=f.filter(l=>l.status==='clôturée');
+  else f=f.filter(l=>locStatusSel.has(l.status));   // filtre par cases à cocher
   if(mf)f=f.filter(l=>l.prescripteur===mf);
-  if(q)f=f.filter(l=>(l.nom+' '+l.prenom+' '+(l.prescripteur||'')).toLowerCase().includes(q));
+  if(q)f=f.filter(l=>(l.nom+' '+l.prenom+' '+(l.prescripteur||'')+' '+locTypeLabel(l.type)+' '+(l.num||'')).toLowerCase().includes(q));
+  f.sort(locCompare);
 
-  const statuses=['en cours','facturée','litige','clôturée'];
   document.getElementById('loc-table').innerHTML=`<table>
-    <thead><tr><th>Patient</th><th>Prescripteur</th><th>Matériel</th><th>N°</th><th>Début</th><th>Fin théorique</th><th>Durée</th><th>Caution</th><th>Statut</th><th class="no-print"></th></tr></thead>
+    <thead><tr>${locTh('patient','Patient')}${locTh('prescripteur','Prescripteur')}${locTh('materiel','Matériel')}${locTh('num','N°')}${locTh('debut','Début')}${locTh('fin','Fin théorique')}${locTh('caution','Caution','text-align:center')}${locTh('statut','Statut')}<th class="no-print"></th></tr></thead>
     <tbody>${f.map(l=>{
       const a=locAlert(l);
       const finStyle=a?`color:${a.color};font-weight:600`:'';
-      const retourLine=l.dateRetour?`<div style="font-size:.7rem;color:#2E7D32;margin-top:3px">${ico('retour')} Retourné le ${new Date(l.dateRetour).toLocaleDateString('fr-FR')}${l.etatRetour?' · '+RET_ETAT_LBL[l.etatRetour]:''}</div>`:'';
+      const retourLine=l.dateRetour?`<div style="font-size:.7rem;color:#2E7D32;margin-top:3px">${ico('retour')} Retourné le ${new Date(l.dateRetour).toLocaleDateString('fr-FR')}${l.etatRetour?' · '+RET_ETAT_LBL[l.etatRetour]:''}${l.retourComplet===false?' · <span style="color:var(--red)">incomplet</span>':''}${l.caution?(l.cautionRendue?' · caution rendue':' · <span style="color:var(--red)">caution non rendue</span>'):''}</div>`:'';
       const alertLine=a?`<div style="margin-top:3px"><span class="badge" style="${a.bg};padding:2px 8px;font-size:.7rem">${ico('alerte')} ${a.label}</span></div>`:'';
       const sentLog=locLastSent(l.id);
       const sentLine=sentLog?`<div style="margin-top:3px"><span class="badge" style="background:var(--b-pale);color:var(--b-dark);padding:2px 8px;font-size:.68rem" title="Envoyé par ${staffName(sentLog.by)} à ${sentLog.time}">${ico('envoyer')} Demande le ${new Date(sentLog.date+'T'+(sentLog.time||'00:00')).toLocaleDateString('fr-FR')}</span></div>`:'';
-      const tot=locTotalDuree(l);
       const nRen=(l.renewals||[]).length;
       const renTooltip=nRen?(l.renewals.map((r,i)=>`#${i+1} : ${r.datePresc?new Date(r.datePresc).toLocaleDateString('fr-FR'):'—'} (+${r.duree} sem.)`).join(' · ')):'';
-      const dureeCell=tot?(nRen
-        ? `${tot} sem. <span class="badge" style="background:#fff3e0;color:#e65100;padding:1px 6px;font-size:.65rem;cursor:help" title="${renTooltip}">${ico('renouveler')} ×${nRen}</span>`
-        : `${tot} sem.`):'—';
+      const renBadge=nRen?` <span class="badge" style="background:#fff3e0;color:#e65100;padding:1px 6px;font-size:.65rem;cursor:help" title="${renTooltip}">${ico('renouveler')} ×${nRen}</span>`:'';
+      const nOrdo=(l.scanData?1:0)+(l.renewals||[]).filter(r=>r.scanData).length;
+      const nCom=(l.comments||[]).length;
       return `<tr>
       <td><strong>${l.nom}</strong> ${l.prenom}</td>
       <td style="white-space:nowrap">${l.prescripteur?ico('medecin')+' '+l.prescripteur:'<span style="color:var(--gray-500)">—</span>'}</td>
-      <td>${locTypeLabel(l.type)}</td>
+      <td>${locTypeLabel(l.type)}${locOptsStr(l)!=='—'?`<div style="font-size:.7rem;color:var(--gray-500)">${locOptsStr(l)}</div>`:''}</td>
       <td style="white-space:nowrap">${l.num||'—'}</td>
       <td style="white-space:nowrap">${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'}</td>
-      <td style="white-space:nowrap;${finStyle}">${locDateFin(l)}</td>
-      <td style="white-space:nowrap">${dureeCell}</td>
+      <td style="white-space:nowrap;${finStyle}">${locDateFin(l)}${renBadge}</td>
       <td style="text-align:center">${l.caution?ico('valider')+' 200€':'—'}</td>
       <td><span class="badge" style="${locStatColor(l.status)};padding:3px 9px">${l.status}</span>${alertLine}${sentLine}${retourLine}</td>
       <td class="no-print">
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           <select style="font-size:.73rem;padding:3px;border-radius:5px;border:1px solid var(--gray-200)" onchange="updLocStatus(${l.id},this.value)">
-            ${statuses.map(s=>`<option${l.status===s?' selected':''}>${s}</option>`).join('')}
+            ${LOC_STATUSES.map(s=>`<option${l.status===s?' selected':''}>${s}</option>`).join('')}
           </select>
-          ${l.status==='en cours'&&!l.dateRetour?`<button class="btn bs btn-ico" onclick="openRenouvellement(${l.id})" title="Renouveler (nouvelle ordo)">${ico('renouveler')}</button>`:''}
-          ${l.status==='en cours'&&!l.dateRetour?`<button class="btn bw btn-ico" onclick="openRetour(${l.id})" title="Enregistrer le retour">${ico('retour')}</button>`:''}
+          <button class="btn bs btn-ico" onclick="openLocOrdos(${l.id})" title="Ordonnances archivées (${nOrdo})">${ico('ordonnance')}${nOrdo?`<span style="font-size:.65rem;font-weight:700">${nOrdo}</span>`:''}</button>
+          <button class="btn bs btn-ico" onclick="openLocComments(${l.id})" title="Commentaires / historique (${nCom})">${ico('messagerie')}${nCom?`<span style="font-size:.65rem;font-weight:700">${nCom}</span>`:''}</button>
+          ${locActif(l)?`<button class="btn bs btn-ico" onclick="openRenouvellement(${l.id})" title="Renouveler (nouvelle ordo)">${ico('renouveler')}</button>`:''}
+          ${locActif(l)?`<button class="btn bw btn-ico" onclick="openRetour(${l.id})" title="Enregistrer le retour">${ico('retour')}</button>`:''}
           <button class="btn bs btn-ico" onclick="editLoc(${l.id})" title="Modifier">${ico('modifier')}</button>
           <button class="btn bs btn-ico" onclick="genContratId(${l.id})" title="Contrat">${ico('document')}</button>
           <button class="btn bd btn-ico" onclick="deleteLoc(${l.id})" title="Supprimer">${ico('corbeille')}</button>
         </div>
       </td>
-    </tr>`;}).join('')||`<tr><td colspan="10" style="text-align:center;color:var(--gray-500);padding:1.5rem">Aucune location</td></tr>`}</tbody></table>`;
+    </tr>`;}).join('')||`<tr><td colspan="9" style="text-align:center;color:var(--gray-500);padding:1.5rem">Aucune location pour ce filtre</td></tr>`}</tbody></table>`;
 }
 
-function updLocStatus(id,s){const l=locations.find(x=>x.id===id);if(l){l.status=s;renderLocs();}}
+function updLocStatus(id,s){
+  const l=locations.find(x=>x.id===id);
+  if(!l) return;
+  if(l.status!==s) locAddComment(l,'Statut : '+l.status+' → '+s, true);
+  l.status=s; l.updatedAt=Date.now();
+  renderLocs();
+}
+
+// ═══════════ ORDONNANCES ARCHIVÉES ═══════════
+// L'ordonnance initiale et tous les renouvellements, au même endroit.
+function locOrdos(l){
+  const out=[];
+  if(l.scan||l.scanData) out.push({titre:'Ordonnance initiale', date:l.datePresc||l.dateDebut, nom:l.scan, type:l.scanType, data:l.scanData, dur:l.duree});
+  (l.renewals||[]).forEach(function(r,i){
+    out.push({titre:'Renouvellement n°'+(i+1), date:r.datePresc, nom:r.scan, type:r.scanType, data:r.scanData, dur:r.duree, by:r.addedBy});
+  });
+  return out;
+}
+function openLocOrdos(id){
+  const l=locations.find(x=>x.id===id); if(!l) return;
+  const list=locOrdos(l);
+  document.getElementById('ordo-info').innerHTML=
+    `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}`;
+  const host=document.getElementById('ordo-list');
+  if(!list.length){
+    host.innerHTML='<div style="color:var(--gray-500);padding:1rem;font-size:.85rem">Aucune ordonnance archivée sur ce dossier. Les ordonnances jointes au dossier et aux renouvellements apparaîtront ici.</div>';
+  } else {
+    host.innerHTML=list.map(function(o,i){
+      const d=o.date?new Date(o.date).toLocaleDateString('fr-FR'):'—';
+      const dispo=!!o.data;
+      return '<div style="border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .8rem;margin-bottom:7px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+        +'<div style="flex:1;min-width:180px"><strong>'+o.titre+'</strong>'
+        +'<div style="font-size:.78rem;color:var(--gray-500)">Ordonnance du '+d+(o.dur?' · '+o.dur+' sem.':'')+(o.nom?' · '+o.nom:'')+'</div></div>'
+        +(dispo
+           ? '<button class="btn bs sm" onclick="viewLocOrdo('+l.id+','+i+')">'+ico('voir')+' Voir</button>'
+           : '<span style="font-size:.76rem;color:var(--gray-500)">Fichier non joint</span>')
+        +'</div>';
+    }).join('');
+  }
+  openModal('ordo-modal');
+}
+function viewLocOrdo(id,idx){
+  const l=locations.find(x=>x.id===id); if(!l) return;
+  const o=locOrdos(l)[idx];
+  if(!o||!o.data){alert('Fichier non disponible.');return;}
+  const w=window.open();
+  if(!w){alert('Autorisez les fenêtres pop-up pour visualiser l\'ordonnance.');return;}
+  const isImg=(o.type||'').startsWith('image/');
+  const safe=(o.nom||o.titre).replace(/[<>"]/g,'');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+safe+'</title>'
+    +'<style>body{margin:0;font-family:system-ui,sans-serif;background:#222;color:#fff}'
+    +'.hdr{padding:8px 14px;font-size:.85rem;background:#111;border-bottom:1px solid #333}'
+    +'iframe,img{display:block;width:100%;height:calc(100vh - 38px);border:none;background:#fff}img{object-fit:contain}</style>'
+    +'</head><body><div class="hdr">'+safe+' — '+(o.date||'')+'</div>'
+    +(isImg?'<img src="'+o.data+'">':'<iframe src="'+o.data+'"></iframe>')+'</body></html>');
+  w.document.close();
+}
+
+// ═══════════ COMMENTAIRES / HISTORIQUE D'INTERVENTION ═══════════
+function locAddComment(l, txt, auto){
+  if(!l||!txt) return;
+  l.comments=l.comments||[];
+  const now=new Date();
+  l.comments.push({
+    date:now.toISOString().split('T')[0],
+    time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+    by:currentUser?.id||null,
+    txt:String(txt).trim(),
+    auto:!!auto
+  });
+  l.updatedAt=Date.now();
+}
+let locComId=null;
+function openLocComments(id){
+  const l=locations.find(x=>x.id===id); if(!l) return;
+  locComId=id;
+  document.getElementById('loccom-info').innerHTML=
+    `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}`;
+  document.getElementById('loccom-text').value='';
+  renderLocComments();
+  openModal('loccom-modal');
+}
+function renderLocComments(){
+  const l=locations.find(x=>x.id===locComId);
+  const host=document.getElementById('loccom-list'); if(!host||!l) return;
+  const list=(l.comments||[]).slice().reverse();   // le plus récent en haut
+  host.innerHTML=list.length?list.map(function(c){
+    return '<div style="border-left:3px solid '+(c.auto?'var(--gray-200)':'var(--g-mid)')+';padding:.45rem .7rem;margin-bottom:6px;background:var(--gray-100);border-radius:0 6px 6px 0">'
+      +'<div style="font-size:.72rem;color:var(--gray-500)">'+new Date(c.date).toLocaleDateString('fr-FR')
+      +(c.time?' à '+c.time:'')+' · '+staffName(c.by)+(c.auto?' · automatique':'')+'</div>'
+      +'<div style="font-size:.85rem;white-space:pre-wrap;margin-top:2px">'+ctlEsc(c.txt)+'</div></div>';
+  }).join(''):'<div style="color:var(--gray-500);font-size:.85rem;padding:.5rem 0">Aucun commentaire sur ce dossier.</div>';
+}
+function saveLocComment(){
+  const l=locations.find(x=>x.id===locComId); if(!l) return;
+  const txt=document.getElementById('loccom-text').value.trim();
+  if(!txt){alert('Saisissez un commentaire.');return}
+  locAddComment(l,txt,false);
+  document.getElementById('loccom-text').value='';
+  renderLocComments();
+  renderLocs();
+}
 function deleteLoc(id){
   if(confirm('Supprimer cette location ?')){locations=locations.filter(x=>x.id!==id);renderLocs();}
 }
@@ -5015,23 +5268,12 @@ function editLoc(id){
   document.getElementById('lc-num').value=l.num||'';
   document.getElementById(l.caution?'lc-caut-oui':'lc-caut-non').checked=true;
   updateLocSub();
-  // Restore opts
-  if(l.type==='fauteuil'&&l.opts){
-    document.getElementById('lc-rj-g').checked=!!l.opts.rjG;
-    document.getElementById('lc-rj-d').checked=!!l.opts.rjD;
-    document.getElementById('lc-rp-g').checked=!!l.opts.rpG;
-    document.getElementById('lc-rp-d').checked=!!l.opts.rpD;
-  }
-  if(l.type==='lit'&&l.opts){
-    document.getElementById('lc-bar-g').checked=!!l.opts.barG;
-    document.getElementById('lc-bar-d').checked=!!l.opts.barD;
-    document.getElementById('lc-potence').checked=!!l.opts.potence;
-    document.getElementById('lc-table').checked=!!l.opts.table;
-  }
-  if(l.type==='tirelait'&&l.opts){
-    document.getElementById('lc-coffret').checked=!!l.opts.coffret;
-    document.getElementById('lc-chargeur').checked=!!l.opts.chargeur;
-  }
+  ((LOC_TYPES[l.type]&&LOC_TYPES[l.type].opts)||[]).forEach(function(o){
+    const el=document.getElementById('lc-opt-'+o[0]);
+    if(el) el.checked=!!(l.opts&&l.opts[o[0]]);
+  });
+  const sc=document.getElementById('lc-scan-name');
+  if(sc) sc.textContent=l.scan||'Aucun fichier';
   document.getElementById('loc-form-card').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
@@ -5059,24 +5301,9 @@ function genContratId(id){
 }
 
 function locOptsStr(l){
-  const parts=[];
   const o=l.opts||{};
-  if(l.type==='fauteuil'){
-    if(o.rjG)parts.push('Relève jambe gauche');
-    if(o.rjD)parts.push('Relève jambe droite');
-    if(o.rpG)parts.push('Repose jambe gauche');
-    if(o.rpD)parts.push('Repose jambe droit');
-  }
-  if(l.type==='lit'){
-    if(o.barG)parts.push('Barrière gauche');
-    if(o.barD)parts.push('Barrière droite');
-    if(o.potence)parts.push('Potence');
-    if(o.table)parts.push('Table de lit');
-  }
-  if(l.type==='tirelait'){
-    if(o.coffret)parts.push('Coffret');
-    if(o.chargeur)parts.push('Chargeur');
-  }
+  const opts=(LOC_TYPES[l.type]&&LOC_TYPES[l.type].opts)||[];
+  const parts=opts.filter(function(x){ return o[x[0]]; }).map(function(x){ return x[1]; });
   return parts.length?parts.join(', '):'—';
 }
 
