@@ -709,8 +709,12 @@ tr:hover td{background:#fafffe}
             <div id="lc-med-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Date de prescription</label><input type="date" id="lc-date-presc"></div>
-          <div class="fg"><label>Date de début</label><input type="date" id="lc-date-debut"></div>
-          <div class="fg"><label>Durée (semaines)</label><input type="number" id="lc-duree" placeholder="4" min="1"></div>
+          <div class="fg"><label>Date de début</label><input type="date" id="lc-date-debut" onchange="lcMajFin()"></div>
+          <div class="fg"><label>Durée (semaines)</label><input type="number" id="lc-duree" placeholder="4" min="1" oninput="lcMajFin()"></div>
+          <div class="fg"><label>Date de fin <span style="font-weight:400;color:var(--gray-500)">(calculée — modifiable)</span></label>
+            <input type="date" id="lc-date-fin" onchange="lcFinTouchee=true">
+            <div id="lc-fin-hint" style="font-size:.72rem;color:var(--gray-500);margin-top:3px"></div>
+          </div>
           <div class="fg"><label>Type d'appareil</label>
             <select id="lc-type" onchange="updateLocSub()"></select>
           </div>
@@ -4494,6 +4498,9 @@ const CRED_ETAPE_HINT = {
 const CRED_NIVEAU_LBL = {1:'🤝 Amical', 2:'⚠️ Ferme', 3:'📨 Recommandé (LRAR)'};
 
 function toggleLocForm(){
+  lcFinTouchee=false;
+  const ff=document.getElementById('lc-date-fin'); if(ff) ff.value='';
+  const fh=document.getElementById('lc-fin-hint'); if(fh) fh.textContent='';
   const c=document.getElementById('loc-form-card');
   const shown=c.style.display!=='none';
   c.style.display=shown?'none':'block';
@@ -4555,6 +4562,10 @@ function saveLoc(){
     caution:document.getElementById('lc-caut-oui').checked,
     status:'nouveau'   // dossier débuté, pas encore saisi dans le logiciel de facturation
   };
+  // Date de fin : on ne stocke un écart que si elle diffère du calcul —
+  // sinon elle reste vivante (un renouvellement la repousse tout seul).
+  const finSaisie=document.getElementById('lc-date-fin').value;
+  obj.dateFinManuelle=(finSaisie&&finSaisie!==lcFinCalculee())?finSaisie:null;
   // Auto-upsert patient DB
   upsertPatient({nom,prenom,dob,tel,mail});
   // Auto-upsert medecin DB
@@ -4617,6 +4628,26 @@ function locPatient(l){
 function locTel(l){ const p=locPatient(l); return (p&&p.tel)||l.tel||''; }
 function locMail(l){ const p=locPatient(l); return (p&&p.mail)||l.mail||''; }
 function locDob(l){ const p=locPatient(l); return (p&&p.dob)||l.dob||''; }
+// Champ « date de fin » du formulaire : pré-rempli avec le calcul, recalculé
+// quand le début ou la durée changent — sauf si l'opérateur l'a fixé à la main.
+let lcFinTouchee=false;
+function lcFinCalculee(){
+  const deb=document.getElementById('lc-date-debut').value;
+  const dur=parseInt(document.getElementById('lc-duree').value)||0;
+  const l=locEditId?locations.find(x=>x.id===locEditId):null;
+  const extra=(l&&l.renewals||[]).reduce(function(s,r){ return s+(r.duree||0); },0);
+  if(!deb||!(dur+extra)) return '';
+  const d=new Date(deb); d.setDate(d.getDate()+(dur+extra)*7);
+  return d.toISOString().split('T')[0];
+}
+function lcMajFin(){
+  const calc=lcFinCalculee();
+  const el=document.getElementById('lc-date-fin'); if(!el) return;
+  if(!lcFinTouchee) el.value=calc;
+  const hint=document.getElementById('lc-fin-hint');
+  if(hint) hint.textContent=calc?('Calcul : '+new Date(calc).toLocaleDateString('fr-FR')
+    +(el.value&&el.value!==calc?' — date ajustée à la main':'')) : '';
+}
 function fillLocTypeSelect(){
   const s=document.getElementById('lc-type'); if(!s||s.options.length) return;
   s.innerHTML='<option value="">— Choisir —</option>'
@@ -4629,12 +4660,19 @@ function locTotalDuree(l){
   return base+extra;
 }
 
-function locDateFin(l){
+// Date de fin brute (AAAA-MM-JJ) : la date fixée à la main sur le dossier
+// prime sur le calcul début + durée + renouvellements.
+function locFinISO(l){
+  if(l.dateFinManuelle) return l.dateFinManuelle;
   const total=locTotalDuree(l);
-  if(!l.dateDebut||!total) return '—';
+  if(!l.dateDebut||!total) return null;
   const d=new Date(l.dateDebut);
   d.setDate(d.getDate()+total*7);
-  return d.toLocaleDateString('fr-FR');
+  return d.toISOString().split('T')[0];
+}
+function locDateFin(l){
+  const f=locFinISO(l);
+  return f?new Date(f).toLocaleDateString('fr-FR')+(l.dateFinManuelle?' *':''):'—';
 }
 
 // « Nouveau » = dossier débuté mais pas encore saisi dans le logiciel de
@@ -4666,9 +4704,9 @@ function locMigrerStatuts(){
 }
 
 function locDaysLeft(l){
-  const total=locTotalDuree(l);
-  if(!l.dateDebut||!total) return null;
-  const fin=new Date(l.dateDebut); fin.setDate(fin.getDate()+total*7); fin.setHours(0,0,0,0);
+  const f=locFinISO(l);
+  if(!f) return null;
+  const fin=new Date(f); fin.setHours(0,0,0,0);
   const today=new Date(); today.setHours(0,0,0,0);
   return Math.round((fin-today)/86400000);
 }
@@ -5329,6 +5367,9 @@ function editLoc(id){
   document.getElementById('lc-date-debut').value=l.dateDebut||'';
   document.getElementById('lc-date-presc').value=l.datePresc||'';
   document.getElementById('lc-duree').value=l.duree||'';
+  lcFinTouchee=!!l.dateFinManuelle;
+  document.getElementById('lc-date-fin').value=l.dateFinManuelle||'';
+  lcMajFin();
   document.getElementById('lc-type').value=l.type||'';
   document.getElementById('lc-num').value=l.num||'';
   document.getElementById(l.caution?'lc-caut-oui':'lc-caut-non').checked=true;
