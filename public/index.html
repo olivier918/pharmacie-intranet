@@ -4688,17 +4688,29 @@ function openRetour(id){
   document.getElementById('retour-info').innerHTML=
     `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}<br>
      <span style="font-size:.78rem;color:var(--gray-500)">Début : ${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'} · Fin théorique : ${locDateFin(l)}</span>`;
-  // Rappel de ce qui est sorti : on ne peut pas vérifier ce dont on ne se souvient pas.
+  // Pointage du retour : l'appareil et chaque accessoire fourni à la sortie ont
+  // leur case, cochée d'avance. Décocher = pièce manquante, et la question
+  // « matériel complet ? » bascule toute seule sur Non.
   const acc=(LOC_TYPES[l.type]&&LOC_TYPES[l.type].opts)||[];
   const coches=acc.filter(function(o){ return l.opts&&l.opts[o[0]]; });
   document.getElementById('ret-recap').innerHTML=
-    '<div style="font-weight:700;margin-bottom:.35rem">À récupérer</div>'
-    +'<div>'+ico('location')+' <strong>'+locTypeLabel(l.type)+'</strong>'+(l.num?' — n° '+l.num:'')+'</div>'
+    '<div style="font-weight:700;margin-bottom:.45rem">Pointage du retour — cochez ce qui est rendu</div>'
+    +'<label class="cbl" style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:4px">'
+      +'<input type="checkbox" class="ret-item" id="ret-item-appareil" checked onchange="retMajComplet()"> '
+      +locTypeLabel(l.type)+(l.num?' — n° '+l.num:'')+'</label>'
     +(coches.length
-        ? '<div style="margin-top:.3rem">Accessoires fournis : '+coches.map(function(o){ return o[1]; }).join(', ')+'</div>'
-        : '<div style="margin-top:.3rem;color:var(--gray-500)">Aucun accessoire enregistré à la sortie.</div>')
-    +(l.caution?'<div style="margin-top:.3rem;color:#E65100;font-weight:600">Caution de 200 € encaissée à la sortie.</div>':'');
+        ? coches.map(function(o){
+            return '<label class="cbl" style="display:flex;align-items:center;gap:8px;margin-bottom:3px">'
+              +'<input type="checkbox" class="ret-item" id="ret-item-'+o[0]+'" checked onchange="retMajComplet()"> '+o[1]+'</label>';
+          }).join('')
+        : '<div style="margin-top:.2rem;color:var(--gray-500)">Aucun accessoire enregistré à la sortie.</div>')
+    +(l.caution?'<div style="margin-top:.45rem;color:#E65100;font-weight:600">Caution de 200 € encaissée à la sortie.</div>':'');
   openModal('retour-modal');
+}
+// Synchronise « matériel complet ? » avec le pointage : tout coché → Oui, sinon Non.
+function retMajComplet(){
+  const manque=[...document.querySelectorAll('#ret-recap .ret-item')].some(function(c){ return !c.checked; });
+  document.getElementById(manque?'ret-complet-non':'ret-complet-oui').checked=true;
 }
 function saveRetour(){
   const l=locations.find(x=>x.id===retourEditId); if(!l) return;
@@ -4708,13 +4720,23 @@ function saveRetour(){
   l.etatRetour=document.getElementById('ret-etat').value;
   l.notesRetour=document.getElementById('ret-notes').value.trim();
   l.retourComplet=document.getElementById('ret-complet-oui').checked;
+  // Pièces décochées au pointage, consignées nommément dans le dossier.
+  const lAcc=(LOC_TYPES[l.type]&&LOC_TYPES[l.type].opts)||[];
+  const manquants=[];
+  const appEl=document.getElementById('ret-item-appareil');
+  if(appEl&&!appEl.checked) manquants.push(locTypeLabel(l.type));
+  lAcc.forEach(function(o){
+    const c=document.getElementById('ret-item-'+o[0]);
+    if(c&&!c.checked) manquants.push(o[1]);
+  });
+  l.retourManquants=manquants;
   l.cautionRendue=l.caution?document.getElementById('ret-caut-oui').checked:null;
   l.retourBy=currentUser?.id||null;
   l.updatedAt=Date.now();
   // Trace automatique dans l'historique du dossier.
   locAddComment(l, 'Retour enregistré le '+new Date(dt).toLocaleDateString('fr-FR')
     +' — '+RET_ETAT_LBL[l.etatRetour]
-    +(l.retourComplet?', matériel complet':', MATÉRIEL INCOMPLET')
+    +(l.retourComplet?', matériel complet':', MATÉRIEL INCOMPLET'+((l.retourManquants&&l.retourManquants.length)?' (manque : '+l.retourManquants.join(', ')+')':''))
     +(l.caution?(l.cautionRendue?', caution restituée':', caution CONSERVÉE'):'')
     +(l.notesRetour?' — '+l.notesRetour:''), true);
   if(l.status==='nouveau'||l.status==='en cours') l.status='clôturée';
@@ -5113,7 +5135,7 @@ function renderLocs(){
     <tbody>${f.map(l=>{
       const a=locAlert(l);
       const finStyle=a?`color:${a.color};font-weight:600`:'';
-      const retourLine=l.dateRetour?`<div style="font-size:.7rem;color:#2E7D32;margin-top:3px">${ico('retour')} Retourné le ${new Date(l.dateRetour).toLocaleDateString('fr-FR')}${l.etatRetour?' · '+RET_ETAT_LBL[l.etatRetour]:''}${l.retourComplet===false?' · <span style="color:var(--red)">incomplet</span>':''}${l.caution?(l.cautionRendue?' · caution rendue':' · <span style="color:var(--red)">caution non rendue</span>'):''}</div>`:'';
+      const retourLine=l.dateRetour?`<div style="font-size:.7rem;color:#2E7D32;margin-top:3px">${ico('retour')} Retourné le ${new Date(l.dateRetour).toLocaleDateString('fr-FR')}${l.etatRetour?' · '+RET_ETAT_LBL[l.etatRetour]:''}${l.retourComplet===false?' · <span style="color:var(--red)">incomplet'+((l.retourManquants&&l.retourManquants.length)?' — manque '+l.retourManquants.join(', '):'')+'</span>':''}${l.caution?(l.cautionRendue?' · caution rendue':' · <span style="color:var(--red)">caution non rendue</span>'):''}</div>`:'';
       const alertLine=a?`<div style="margin-top:3px"><span class="badge" style="${a.bg};padding:2px 8px;font-size:.7rem">${ico('alerte')} ${a.label}</span></div>`:'';
       const sentLog=locLastSent(l.id);
       const sentLine=sentLog?`<div style="margin-top:3px"><span class="badge" style="background:var(--b-pale);color:var(--b-dark);padding:2px 8px;font-size:.68rem" title="Envoyé par ${staffName(sentLog.by)} à ${sentLog.time}">${ico('envoyer')} Demande le ${new Date(sentLog.date+'T'+(sentLog.time||'00:00')).toLocaleDateString('fr-FR')}</span></div>`:'';
