@@ -5139,6 +5139,36 @@ function locCompare(a,b){
   else c=String(va).localeCompare(String(vb),'fr');
   return c*locSort.dir;
 }
+// ── Filtre par type de matériel, dans l'en-tête de colonne ──
+// Un clic sur l'entonnoir ouvre la liste ; plusieurs types cochables.
+// Tout coché = pas de filtre (les types inconnus/anciens restent visibles).
+let locTypeSel=null, locTypeOpen=false;
+function locTypeInit(){ if(!locTypeSel) locTypeSel=new Set(Object.keys(LOC_TYPES)); }
+function locTypeFiltreActif(){ locTypeInit(); return locTypeSel.size<Object.keys(LOC_TYPES).length; }
+function locTypeMenuToggle(ev){ if(ev) ev.stopPropagation(); locTypeOpen=!locTypeOpen; renderLocs(); }
+function locTypeToggle(k,on,ev){ if(ev) ev.stopPropagation(); locTypeInit(); if(on) locTypeSel.add(k); else locTypeSel.delete(k); renderLocs(); }
+function locTypeTous(on,ev){ if(ev) ev.stopPropagation(); locTypeSel=new Set(on?Object.keys(LOC_TYPES):[]); renderLocs(); }
+// Fermer le menu d'un clic ailleurs dans la page.
+document.addEventListener('click',function(){ if(locTypeOpen){ locTypeOpen=false; renderLocs(); } });
+function locThMateriel(){
+  locTypeInit();
+  const on=locSort.col==='materiel';
+  const fleche=on?(locSort.dir>0?' ▲':' ▼'):'';
+  const actif=locTypeFiltreActif();
+  const menu=!locTypeOpen?'':'<div onclick="event.stopPropagation()" style="position:absolute;top:100%;left:0;z-index:500;background:#fff;border:1px solid var(--gray-200);border-radius:9px;box-shadow:0 10px 26px rgba(0,0,0,.16);padding:.6rem .8rem;min-width:210px;text-align:left;font-weight:400;text-transform:none;letter-spacing:0">'
+    +'<div style="display:flex;gap:10px;font-size:.72rem;margin-bottom:.45rem"><span style="color:var(--g-mid);cursor:pointer;text-decoration:underline" onclick="locTypeTous(true,event)">Tout cocher</span><span style="color:var(--g-mid);cursor:pointer;text-decoration:underline" onclick="locTypeTous(false,event)">Tout décocher</span></div>'
+    +Object.keys(LOC_TYPES).map(function(k){
+      return '<label style="display:flex;align-items:center;gap:7px;font-size:.8rem;padding:2px 0;cursor:pointer;white-space:nowrap">'
+        +'<input type="checkbox"'+(locTypeSel.has(k)?' checked':'')+' onclick="event.stopPropagation()" onchange="locTypeToggle(\''+k+'\',this.checked,event)"> '
+        +LOC_TYPES[k].lbl+'</label>';
+    }).join('')+'</div>';
+  return '<th style="cursor:pointer;white-space:nowrap;position:relative" onclick="setLocSort(\'materiel\')" title="Trier — l\u2019entonnoir filtre par type">'
+    +'Matériel<span style="color:var(--g-mid);font-size:.7rem">'+fleche+'</span> '
+    +'<span onclick="locTypeMenuToggle(event)" title="Filtrer par type de matériel" style="cursor:pointer;padding:1px 5px;border-radius:5px;'
+    +(actif?'background:#FFF3E0;color:#E65100;font-weight:700':'color:var(--gray-500)')+'">&#9662;'
+    +(actif?' '+locTypeSel.size+'/'+Object.keys(LOC_TYPES).length:'')+'</span>'
+    +menu+'</th>';
+}
 function locTh(col,txt,extra){
   const on=locSort.col===col;
   const fleche=on?(locSort.dir>0?' ▲':' ▼'):'';
@@ -5201,12 +5231,13 @@ function renderLocs(){
   else if(locQuickFilter==='retour') f=f.filter(l=>l.status==='retourné');
   else if(locQuickFilter==='closed') f=f.filter(l=>l.status==='clôturée');
   else f=f.filter(l=>locStatusSel.has(l.status));   // filtre par cases à cocher
+  if(locTypeFiltreActif()) f=f.filter(l=>locTypeSel.has(l.type)||!LOC_TYPES[l.type]);
   if(mf)f=f.filter(l=>l.prescripteur===mf);
   if(q)f=f.filter(l=>(l.nom+' '+l.prenom+' '+(l.prescripteur||'')+' '+locTypeLabel(l.type)+' '+(l.num||'')).toLowerCase().includes(q));
   f.sort(locCompare);
 
   document.getElementById('loc-table').innerHTML=`<table>
-    <thead><tr>${locTh('patient','Patient')}${locTh('prescripteur','Prescripteur')}${locTh('materiel','Matériel')}${locTh('num','N°')}${locTh('debut','Début')}${locTh('fin','Fin théorique')}${locTh('caution','Caution','text-align:center')}${locTh('statut','Statut')}<th class="no-print"></th></tr></thead>
+    <thead><tr>${locTh('patient','Patient')}${locTh('prescripteur','Prescripteur')}${locThMateriel()}${locTh('num','N°')}${locTh('debut','Début')}${locTh('fin','Fin théorique')}${locTh('caution','Caution','text-align:center')}${locTh('statut','Statut')}<th class="no-print"></th></tr></thead>
     <tbody>${f.map(l=>{
       const a=locAlert(l);
       const finStyle=a?`color:${a.color};font-weight:600`:'';
