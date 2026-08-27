@@ -4601,6 +4601,22 @@ const LOC_TYPES={
   accessoire: {lbl:'Accessoire prêté',    opts:[['pieds','Pied à sérum'],['tableLit','Table de lit'],['oxymetre','Oxymètre'],['tensio','Tensiomètre'],['pesebebe','Pèse-bébé']]}
 };
 function locTypeLabel(t){ return (LOC_TYPES[t]&&LOC_TYPES[t].lbl)||t||'—'; }
+
+// ── Lien vivant avec l'annuaire patients ──
+// Chaque location gardait une photocopie du téléphone / mail prise à la
+// création : une correction dans le Back Office n'apparaissait jamais ici.
+// On lit désormais l'annuaire en direct, la copie locale ne sert que de
+// secours si le patient a été supprimé de l'annuaire.
+function locPatient(l){
+  if(!l) return null;
+  const n=(l.nom||'').trim().toUpperCase(), p=(l.prenom||'').trim().toLowerCase();
+  return patients.find(function(x){
+    return (x.nom||'').trim().toUpperCase()===n && (x.prenom||'').trim().toLowerCase()===p;
+  })||null;
+}
+function locTel(l){ const p=locPatient(l); return (p&&p.tel)||l.tel||''; }
+function locMail(l){ const p=locPatient(l); return (p&&p.mail)||l.mail||''; }
+function locDob(l){ const p=locPatient(l); return (p&&p.dob)||l.dob||''; }
 function fillLocTypeSelect(){
   const s=document.getElementById('lc-type'); if(!s||s.options.length) return;
   s.innerHTML='<option value="">— Choisir —</option>'
@@ -4694,7 +4710,7 @@ function openRetour(id){
   document.getElementById('ret-caution-wrap').style.display=l.caution?'block':'none';
   document.getElementById('retour-info').innerHTML=
     `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}<br>
-     <span style="font-size:.78rem;color:var(--gray-500)">Début : ${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'} · Fin théorique : ${locDateFin(l)}</span>`;
+     <span style="font-size:.78rem;color:var(--gray-500)">${locTel(l)?ico('telephone')+' '+locTel(l)+' · ':''}Début : ${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'} · Fin théorique : ${locDateFin(l)}</span>`;
   // Pointage du retour : l'appareil et chaque accessoire fourni à la sortie ont
   // leur case, cochée d'avance. Décocher = pièce manquante, et la question
   // « matériel complet ? » bascule toute seule sur Non.
@@ -5166,7 +5182,7 @@ function renderLocs(){
       const nOrdo=(l.scanData?1:0)+(l.renewals||[]).filter(r=>r.scanData).length;
       const nCom=(l.comments||[]).length;
       return `<tr>
-      <td><strong>${l.nom}</strong> ${l.prenom}</td>
+      <td><strong>${l.nom}</strong> ${l.prenom}${locTel(l)?`<div style="font-size:.7rem;color:var(--gray-500);white-space:nowrap">${ico('telephone')} ${locTel(l)}</div>`:''}</td>
       <td style="white-space:nowrap">${l.prescripteur?ico('medecin')+' '+l.prescripteur:'<span style="color:var(--gray-500)">—</span>'}</td>
       <td>${locTypeLabel(l.type)}${locOptsStr(l)!=='—'?`<div style="font-size:.7rem;color:var(--gray-500)">${locOptsStr(l)}</div>`:''}</td>
       <td style="white-space:nowrap">${l.num||'—'}</td>
@@ -5304,6 +5320,11 @@ function editLoc(id){
   document.getElementById('loc-form-title').textContent='Modifier la location';
   document.getElementById('lc-nom').value=l.nom;
   document.getElementById('lc-prenom').value=l.prenom;
+  // Coordonnées lues dans l'annuaire (valeurs à jour). Avant, ces champs
+  // restaient vides et l'enregistrement effaçait le téléphone et le mail.
+  document.getElementById('lc-tel').value=locTel(l);
+  document.getElementById('lc-mail').value=locMail(l);
+  document.getElementById('lc-dob-pat').value=locDob(l);
   document.getElementById('lc-prescripteur').value=l.prescripteur||'';
   document.getElementById('lc-date-debut').value=l.dateDebut||'';
   document.getElementById('lc-date-presc').value=l.datePresc||'';
