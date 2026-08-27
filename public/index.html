@@ -683,6 +683,9 @@ tr:hover td{background:#fafffe}
     <!-- ═══ LOCATIONS ═══ -->
     <div id="sec-locations" class="sec">
       <p class="stitle"><svg class="ico"><use href="#ic-location"></use></svg> Locations de matériel médical</p>
+      <!-- Compteurs cliquables (renderLocs les remplit ; ce conteneur manquait,
+           les cartes n'étaient jamais affichées) -->
+      <div class="sgrid" id="loc-stats"></div>
 
       <!-- Formulaire nouvelle location -->
       <div class="card" id="loc-form-card">
@@ -4620,12 +4623,16 @@ function locDateFin(l){
 
 // « Nouveau » = dossier débuté mais pas encore saisi dans le logiciel de
 // facturation. Il remplace l'ancien statut « Facturée ».
-const LOC_STATUSES=['nouveau','en cours','litige','clôturée'];
+// « retourné » = matériel rendu, dossier restant à clôturer dans le logiciel de
+// facturation — même logique que « payé, à saisir » côté crédits : l'état
+// intermédiaire empêche d'oublier la saisie Winpharma.
+const LOC_STATUSES=['nouveau','en cours','litige','retourné','clôturée'];
 function locStatColor(s){
   return {
     'nouveau':'background:#FFF3E0;color:#E65100',
     'en cours':'background:#E3F2FD;color:#1565C0',
     'litige':'background:#FFEBEE;color:#C62828',
+    'retourné':'background:#F3E5F5;color:#6A1B9A',
     'clôturée':'background:#f5f5f5;color:#777'
   }[s]||'';
 }
@@ -4739,8 +4746,19 @@ function saveRetour(){
     +(l.retourComplet?', matériel complet':', MATÉRIEL INCOMPLET'+((l.retourManquants&&l.retourManquants.length)?' (manque : '+l.retourManquants.join(', ')+')':''))
     +(l.caution?(l.cautionRendue?', caution restituée':', caution CONSERVÉE'):'')
     +(l.notesRetour?' — '+l.notesRetour:''), true);
-  if(l.status==='nouveau'||l.status==='en cours') l.status='clôturée';
+  // Matériel rendu ≠ dossier terminé : la clôture se fait après la saisie
+  // dans le logiciel de facturation (bouton « Clôturer » ou liste des statuts).
+  if(l.status==='nouveau'||l.status==='en cours') l.status='retourné';
   closeModal('retour-modal');
+  renderLocs();
+}
+
+// Clôture après saisie en facturation, avec confirmation et trace.
+function cloturerLoc(id){
+  const l=locations.find(x=>x.id===id); if(!l) return;
+  if(!confirm('Confirmez-vous que le dossier de '+l.nom+' '+l.prenom+' est saisi et clôturé dans le logiciel de facturation ?')) return;
+  locAddComment(l,'Dossier clôturé après saisie en facturation.', true);
+  l.status='clôturée'; l.updatedAt=Date.now();
   renderLocs();
 }
 
@@ -5081,9 +5099,10 @@ function renderLocs(){
   const mf=(document.getElementById('loc-med-filter')?.value||'');
   const q=(document.getElementById('loc-q')?.value||'').toLowerCase();
 
-  let nNouveau=0,nEnCours=0,nSoon=0,nLate=0,nClos=0;
+  let nNouveau=0,nEnCours=0,nSoon=0,nLate=0,nClos=0,nRet=0;
   locations.forEach(l=>{
     if(l.status==='clôturée') nClos++;
+    if(l.status==='retourné') nRet++;
     if(l.status==='nouveau'&&!l.dateRetour) nNouveau++;
     if(locActif(l)){
       nEnCours++;
@@ -5100,6 +5119,7 @@ function renderLocs(){
       <div class="scard" style="${cardCss(locQuickFilter==='active','var(--b-mid)')}" onclick="setLocQuickFilter('active')" title="Matériel non rendu"><div class="slabel">En cours</div><div class="sval" style="color:var(--b-mid)">${nEnCours}</div></div>
       <div class="scard" style="${cardCss(locQuickFilter==='soon','var(--amber)')}" onclick="setLocQuickFilter('soon')" title="Échéance ≤ 7 jours"><div class="slabel">Échéance ≤ 7j</div><div class="sval" style="color:var(--amber)">${nSoon}</div></div>
       <div class="scard" style="${cardCss(locQuickFilter==='late','var(--red)')}" onclick="setLocQuickFilter('late')" title="Date de fin dépassée"><div class="slabel">En retard</div><div class="sval" style="color:var(--red)">${nLate}</div></div>
+      <div class="scard" style="${cardCss(locQuickFilter==='retour','#6A1B9A')}" onclick="setLocQuickFilter('retour')" title="Matériel rendu — dossier à clôturer en facturation"><div class="slabel">À clôturer</div><div class="sval" style="color:#6A1B9A">${nRet}</div></div>
       <div class="scard" style="${cardCss(locQuickFilter==='closed','#2E7D32')}" onclick="setLocQuickFilter('closed')" title="Dossiers clôturés"><div class="slabel">Clôturées</div><div class="sval" style="color:#2E7D32">${nClos}</div></div>`;
   }
 
@@ -5124,6 +5144,7 @@ function renderLocs(){
   else if(locQuickFilter==='active') f=f.filter(locActif);
   else if(locQuickFilter==='soon')   f=f.filter(l=>locAlert(l)?.kind==='soon');
   else if(locQuickFilter==='late')   f=f.filter(l=>locAlert(l)?.kind==='late');
+  else if(locQuickFilter==='retour') f=f.filter(l=>l.status==='retourné');
   else if(locQuickFilter==='closed') f=f.filter(l=>l.status==='clôturée');
   else f=f.filter(l=>locStatusSel.has(l.status));   // filtre par cases à cocher
   if(mf)f=f.filter(l=>l.prescripteur===mf);
@@ -5160,6 +5181,7 @@ function renderLocs(){
           </select>
           <button class="btn bs btn-ico" onclick="openLocOrdos(${l.id})" title="Ordonnances archivées (${nOrdo})">${ico('ordonnance')}${nOrdo?`<span style="font-size:.65rem;font-weight:700">${nOrdo}</span>`:''}</button>
           <button class="btn bs btn-ico" onclick="openLocComments(${l.id})" title="Commentaires / historique (${nCom})">${ico('messagerie')}${nCom?`<span style="font-size:.65rem;font-weight:700">${nCom}</span>`:''}</button>
+          ${l.status==='retourné'?`<button class="btn bp btn-ico" onclick="cloturerLoc(${l.id})" title="Saisi en facturation : clôturer le dossier">${ico('valider')}</button>`:''}
           ${locActif(l)?`<button class="btn bs btn-ico" onclick="openRenouvellement(${l.id})" title="Renouveler (nouvelle ordo)">${ico('renouveler')}</button>`:''}
           ${locActif(l)?`<button class="btn bw btn-ico" onclick="openRetour(${l.id})" title="Enregistrer le retour">${ico('retour')}</button>`:''}
           <button class="btn bs btn-ico" onclick="editLoc(${l.id})" title="Modifier">${ico('modifier')}</button>
