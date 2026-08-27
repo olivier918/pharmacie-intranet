@@ -742,9 +742,9 @@ tr:hover td{background:#fafffe}
 
         <!-- Caution -->
         <div style="margin-top:.9rem">
-          <div class="fg" style="margin-bottom:.6rem"><label>Caution de 200 €</label></div>
+          <div class="fg" style="margin-bottom:.6rem"><label id="lc-caut-lbl">Caution</label></div>
           <div class="cbrow">
-            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-oui" value="oui"> Oui — 200 €</label>
+            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-oui" value="oui"> <span id="lc-caut-oui-lbl">Oui</span></label>
             <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-non" value="non" checked> Non</label>
           </div>
         </div>
@@ -1157,7 +1157,36 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot4" onclick="boTab('compte')"><svg class="ico"><use href="#ic-securite"></use></svg> Compte admin</button>
         <button class="btn bs" id="bot7" onclick="boTab('smstpl')"><svg class="ico"><use href="#ic-messagerie"></use></svg> Modèles SMS</button>
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
+        <button class="btn bs" id="bot9" onclick="boTab('materiel')"><svg class="ico"><use href="#ic-location"></use></svg> Matériel</button>
         <button class="btn bs" id="bot8" onclick="boTab('sonnette')"><svg class="ico"><use href="#ic-sonnette"></use></svg> Sonnette</button>
+      </div>
+
+      <!-- MATÉRIEL EN LOCATION -->
+      <div id="bo-materiel" style="display:none">
+        <div class="card" style="margin-bottom:1rem">
+          <div class="ch"><span class="ct" id="mat-form-title">Ajouter un matériel</span></div>
+          <div class="fgrid">
+            <div class="fg"><label>Nom du matériel <span class="req">*</span></label><input type="text" id="mat-lbl" placeholder="Ex. Fauteuil de transfert"></div>
+            <div class="fg"><label>Caution (€)</label><input type="number" id="mat-caution" min="0" step="10" placeholder="200"></div>
+          </div>
+          <div class="fg" style="margin-top:.9rem">
+            <label>Accessoires <span style="font-weight:400;color:var(--gray-500)">(un par ligne — cochables à la sortie et pointés au retour)</span></label>
+            <textarea id="mat-opts" rows="4" placeholder="Relève jambe gauche&#10;Relève jambe droite&#10;Coussin"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:.9rem">
+            <button class="btn bp" id="mat-submit" onclick="saveMatType()">+ Ajouter</button>
+            <button class="btn bs" id="mat-cancel" style="display:none" onclick="cancelMatType()">Annuler</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><span class="ct">Matériel en location</span></div>
+          <p style="color:var(--gray-600);font-size:.82rem;margin:.2rem 0 .9rem;line-height:1.5">
+            Ce catalogue alimente le module Locations : liste des appareils du formulaire, accessoires cochables,
+            montant de la caution sur le contrat et au retour. Les dossiers déjà ouverts gardent leur matériel,
+            même si vous le modifiez ici.
+          </p>
+          <div id="mat-list"></div>
+        </div>
       </div>
 
       <!-- SONNETTE -->
@@ -1429,7 +1458,7 @@ tr:hover td{background:#fafffe}
       </div>
     </div>
     <div class="fg" id="ret-caution-wrap" style="margin-bottom:.9rem;display:none">
-      <label>Caution de 200 € restituée ?</label>
+      <label id="ret-caut-lbl">Caution restituée ?</label>
       <div class="cbrow">
         <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-oui" value="oui" checked> Oui, rendue au patient</label>
         <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-non" value="non"> Non, conservée</label>
@@ -2307,7 +2336,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2362,6 +2391,7 @@ async function loadAll(){
     if(data.preps)preps=data.preps;
     if(data.bpmList)bpmList=data.bpmList;
     if(data.locations)locations=data.locations;
+    if(Array.isArray(data.locTypes)&&data.locTypes.length){ locTypesDB=data.locTypes; rebuildLocTypes(); }
     if(data.caisse)caisse=data.caisse;
     if(data.credits)credits=data.credits;
     if(data.labo)labo=data.labo;
@@ -2392,6 +2422,7 @@ setInterval(async()=>{
         if(d.preps)preps=d.preps;
         if(d.bpmList)bpmList=d.bpmList;
         if(d.locations)locations=d.locations;
+        if(Array.isArray(d.locTypes)&&d.locTypes.length){ locTypesDB=d.locTypes; rebuildLocTypes(); }
         if(d.caisse)caisse=d.caisse;
         if(d.credits)credits=d.credits;
         if(d.patients)patients=d.patients;
@@ -3738,11 +3769,11 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot8'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-sonnette'];
+const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette'];
 function boTab(t){
   if((t==='compte'||t==='backups') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,sonnette:7};
+  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
@@ -3752,6 +3783,7 @@ function boTab(t){
   if(t==='smstpl')renderSmsTpl();
   if(t==='backups')renderBackups();
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
+  if(t==='materiel')renderMatTypes();
   applyAdminUI();
 }
 
@@ -4519,6 +4551,10 @@ function toggleLocForm(){
 
 function updateLocSub(){
   const t=document.getElementById('lc-type').value;
+  // Montant de caution du type choisi (géré au Back Office).
+  const cm=(LOC_TYPES[t]&&LOC_TYPES[t].caution!=null)?LOC_TYPES[t].caution:200;
+  const cl=document.getElementById('lc-caut-lbl'); if(cl) cl.textContent='Caution de '+cm+' €';
+  const co=document.getElementById('lc-caut-oui-lbl'); if(co) co.textContent='Oui — '+cm+' €';
   const box=document.getElementById('lc-sub-dyn'), row=document.getElementById('lc-sub-row');
   if(!box||!row) return;
   const opts=(LOC_TYPES[t]&&LOC_TYPES[t].opts)||[];
@@ -4566,6 +4602,7 @@ function saveLoc(){
   // sinon elle reste vivante (un renouvellement la repousse tout seul).
   const finSaisie=document.getElementById('lc-date-fin').value;
   obj.dateFinManuelle=(finSaisie&&finSaisie!==lcFinCalculee())?finSaisie:null;
+  obj.cautionMontant=obj.caution?(((LOC_TYPES[obj.type]||{}).caution)||200):null;
   // Auto-upsert patient DB
   upsertPatient({nom,prenom,dob,tel,mail});
   // Auto-upsert medecin DB
@@ -4597,20 +4634,132 @@ function saveLoc(){
   } else commit(null);
 }
 
-// Catalogue : libellé de l'appareil + accessoires cochables à la sortie.
-// Une seule source de vérité — formulaire, contrat, fenêtre de retour et tableau
-// s'y réfèrent tous.
-const LOC_TYPES={
-  fauteuil:   {lbl:'Fauteuil roulant',    opts:[['rjG','Relève jambe gauche'],['rjD','Relève jambe droite'],['rpG','Repose jambe gauche'],['rpD','Repose jambe droit']]},
-  lit:        {lbl:'Lit médicalisé',      opts:[['barG','Barrière gauche'],['barD','Barrière droite'],['potence','Potence'],['table','Table de lit']]},
-  aerosol:    {lbl:'Aérosol',             opts:[]},
-  tirelait:   {lbl:'Tire-lait',           opts:[['coffret','Coffret'],['chargeur','Chargeur']]},
-  neurostim:  {lbl:'Neurostimulateur',    opts:[['boite','Boîte'],['chargeur','Chargeur']]},
-  potence:    {lbl:'Potence',             opts:[]},
-  levemalade: {lbl:'Lève-malade',         opts:[]},
-  aspirateur: {lbl:'Aspirateur trachéal', opts:[]},
-  accessoire: {lbl:'Accessoire prêté',    opts:[['pieds','Pied à sérum'],['tableLit','Table de lit'],['oxymetre','Oxymètre'],['tensio','Tensiomètre'],['pesebebe','Pèse-bébé']]}
-};
+// ── Catalogue du matériel : géré au Back Office (onglet Matériel) ──
+// locTypesDB est la collection partagée entre postes ; LOC_TYPES en est la vue
+// indexée par id, que tout le module consulte (formulaire, contrat, retour,
+// tableau, filtre). Le catalogue historique sert d'amorçage au premier
+// démarrage, et tout type rencontré dans un dossier existant est repris.
+let locTypesDB=[];
+let LOC_TYPES={};
+const LOC_TYPES_DEFAUT=[
+  {id:'fauteuil',   lbl:'Fauteuil roulant',    caution:200, opts:[['rjG','Relève jambe gauche'],['rjD','Relève jambe droite'],['rpG','Repose jambe gauche'],['rpD','Repose jambe droit']]},
+  {id:'lit',        lbl:'Lit médicalisé',      caution:200, opts:[['barG','Barrière gauche'],['barD','Barrière droite'],['potence','Potence'],['table','Table de lit']]},
+  {id:'aerosol',    lbl:'Aérosol',             caution:200, opts:[]},
+  {id:'tirelait',   lbl:'Tire-lait',           caution:200, opts:[['coffret','Coffret'],['chargeur','Chargeur']]},
+  {id:'neurostim',  lbl:'Neurostimulateur',    caution:200, opts:[['boite','Boîte'],['chargeur','Chargeur']]},
+  {id:'potence',    lbl:'Potence',             caution:200, opts:[]},
+  {id:'levemalade', lbl:'Lève-malade',         caution:200, opts:[]},
+  {id:'aspirateur', lbl:'Aspirateur trachéal', caution:200, opts:[]},
+  {id:'accessoire', lbl:'Accessoire prêté',    caution:200, opts:[['pieds','Pied à sérum'],['tableLit','Table de lit'],['oxymetre','Oxymètre'],['tensio','Tensiomètre'],['pesebebe','Pèse-bébé']]}
+];
+function rebuildLocTypes(){
+  LOC_TYPES={};
+  locTypesDB.forEach(function(t){ if(t&&t.id) LOC_TYPES[t.id]={lbl:t.lbl,opts:t.opts||[],caution:(t.caution==null?200:t.caution)}; });
+}
+function ensureLocTypes(){
+  let neuf=false;
+  if(!Array.isArray(locTypesDB)) locTypesDB=[];
+  if(!locTypesDB.length){
+    // Premier démarrage : reprise du catalogue historique.
+    locTypesDB=LOC_TYPES_DEFAUT.map(function(t){ return Object.assign({},t,{updatedAt:Date.now()}); });
+    neuf=true;
+  }
+  // Reprise du matériel déjà en cours : tout type présent dans un dossier mais
+  // absent du catalogue y entre, pour qu'aucun dossier ne devienne orphelin.
+  const ids=new Set(locTypesDB.map(function(t){ return t.id; }));
+  locations.forEach(function(l){
+    if(l&&l.type&&!ids.has(l.type)){
+      locTypesDB.push({id:l.type, lbl:l.type, caution:200, opts:[], updatedAt:Date.now()});
+      ids.add(l.type); neuf=true;
+    }
+  });
+  rebuildLocTypes();
+  return neuf;
+}
+// ── Back Office > Matériel : création / modification du catalogue ──
+let matEditId=null;
+function matSlug(s){
+  return String(s||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'materiel';
+}
+function renderMatTypes(){
+  ensureLocTypes();
+  const host=document.getElementById('mat-list'); if(!host) return;
+  host.innerHTML=locTypesDB.map(function(t){
+    const nUse=locations.filter(function(l){ return l.type===t.id; }).length;
+    return '<div style="border:1px solid var(--gray-200);border-radius:9px;padding:.7rem .95rem;margin-bottom:8px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:220px"><strong>'+ctlEsc(t.lbl)+'</strong>'
+      +'<div style="font-size:.76rem;color:var(--gray-500);margin-top:2px">Caution '+(t.caution==null?200:t.caution)+' € · '
+      +((t.opts&&t.opts.length)?t.opts.map(function(o){ return ctlEsc(o[1]); }).join(', '):'aucun accessoire')
+      +' · '+nUse+' dossier(s)</div></div>'
+      +'<div style="display:flex;gap:5px">'
+      +'<button class="btn bs btn-ico" onclick="editMatType(\''+t.id+'\')" title="Modifier">'+ico('modifier')+'</button>'
+      +'<button class="btn bd btn-ico" onclick="delMatType(\''+t.id+'\')" title="Supprimer">'+ico('corbeille')+'</button>'
+      +'</div></div>';
+  }).join('')||'<div style="color:var(--gray-500);font-size:.85rem">Aucun matériel.</div>';
+}
+function saveMatType(){
+  const lbl=document.getElementById('mat-lbl').value.trim();
+  if(!lbl){alert('Le nom du matériel est obligatoire.');return}
+  const caution=Math.max(0,parseFloat(document.getElementById('mat-caution').value)||0);
+  // Accessoires : un par ligne. Les clés (slug) restent stables pour que les
+  // dossiers existants retrouvent leurs cases cochées.
+  const lignes=document.getElementById('mat-opts').value.split('\n').map(function(x){ return x.trim(); }).filter(Boolean);
+  const anciennes={};
+  if(matEditId){ const ex=locTypesDB.find(function(t){ return t.id===matEditId; });
+    (ex&&ex.opts||[]).forEach(function(o){ anciennes[o[1].toLowerCase()]=o[0]; }); }
+  const vus=new Set();
+  const opts=lignes.map(function(lb){
+    let k=anciennes[lb.toLowerCase()]||matSlug(lb);
+    while(vus.has(k)) k=k+'2';
+    vus.add(k);
+    return [k,lb];
+  });
+  if(matEditId){
+    const t=locTypesDB.find(function(x){ return x.id===matEditId; });
+    if(t){ t.lbl=lbl; t.caution=caution; t.opts=opts; t.updatedAt=Date.now(); }
+  } else {
+    let id=matSlug(lbl), n=2;
+    const ids=new Set(locTypesDB.map(function(t){ return t.id; }));
+    while(ids.has(id)) id=matSlug(lbl)+n++;
+    locTypesDB.push({id:id, lbl:lbl, caution:caution, opts:opts, updatedAt:Date.now()});
+  }
+  cancelMatType();
+  rebuildLocTypes();
+  renderMatTypes();
+  renderLocs();
+}
+function editMatType(id){
+  const t=locTypesDB.find(function(x){ return x.id===id; }); if(!t) return;
+  matEditId=id;
+  document.getElementById('mat-form-title').textContent='Modifier : '+t.lbl;
+  document.getElementById('mat-lbl').value=t.lbl;
+  document.getElementById('mat-caution').value=(t.caution==null?200:t.caution);
+  document.getElementById('mat-opts').value=(t.opts||[]).map(function(o){ return o[1]; }).join('\n');
+  document.getElementById('mat-submit').textContent='Enregistrer';
+  document.getElementById('mat-cancel').style.display='';
+}
+function cancelMatType(){
+  matEditId=null;
+  document.getElementById('mat-form-title').textContent='Ajouter un matériel';
+  ['mat-lbl','mat-caution','mat-opts'].forEach(function(i){ document.getElementById(i).value=''; });
+  document.getElementById('mat-submit').textContent='+ Ajouter';
+  document.getElementById('mat-cancel').style.display='none';
+}
+function delMatType(id){
+  const t=locTypesDB.find(function(x){ return x.id===id; }); if(!t) return;
+  const nUse=locations.filter(function(l){ return l.type===id; }).length;
+  if(nUse){ alert('Impossible de supprimer « '+t.lbl+' » : '+nUse+' dossier(s) de location l\u2019utilisent encore.'); return; }
+  if(!confirm('Supprimer « '+t.lbl+' » du catalogue ?')) return;
+  locTypesDB=locTypesDB.filter(function(x){ return x.id!==id; });
+  markDeleted('locTypes', id);
+  rebuildLocTypes();
+  renderMatTypes();
+  renderLocs();
+}
+
+function locCautionMontant(l){ return (l&&l.cautionMontant)||((LOC_TYPES[l&&l.type]||{}).caution)||200; }
 function locTypeLabel(t){ return (LOC_TYPES[t]&&LOC_TYPES[t].lbl)||t||'—'; }
 
 // ── Lien vivant avec l'annuaire patients ──
@@ -4649,9 +4798,11 @@ function lcMajFin(){
     +(el.value&&el.value!==calc?' — date ajustée à la main':'')) : '';
 }
 function fillLocTypeSelect(){
-  const s=document.getElementById('lc-type'); if(!s||s.options.length) return;
+  const s=document.getElementById('lc-type'); if(!s) return;
+  const cur=s.value;
   s.innerHTML='<option value="">— Choisir —</option>'
     +Object.keys(LOC_TYPES).map(function(k){ return '<option value="'+k+'">'+LOC_TYPES[k].lbl+'</option>'; }).join('');
+  if(cur&&LOC_TYPES[cur]) s.value=cur;
 }
 
 function locTotalDuree(l){
@@ -4746,6 +4897,7 @@ function openRetour(id){
   document.getElementById('ret-complet-oui').checked=true;
   document.getElementById('ret-caut-oui').checked=true;
   document.getElementById('ret-caution-wrap').style.display=l.caution?'block':'none';
+  const rcl=document.getElementById('ret-caut-lbl'); if(rcl) rcl.textContent='Caution de '+locCautionMontant(l)+' € restituée ?';
   document.getElementById('retour-info').innerHTML=
     `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}<br>
      <span style="font-size:.78rem;color:var(--gray-500)">${locTel(l)?ico('telephone')+' '+locTel(l)+' · ':''}Début : ${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'} · Fin théorique : ${locDateFin(l)}</span>`;
@@ -4765,7 +4917,7 @@ function openRetour(id){
               +'<input type="checkbox" class="ret-item" id="ret-item-'+o[0]+'" checked onchange="retMajComplet()"> '+o[1]+'</label>';
           }).join('')
         : '<div style="margin-top:.2rem;color:var(--gray-500)">Aucun accessoire enregistré à la sortie.</div>')
-    +(l.caution?'<div style="margin-top:.45rem;color:#E65100;font-weight:600">Caution de 200 € encaissée à la sortie.</div>':'');
+    +(l.caution?'<div style="margin-top:.45rem;color:#E65100;font-weight:600">Caution de '+locCautionMontant(l)+' € encaissée à la sortie.</div>':'');
   openModal('retour-modal');
 }
 // Synchronise « matériel complet ? » avec le pointage : tout coché → Oui, sinon Non.
@@ -5177,6 +5329,7 @@ function locTh(col,txt,extra){
 }
 
 function renderLocs(){
+  ensureLocTypes();
   fillLocTypeSelect();
   locStatusInit();
   locMigrerStatuts();
@@ -5257,7 +5410,7 @@ function renderLocs(){
       <td style="white-space:nowrap">${l.num||'—'}</td>
       <td style="white-space:nowrap">${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'}</td>
       <td style="white-space:nowrap;${finStyle}">${locDateFin(l)}${renBadge}</td>
-      <td style="text-align:center">${l.caution?ico('valider')+' 200€':'—'}</td>
+      <td style="text-align:center">${l.caution?ico('valider')+' '+locCautionMontant(l)+'€':'—'}</td>
       <td><span class="badge" style="${locStatColor(l.status)};padding:3px 9px">${l.status}</span>${alertLine}${sentLine}${retourLine}</td>
       <td class="no-print">
         <div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -5495,7 +5648,7 @@ ${[1,2].map(ex=>`
       <tr><td>Date de début</td><td>${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'}</td></tr>
       <tr><td>Durée prescrite</td><td>${l.duree?l.duree+' semaine(s)':'—'}</td></tr>
       <tr><td>Date de fin théorique</td><td>${fin}</td></tr>
-      <tr><td>Caution</td><td>${l.caution?'200,00 € (encaissée à la remise du matériel)':'Non applicable'}</td></tr>
+      <tr><td>Caution</td><td>${l.caution?locCautionMontant(l).toFixed(2).replace('.',',')+' € (encaissée à la remise du matériel)':'Non applicable'}</td></tr>
     </table>
   </div>
 
@@ -5506,7 +5659,7 @@ ${[1,2].map(ex=>`
       <br><br>
       À défaut de restitution dans ce délai, chaque semaine de location supplémentaire sera facturée au tarif en vigueur et sera à la charge exclusive du patient, en dehors de toute prise en charge par l'Assurance Maladie.
       <br><br>
-      ${l.caution?`La caution de <strong>200,00 €</strong> est encaissée à la remise du matériel. Elle sera intégralement restituée lors du retour du matériel complet et en bon état, et après règlement de toute période de location non couverte par l'Assurance Maladie.`:''}
+      ${l.caution?`La caution de <strong>${locCautionMontant(l).toFixed(2).replace('.',',')} €</strong> est encaissée à la remise du matériel. Elle sera intégralement restituée lors du retour du matériel complet et en bon état, et après règlement de toute période de location non couverte par l'Assurance Maladie.`:''}
       <br><br>
       Le patient reconnaît avoir pris connaissance des présentes conditions et s'engage à les respecter.
     </div>
