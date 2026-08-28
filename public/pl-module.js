@@ -117,6 +117,44 @@
   }
   const PL_MOTIFS = { cp: 'Congés', mal: 'Maladie', rec: 'Récup.', for: 'Formation' };
 
+  // ── amplitude d'ouverture (par défaut : 9h00-12h30 / 14h00-19h30, lundi-samedi) ──
+  // surchargée par plParams.ouverture = { M:[540,750], AM:[840,1170] } (minutes depuis minuit)
+  function plOuverture(demi) {
+    const o = (P().ouverture) || {};
+    return demi === 'M' ? (o.M || [540, 750]) : (o.AM || [840, 1170]);
+  }
+  function plParseSlot(str) {
+    const m = String(str || '').match(/(\d{1,2})h(\d*)\s*[-–]\s*(\d{1,2})h(\d*)/);
+    if (!m) return null;
+    let a = (+m[1]) * 60 + (+m[2] || 0), b = (+m[3]) * 60 + (+m[4] || 0);
+    if (b < a) b += 720;
+    return { a: a, b: b };
+  }
+  // présence partielle AU COMPTOIR : le créneau ne couvre pas toute la plage d'ouverture
+  // (ex. fin à 18h30 alors que la pharmacie ferme à 19h30, ou arrivée après l'ouverture)
+  function plPartiel(slotStr, demi) {
+    const t = plParseSlot(slotStr); if (!t) return false;
+    const o = plOuverture(demi);
+    return t.a > o[0] || t.b < o[1];
+  }
+  // Les livraisons arrivent entre 15h et 18h (~1h). Si aucun logisticien n'est présent
+  // sur cette fenêtre, le jour est signalé : il faut désigner un responsable des livraisons.
+  function plLivraisonsCouvertes(date) {
+    const p = P(); const fen = p.fenetreLivraisons || [900, 1080];   // minutes : 15h00 → 18h00
+    return L('contrats').some(c => {
+      if (c.actif === false || c.grp !== 'logi') return false;
+      const sl = plSlots(c, date), ab = plAbs(c, plIso(date));
+      if (!sl[1] || ab[1]) return false;
+      const t = plParseSlot(sl[1]); if (!t) return false;
+      return Math.max(t.a, fen[0]) < Math.min(t.b, fen[1]);
+    });
+  }
+  function plPartielTitle(slotStr, demi) {
+    const o = plOuverture(demi);
+    const f = mn => Math.floor(mn / 60) + 'h' + (mn % 60 ? String(mn % 60).padStart(2, '0') : '');
+    return 'Présence partielle au comptoir : ' + slotStr + ' (ouverture ' + f(o[0]) + '-' + f(o[1]) + ')';
+  }
+
   // heures planifiées d'une semaine (lun→dim) pour un contrat
   function plHeuresSemaine(c, monday) {
     let tot = 0;
@@ -144,12 +182,13 @@
     const s = arr.find(x => x.jour === jr && x.demi === demi);
     return s ? s.mini : 1;
   }
-  // effectifs présents une demi-journée, par POSITION : {cpt, back, ph, avOk}
+  // effectifs présents une demi-journée, par POSITION : {cpt, back, logi, ph, avOk}
   // cpt = disponibles au comptoir (pharmaciens + préparateurs en C + étudiants) ;
-  // back = back-office (préparateurs en B, secrétariat, logistique) ; entretien hors effectif.
+  // back = back-office (préparateurs en B, secrétariat) ; logi = logisticiens (compteur à part) ;
+  // entretien hors effectif.
   function plEffectif(date, demi) {
     const iso = plIso(date); const h = demi === 'M' ? 0 : 1;
-    let cpt = 0, back = 0, ph = 0, avPresent = false;
+    let cpt = 0, back = 0, logi = 0, ph = 0, avPresent = false;
     L('contrats').forEach(c => {
       if (c.actif === false) return;
       const sl = plSlots(c, date), ab = plAbs(c, iso);
@@ -158,6 +197,7 @@
       const pos = plPosOf(c, rang, plDayKey(date), h);
       if (c.estPharmacien) { ph++; cpt++; return; }      // pharmacien : toujours comptoir
       if (c.grp === 'entretien') return;                 // hors effectif
+      if (c.grp === 'logi') { logi++; return; }          // logistique : compteur dédié
       if (pos === 'A') { avPresent = true; return; }     // poste avancé : jamais compté comptoir
       if (pos === 'B') { back++; return; }               // back-office : pas disponible comptoir
       cpt++;                                             // position C
@@ -167,7 +207,7 @@
     const avContrat = L('contrats').find(c => c.grp === 'avance' && c.actif !== false);
     let avCouvert = avPresent;
     if (avContrat && !avPresent && cpt > 0) { cpt -= 1; avCouvert = true; }
-    return { cpt: cpt, back: back, ph: ph, avOk: avCouvert };
+    return { cpt: cpt, back: back, logi: logi, ph: ph, avOk: avCouvert };
   }
 
   // ---------- état ----------
@@ -244,6 +284,7 @@
   .pl-cntrow td{background:#FBFAF9;border-bottom:2px solid var(--plline);padding:5px 6px}
   .pl-cntlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
   .pl-pill.nt{background:#EDF0F4;color:#4A5B74}
+  .pl-pill.lg{background:#EAF0E6;color:#4F6B3F}
   .pl-pill b{font-variant-numeric:tabular-nums}
   .pl-shift{position:relative;padding-right:20px}
   .pl-shift.pl-pB{border-left-color:#5B7BA8;background:#E9EFF6;color:#2C4A78}
@@ -251,6 +292,10 @@
   .pl-pos{position:absolute;right:3px;top:50%;transform:translateY(-50%);font-style:normal;font-size:8.5px;
     font-weight:800;width:13px;height:13px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
   .pl-pos-C{background:#CFE7DA;color:#0B5B44}.pl-pos-B{background:#C9D8EC;color:#2C4A78}.pl-pos-A{background:#F2CBDC;color:var(--plrosei)}
+  .pl-shift.pl-part{border-left-color:var(--plwarn);background:var(--plforb);color:#7A5A10}
+  .pl-shift.pl-click{cursor:pointer}
+  .pl-shift.pl-click:hover{filter:brightness(.94);box-shadow:0 1px 4px rgba(70,40,55,.18)}
+  .pl-chip.pl-ch-part{background:var(--plforb);color:var(--plwarn)}.pl-chip.pl-ch-part i{background:var(--plwarn)}
   .pl-empty{color:var(--plmut);text-align:center;padding:44px 12px;line-height:1.6}
   .pl-empty b{font-size:1rem;color:var(--plink)}
   /* mois */
@@ -332,10 +377,14 @@
       <span class="pl-chip pl-ch-mal"><i></i>Maladie</span>
       <span class="pl-chip pl-ch-rec"><i></i>Récupération</span>
       <span class="pl-chip pl-ch-for"><i></i>Formation</span>
+      <span class="pl-chip pl-ch-part"><i></i>Comptoir partiel</span>
+      <span style="font-size:10.5px">Compteurs : <b>présents/seuil</b>, hors poste avancé</span>
       <span style="margin-left:auto" id="pl-info"></span>
     </div>
     <div id="pl-body"></div>
-    <div class="pl-note">Lot 1 — planning théorique calculé depuis la trame type et les rotations (Prép 2 sem · Ph 3 sem · PDA 4 sem).
+    <div class="pl-note">Planning théorique calculé depuis la trame type et les rotations. Un créneau <b>comptoir partiel</b> (ambre)
+    ne couvre pas toute la plage d'ouverture (9h00-12h30 / 14h00-19h30) — typiquement une fin à 18h30.
+    🚚 = aucun logisticien présent sur la fenêtre de livraisons (15h-18h) : désigner un responsable des livraisons ce jour-là.
     Les absences, demandes de congés et compteurs arrivent aux lots suivants.</div>
   </div>`;
 
@@ -443,7 +492,7 @@
       const pM = plSeuilPh(d, 'M'), pA = plSeuilPh(d, 'AM');
       function pill(e, s, p, lbl) {
         const k = (e.cpt < s || e.ph < 1) ? 'bad' : (e.cpt === s || e.ph < p) ? 'lim' : 'ok';
-        return '<span class="pl-pill ' + k + '" title="Comptoir ' + e.cpt + '/' + s + ' · pharmaciens ' + e.ph + '/' + p + (e.avOk ? '' : ' · poste avancé non tenu') + '">'
+        return '<span class="pl-pill ' + k + '" title="' + e.cpt + ' disponibles au comptoir / seuil ' + s + ' (hors poste avancé) · pharmaciens ' + e.ph + '/' + p + (e.avOk ? '' : ' · poste avancé non tenu') + '">'
           + '<span class="pl-dotph ' + (e.ph > 0 ? 'ok' : 'bad') + '"></span>' + lbl + ' ' + e.cpt + '/' + s + '</span>';
       }
       h += '<th><div class="pl-dayn">' + PL_JOURS_FR[(d.getDay() + 6) % 7] + '</div>'
@@ -456,7 +505,12 @@
     days.forEach(d => {
       const eM = plEffectif(d, 'M'), eA = plEffectif(d, 'AM');
       const sM = plSeuilComptoir(d, 'M'), sA = plSeuilComptoir(d, 'AM');
-      function cp(e, s, lbl) { const k = e.cpt < s ? 'bad' : (e.cpt === s ? 'lim' : 'ok'); return '<span class="pl-pill ' + k + '">' + lbl + ' <b>' + e.cpt + '</b>/' + s + '</span>'; }
+      function cp(e, s, lbl) {
+        const k = e.cpt < s ? 'bad' : (e.cpt === s ? 'lim' : 'ok');
+        const tt = e.cpt + ' disponibles au comptoir (pharmaciens + préparateurs en position comptoir, HORS poste avancé) pour un seuil de ' + s
+          + (e.avOk ? '' : ' — poste avancé non tenu');
+        return '<span class="pl-pill ' + k + '" title="' + tt + '">' + lbl + ' <b>' + e.cpt + '</b>/' + s + '</span>';
+      }
       h += '<td><div class="pl-cnt">' + cp(eM, sM, 'M') + cp(eA, sA, 'AM') + '</div></td>';
     });
     h += '</tr><tr class="pl-cntrow"><td class="pl-who pl-cntlbl">Back-office</td>';
@@ -464,6 +518,14 @@
       const eM = plEffectif(d, 'M'), eA = plEffectif(d, 'AM');
       h += '<td><div class="pl-cnt"><span class="pl-pill nt">M <b>' + eM.back + '</b></span><span class="pl-pill nt">AM <b>' + eA.back + '</b></span>'
         + (eM.avOk && eA.avOk ? '' : '<span class="pl-pill bad">poste avancé ?</span>') + '</div></td>';
+    });
+    h += '</tr><tr class="pl-cntrow"><td class="pl-who pl-cntlbl">Logistique</td>';
+    days.forEach(d => {
+      const eM = plEffectif(d, 'M'), eA = plEffectif(d, 'AM');
+      const liv = plLivraisonsCouvertes(d);
+      h += '<td><div class="pl-cnt"><span class="pl-pill lg">M <b>' + eM.logi + '</b></span><span class="pl-pill lg">AM <b>' + eA.logi + '</b></span>'
+        + (liv ? '' : '<span class="pl-pill bad" title="Livraisons 15h-18h : aucun logisticien présent sur la fenêtre — désigner un responsable des livraisons">🚚 resp. ?</span>')
+        + '</div></td>';
     });
     h += '</tr>';
     let lastGrp = null;
@@ -481,7 +543,12 @@
           else if (sl[hh]) {
             const pos = plPosOf(c, rangC, plDayKey(d), hh);
             const posBadge = (pos !== 'C' || PL_POS_CHOIX[c.grp]) ? '<i class="pl-pos pl-pos-' + pos + '" title="' + PL_POS_LBL[pos] + '">' + pos + '</i>' : '';
-            cell += '<div class="pl-shift pl-p' + pos + (String(sl[hh]).indexOf('6h') === 0 ? ' early' : '') + '">' + plEsc(sl[hh]) + posBadge + '</div>';
+            const part = pos === 'C' && plPartiel(sl[hh], hh ? 'AM' : 'M');
+            const clic = PL_POS_CHOIX[c.grp]
+              ? ' pl-click" onclick="plCyclePos(\'' + c.id + '\',\'' + rangC + '\',\'' + plDayKey(d) + '\',' + hh + ')" title="'
+                + plEsc((part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '') + PL_POS_LBL[pos] + ' · cliquer pour changer de position (semaine type)') + '"'
+              : (part ? '" title="' + plEsc(plPartielTitle(sl[hh], hh ? 'AM' : 'M')) + '"' : '"');
+            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + clic + '>' + plEsc(sl[hh]) + posBadge + '</div>';
           }
         }
         cells += '<td class="pl-cell">' + (cell || '<div class="pl-off">repos</div>') + '</td>';
@@ -590,7 +657,7 @@
       let cnt = '<table class="pl-tt" style="font-size:10.5px;margin-bottom:8px"><tr><th style="text-align:left">Disponibles</th>'
         + PL_JOURS_FR.slice(0, 6).map(j => '<th colspan="2">' + j.slice(0, 3) + '</th>').join('') + '</tr>'
         + '<tr><th style="text-align:left"></th>' + PL_JOURS.slice(0, 6).map(() => '<th style="font-size:9px">M</th><th style="font-size:9px">AM</th>').join('') + '</tr>';
-      ['Comptoir', 'Back-office'].forEach(lbl => {
+      ['Comptoir', 'Back-office', 'Logistique'].forEach(lbl => {
         cnt += '<tr><th style="text-align:left">' + lbl + '</th>';
         for (let k = 0; k < 6; k++) {
           const d = plAddD(refDate, k);
@@ -600,8 +667,12 @@
               const seuil = plSeuilComptoir(d, demi);
               const kk = e.cpt < seuil ? 'bad' : (e.cpt === seuil ? 'lim' : 'ok');
               cnt += '<td><span class="pl-pill ' + kk + '" style="padding:1px 5px"><b>' + e.cpt + '</b>/' + seuil + '</span></td>';
-            } else {
+            } else if (lbl === 'Back-office') {
               cnt += '<td><span class="pl-pill nt" style="padding:1px 5px"><b>' + e.back + '</b></span></td>';
+            } else {
+              const livOk = demi === 'M' ? true : plLivraisonsCouvertes(d);
+              cnt += '<td><span class="pl-pill lg" style="padding:1px 5px"><b>' + e.logi + '</b></span>'
+                + (livOk ? '' : '<div><span class="pl-pill bad" style="padding:0 4px;font-size:8.5px" title="Livraisons 15h-18h : aucun logisticien — désigner un responsable">🚚?</span></div>') + '</td>';
             }
           });
         }
@@ -626,7 +697,12 @@
               if (day[hh]) {
                 tot += plDurOf(day[hh]);
                 const pos = plPosOf(c, rang, jr, hh);
-                cell += '<div class="pl-shift pl-p' + pos + '" style="font-size:9.5px;padding:1px 4px;padding-right:16px;margin:1px 0">' + plEsc(day[hh])
+                const part = pos === 'C' && plPartiel(day[hh], hh ? 'AM' : 'M');
+                const clicT = PL_POS_CHOIX[c.grp]
+                  ? ' pl-click" onclick="plCyclePos(\'' + c.id + '\',\'' + rang + '\',\'' + jr + '\',' + hh + ')"'
+                  : '"';
+                cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + clicT + ' style="font-size:9.5px;padding:1px 4px;padding-right:16px;margin:1px 0"'
+                  + ' title="' + plEsc((part ? plPartielTitle(day[hh], hh ? 'AM' : 'M') + ' — ' : '') + PL_POS_LBL[pos] + (PL_POS_CHOIX[c.grp] ? ' · cliquer pour changer' : '')) + '">' + plEsc(day[hh])
                   + ((pos !== 'C' || PL_POS_CHOIX[c.grp]) ? '<i class="pl-pos pl-pos-' + pos + '">' + pos + '</i>' : '') + '</div>';
               }
             }
@@ -693,6 +769,22 @@
       el.innerHTML = h;
     }
   }
+  // clic sur une plage horaire d'un préparateur : fait tourner la position C → B → A.
+  // La modification s'applique à la SEMAINE TYPE (elle vaut pour toutes les semaines de ce rang).
+  window.plCyclePos = function (cid, rang, jour, hh) {
+    const c = L('contrats').find(x => x.id === cid); if (!c || !PL_POS_CHOIX[c.grp]) return;
+    if (!c.pos) c.pos = {};
+    if (!c.pos[rang]) c.pos[rang] = {};
+    if (!c.pos[rang][jour]) c.pos[rang][jour] = ['C', 'C'];
+    const cur = c.pos[rang][jour][hh] || 'C';
+    const suite = { C: 'B', B: 'A', A: 'C' };
+    c.pos[rang][jour][hh] = suite[cur] || 'C';
+    plStamp(c); plPersist();
+    plToast(c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[PL_JOURS.indexOf(jour)] + ' ' + (hh ? 'après-midi' : 'matin') + ' → ' + PL_POS_LBL[c.pos[rang][jour][hh]]);
+    plRender();
+    const reg = document.getElementById('pl-ov-reg');
+    if (reg && reg.classList.contains('pl-on')) plRegRender();
+  };
   window.plSetBase = function (cid, v) {
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const n = parseFloat(String(v).replace(',', '.'));
