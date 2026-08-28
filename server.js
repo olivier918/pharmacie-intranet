@@ -590,7 +590,9 @@ function applyTombstones(arr, tombs, coll) {
 }
 
 // Collections synchronisées « à id » : réconciliation par enregistrement + tombstones.
-const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'locTypes', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives', 'patients', 'medecins', 'smsLog', 'smsTemplates'];
+const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'locTypes', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives', 'patients', 'medecins', 'smsLog', 'smsTemplates',
+  // Module Planning (Lot 1) : collections à id, fusion par enregistrement + tombstones
+  'plPostes', 'plRotations', 'plContrats', 'plTrames', 'plExceptions', 'plDemandes', 'plReels', 'plNotifs', 'plClotures'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des
@@ -608,6 +610,21 @@ function mergeCaisse(existing, incoming) {
   if (!incoming || typeof incoming !== 'object') return existing;
   const out = Object.assign({}, existing, incoming); // réglages + monnaie.fond : dernier envoi
   CAISSE_SUBS.forEach(sub => {
+    if (!Array.isArray(existing[sub]) && !Array.isArray(incoming[sub])) return;
+    out[sub] = mergeById(existing[sub], incoming[sub]);
+  });
+  return out;
+}
+
+// ── plParams (module Planning) : conteneur, comme la caisse ──
+// Réglages scalaires (pas d'ouverture, règles CCN) en dernier-écrit-gagne,
+// sous-listes à id fusionnées finement (clé tombstone 'plParams.<sub>').
+const PLPARAMS_SUBS = ['periodes', 'seuilsComptoir', 'seuilsPharmaciens', 'seuilsPostes', 'motifsAbsence'];
+function mergePlParams(existing, incoming) {
+  if (!existing || typeof existing !== 'object') return incoming;
+  if (!incoming || typeof incoming !== 'object') return existing;
+  const out = Object.assign({}, existing, incoming);
+  PLPARAMS_SUBS.forEach(sub => {
     if (!Array.isArray(existing[sub]) && !Array.isArray(incoming[sub])) return;
     out[sub] = mergeById(existing[sub], incoming[sub]);
   });
@@ -656,6 +673,16 @@ function mergeState(existing, incoming) {
       });
     }
     merged.caisse = c;
+  }
+  // plParams (module Planning) : fusion fine des sous-listes + tombstones 'plParams.<sub>'
+  if (existing.plParams || incoming.plParams) {
+    const p = mergePlParams(existing.plParams, incoming.plParams);
+    if (p && typeof p === 'object') {
+      PLPARAMS_SUBS.forEach(sub => {
+        if (Array.isArray(p[sub])) p[sub] = applyTombstones(p[sub], merged.tombstones, 'plParams.' + sub);
+      });
+    }
+    merged.plParams = p;
   }
   return merged;
 }
@@ -802,4 +829,4 @@ async function start() {
 // on n'ouvre ni port ni connexion : on expose les fonctions de fusion pour les vérifier.
 if (require.main === module) start();
 
-module.exports = { mergeState, mergeCaisse, mergeById, mergeTombstones, applyTombstones, mergeStaff, ensureNatIds, toMsisdnFR, smsSender, smsConfigured };
+module.exports = { mergeState, mergeCaisse, mergePlParams, mergeById, mergeTombstones, applyTombstones, mergeStaff, ensureNatIds, toMsisdnFR, smsSender, smsConfigured };

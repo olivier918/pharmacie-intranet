@@ -2272,6 +2272,10 @@ let bpmList = [
 ];
 
 let caisse = { seuilAlerteEuros:50, dureeAlerteJours:3, releves:[], remises:[], ajustements:[] };
+// ─── Module Planning (Lot 1) : collections synchronisées + paramètres (conteneur) ───
+let plParams = {};
+let plPostes = [], plRotations = [], plContrats = [], plTrames = [];
+let plExceptions = [], plDemandes = [], plReels = [], plNotifs = [], plClotures = [];
 
 // Module « Contrôle annuel des lits médicalisés » (FICHE 110 / NF EN 60601-2-52)
 let controles = [];
@@ -2300,18 +2304,23 @@ let _savePending=false;  // true tant qu'une modif locale n'est pas persistée :
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
 const CAISSE_SUBS=['releves','remises','ajustements','commandesMonnaie'];
+// Sous-listes de plParams (module Planning) fusionnées finement côté serveur (clé tombstone 'plParams.<sub>').
+const PLPARAMS_SUBS=['periodes','seuilsComptoir','seuilsPharmaciens','seuilsPostes','motifsAbsence'];
 function _collRef(n){ switch(n){
   case 'deliveries':return deliveries; case 'staffDB':return staffDB; case 'threads':return threads;
   case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
   case 'credits':return credits; case 'controles':return controles; case 'retours':return retours;
   case 'renouvellements':return renouvellements; case 'renouvArchives':return renouvArchives;
   case 'patients':return patients; case 'medecins':return medecins;
-  case 'smsLog':return smsLog; case 'smsTemplates':return smsTemplates; } return null; }
+  case 'smsLog':return smsLog; case 'smsTemplates':return smsTemplates;
+  case 'plPostes':return plPostes; case 'plRotations':return plRotations; case 'plContrats':return plContrats;
+  case 'plTrames':return plTrames; case 'plExceptions':return plExceptions; case 'plDemandes':return plDemandes;
+  case 'plReels':return plReels; case 'plNotifs':return plNotifs; case 'plClotures':return plClotures; } return null; }
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
 // patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle
@@ -2321,9 +2330,9 @@ function ensureNatIds(){
   if(Array.isArray(medecins)) medecins.forEach(m=>{ if(m&&m.id==null) m.id='md:'+(m.nom||''); });
 }
 // Photographie des ids présents (appelée après chaque lecture serveur) — sert de référence pour détecter les suppressions.
-function snapIds(){ ensureNatIds(); SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); CAISSE_SUBS.forEach(s=>{ _idSnap['caisse.'+s]=_idsOf(caisse&&caisse[s]); }); }
+function snapIds(){ ensureNatIds(); SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); CAISSE_SUBS.forEach(s=>{ _idSnap['caisse.'+s]=_idsOf(caisse&&caisse[s]); }); PLPARAMS_SUBS.forEach(s=>{ _idSnap['plParams.'+s]=_idsOf(plParams&&plParams[s]); }); }
 // Détection centrale des suppressions : tout id présent à la dernière lecture et absent maintenant = tombstone.
-function diffTombstones(){ ensureNatIds(); const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); CAISSE_SUBS.forEach(s=>{ const prev=_idSnap['caisse.'+s]; if(!prev)return; const cur=_idsOf(caisse&&caisse[s]); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:'caisse.'+s,id:id,t:now}); }); }); }
+function diffTombstones(){ ensureNatIds(); const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); CAISSE_SUBS.forEach(s=>{ const prev=_idSnap['caisse.'+s]; if(!prev)return; const cur=_idsOf(caisse&&caisse[s]); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:'caisse.'+s,id:id,t:now}); }); }); PLPARAMS_SUBS.forEach(s=>{ const prev=_idSnap['plParams.'+s]; if(!prev)return; const cur=_idsOf(plParams&&plParams[s]); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:'plParams.'+s,id:id,t:now}); }); }); }
 function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
 // fetch() ne lève PAS d'exception sur une réponse 401 ou 500 : sans vérifier
 // r.ok, un enregistrement refusé (session expirée, redéploiement en cours) était
@@ -2336,7 +2345,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2405,6 +2414,16 @@ async function loadAll(){
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.banque)banque=data.banque;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
+    if(data.plParams)plParams=data.plParams;
+    if(data.plPostes)plPostes=data.plPostes;
+    if(data.plRotations)plRotations=data.plRotations;
+    if(data.plContrats)plContrats=data.plContrats;
+    if(data.plTrames)plTrames=data.plTrames;
+    if(data.plExceptions)plExceptions=data.plExceptions;
+    if(data.plDemandes)plDemandes=data.plDemandes;
+    if(data.plReels)plReels=data.plReels;
+    if(data.plNotifs)plNotifs=data.plNotifs;
+    if(data.plClotures)plClotures=data.plClotures;
     snapIds();   // référence initiale des ids après lecture serveur
   }catch(e){console.warn('Chargement:',e.message);}
 }
@@ -2439,8 +2458,18 @@ setInterval(async()=>{
         if(d.staffDB){ staffDB=d.staffDB; if(currentUser){ const u=staffDB.find(x=>x.id===currentUser.id); if(u)currentUser=u; } }
         if(d.labo)labo=d.labo;
         if(d.ADMIN)Object.assign(ADMIN,d.ADMIN);
+        if(d.plParams)plParams=d.plParams;
+        if(d.plPostes)plPostes=d.plPostes;
+        if(d.plRotations)plRotations=d.plRotations;
+        if(d.plContrats)plContrats=d.plContrats;
+        if(d.plTrames)plTrames=d.plTrames;
+        if(d.plExceptions)plExceptions=d.plExceptions;
+        if(d.plDemandes)plDemandes=d.plDemandes;
+        if(d.plReels)plReels=d.plReels;
+        if(d.plNotifs)plNotifs=d.plNotifs;
+        if(d.plClotures)plClotures=d.plClotures;
         snapIds();   // resynchro : nouvelle référence des ids (une suppression venue d'un autre poste n'est pas re-signalée comme locale)
-        _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} } finally { _suppressSave=false; }
+        _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} if(typeof plRender==='function'){try{plRender();}catch(_e){}} } finally { _suppressSave=false; }
       }
     }catch(e){ _loadedOK=false; }
   }
@@ -9083,6 +9112,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="rn-module.js"></script>
 <script src="fc-module.js"></script>
 <script src="cm-module.js"></script>
+<script src="pl-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>
