@@ -382,11 +382,11 @@
   .pl-tick.cp{background:var(--plcp)}.pl-tick.mal{background:var(--plmal)}
   .pl-tick.rec{background:var(--plrec)}.pl-tick.for{background:var(--plfor)}
   .pl-wee{background:#F7F4F2}
-  .pl-mini{width:17px;margin:1px auto;border-radius:4px;font-size:8.5px;font-weight:800;line-height:12px;
+  .pl-mnp{width:17px;margin:1px auto;border-radius:4px;font-size:8.5px;font-weight:800;line-height:12px;
     text-align:center;font-variant-numeric:tabular-nums}
-  .pl-mini-ok{background:#DDEFE4;color:var(--plok)}
-  .pl-mini-lim{background:#F5E9CC;color:var(--plwarn)}
-  .pl-mini-bad{background:#F6DAD6;color:var(--plcrit)}
+  .pl-mnp-ok{background:#DDEFE4;color:var(--plok)}
+  .pl-mnp-lim{background:#F5E9CC;color:var(--plwarn)}
+  .pl-mnp-bad{background:#F6DAD6;color:var(--plcrit)}
   .pl-av{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:baseline}
   /* année */
   .pl-yr td{padding:3px 6px}
@@ -403,6 +403,44 @@
     width:min(880px,96vw);max-height:90vh;overflow:auto}
   .pl-box h3{margin:0 0 4px;font-size:1.02rem}
   .pl-box .pl-sub{color:var(--plmut);font-size:12px;margin-bottom:14px}
+  /* mode pleine page (exercice de trame : on a besoin de toute la largeur) */
+  .pl-ov.pl-full{padding:0;background:var(--plbg);align-items:stretch}
+  .pl-ov.pl-full>.pl-box{width:100vw;max-width:none;height:100vh;max-height:100vh;border-radius:0;
+    box-shadow:none;padding:14px 22px 0;display:flex;flex-direction:column;overflow:hidden}
+  .pl-hd{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .pl-hd .pl-sub{margin-bottom:10px}
+  .pl-ov.pl-full .pl-hd{align-items:center}
+  .pl-ov.pl-full .pl-hd .pl-sub{margin:0;max-width:680px}
+  .pl-ov.pl-full #pl-reg-body{flex:1;min-height:0;overflow:auto;margin:0 -22px;padding:0 22px 18px}
+  .pl-ov.pl-full .pl-actions{display:none}
+  .pl-ov.pl-full .pl-tt{font-size:12px}
+  .pl-ov.pl-full .pl-shift{font-size:11px!important}
+  .pl-trtop{background:#fff}
+  .pl-ov.pl-full .pl-trtop{position:sticky;top:0;z-index:6;padding:8px 0 6px;
+    box-shadow:0 6px 12px -10px rgba(70,40,55,.55)}
+  .pl-ov.pl-full .pl-trgrid .pl-tt td:first-child,
+  .pl-ov.pl-full .pl-trgrid .pl-tt th:first-child{position:sticky;left:0;z-index:2;background:#fff}
+  /* saisie directe des horaires dans la grille d'équipe */
+  .pl-hrow{display:flex;align-items:center;gap:3px;margin:2px 0}
+  .pl-hin{flex:1 1 auto;width:100%;min-width:0;font-family:inherit;font-size:11px;font-weight:600;text-align:center;
+    border:1px solid transparent;border-left:3px solid var(--plac);border-radius:6px;padding:3px 2px;
+    background:var(--placs);color:#1F5C46;font-variant-numeric:tabular-nums}
+  .pl-hin::placeholder{color:#C6CFCA;font-weight:500}
+  .pl-hin:placeholder-shown{background:transparent;border-left-color:transparent}
+  .pl-hin:hover{border-color:var(--plline)}
+  #pl-ov-reg .pl-hin:focus{outline:none;background:#fff;border-color:var(--plac);border-left-color:var(--plac);
+    box-shadow:0 0 0 2px rgba(52,132,102,.18)}
+  .pl-hin.pl-hB{border-left-color:#5B7BA8;background:#E9EFF6;color:#2C4A78}
+  .pl-hin.pl-hA{border-left-color:var(--plrose);background:var(--plroses);color:var(--plrosei)}
+  .pl-hin.pl-hpart{border-left-color:var(--plwarn);background:var(--plforb);color:#7A5A10}
+  .pl-hin.pl-herr{border-color:var(--plcrit);background:#FAE9E7;color:var(--plcrit)}
+  .pl-posb{font-style:normal;font-size:8.5px;font-weight:800;width:14px;height:16px;border-radius:4px;border:none;
+    display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;padding:0;font-family:inherit}
+  button.pl-posb{cursor:pointer}
+  .pl-posv{background:none}
+  .pl-tc{padding:2px 4px!important;min-width:92px}
+  .pl-hd-sp{flex:1 1 auto}
+  .pl-hd .pl-btn,.pl-trtop .pl-btn{flex:0 0 auto;white-space:nowrap}
   .pl-form{display:flex;flex-wrap:wrap;gap:10px}
   .pl-form label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--plmut);font-weight:600}
   .pl-inp{font-family:inherit;font-size:13px;border:1px solid var(--plline);border-radius:8px;background:#fff;
@@ -470,8 +508,16 @@
   // ---------- modales (réglages + trame) ----------
   const PL_MODALS = `
   <div class="pl-ov pl-vars" id="pl-ov-reg"><div class="pl-box">
-    <h3>Réglages du planning</h3>
-    <div class="pl-sub">Rotations, seuils d'alerte et contrats. Les seuils déclenchent les alertes de couverture (règles R1 bis et R2 du cahier des charges).</div>
+    <div class="pl-hd">
+      <div>
+        <h3 id="pl-reg-title">Réglages du planning</h3>
+        <div class="pl-sub" id="pl-reg-sub">Rotations, seuils d'alerte et contrats. Les seuils déclenchent les alertes de couverture (règles R1 bis et R2 du cahier des charges).</div>
+      </div>
+      <span class="pl-hd-sp"></span>
+      <button class="pl-btn pl-ghost pl-mini" onclick="plTramesOnglet()" title="Ouvrir un second onglet sur la trame">↗ Nouvel onglet</button>
+      <button class="pl-btn pl-ghost pl-mini" id="pl-reg-full" onclick="plToggleFull()">⛶ Pleine page</button>
+      <button class="pl-btn pl-ghost pl-mini" id="pl-reg-x" onclick="plClose('pl-ov-reg')" style="display:none">✕ Fermer</button>
+    </div>
     <div class="pl-tabsC">
       <button id="pl-rt-t" onclick="plRegTab('t')">Trames horaires</button>
       <button id="pl-rt-c" class="pl-act" onclick="plRegTab('c')">Contrats</button>
@@ -528,6 +574,16 @@
   }
   window.plOpen = function (id) { document.getElementById(id).classList.add('pl-on'); };
   window.plClose = function (id) { document.getElementById(id).classList.remove('pl-on'); };
+  // Échap : ferme la fenêtre la plus haute, puis sort de la pleine page.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    const top = ['pl-ov-jour', 'pl-ov-trame'].find(id => {
+      const n = document.getElementById(id); return n && n.classList.contains('pl-on');
+    });
+    if (top) { plClose(top); return; }
+    const reg = document.getElementById('pl-ov-reg');
+    if (reg && reg.classList.contains('pl-on')) plClose('pl-ov-reg');
+  });
 
   // ---------- navigation ----------
   window.plSetView = function (v) {
@@ -691,7 +747,7 @@
         ['M', 'AM'].forEach(demi => {
           const e = plEffectif(dt, demi), s2 = plSeuilComptoir(dt, demi);
           const k = e.cpt < s2 ? 'bad' : (e.cpt === s2 ? 'lim' : 'ok');
-          cell += '<div class="pl-mini pl-mini-' + k + '" title="' + PL_JOURS_FR[(dt.getDay() + 6) % 7] + ' ' + d + ' · ' + (demi === 'M' ? 'matin' : 'après-midi') + ' : ' + e.cpt + ' disponibles au comptoir / seuil ' + s2 + ' (hors poste avancé)">' + e.cpt + '</div>';
+          cell += '<div class="pl-mnp pl-mnp-' + k + '" title="' + PL_JOURS_FR[(dt.getDay() + 6) % 7] + ' ' + d + ' · ' + (demi === 'M' ? 'matin' : 'après-midi') + ' : ' + e.cpt + ' disponibles au comptoir / seuil ' + s2 + ' (hors poste avancé)">' + e.cpt + '</div>';
         });
       }
       h += '<td class="' + (dt.getDay() === 0 ? 'pl-wee' : '') + '" style="border-top:2px solid var(--plline)">' + cell + '</td>';
@@ -731,13 +787,157 @@
   // ---------- réglages ----------
   let plRegView = 'c';
   let plTrRotSel = 'rot:prep', plTrRangSel = 1;
-  window.plOpenReglages = function () { plRegView = 'c'; plRegRender(); plOpen('pl-ov-reg'); };
-  window.plOpenTrames = function () { plRegView = 't'; plRegRender(); plOpen('pl-ov-reg'); };
+  let plRegFull = false;
+  function plApplyFull() {
+    const ov = document.getElementById('pl-ov-reg'); if (!ov) return;
+    ov.classList.toggle('pl-full', plRegFull);
+    const b = document.getElementById('pl-reg-full'), x = document.getElementById('pl-reg-x');
+    if (b) b.textContent = plRegFull ? '⤡ Réduire' : '⛶ Pleine page';
+    if (x) x.style.display = plRegFull ? '' : 'none';
+  }
+  window.plToggleFull = function () { plRegFull = !plRegFull; plApplyFull(); };
+  // Ouvre l'intranet dans un second onglet, directement sur la trame (pour comparer deux écrans).
+  window.plTramesOnglet = function () {
+    window.open(location.origin + location.pathname + '#trames', '_blank');
+  };
+  // Un onglet ouvert sur #trames attend que la session soit ouverte, puis affiche la trame.
+  function plHashWatch() {
+    if (location.hash !== '#trames') return;
+    let n = 0;
+    const t = setInterval(function () {
+      const app = document.getElementById('app');
+      const pret = app && app.style.display !== 'none' && typeof window.showSec === 'function'
+        && document.getElementById('sec-planning');
+      if (pret) {
+        clearInterval(t);
+        try { history.replaceState(null, '', location.pathname); } catch (_e) { }
+        try { window.showSec('planning', document.querySelector('.sb-item[data-sec="planning"]')); } catch (_e) { }
+        setTimeout(function () { try { plOpenTrames(); } catch (_e) { } }, 250);
+      } else if (++n > 300) clearInterval(t);   // 2 min d'attente maximum (le temps de se connecter)
+    }, 400);
+  }
+  window.plOpenReglages = function () { plRegView = 'c'; plRegFull = false; plApplyFull(); plRegRender(); plOpen('pl-ov-reg'); };
+  // La trame d'équipe s'ouvre en pleine page : c'est un exercice qui demande toute la largeur.
+  window.plOpenTrames = function () { plRegView = 't'; plRegFull = true; plApplyFull(); plRegRender(); plOpen('pl-ov-reg'); };
   window.plRegTab = function (t) { plRegView = t; plRegRender(); };
   window.plTrSel = function (rid, rang) { if (rid) plTrRotSel = rid; plTrRangSel = +rang; plRegRender(); };
+  // ---------- saisie directe des horaires dans la grille d'équipe ----------
+  let plTrRef = null;   // lundi de la semaine type affichée (pour recalculer les compteurs)
+
+  // Normalise une saisie libre en « 9h-12h30 » : 9-12h30, 9:00 12:30, 9h00 à 12h30…
+  function plNormHoraire(v) {
+    const s = String(v || '').trim();
+    if (!s) return { val: null, ok: true };
+    const m = s.match(/^(\d{1,2})\s*[h:.,]?\s*(\d{2})?\s*(?:[-–—]|à|a|\/)\s*(\d{1,2})\s*[h:.,]?\s*(\d{2})?$/i);
+    if (!m) return { val: s, ok: false };
+    const f = (h, mn) => (+h) + 'h' + (mn && +mn ? mn : '');
+    const out = f(m[1], m[2]) + '-' + f(m[3], m[4]);
+    return { val: out, ok: plDurOf(out) > 0 };
+  }
+
+  function plTrCntHtml(refDate) {
+    let cnt = '<table class="pl-tt" style="font-size:10.5px;margin-bottom:8px"><tr><th style="text-align:left">Disponibles</th>'
+      + PL_JOURS_FR.slice(0, 6).map(j => '<th colspan="2">' + j.slice(0, 3) + '</th>').join('') + '</tr>'
+      + '<tr><th style="text-align:left"></th>' + PL_JOURS.slice(0, 6).map(() => '<th style="font-size:9px">M</th><th style="font-size:9px">AM</th>').join('') + '</tr>';
+    ['Comptoir', 'Back-office', 'Logistique'].forEach(lbl => {
+      cnt += '<tr><th style="text-align:left">' + lbl + '</th>';
+      for (let k = 0; k < 6; k++) {
+        const d = plAddD(refDate, k);
+        ['M', 'AM'].forEach(demi => {
+          const e = plEffectif(d, demi);
+          if (lbl === 'Comptoir') {
+            const seuil = plSeuilComptoir(d, demi);
+            const kk = e.cpt < seuil ? 'bad' : (e.cpt === seuil ? 'lim' : 'ok');
+            cnt += '<td><span class="pl-pill ' + kk + '" style="padding:1px 5px"><b>' + e.cpt + '</b>/' + seuil + '</span></td>';
+          } else if (lbl === 'Back-office') {
+            cnt += '<td><span class="pl-pill nt" style="padding:1px 5px"><b>' + e.back + '</b></span></td>';
+          } else {
+            const livOk = demi === 'M' ? true : plLivraisonsCouvertes(d);
+            cnt += '<td><span class="pl-pill lg" style="padding:1px 5px"><b>' + e.logi + '</b></span>'
+              + (livOk ? '' : '<div><span class="pl-pill bad" style="padding:0 4px;font-size:8.5px" title="Livraisons 15h-18h : aucun logisticien — désigner un responsable">🚚?</span></div>') + '</td>';
+          }
+        });
+      }
+      cnt += '</tr>';
+    });
+    return cnt + '</table>';
+  }
+  function plTrCntRefresh() {
+    const el = document.getElementById('pl-trcnt');
+    if (el && plTrRef) el.innerHTML = plTrCntHtml(plTrRef);
+  }
+  // La ligne affichée peut retomber sur la semaine 1 quand le rang n'existe pas : on la matérialise avant d'écrire.
+  function plSemOf(c, rang) {
+    if (!c.sem) c.sem = {};
+    if (!c.sem[rang]) c.sem[rang] = JSON.parse(JSON.stringify(c.sem['1'] || {}));
+    return c.sem[rang];
+  }
+  window.plGridSet = function (el) {
+    const c = L('contrats').find(x => x.id === el.dataset.c); if (!c) return;
+    const rang = el.dataset.r, jr = el.dataset.j, hh = +el.dataset.h;
+    const n = plNormHoraire(el.value);
+    el.classList.toggle('pl-herr', !n.ok);
+    if (!n.ok) { plToast('Format attendu : 9h-12h30'); return; }
+    el.value = n.val || '';
+    const sem = plSemOf(c, rang);
+    if (!sem[jr]) sem[jr] = [null, null];
+    sem[jr][hh] = n.val;
+    plStamp(c); plPersist();
+    // mise à jour ciblée : on ne reconstruit pas la grille, la saisie continue au clavier
+    const pos = plPosOf(c, rang, jr, hh);
+    const part = n.val && pos === 'C' && plPartiel(n.val, hh ? 'AM' : 'M');
+    el.classList.toggle('pl-hpart', !!part);
+    // la pastille de poste suit la case : elle apparaît dès qu'un horaire est saisi (sans casser la frappe)
+    const bEl = el.nextElementSibling;
+    if (bEl) {
+      if (!n.val) bEl.outerHTML = '<i class="pl-posb pl-posv"></i>';
+      else if (bEl.classList.contains('pl-posv')) {
+        bEl.outerHTML = PL_POS_CHOIX[c.grp]
+          ? '<button class="pl-posb pl-pos-' + pos + '" title="' + PL_POS_LBL[pos] + ' — cliquer pour changer de poste"'
+            + ' onclick="plCyclePos(\'' + c.id + '\',\'' + rang + '\',\'' + jr + '\',' + hh + ')">' + pos + '</button>'
+          : (pos !== 'C' ? '<i class="pl-posb pl-pos-' + pos + '" title="' + PL_POS_LBL[pos] + '">' + pos + '</i>' : '<i class="pl-posb pl-posv"></i>');
+      }
+    }
+    let tot = 0;
+    PL_JOURS.slice(0, 6).forEach(j2 => { const d2 = sem[j2] || [null, null]; tot += plDurOf(d2[0]) + plDurOf(d2[1]); });
+    const tEl = document.getElementById('pl-trtot-' + c.id);
+    if (tEl) tEl.textContent = plFmtH(Math.round(tot * 4) / 4);
+    plTrCntRefresh();
+    plRender();
+  };
+  // Entrée / flèches : on circule dans la grille sans quitter le clavier.
+  window.plGridKey = function (e, el) {
+    if (e.key !== 'Enter' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const all = [...document.querySelectorAll('#pl-reg-body .pl-hin')];
+    const i = all.indexOf(el);
+    const next = all[i + (e.key === 'ArrowUp' ? -1 : 1)];
+    el.blur();
+    if (next) { next.focus(); next.select(); }
+  };
+  window.plRowCopy = function (cid, rang) {
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    const rot = plRotOf(c), nb = rot ? rot.longueur : 1;
+    const src = plSemOf(c, rang);
+    for (let w = 1; w <= nb; w++) {
+      if (String(w) === String(rang)) continue;
+      c.sem[String(w)] = JSON.parse(JSON.stringify(src));
+      if (c.pos && c.pos[rang]) c.pos[String(w)] = JSON.parse(JSON.stringify(c.pos[rang]));
+    }
+    plStamp(c); plPersist(); plToast(c.nom.split(' ')[0] + ' · semaine recopiée sur tout le cycle');
+    plRegRender(); plRender();
+  };
+
   function plRegRender() {
     ['t', 'c', 'r', 's'].forEach(t => { const b = document.getElementById('pl-rt-' + t); if (b) b.classList.toggle('pl-act', t === plRegView); });
+    const rtT = document.getElementById('pl-reg-title'), rtS = document.getElementById('pl-reg-sub');
+    if (rtT) rtT.textContent = plRegView === 't' ? 'Trames horaires — semaine type de l’équipe' : 'Réglages du planning';
+    if (rtS) rtS.innerHTML = plRegView === 't'
+      ? 'Construisez la semaine type de toute l’équipe : les compteurs du haut se recalculent à chaque modification.'
+      : 'Rotations, seuils d’alerte et contrats. Les seuils déclenchent les alertes de couverture (règles R1 bis et R2 du cahier des charges).';
     const el = document.getElementById('pl-reg-body'); if (!el) return;
+    const scrollY = el.scrollTop;
+    setTimeout(function () { try { el.scrollTop = scrollY; } catch (_e) { } }, 0);
     if (plRegView === 't') {
       // ── Trames horaires : TOUTE l'équipe sur une même semaine type, avec les compteurs ──
       // Les cycles diffèrent (Prép 2 sem, Ph 3 sem...) : le motif complet se répète sur le
@@ -753,7 +953,7 @@
       const anc0 = rots.length ? rots.map(r => r.ancrage).sort()[0] : plIso(new Date());
       const refDate = plAddD(plMonday(new Date(anc0 + 'T12:00')), (plTrRangSel - 1) * 7);
       function rangDe(c) { return String(plRang(plRotOf(c), refDate)); }
-      let selHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'
+      let selHtml = '<div class="pl-trtop"><div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">'
         + '<span style="font-size:11.5px;font-weight:700;color:var(--plmut);text-transform:uppercase;letter-spacing:.4px">Semaine type :</span>';
       for (let k = 1; k <= nbTypes; k++) {
         const dk = plAddD(plMonday(new Date(anc0 + 'T12:00')), (k - 1) * 7);
@@ -762,34 +962,11 @@
           + '<span>Type ' + k + '</span><span style="font-size:8.5px;font-weight:500;opacity:.8">' + det + '</span></button>';
       }
       selHtml += '<span style="font-size:10.5px;color:var(--plmut)">le motif complet se répète toutes les ' + nbTypes + ' semaines</span></div>';
-      // compteurs de la semaine type (trame pure, sans absence)
-      let cnt = '<table class="pl-tt" style="font-size:10.5px;margin-bottom:8px"><tr><th style="text-align:left">Disponibles</th>'
-        + PL_JOURS_FR.slice(0, 6).map(j => '<th colspan="2">' + j.slice(0, 3) + '</th>').join('') + '</tr>'
-        + '<tr><th style="text-align:left"></th>' + PL_JOURS.slice(0, 6).map(() => '<th style="font-size:9px">M</th><th style="font-size:9px">AM</th>').join('') + '</tr>';
-      ['Comptoir', 'Back-office', 'Logistique'].forEach(lbl => {
-        cnt += '<tr><th style="text-align:left">' + lbl + '</th>';
-        for (let k = 0; k < 6; k++) {
-          const d = plAddD(refDate, k);
-          ['M', 'AM'].forEach(demi => {
-            const e = plEffectif(d, demi);
-            if (lbl === 'Comptoir') {
-              const seuil = plSeuilComptoir(d, demi);
-              const kk = e.cpt < seuil ? 'bad' : (e.cpt === seuil ? 'lim' : 'ok');
-              cnt += '<td><span class="pl-pill ' + kk + '" style="padding:1px 5px"><b>' + e.cpt + '</b>/' + seuil + '</span></td>';
-            } else if (lbl === 'Back-office') {
-              cnt += '<td><span class="pl-pill nt" style="padding:1px 5px"><b>' + e.back + '</b></span></td>';
-            } else {
-              const livOk = demi === 'M' ? true : plLivraisonsCouvertes(d);
-              cnt += '<td><span class="pl-pill lg" style="padding:1px 5px"><b>' + e.logi + '</b></span>'
-                + (livOk ? '' : '<div><span class="pl-pill bad" style="padding:0 4px;font-size:8.5px" title="Livraisons 15h-18h : aucun logisticien — désigner un responsable">🚚?</span></div>') + '</td>';
-            }
-          });
-        }
-        cnt += '</tr>';
-      });
-      cnt += '</table>';
+      // compteurs de la semaine type (trame pure, sans absence) — rafraîchis à chaque frappe
+      plTrRef = refDate;
+      const cnt = '<div id="pl-trcnt">' + plTrCntHtml(refDate) + '</div></div>';   // fin .pl-trtop (bandeau collant)
       // grille équipe complète
-      let h = selHtml + cnt + '<table class="pl-tt" style="font-size:11px"><tr><th style="text-align:left">Collaborateur</th>'
+      let h = selHtml + cnt + '<div class="pl-trgrid"><table class="pl-tt" style="font-size:11px"><tr><th style="text-align:left">Collaborateur</th>'
         + PL_JOURS_FR.slice(0, 6).map(j => '<th>' + j.slice(0, 3) + '</th>').join('') + '<th>Total</th></tr>';
       let lastG = null;
       L('contrats').filter(c => c.actif !== false)
@@ -798,31 +975,41 @@
           if (c.grp !== lastG) { lastG = c.grp; h += '<tr><td colspan="8" style="text-align:left;background:linear-gradient(90deg,var(--placs),#FDF6F9);font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--plac)">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
           const rang = rangDe(c);
           const sem = (c.sem && (c.sem[rang] || c.sem['1'])) || {};
+          const posEd = !!PL_POS_CHOIX[c.grp];
           let tot = 0, cells = '';
           PL_JOURS.slice(0, 6).forEach(jr => {
             const day = sem[jr] || [null, null];
             let cell = '';
             for (let hh = 0; hh < 2; hh++) {
-              if (day[hh]) {
-                tot += plDurOf(day[hh]);
-                const pos = plPosOf(c, rang, jr, hh);
-                const part = pos === 'C' && plPartiel(day[hh], hh ? 'AM' : 'M');
-                const clicT = PL_POS_CHOIX[c.grp]
-                  ? ' pl-click" onclick="plCyclePos(\'' + c.id + '\',\'' + rang + '\',\'' + jr + '\',' + hh + ')"'
-                  : '"';
-                cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + clicT + ' style="font-size:9.5px;padding:1px 4px;padding-right:16px;margin:1px 0"'
-                  + ' title="' + plEsc((part ? plPartielTitle(day[hh], hh ? 'AM' : 'M') + ' — ' : '') + PL_POS_LBL[pos] + (PL_POS_CHOIX[c.grp] ? ' · cliquer pour changer' : '')) + '">' + plEsc(day[hh])
-                  + ((pos !== 'C' || PL_POS_CHOIX[c.grp]) ? '<i class="pl-pos pl-pos-' + pos + '">' + pos + '</i>' : '') + '</div>';
-              }
+              const v = day[hh] || '';
+              tot += plDurOf(v);
+              const pos = plPosOf(c, rang, jr, hh);
+              const part = v && pos === 'C' && plPartiel(v, hh ? 'AM' : 'M');
+              // pas d'horaire = pas de poste : la pastille ne s'affiche que sur un créneau travaillé
+              const badge = !v ? '<i class="pl-posb pl-posv"></i>'
+                : (posEd
+                  ? '<button class="pl-posb pl-pos-' + pos + '" title="' + PL_POS_LBL[pos] + ' — cliquer pour changer de poste"'
+                    + ' onclick="plCyclePos(\'' + c.id + '\',\'' + rang + '\',\'' + jr + '\',' + hh + ')">' + pos + '</button>'
+                  : (pos !== 'C' ? '<i class="pl-posb pl-pos-' + pos + '" title="' + PL_POS_LBL[pos] + '">' + pos + '</i>' : '<i class="pl-posb pl-posv"></i>'));
+              cell += '<div class="pl-hrow"><input class="pl-hin' + (pos !== 'C' ? ' pl-h' + pos : '') + (part ? ' pl-hpart' : '') + '"'
+                + ' value="' + plEsc(v) + '" placeholder="—" spellcheck="false"'
+                + ' data-c="' + c.id + '" data-r="' + rang + '" data-j="' + jr + '" data-h="' + hh + '"'
+                + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — saisir 9h-12h30, vider = repos'
+                + (part ? ' · ' + plEsc(plPartielTitle(v, hh ? 'AM' : 'M')) : '') + '"'
+                + ' onchange="plGridSet(this)" onkeydown="plGridKey(event,this)">' + badge + '</div>';
             }
-            cells += '<td style="padding:2px 3px;min-width:74px">' + (cell || '<span style="color:#C3CDC7;font-size:9px">—</span>') + '</td>';
+            cells += '<td class="pl-tc">' + cell + '</td>';
           });
           const rot = plRotOf(c);
           h += '<tr><td style="text-align:left;white-space:nowrap"><b>' + plEsc(c.nom) + '</b> <span style="font-size:9px;color:var(--plmut)">' + (rot ? plEsc(rot.lbl) + ' S' + rang : '') + '</span><br>'
-            + '<button class="pl-btn pl-ghost pl-mini" style="margin-top:2px" onclick="plEditTrame(\'' + c.id + '\')">✎ modifier</button></td>'
-            + cells + '<td style="font-weight:700;font-variant-numeric:tabular-nums">' + plFmtH(Math.round(tot * 4) / 4) + '</td></tr>';
+            + '<button class="pl-btn pl-ghost pl-mini" style="margin-top:2px" title="Voir et modifier toutes les semaines du cycle de ce collaborateur" onclick="plEditTrame(\'' + c.id + '\')">✎ cycle complet</button>'
+            + (rot && rot.longueur > 1 ? ' <button class="pl-btn pl-ghost pl-mini" style="margin-top:2px" title="Recopier cette semaine sur les autres semaines du cycle" onclick="plRowCopy(\'' + c.id + '\',\'' + rang + '\')">⧉</button>' : '') + '</td>'
+            + cells + '<td style="font-weight:700;font-variant-numeric:tabular-nums" id="pl-trtot-' + c.id + '">' + plFmtH(Math.round(tot * 4) / 4) + '</td></tr>';
         });
-      h += '</table><div class="pl-note">Positions : <i class="pl-pos pl-pos-C">C</i> comptoir · <i class="pl-pos pl-pos-B">B</i> back-office · <i class="pl-pos pl-pos-A">A</i> poste avancé. '
+      h += '</table></div><div class="pl-note"><b>Saisie directe :</b> tapez l’horaire dans la case (<b>9h-12h30</b>), videz-la pour un repos ; '
+        + 'Entrée ou ↓ passe à la case suivante, et les compteurs du haut se recalculent aussitôt. La pastille <i class="pl-posb pl-pos-C">C</i> à droite de chaque case change le poste (préparateurs). '
+        + '<b>⧉</b> recopie la semaine affichée sur les autres semaines du cycle, <b>✎ cycle complet</b> ouvre les 2 à 4 semaines d’un collaborateur côte à côte.<br>'
+        + 'Positions : <i class="pl-posb pl-pos-C">C</i> comptoir · <i class="pl-posb pl-pos-B">B</i> back-office · <i class="pl-posb pl-pos-A">A</i> poste avancé. '
         + 'Chaque ligne affiche la semaine du cycle propre au collaborateur (Prép sur 2 semaines pour l’alternance du samedi, Ph sur 3…) — la longueur des cycles se règle dans l’onglet Rotations (1 à 4 semaines). '
         + 'Les compteurs du haut se recalculent à chaque enregistrement : c’est ici qu’on vérifie que la trame met le bon nombre de personnes au bon endroit.</div>';
       el.innerHTML = h;
@@ -906,11 +1093,24 @@
     const cur = c.pos[rang][jour][hh] || 'C';
     const suite = { C: 'B', B: 'A', A: 'C' };
     c.pos[rang][jour][hh] = suite[cur] || 'C';
+    const pos = c.pos[rang][jour][hh];
     plStamp(c); plPersist();
-    plToast(c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[PL_JOURS.indexOf(jour)] + ' ' + (hh ? 'après-midi' : 'matin') + ' → ' + PL_POS_LBL[c.pos[rang][jour][hh]]);
+    plToast(c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[PL_JOURS.indexOf(jour)] + ' ' + (hh ? 'après-midi' : 'matin') + ' → ' + PL_POS_LBL[pos]);
     plRender();
-    const reg = document.getElementById('pl-ov-reg');
-    if (reg && reg.classList.contains('pl-on')) plRegRender();
+    // mise à jour ciblée de la grille (on garde la position de défilement et le focus)
+    const inp = document.querySelector('#pl-reg-body .pl-hin[data-c="' + cid + '"][data-r="' + rang + '"][data-j="' + jour + '"][data-h="' + hh + '"]');
+    if (inp) {
+      const part = inp.value && pos === 'C' && plPartiel(inp.value, hh ? 'AM' : 'M');
+      inp.classList.remove('pl-hB', 'pl-hA', 'pl-hpart');
+      if (pos !== 'C') inp.classList.add('pl-h' + pos);
+      if (part) inp.classList.add('pl-hpart');
+      const b = inp.nextElementSibling;
+      if (b) { b.className = 'pl-posb pl-pos-' + pos; b.textContent = pos; b.title = PL_POS_LBL[pos] + ' — cliquer pour changer de poste'; }
+      plTrCntRefresh();
+    } else {
+      const reg = document.getElementById('pl-ov-reg');
+      if (reg && reg.classList.contains('pl-on')) plRegRender();
+    }
   };
   window.plSetBase = function (cid, v) {
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
@@ -1108,7 +1308,7 @@
   };
 
   // ---------- init ----------
-  function plInit() { try { plInject(); } catch (e) { console.warn('pl init', e); } }
+  function plInit() { try { plInject(); plHashWatch(); } catch (e) { console.warn('pl init', e); } }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', plInit);
   else plInit();
   // premier rendu quand la section devient visible (showSec ne notifie pas : on rend à l'injection + à chaque sync)
