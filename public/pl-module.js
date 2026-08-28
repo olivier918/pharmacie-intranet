@@ -147,14 +147,35 @@
     const w = plWeeksBetween(rot.ancrage, date);
     return ((w % rot.longueur) + rot.longueur + (rot.rangAncrage || 1) - 1) % rot.longueur + 1;
   }
-  // horaires théoriques [matin, aprem] d'un contrat à une date (trame seule — Lot 1)
-  function plSlots(c, date) {
+  // horaires de la TRAME [matin, aprem] d'un contrat à une date
+  function plSlotsTrame(c, date) {
     const rot = plRotOf(c);
     const rang = String(plRang(rot, date));
     const sem = (c.sem && (c.sem[rang] || c.sem['1'])) || null;
     if (!sem) return [null, null];
     const day = sem[plDayKey(date)];
     return Array.isArray(day) ? [day[0] || null, day[1] || null] : [null, null];
+  }
+  // exception d'horaire du jour (type 'horaire') pour une demi-journée : record ou null
+  function plExOf(c, iso, demi) {
+    return L('exceptions').find(x => x.contratId === c.id && x.date === iso && x.type === 'horaire' && x.demi === demi) || null;
+  }
+  // horaires EFFECTIFS : trame + exceptions du jour (départ anticipé, créneau ajouté/supprimé…)
+  function plSlots(c, date) {
+    const t = plSlotsTrame(c, date), iso = plIso(date);
+    const out = [t[0], t[1]];
+    ['M', 'AM'].forEach((demi, i) => {
+      const ex = plExOf(c, iso, demi);
+      if (ex) out[i] = ex.horaire || null;   // horaire vide = ne travaille pas ce jour-là
+    });
+    return out;
+  }
+  // position effective à une date (exception du jour > trame)
+  function plPosEff(c, date, hh) {
+    const ex = plExOf(c, plIso(date), hh ? 'AM' : 'M');
+    if (ex && ex.pos) return ex.pos;
+    const rang = String(plRang(plRotOf(c), date));
+    return plPosOf(c, rang, plDayKey(date), hh);
   }
   // absence validée (exception de type absence) pour un contrat à une date → {motif} ou null par demi-journée
   function plAbs(c, iso) {
@@ -241,8 +262,7 @@
       if (c.actif === false) return;
       const sl = plSlots(c, date), ab = plAbs(c, iso);
       if (!sl[h] || ab[h]) return;                       // pas présent cette demi-journée
-      const rot = plRotOf(c), rang = String(plRang(rot, date));
-      const pos = plPosOf(c, rang, plDayKey(date), h);
+      const pos = plPosEff(c, date, h);
       if (c.estPharmacien) { ph++; cpt++; return; }      // pharmacien : toujours comptoir
       if (c.grp === 'entretien') return;                 // hors effectif
       if (c.grp === 'logi') { logi++; return; }          // logistique : compteur dédié
@@ -341,6 +361,11 @@
     font-weight:800;width:13px;height:13px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
   .pl-pos-C{background:#CFE7DA;color:#0B5B44}.pl-pos-B{background:#C9D8EC;color:#2C4A78}.pl-pos-A{background:#F2CBDC;color:var(--plrosei)}
   .pl-shift.pl-part{border-left-color:var(--plwarn);background:var(--plforb);color:#7A5A10}
+  .pl-shift.pl-mod{box-shadow:inset 0 0 0 1.5px var(--plwarn)}
+  .pl-exdot{position:absolute;left:-4px;top:-4px;width:9px;height:9px;border-radius:50%;background:var(--plwarn);
+    border:1.5px solid #fff;font-style:normal}
+  .pl-cell.pl-click{cursor:pointer}
+  .pl-cell.pl-click:hover{background:#FBF8F6}
   .pl-shift.pl-click{cursor:pointer}
   .pl-shift.pl-click:hover{filter:brightness(.94);box-shadow:0 1px 4px rgba(70,40,55,.18)}
   .pl-chip.pl-ch-part{background:var(--plforb);color:var(--plwarn)}.pl-chip.pl-ch-part i{background:var(--plwarn)}
@@ -463,6 +488,18 @@
     <div class="pl-actions">
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-trame')">Annuler</button>
       <button class="pl-btn pl-pri" onclick="plSaveTrame()">Enregistrer la trame</button>
+    </div>
+  </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-jour"><div class="pl-box" style="width:min(560px,96vw)">
+    <h3 id="pl-jr-title">Modifier ce jour</h3>
+    <div class="pl-sub">Modification valable <b>ce jour uniquement</b> — la semaine type n'est pas touchée.
+    Laisser l'horaire vide = ne travaille pas sur cette demi-journée ; saisir un horaire sur une demi-journée de repos = créneau ajouté.</div>
+    <div id="pl-jr-body"></div>
+    <div class="pl-actions">
+      <button class="pl-btn pl-ghost" id="pl-jr-reset" onclick="plResetJour()">↩ Rétablir la trame</button>
+      <span style="flex:1"></span>
+      <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-jour')">Annuler</button>
+      <button class="pl-btn pl-pri" onclick="plSaveJour()">Enregistrer</button>
     </div>
   </div></div>
   <div class="pl-toast" id="pl-toast"></div>`;
@@ -592,22 +629,24 @@
       let cells = '';
       days.forEach(d => {
         const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso);
-        const rotC = plRotOf(c), rangC = String(plRang(rotC, d));
         let cell = '';
         for (let hh = 0; hh < 2; hh++) {
           if (ab[hh]) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
           else if (sl[hh]) {
-            const pos = plPosOf(c, rangC, plDayKey(d), hh);
+            const pos = plPosEff(c, d, hh);
+            const ex = plExOf(c, iso, hh ? 'AM' : 'M');
             const posBadge = (pos !== 'C' || PL_POS_CHOIX[c.grp]) ? '<i class="pl-pos pl-pos-' + pos + '" title="' + PL_POS_LBL[pos] + '">' + pos + '</i>' : '';
             const part = pos === 'C' && plPartiel(sl[hh], hh ? 'AM' : 'M');
-            const clic = PL_POS_CHOIX[c.grp]
-              ? ' pl-click" onclick="plCyclePos(\'' + c.id + '\',\'' + rangC + '\',\'' + plDayKey(d) + '\',' + hh + ')" title="'
-                + plEsc((part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '') + PL_POS_LBL[pos] + ' · cliquer pour changer de position (semaine type)') + '"'
-              : (part ? '" title="' + plEsc(plPartielTitle(sl[hh], hh ? 'AM' : 'M')) + '"' : '"');
-            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + clic + '>' + plEsc(sl[hh]) + posBadge + '</div>';
+            const tt = (ex ? 'Horaire modifié ce jour (trame : ' + (plSlotsTrame(c, d)[hh] || 'repos') + ') — ' : '')
+              + (part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '')
+              + PL_POS_LBL[pos] + ' · cliquer pour modifier ce jour';
+            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + ' pl-click" title="' + plEsc(tt) + '">' + plEsc(sl[hh]) + posBadge + (ex ? '<i class="pl-exdot" title="Exception du jour"></i>' : '') + '</div>';
+          } else {
+            const ex = plExOf(c, iso, hh ? 'AM' : 'M');
+            if (ex) cell += '<div class="pl-off pl-mod pl-click" style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
           }
         }
-        cells += '<td class="pl-cell">' + (cell || '<div class="pl-off">repos</div>') + '</td>';
+        cells += '<td class="pl-cell pl-click" onclick="plEditJour(\'' + c.id + '\',\'' + iso + '\')">' + (cell || '<div class="pl-off">repos</div>') + '</td>';
       });
       h += '<tr><td class="pl-who"><b>' + plEsc(c.nom) + '</b><small>' + plEsc(c.role || '') + '</small>'
         + '<div class="pl-hrs ' + cls + '">' + plFmtH(planned) + (base != null ? ' / ' + plFmtH(base) : '') + '</div></td>' + cells + '</tr>';
@@ -893,6 +932,66 @@
     let s = p[listName].find(x => x.jour === jour && x.demi === demi);
     if (!s) { s = { id: listName + ':' + jour + ':' + demi, jour: jour, demi: demi }; p[listName].push(s); }
     s.mini = Math.max(0, parseInt(v, 10) || 0); plStamp(s); plStamp(p); plPersist(); plRender();
+  };
+
+  // ---------- exception du jour (clic sur la vue Semaine) ----------
+  let plJourCid = null, plJourIso = null;
+  window.plEditJour = function (cid, iso) {
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    plJourCid = cid; plJourIso = iso;
+    const d = new Date(iso + 'T12:00');
+    document.getElementById('pl-jr-title').textContent = c.nom + ' — ' + PL_JOURS_FR[(d.getDay() + 6) % 7].toLowerCase() + ' ' + d.getDate() + ' ' + PL_MOIS_FR[d.getMonth()];
+    const trame = plSlotsTrame(c, d), eff = plSlots(c, d);
+    const posEditable = !!PL_POS_CHOIX[c.grp];
+    let h = '<table class="pl-tt"><tr><th></th><th>Horaire du jour</th>' + (posEditable ? '<th>Position</th>' : '') + '<th>Trame</th></tr>';
+    ['M', 'AM'].forEach((demi, hh) => {
+      const posCur = plPosEff(c, d, hh);
+      h += '<tr><th>' + (demi === 'M' ? 'Matin' : 'Après-midi') + '</th>'
+        + '<td><input id="pl-jr-h-' + hh + '" style="width:110px" value="' + plEsc(eff[hh] || '') + '" placeholder="repos"></td>'
+        + (posEditable ? '<td><select id="pl-jr-p-' + hh + '" class="pl-inp" style="height:30px">'
+          + ['C', 'B', 'A'].map(p => '<option value="' + p + '"' + (posCur === p ? ' selected' : '') + '>' + p + ' · ' + PL_POS_LBL[p] + '</option>').join('') + '</select></td>' : '')
+        + '<td style="color:var(--plmut)">' + plEsc(trame[hh] || 'repos') + '</td></tr>';
+    });
+    h += '</table>';
+    document.getElementById('pl-jr-body').innerHTML = h;
+    const hasEx = plExOf(c, iso, 'M') || plExOf(c, iso, 'AM');
+    document.getElementById('pl-jr-reset').style.display = hasEx ? '' : 'none';
+    plOpen('pl-ov-jour');
+  };
+  function plDropEx(cid, iso, demi) {
+    const arr = L('exceptions');
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const x = arr[i];
+      if (x.contratId === cid && x.date === iso && x.type === 'horaire' && x.demi === demi) arr.splice(i, 1);
+    }
+  }
+  window.plSaveJour = function () {
+    const c = L('contrats').find(x => x.id === plJourCid); if (!c) return;
+    const d = new Date(plJourIso + 'T12:00'), trame = plSlotsTrame(c, d);
+    const rang = String(plRang(plRotOf(c), d));
+    ['M', 'AM'].forEach((demi, hh) => {
+      const hEl = document.getElementById('pl-jr-h-' + hh); if (!hEl) return;
+      const val = hEl.value.trim() || null;
+      const pEl = document.getElementById('pl-jr-p-' + hh);
+      const posTrame = plPosOf(c, rang, plDayKey(d), hh);
+      const posVal = pEl ? pEl.value : posTrame;
+      const memeHoraire = (val || null) === (trame[hh] || null);
+      const memePos = posVal === posTrame;
+      plDropEx(c.id, plJourIso, demi);
+      if (!memeHoraire || !memePos) {
+        plExceptions.push({ id: plNewId('ex'), contratId: c.id, date: plJourIso, demi: demi, type: 'horaire',
+          horaire: val, pos: (pEl && !memePos) ? posVal : null,
+          saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() });
+      }
+    });
+    plPersist(); plClose('pl-ov-jour');
+    plToast('Journée du ' + plJourIso.split('-').reverse().join('/') + ' enregistrée pour ' + c.nom.split(' ')[0]);
+    plRender();
+  };
+  window.plResetJour = function () {
+    const c = L('contrats').find(x => x.id === plJourCid); if (!c) return;
+    plDropEx(c.id, plJourIso, 'M'); plDropEx(c.id, plJourIso, 'AM');
+    plPersist(); plClose('pl-ov-jour'); plToast('Trame rétablie'); plRender();
   };
 
   // ---------- éditeur de trame ----------
