@@ -62,10 +62,30 @@
   // ---------- groupes (fonctions) ----------
   const PL_GRPS = {
     ph: { lbl: 'Pharmaciens', ord: 1 }, prep: { lbl: 'Préparateurs', ord: 2 },
-    avance: { lbl: 'Poste avancé', ord: 3 }, dermo: { lbl: 'Dermo-conseil', ord: 4 },
-    pda: { lbl: 'PDA', ord: 5 }, logi: { lbl: 'Logistique', ord: 6 },
-    entretien: { lbl: 'Entretien', ord: 7 }, renfort: { lbl: 'Étudiants · renforts', ord: 8 }
+    avance: { lbl: 'Esthéticienne — poste avancé', ord: 3 }, secr: { lbl: 'Secrétariat', ord: 4 },
+    logi: { lbl: 'Logistique', ord: 5 }, entretien: { lbl: 'Entretien', ord: 6 },
+    renfort: { lbl: 'Étudiants · renforts', ord: 7 }
   };
+  // Position d'une demi-journée travaillée : C = comptoir, B = back-office, A = poste avancé.
+  // Règles d'Olivier (28/08/2026) : pharmaciens TOUJOURS comptoir ; préparateurs C/B/A au choix
+  // (B et A = pas comptés au comptoir) ; esthéticienne toujours A quand présente ; secrétaire et
+  // logistique toujours back-office ; entretien hors effectif ; étudiants viennent pour le comptoir.
+  const PL_POS_DEFAUT = { ph: 'C', prep: 'C', avance: 'A', secr: 'B', logi: 'B', entretien: 'B', renfort: 'C' };
+  const PL_POS_CHOIX = { prep: ['C', 'B', 'A'] };   // seuls les préparateurs choisissent leur position
+  const PL_POS_LBL = { C: 'Comptoir', B: 'Back-office', A: 'Poste avancé' };
+  function plPosOf(c, rang, jour, hh) {
+    if (PL_POS_CHOIX[c.grp] && c.pos && c.pos[rang] && c.pos[rang][jour] && c.pos[rang][jour][hh]) return c.pos[rang][jour][hh];
+    return PL_POS_DEFAUT[c.grp] || 'C';
+  }
+  // migration douce des anciens groupes du seed initial (dermo→secr, pda→logi)
+  function plMigrate() {
+    let ch = false;
+    L('contrats').forEach(c => {
+      if (c.grp === 'dermo') { c.grp = 'secr'; c.role = 'Secrétaire'; plStamp(c); ch = true; }
+      if (c.grp === 'pda') { c.grp = 'logi'; c.role = 'Logistique'; plStamp(c); ch = true; }
+    });
+    if (ch) plPersist();
+  }
 
   // ---------- moteur : rotation → semaine de cycle → horaires ----------
   function plRotOf(c) { return L('rotations').find(r => r.id === c.rotationId) || null; }
@@ -124,24 +144,30 @@
     const s = arr.find(x => x.jour === jr && x.demi === demi);
     return s ? s.mini : 1;
   }
-  // effectifs présents une demi-journée : {cpt, ph, avOk}
+  // effectifs présents une demi-journée, par POSITION : {cpt, back, ph, avOk}
+  // cpt = disponibles au comptoir (pharmaciens + préparateurs en C + étudiants) ;
+  // back = back-office (préparateurs en B, secrétariat, logistique) ; entretien hors effectif.
   function plEffectif(date, demi) {
     const iso = plIso(date); const h = demi === 'M' ? 0 : 1;
-    let cpt = 0, ph = 0, avPresent = false, avId = null;
+    let cpt = 0, back = 0, ph = 0, avPresent = false;
     L('contrats').forEach(c => {
       if (c.actif === false) return;
       const sl = plSlots(c, date), ab = plAbs(c, iso);
-      const present = !!sl[h] && !ab[h];
-      if (!present) return;
-      if (c.grp === 'avance') { avPresent = true; avId = c.id; return; } // poste avancé : jamais compté
-      if (c.compteComptoir !== false && c.grp !== 'entretien' && c.grp !== 'logi' && c.grp !== 'pda' && c.grp !== 'dermo') cpt++;
-      if (c.estPharmacien) ph++;
+      if (!sl[h] || ab[h]) return;                       // pas présent cette demi-journée
+      const rot = plRotOf(c), rang = String(plRang(rot, date));
+      const pos = plPosOf(c, rang, plDayKey(date), h);
+      if (c.estPharmacien) { ph++; cpt++; return; }      // pharmacien : toujours comptoir
+      if (c.grp === 'entretien') return;                 // hors effectif
+      if (pos === 'A') { avPresent = true; return; }     // poste avancé : jamais compté comptoir
+      if (pos === 'B') { back++; return; }               // back-office : pas disponible comptoir
+      cpt++;                                             // position C
     });
-    // R3 : esthéticienne absente → une préparatrice couvre le poste avancé, décomptée du comptoir
+    // R3 : esthéticienne (ou position A) absente → une préparatrice couvre le poste avancé,
+    // automatiquement décomptée du comptoir (généralisation de SI(Allison=0 ; nb−1 ; nb)).
     const avContrat = L('contrats').find(c => c.grp === 'avance' && c.actif !== false);
     let avCouvert = avPresent;
     if (avContrat && !avPresent && cpt > 0) { cpt -= 1; avCouvert = true; }
-    return { cpt: cpt, ph: ph, avOk: avCouvert };
+    return { cpt: cpt, back: back, ph: ph, avOk: avCouvert };
   }
 
   // ---------- état ----------
@@ -215,6 +241,16 @@
   .pl-abs.cp{background:var(--plcpb);color:var(--plcp)}.pl-abs.mal{background:var(--plmalb);color:var(--plmal)}
   .pl-abs.rec{background:var(--plrecb);color:var(--plrec)}.pl-abs.for{background:var(--plforb);color:var(--plfor)}
   .pl-off{color:#C3CDC7;font-size:10px;padding:6px 7px}
+  .pl-cntrow td{background:#FBFAF9;border-bottom:2px solid var(--plline);padding:5px 6px}
+  .pl-cntlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
+  .pl-pill.nt{background:#EDF0F4;color:#4A5B74}
+  .pl-pill b{font-variant-numeric:tabular-nums}
+  .pl-shift{position:relative;padding-right:20px}
+  .pl-shift.pl-pB{border-left-color:#5B7BA8;background:#E9EFF6;color:#2C4A78}
+  .pl-shift.pl-pA{border-left-color:var(--plrose);background:var(--plroses);color:var(--plrosei)}
+  .pl-pos{position:absolute;right:3px;top:50%;transform:translateY(-50%);font-style:normal;font-size:8.5px;
+    font-weight:800;width:13px;height:13px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
+  .pl-pos-C{background:#CFE7DA;color:#0B5B44}.pl-pos-B{background:#C9D8EC;color:#2C4A78}.pl-pos-A{background:#F2CBDC;color:var(--plrosei)}
   .pl-empty{color:var(--plmut);text-align:center;padding:44px 12px;line-height:1.6}
   .pl-empty b{font-size:1rem;color:var(--plink)}
   /* mois */
@@ -287,6 +323,7 @@
       </div>
       <span class="pl-grow"></span>
       <select class="pl-sel" id="pl-fgrp" onchange="plFiltre(this.value)"><option value="">Toute l'équipe</option></select>
+      <button class="pl-btn pl-rose" onclick="plOpenTrames()">🗓 Trames horaires</button>
       <button class="pl-btn pl-ghost" id="pl-btn-reg" onclick="plOpenReglages()">⚙ Réglages</button>
     </div>
     <div class="pl-legend">
@@ -308,6 +345,7 @@
     <h3>Réglages du planning</h3>
     <div class="pl-sub">Rotations, seuils d'alerte et contrats. Les seuils déclenchent les alertes de couverture (règles R1 bis et R2 du cahier des charges).</div>
     <div class="pl-tabsC">
+      <button id="pl-rt-t" onclick="plRegTab('t')">Trames horaires</button>
       <button id="pl-rt-c" class="pl-act" onclick="plRegTab('c')">Contrats</button>
       <button id="pl-rt-r" onclick="plRegTab('r')">Rotations</button>
       <button id="pl-rt-s" onclick="plRegTab('s')">Seuils d'alerte</button>
@@ -376,6 +414,7 @@
   // ---------- rendu principal ----------
   window.plRender = function () {
     plInject();
+    plMigrate();
     const body = document.getElementById('pl-body');
     if (!body) return;
     if (!L('contrats').length) {
@@ -412,6 +451,21 @@
         + '<div class="pl-cnt">' + pill(eM, sM, pM, 'M') + pill(eA, sA, pA, 'AM') + '</div></th>';
     });
     h += '</tr></thead><tbody>';
+    // ── compteurs par demi-journée (repris d'OffiPlanning) : disponibles COMPTOIR + BACK-OFFICE ──
+    h += '<tr class="pl-cntrow"><td class="pl-who pl-cntlbl">Comptoir</td>';
+    days.forEach(d => {
+      const eM = plEffectif(d, 'M'), eA = plEffectif(d, 'AM');
+      const sM = plSeuilComptoir(d, 'M'), sA = plSeuilComptoir(d, 'AM');
+      function cp(e, s, lbl) { const k = e.cpt < s ? 'bad' : (e.cpt === s ? 'lim' : 'ok'); return '<span class="pl-pill ' + k + '">' + lbl + ' <b>' + e.cpt + '</b>/' + s + '</span>'; }
+      h += '<td><div class="pl-cnt">' + cp(eM, sM, 'M') + cp(eA, sA, 'AM') + '</div></td>';
+    });
+    h += '</tr><tr class="pl-cntrow"><td class="pl-who pl-cntlbl">Back-office</td>';
+    days.forEach(d => {
+      const eM = plEffectif(d, 'M'), eA = plEffectif(d, 'AM');
+      h += '<td><div class="pl-cnt"><span class="pl-pill nt">M <b>' + eM.back + '</b></span><span class="pl-pill nt">AM <b>' + eA.back + '</b></span>'
+        + (eM.avOk && eA.avOk ? '' : '<span class="pl-pill bad">poste avancé ?</span>') + '</div></td>';
+    });
+    h += '</tr>';
     let lastGrp = null;
     plContratsVisibles().forEach(c => {
       if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td colspan="7">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
@@ -420,10 +474,15 @@
       let cells = '';
       days.forEach(d => {
         const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso);
+        const rotC = plRotOf(c), rangC = String(plRang(rotC, d));
         let cell = '';
         for (let hh = 0; hh < 2; hh++) {
           if (ab[hh]) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
-          else if (sl[hh]) cell += '<div class="pl-shift' + (String(sl[hh]).indexOf('6h') === 0 ? ' early' : '') + '">' + plEsc(sl[hh]) + '</div>';
+          else if (sl[hh]) {
+            const pos = plPosOf(c, rangC, plDayKey(d), hh);
+            const posBadge = (pos !== 'C' || PL_POS_CHOIX[c.grp]) ? '<i class="pl-pos pl-pos-' + pos + '" title="' + PL_POS_LBL[pos] + '">' + pos + '</i>' : '';
+            cell += '<div class="pl-shift pl-p' + pos + (String(sl[hh]).indexOf('6h') === 0 ? ' early' : '') + '">' + plEsc(sl[hh]) + posBadge + '</div>';
+          }
         }
         cells += '<td class="pl-cell">' + (cell || '<div class="pl-off">repos</div>') + '</td>';
       });
@@ -495,12 +554,95 @@
 
   // ---------- réglages ----------
   let plRegView = 'c';
+  let plTrRotSel = 'rot:prep', plTrRangSel = 1;
   window.plOpenReglages = function () { plRegView = 'c'; plRegRender(); plOpen('pl-ov-reg'); };
+  window.plOpenTrames = function () { plRegView = 't'; plRegRender(); plOpen('pl-ov-reg'); };
   window.plRegTab = function (t) { plRegView = t; plRegRender(); };
+  window.plTrSel = function (rid, rang) { if (rid) plTrRotSel = rid; plTrRangSel = +rang; plRegRender(); };
   function plRegRender() {
-    ['c', 'r', 's'].forEach(t => { const b = document.getElementById('pl-rt-' + t); if (b) b.classList.toggle('pl-act', t === plRegView); });
+    ['t', 'c', 'r', 's'].forEach(t => { const b = document.getElementById('pl-rt-' + t); if (b) b.classList.toggle('pl-act', t === plRegView); });
     const el = document.getElementById('pl-reg-body'); if (!el) return;
-    if (plRegView === 'c') {
+    if (plRegView === 't') {
+      // ── Trames horaires : TOUTE l'équipe sur une même semaine type, avec les compteurs ──
+      // Les cycles diffèrent (Prép 2 sem, Ph 3 sem...) : le motif complet se répète sur le
+      // plus petit multiple commun des cycles actifs. Chaque « semaine type k » montre, pour
+      // chacun, la semaine de SON cycle qui tombe cette semaine-là — équipe complète, pour
+      // vérifier qu'on a le bon nombre de personnes au bon endroit avant de valider la trame.
+      const rots = L('rotations').filter(r => L('contrats').some(c => c.actif !== false && c.rotationId === r.id));
+      function pgcd(a, b) { return b ? pgcd(b, a % b) : a; }
+      let nbTypes = 1;
+      rots.forEach(r => { nbTypes = nbTypes * r.longueur / pgcd(nbTypes, r.longueur); });
+      nbTypes = Math.min(nbTypes, 12);
+      if (plTrRangSel > nbTypes) plTrRangSel = 1;
+      const anc0 = rots.length ? rots.map(r => r.ancrage).sort()[0] : plIso(new Date());
+      const refDate = plAddD(plMonday(new Date(anc0 + 'T12:00')), (plTrRangSel - 1) * 7);
+      function rangDe(c) { return String(plRang(plRotOf(c), refDate)); }
+      let selHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'
+        + '<span style="font-size:11.5px;font-weight:700;color:var(--plmut);text-transform:uppercase;letter-spacing:.4px">Semaine type :</span>';
+      for (let k = 1; k <= nbTypes; k++) {
+        const dk = plAddD(plMonday(new Date(anc0 + 'T12:00')), (k - 1) * 7);
+        const det = rots.map(r => plEsc(r.lbl) + ' S' + plRang(r, dk)).join(' · ');
+        selHtml += '<button class="pl-btn ' + (k === plTrRangSel ? 'pl-pri' : 'pl-ghost') + ' pl-mini" style="flex-direction:column;gap:0;line-height:1.25" onclick="plTrSel(null,' + k + ')">'
+          + '<span>Type ' + k + '</span><span style="font-size:8.5px;font-weight:500;opacity:.8">' + det + '</span></button>';
+      }
+      selHtml += '<span style="font-size:10.5px;color:var(--plmut)">le motif complet se répète toutes les ' + nbTypes + ' semaines</span></div>';
+      // compteurs de la semaine type (trame pure, sans absence)
+      let cnt = '<table class="pl-tt" style="font-size:10.5px;margin-bottom:8px"><tr><th style="text-align:left">Disponibles</th>'
+        + PL_JOURS_FR.slice(0, 6).map(j => '<th colspan="2">' + j.slice(0, 3) + '</th>').join('') + '</tr>'
+        + '<tr><th style="text-align:left"></th>' + PL_JOURS.slice(0, 6).map(() => '<th style="font-size:9px">M</th><th style="font-size:9px">AM</th>').join('') + '</tr>';
+      ['Comptoir', 'Back-office'].forEach(lbl => {
+        cnt += '<tr><th style="text-align:left">' + lbl + '</th>';
+        for (let k = 0; k < 6; k++) {
+          const d = plAddD(refDate, k);
+          ['M', 'AM'].forEach(demi => {
+            const e = plEffectif(d, demi);
+            if (lbl === 'Comptoir') {
+              const seuil = plSeuilComptoir(d, demi);
+              const kk = e.cpt < seuil ? 'bad' : (e.cpt === seuil ? 'lim' : 'ok');
+              cnt += '<td><span class="pl-pill ' + kk + '" style="padding:1px 5px"><b>' + e.cpt + '</b>/' + seuil + '</span></td>';
+            } else {
+              cnt += '<td><span class="pl-pill nt" style="padding:1px 5px"><b>' + e.back + '</b></span></td>';
+            }
+          });
+        }
+        cnt += '</tr>';
+      });
+      cnt += '</table>';
+      // grille équipe complète
+      let h = selHtml + cnt + '<table class="pl-tt" style="font-size:11px"><tr><th style="text-align:left">Collaborateur</th>'
+        + PL_JOURS_FR.slice(0, 6).map(j => '<th>' + j.slice(0, 3) + '</th>').join('') + '<th>Total</th></tr>';
+      let lastG = null;
+      L('contrats').filter(c => c.actif !== false)
+        .sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord || (a.nom || '').localeCompare(b.nom || ''))
+        .forEach(c => {
+          if (c.grp !== lastG) { lastG = c.grp; h += '<tr><td colspan="8" style="text-align:left;background:linear-gradient(90deg,var(--placs),#FDF6F9);font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--plac)">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
+          const rang = rangDe(c);
+          const sem = (c.sem && (c.sem[rang] || c.sem['1'])) || {};
+          let tot = 0, cells = '';
+          PL_JOURS.slice(0, 6).forEach(jr => {
+            const day = sem[jr] || [null, null];
+            let cell = '';
+            for (let hh = 0; hh < 2; hh++) {
+              if (day[hh]) {
+                tot += plDurOf(day[hh]);
+                const pos = plPosOf(c, rang, jr, hh);
+                cell += '<div class="pl-shift pl-p' + pos + '" style="font-size:9.5px;padding:1px 4px;padding-right:16px;margin:1px 0">' + plEsc(day[hh])
+                  + ((pos !== 'C' || PL_POS_CHOIX[c.grp]) ? '<i class="pl-pos pl-pos-' + pos + '">' + pos + '</i>' : '') + '</div>';
+              }
+            }
+            cells += '<td style="padding:2px 3px;min-width:74px">' + (cell || '<span style="color:#C3CDC7;font-size:9px">—</span>') + '</td>';
+          });
+          const rot = plRotOf(c);
+          h += '<tr><td style="text-align:left;white-space:nowrap"><b>' + plEsc(c.nom) + '</b> <span style="font-size:9px;color:var(--plmut)">' + (rot ? plEsc(rot.lbl) + ' S' + rang : '') + '</span><br>'
+            + '<button class="pl-btn pl-ghost pl-mini" style="margin-top:2px" onclick="plEditTrame(\'' + c.id + '\')">✎ modifier</button></td>'
+            + cells + '<td style="font-weight:700;font-variant-numeric:tabular-nums">' + plFmtH(Math.round(tot * 4) / 4) + '</td></tr>';
+        });
+      h += '</table><div class="pl-note">Positions : <i class="pl-pos pl-pos-C">C</i> comptoir · <i class="pl-pos pl-pos-B">B</i> back-office · <i class="pl-pos pl-pos-A">A</i> poste avancé. '
+        + 'Chaque ligne affiche la semaine du cycle propre au collaborateur (Prép sur 2 semaines pour l’alternance du samedi, Ph sur 3…) — la longueur des cycles se règle dans l’onglet Rotations (1 à 4 semaines). '
+        + 'Les compteurs du haut se recalculent à chaque enregistrement : c’est ici qu’on vérifie que la trame met le bon nombre de personnes au bon endroit.</div>';
+      el.innerHTML = h;
+    } else if (plRegView === 'c') {
+
       let h = '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Base hebdo</th><th>Rotation</th><th>Trame</th></tr>';
       L('contrats').filter(c => c.actif !== false).sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord).forEach(c => {
         const rot = plRotOf(c);
@@ -513,14 +655,16 @@
       h += '</table><div class="pl-note">La base hebdo sert de référence au total de la semaine (vert = conforme, rouge = écart). Pour un cycle à bases variables (ex. 34,5 / 35,5), saisir la moyenne.</div>';
       el.innerHTML = h;
     } else if (plRegView === 'r') {
-      let h = '<table class="pl-list"><tr><th>Rotation</th><th>Longueur</th><th>Semaine en cours</th><th>Ancrage</th></tr>';
+      let h = '<table class="pl-list"><tr><th>Rotation</th><th>Cycle</th><th>Semaine en cours</th><th>Ancrage</th></tr>';
       L('rotations').forEach(r => {
         h += '<tr><td><b>' + plEsc(r.lbl) + '</b></td>'
-          + '<td>' + r.longueur + ' semaines</td>'
+          + '<td><select class="pl-inp" style="height:30px;width:130px" onchange="plSetLongueur(\'' + r.id + '\',this.value)">'
+          + [1, 2, 3, 4].map(n => '<option value="' + n + '"' + (r.longueur === n ? ' selected' : '') + '>' + n + ' semaine' + (n > 1 ? 's' : '') + '</option>').join('')
+          + '</select></td>'
           + '<td>Semaine ' + plRang(r, new Date()) + '</td>'
           + '<td><input type="date" class="pl-inp" style="height:30px" value="' + plEsc(r.ancrage) + '" onchange="plSetAncrage(\'' + r.id + '\',this.value)"> = semaine ' + (r.rangAncrage || 1) + '</td></tr>';
       });
-      h += '</table><div class="pl-note">La semaine de cycle est calculée automatiquement à partir de l’ancrage — plus rien à recopier à la main. L’ancrage importé : semaine du 07/09/2026 = Prép S1 · Ph S1 · PDA S4 (relevé du planning 2026).</div>';
+      h += '</table><div class="pl-note">Le cycle se règle de 1 à 4 semaines : 2 pour l’alternance du samedi des préparateurs, 3 pour les pharmaciens. La semaine en cours est calculée depuis l’ancrage — plus rien à recopier à la main (ancrage importé : semaine du 07/09/2026 = Prép S1 · Ph S1 · PDA S4).</div>';
       el.innerHTML = h;
     } else {
       const p = P();
@@ -554,6 +698,12 @@
     const n = parseFloat(String(v).replace(',', '.'));
     c.base = isNaN(n) ? null : n; plStamp(c); plPersist(); plRender();
   };
+  window.plSetLongueur = function (rid, v) {
+    const r = L('rotations').find(x => x.id === rid); if (!r) return;
+    const n = Math.max(1, Math.min(4, parseInt(v, 10) || 1));
+    r.longueur = n; if ((r.rangAncrage || 1) > n) r.rangAncrage = 1;
+    plStamp(r); plPersist(); plRegRender(); plRender();
+  };
   window.plSetAncrage = function (rid, v) {
     const r = L('rotations').find(x => x.id === rid); if (!r || !v) return;
     r.ancrage = v; plStamp(r); plPersist(); plRegRender(); plRender();
@@ -578,11 +728,19 @@
       h += '<b style="font-size:12.5px;display:block;margin-top:' + (w > 1 ? '14px' : '0') + '">Semaine ' + w + ' du cycle'
         + (nb > 1 ? ' <button class="pl-btn pl-ghost pl-mini" onclick="plCopySem(' + w + ')">⧉ copier vers les autres</button>' : '') + '</b>';
       h += '<table class="pl-tt"><tr><th></th>' + PL_JOURS_FR.slice(0, 6).map(j => '<th>' + j + '</th>').join('') + '<th>Total</th></tr>';
+      const posEditable = !!PL_POS_CHOIX[c.grp];
+      const posSem = (c.pos && c.pos[String(w)]) || {};
       ['M', 'AM'].forEach((demi, hh) => {
         h += '<tr><th>' + (demi === 'M' ? 'Matin' : 'Après-midi') + '</th>';
         PL_JOURS.slice(0, 6).forEach(jr => {
           const v = (sem[jr] && sem[jr][hh]) || '';
-          h += '<td><input data-w="' + w + '" data-j="' + jr + '" data-h="' + hh + '" value="' + plEsc(v) + '" placeholder="—" oninput="plTrTotal()"></td>';
+          let posSel = '';
+          if (posEditable) {
+            const cur = (posSem[jr] && posSem[jr][hh]) || 'C';
+            posSel = '<br><select data-pw="' + w + '" data-pj="' + jr + '" data-ph="' + hh + '" style="font-size:9.5px;border:1px solid var(--plline);border-radius:5px;margin-top:2px">'
+              + ['C', 'B', 'A'].map(p => '<option value="' + p + '"' + (cur === p ? ' selected' : '') + '>' + p + ' · ' + PL_POS_LBL[p] + '</option>').join('') + '</select>';
+          }
+          h += '<td><input data-w="' + w + '" data-j="' + jr + '" data-h="' + hh + '" value="' + plEsc(v) + '" placeholder="—" oninput="plTrTotal()">' + posSel + '</td>';
         });
         h += (hh === 0 ? '<td rowspan="2" style="font-weight:700;font-variant-numeric:tabular-nums" id="pl-tr-tot-' + w + '"></td>' : '') + '</tr>';
       });
@@ -615,12 +773,24 @@
       const v = i.value.trim();
       sem[w][jr][hh] = v || null;
     });
-    c.sem = sem; plStamp(c); plPersist();
+    c.sem = sem;
+    if (PL_POS_CHOIX[c.grp]) {
+      const pos = {};
+      document.querySelectorAll('#pl-tr-body select[data-pw]').forEach(sel => {
+        const w = sel.dataset.pw, jr = sel.dataset.pj, hh = +sel.dataset.ph;
+        if (!pos[w]) pos[w] = {};
+        if (!pos[w][jr]) pos[w][jr] = ['C', 'C'];
+        pos[w][jr][hh] = sel.value;
+      });
+      c.pos = pos;
+    }
+    plStamp(c); plPersist();
     plClose('pl-ov-trame'); plToast('Trame de ' + c.nom + ' enregistrée'); plRender();
+    if (document.getElementById('pl-ov-reg').classList.contains('pl-on')) plRegRender();
   };
 
   // ---------- seed : trame du 01/09/2026 ----------
-  const PL_SEED = [{"nom": "Hervine Lhullier", "grp": "ph", "role": "Pharmacienne adjointe", "ph": true, "base": 27.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": [null, null], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Alexis Baguelin", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Jules Palvadeau", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Enzo Doré", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Céline Bourdon", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Elodie Rivognac", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 27.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Mathilde Binet", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 16.0, "sem": {"1": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}, "2": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}}}, {"nom": "Jean-Claude Tran Van", "grp": "prep", "role": "Préparateur", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h00"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Marion Noyée", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h15"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h45"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Julie Nicolas", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 32.75, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "2": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["8h30-12h30", "14h-19h"]}}}, {"nom": "Hortense Le Pont", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Elise Lamy", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Violette Gente", "grp": "renfort", "role": "Étudiante", "ph": false, "base": 9.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Allison Courvalet", "grp": "avance", "role": "Esthéticienne", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Paloma Petit", "grp": "dermo", "role": "Dermo-conseillère", "ph": false, "base": 28.0, "sem": {"1": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}}}, {"nom": "Brunilde Marti", "grp": "pda", "role": "PDA", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}, "2": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}}}, {"nom": "Quentin Debons", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": ["8h30-11h", null]}, "2": {"lun": [null, "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": [null, null]}}}, {"nom": "Corinne Porey", "grp": "entretien", "role": "Entretien", "ph": false, "base": 12.5, "sem": {"1": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}, "2": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}}}];
+  const PL_SEED = [{"nom": "Hervine Lhullier", "grp": "ph", "role": "Pharmacienne adjointe", "ph": true, "base": 27.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": [null, null], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Alexis Baguelin", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Jules Palvadeau", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Enzo Doré", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Céline Bourdon", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Elodie Rivognac", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 27.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Mathilde Binet", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 16.0, "sem": {"1": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}, "2": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}}}, {"nom": "Jean-Claude Tran Van", "grp": "prep", "role": "Préparateur", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h00"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Marion Noyée", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h15"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h45"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Julie Nicolas", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 32.75, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "2": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["8h30-12h30", "14h-19h"]}}}, {"nom": "Hortense Le Pont", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Elise Lamy", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Violette Gente", "grp": "renfort", "role": "Étudiante", "ph": false, "base": 9.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Allison Courvalet", "grp": "avance", "role": "Esthéticienne", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Paloma Petit", "grp": "secr", "role": "Secrétaire", "ph": false, "base": 28.0, "sem": {"1": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}}}, {"nom": "Brunilde Marti", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}, "2": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}}}, {"nom": "Quentin Debons", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": ["8h30-11h", null]}, "2": {"lun": [null, "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": [null, null]}}}, {"nom": "Corinne Porey", "grp": "entretien", "role": "Entretien", "ph": false, "base": 12.5, "sem": {"1": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}, "2": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}}}];
   window.plSeed = function () {
     if (L('contrats').length) { plToast('Des contrats existent déjà.'); return; }
     const now = Date.now();
