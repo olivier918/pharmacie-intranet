@@ -78,14 +78,62 @@
     return PL_POS_DEFAUT[c.grp] || 'C';
   }
   // migration douce des anciens groupes du seed initial (dermo→secr, pda→logi)
+  // + ajout des titulaires Anouck et Olivier s'ils manquent (idempotent par id)
   function plMigrate() {
     let ch = false;
     L('contrats').forEach(c => {
       if (c.grp === 'dermo') { c.grp = 'secr'; c.role = 'Secrétaire'; plStamp(c); ch = true; }
       if (c.grp === 'pda') { c.grp = 'logi'; c.role = 'Logistique'; plStamp(c); ch = true; }
     });
+    if (L('contrats').length) {
+      [{ id: 'ct:anouck', nom: 'Anouck', role: 'Pharmacienne titulaire' },
+       { id: 'ct:olivier', nom: 'Olivier', role: 'Pharmacien titulaire' }].forEach(t => {
+        if (!L('contrats').some(c => c.id === t.id)) {
+          plContrats.push({ id: t.id, nom: t.nom, grp: 'ph', role: t.role, estPharmacien: true,
+            base: null, tempsPartiel: false, rotationId: 'rot:ph', sem: {}, actif: true, updatedAt: Date.now() });
+          ch = true;
+        }
+      });
+      // l'entretien ne fait pas partie du planning (demande d'Olivier du 28/08/2026)
+      L('contrats').forEach(c => { if (c.grp === 'entretien' && c.actif !== false) { c.actif = false; plStamp(c); ch = true; } });
+    }
+    if (ch) plPersist();
+    plLinkStaff();
+  }
+
+  // ── lien avec la liste des collaborateurs du Back Office (staffDB) ──
+  function plNorm(x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]+/g, ' ').trim(); }
+  function plStaffList() { return (typeof staffDB !== 'undefined' && Array.isArray(staffDB)) ? staffDB : []; }
+  function plStaffOf(c) { return plStaffList().find(s => s.id === c.staffId) || null; }
+  // rapprochement automatique : « Prénom Nom » identique, sinon prénom unique. Idempotent.
+  function plLinkStaff() {
+    const staff = plStaffList(); if (!staff.length) return;
+    let ch = false;
+    L('contrats').forEach(c => {
+      if (c.staffId && staff.some(s => s.id === c.staffId)) return;
+      const n = plNorm(c.nom);
+      let m = staff.find(s => plNorm(s.prenom + ' ' + s.nom) === n || plNorm(s.nom + ' ' + s.prenom) === n);
+      if (!m) { const cand = staff.filter(s => plNorm(s.prenom) === n || n.indexOf(plNorm(s.prenom)) === 0 && plNorm(s.prenom)); m = (staff.filter(s => plNorm(s.prenom) === n.split(' ')[0]).length === 1) ? staff.find(s => plNorm(s.prenom) === n.split(' ')[0]) : null; }
+      if (m) { c.staffId = m.id; plStamp(c); ch = true; }
+    });
     if (ch) plPersist();
   }
+  window.plSetStaff = function (cid, sid) {
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    c.staffId = sid || null; plStamp(c); plPersist(); plRegRender(); plRender();
+  };
+  // créer un contrat pour un collaborateur du site qui n'en a pas encore
+  window.plCreateFromStaff = function (sid) {
+    const st = plStaffList().find(s => s.id === sid); if (!st) return;
+    const grp = /pharmacien/i.test(st.poste || '') ? 'ph' : 'prep';
+    plContrats.push({
+      id: plNewId('ct'), nom: (st.prenom || '') + ' ' + (st.nom ? st.nom.charAt(0) + st.nom.slice(1).toLowerCase() : ''),
+      grp: grp, role: st.poste || 'À préciser', estPharmacien: grp === 'ph',
+      base: null, tempsPartiel: false, rotationId: grp === 'ph' ? 'rot:ph' : 'rot:prep',
+      sem: {}, staffId: st.id, actif: true, updatedAt: Date.now()
+    });
+    plPersist(); plToast('Contrat créé pour ' + st.prenom + ' — complétez sa trame et sa base'); plRegRender(); plRender();
+  };
 
   // ---------- moteur : rotation → semaine de cycle → horaires ----------
   function plRotOf(c) { return L('rotations').find(r => r.id === c.rotationId) || null; }
@@ -309,6 +357,12 @@
   .pl-tick.cp{background:var(--plcp)}.pl-tick.mal{background:var(--plmal)}
   .pl-tick.rec{background:var(--plrec)}.pl-tick.for{background:var(--plfor)}
   .pl-wee{background:#F7F4F2}
+  .pl-mini{width:17px;margin:1px auto;border-radius:4px;font-size:8.5px;font-weight:800;line-height:12px;
+    text-align:center;font-variant-numeric:tabular-nums}
+  .pl-mini-ok{background:#DDEFE4;color:var(--plok)}
+  .pl-mini-lim{background:#F5E9CC;color:var(--plwarn)}
+  .pl-mini-bad{background:#F6DAD6;color:var(--plcrit)}
+  .pl-av{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:baseline}
   /* année */
   .pl-yr td{padding:3px 6px}
   .pl-yr .pl-strip{display:flex;gap:1px}
@@ -453,11 +507,13 @@
   window.plToday = function () { plAnchor = plMonday(new Date()); plRender(); };
   window.plFiltre = function (g) { plFiltreGrp = g; plRender(); };
 
+  function plTit(c) { return /titulaire/i.test(c.role || '') ? 0 : 1; }
   function plContratsVisibles() {
     return L('contrats')
       .filter(c => c.actif !== false)
       .filter(c => !plFiltreGrp || c.grp === plFiltreGrp)
-      .sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord || (a.nom || '').localeCompare(b.nom || ''));
+      .sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord
+        || plTit(a) - plTit(b) || (a.nom || '').localeCompare(b.nom || ''));
   }
 
   // ---------- rendu principal ----------
@@ -587,7 +643,21 @@
       }
       h += '</tr>';
     });
-    h += '</tbody></table></div>';
+    // ── compteur Comptoir par jour (M/AM vs seuil, hors poste avancé) ──
+    h += '</tbody><tfoot><tr><td class="pl-who pl-cntlbl" style="border-top:2px solid var(--plline)">Comptoir</td>';
+    for (let d = 1; d <= nd; d++) {
+      const dt = new Date(y, m, d, 12);
+      let cell = '';
+      if (dt.getDay() !== 0) {
+        ['M', 'AM'].forEach(demi => {
+          const e = plEffectif(dt, demi), s2 = plSeuilComptoir(dt, demi);
+          const k = e.cpt < s2 ? 'bad' : (e.cpt === s2 ? 'lim' : 'ok');
+          cell += '<div class="pl-mini pl-mini-' + k + '" title="' + PL_JOURS_FR[(dt.getDay() + 6) % 7] + ' ' + d + ' · ' + (demi === 'M' ? 'matin' : 'après-midi') + ' : ' + e.cpt + ' disponibles au comptoir / seuil ' + s2 + ' (hors poste avancé)">' + e.cpt + '</div>';
+        });
+      }
+      h += '<td class="' + (dt.getDay() === 0 ? 'pl-wee' : '') + '" style="border-top:2px solid var(--plline)">' + cell + '</td>';
+    }
+    h += '</tr></tfoot></table></div>';
     document.getElementById('pl-body').innerHTML = h;
   }
 
@@ -719,16 +789,34 @@
       el.innerHTML = h;
     } else if (plRegView === 'c') {
 
-      let h = '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Base hebdo</th><th>Rotation</th><th>Trame</th></tr>';
+      const staff = plStaffList();
+      let h = '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Compte intranet</th><th>Base hebdo</th><th>Rotation</th><th>Trame</th></tr>';
       L('contrats').filter(c => c.actif !== false).sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord).forEach(c => {
-        const rot = plRotOf(c);
+        const rot = plRotOf(c), st = plStaffOf(c);
+        let lien;
+        if (st) lien = '<span class="pl-av" style="background:' + plEsc(st.col || '#888') + '"></span>' + plEsc(st.prenom + ' ' + st.nom)
+          + ' <button class="pl-btn pl-ghost pl-mini" title="Délier" onclick="plSetStaff(\'' + c.id + '\',null)">✕</button>';
+        else lien = '<select class="pl-inp" style="height:30px;max-width:170px" onchange="plSetStaff(\'' + c.id + '\',this.value)">'
+          + '<option value="">— à relier —</option>'
+          + staff.map(s2 => '<option value="' + plEsc(s2.id) + '">' + plEsc(s2.prenom + ' ' + s2.nom) + '</option>').join('') + '</select>';
         h += '<tr><td><b>' + plEsc(c.nom) + '</b>' + (c.estPharmacien ? ' <span class="pl-chip pl-ch-cp" style="font-size:9.5px">Pharmacien</span>' : '') + '</td>'
           + '<td>' + plEsc(c.role || '') + '</td>'
+          + '<td>' + lien + '</td>'
           + '<td><input class="pl-inp" style="width:70px;height:30px" value="' + (c.base != null ? c.base : '') + '" onchange="plSetBase(\'' + c.id + '\',this.value)"> h</td>'
           + '<td>' + (rot ? plEsc(rot.lbl) + ' (' + rot.longueur + ' sem)' : '—') + '</td>'
           + '<td><button class="pl-btn pl-ghost pl-mini" onclick="plEditTrame(\'' + c.id + '\')">✎ Horaires</button></td></tr>';
       });
-      h += '</table><div class="pl-note">La base hebdo sert de référence au total de la semaine (vert = conforme, rouge = écart). Pour un cycle à bases variables (ex. 34,5 / 35,5), saisir la moyenne.</div>';
+      h += '</table>';
+      const sansContrat = staff.filter(s2 => !L('contrats').some(c => c.actif !== false && c.staffId === s2.id));
+      if (sansContrat.length) {
+        h += '<div style="margin-top:12px"><b style="font-size:12px">Collaborateurs du site sans contrat au planning</b><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:6px">';
+        sansContrat.forEach(s2 => {
+          h += '<button class="pl-btn pl-ghost pl-mini" onclick="plCreateFromStaff(\'' + plEsc(s2.id) + '\')">'
+            + '<span class="pl-av" style="background:' + plEsc(s2.col || '#888') + '"></span>＋ ' + plEsc(s2.prenom + ' ' + s2.nom) + '</button>';
+        });
+        h += '</div></div>';
+      }
+      h += '<div class="pl-note">Le lien avec la liste des collaborateurs du Back Office est fait automatiquement par le nom ; corrigez-le ici si besoin. La pastille reprend la couleur du compte intranet. La base hebdo sert de référence au total de la semaine (vert = conforme, rouge = écart) ; pour un cycle à bases variables (ex. 34,5 / 35,5), saisir la moyenne.</div>';
       el.innerHTML = h;
     } else if (plRegView === 'r') {
       let h = '<table class="pl-list"><tr><th>Rotation</th><th>Cycle</th><th>Semaine en cours</th><th>Ancrage</th></tr>';
@@ -882,7 +970,7 @@
   };
 
   // ---------- seed : trame du 01/09/2026 ----------
-  const PL_SEED = [{"nom": "Hervine Lhullier", "grp": "ph", "role": "Pharmacienne adjointe", "ph": true, "base": 27.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": [null, null], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Alexis Baguelin", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Jules Palvadeau", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Enzo Doré", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Céline Bourdon", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Elodie Rivognac", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 27.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Mathilde Binet", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 16.0, "sem": {"1": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}, "2": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}}}, {"nom": "Jean-Claude Tran Van", "grp": "prep", "role": "Préparateur", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h00"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Marion Noyée", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h15"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h45"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Julie Nicolas", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 32.75, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "2": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["8h30-12h30", "14h-19h"]}}}, {"nom": "Hortense Le Pont", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Elise Lamy", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Violette Gente", "grp": "renfort", "role": "Étudiante", "ph": false, "base": 9.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Allison Courvalet", "grp": "avance", "role": "Esthéticienne", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Paloma Petit", "grp": "secr", "role": "Secrétaire", "ph": false, "base": 28.0, "sem": {"1": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}}}, {"nom": "Brunilde Marti", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}, "2": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}}}, {"nom": "Quentin Debons", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": ["8h30-11h", null]}, "2": {"lun": [null, "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": [null, null]}}}, {"nom": "Corinne Porey", "grp": "entretien", "role": "Entretien", "ph": false, "base": 12.5, "sem": {"1": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}, "2": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}}}];
+  const PL_SEED = [{"nom": "Anouck", "grp": "ph", "role": "Pharmacienne titulaire", "ph": true, "base": null, "sem": {}}, {"nom": "Olivier", "grp": "ph", "role": "Pharmacien titulaire", "ph": true, "base": null, "sem": {}}, {"nom": "Hervine Lhullier", "grp": "ph", "role": "Pharmacienne adjointe", "ph": true, "base": 27.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": [null, null], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Alexis Baguelin", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Jules Palvadeau", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Enzo Doré", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Céline Bourdon", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Elodie Rivognac", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 27.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Mathilde Binet", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 16.0, "sem": {"1": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}, "2": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}}}, {"nom": "Jean-Claude Tran Van", "grp": "prep", "role": "Préparateur", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h00"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Marion Noyée", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h15"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h45"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Julie Nicolas", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 32.75, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "2": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["8h30-12h30", "14h-19h"]}}}, {"nom": "Hortense Le Pont", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Elise Lamy", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Violette Gente", "grp": "renfort", "role": "Étudiante", "ph": false, "base": 9.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Allison Courvalet", "grp": "avance", "role": "Esthéticienne", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Paloma Petit", "grp": "secr", "role": "Secrétaire", "ph": false, "base": 28.0, "sem": {"1": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}}}, {"nom": "Brunilde Marti", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}, "2": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}}}, {"nom": "Quentin Debons", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": ["8h30-11h", null]}, "2": {"lun": [null, "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": [null, null]}}}, {"nom": "Corinne Porey", "grp": "entretien", "role": "Entretien", "ph": false, "base": 12.5, "sem": {"1": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}, "2": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}}, "inactif": true}];
   window.plSeed = function () {
     if (L('contrats').length) { plToast('Des contrats existent déjà.'); return; }
     const now = Date.now();
@@ -903,7 +991,7 @@
         nom: s.nom, grp: s.grp, role: s.role, estPharmacien: !!s.ph,
         base: s.base, tempsPartiel: s.base != null && s.base < 35,
         rotationId: s.ph ? 'rot:ph' : 'rot:prep',
-        sem: s.sem, actif: true, updatedAt: now
+        sem: s.sem, actif: !s.inactif, updatedAt: now
       });
     });
     // seuils par défaut : comptoir 6 (5 le samedi), pharmaciens = ligne 13 de la trame
