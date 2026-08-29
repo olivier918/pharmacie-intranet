@@ -338,6 +338,11 @@
   .pl-who small{color:var(--plmut);font-size:10px;font-weight:500}
   .pl-hrs{margin-top:3px;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums}
   .pl-hrs.good{color:var(--plok)}.pl-hrs.bad{color:var(--plcrit)}
+  .pl-vide{font-size:9px;font-weight:600;color:transparent;text-align:center;border:1px dashed transparent;
+    border-radius:6px;padding:1px 0;margin:1px 0;letter-spacing:.2px;transition:color .12s,border-color .12s}
+  .pl-cell:hover .pl-vide{color:#B9C2BD;border-color:var(--plline)}
+  .pl-cell .pl-vide:hover{border-color:var(--plac);color:var(--plac);background:var(--placs)}
+  .pl-repos:hover .pl-restlbl{display:none}
   .pl-cyc2{font-size:9.5px;font-weight:600;color:var(--plmut);font-variant-numeric:tabular-nums}
   .pl-cyc2.good{color:var(--plok)}.pl-cyc2.bad{color:var(--plcrit)}
   .pl-grp td{background:linear-gradient(90deg,var(--placs),#FDF6F9);padding:4px 14px;font-size:10.5px;
@@ -739,6 +744,8 @@
         const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso);
         let cell = '';
         for (let hh = 0; hh < 2; hh++) {
+          // chaque demi-journée est un point d'entrée : un clic ouvre le sélecteur d'horaires
+          const clic = ' onclick="plJourPick(event,\'' + c.id + '\',\'' + iso + '\',' + hh + ')"';
           if (ab[hh]) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
           else if (sl[hh]) {
             const pos = plPosEff(c, d, hh);
@@ -748,13 +755,18 @@
             const tt = (ex ? 'Horaire modifié ce jour (trame : ' + (plSlotsTrame(c, d)[hh] || 'repos') + ') — ' : '')
               + (part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '')
               + PL_POS_LBL[pos] + ' · cliquer pour modifier ce jour';
-            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + ' pl-click" title="' + plEsc(tt) + '">' + plEsc(sl[hh]) + posBadge + (ex ? '<i class="pl-exdot" title="Exception du jour"></i>' : '') + '</div>';
+            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + ' pl-click"' + clic + ' title="' + plEsc(tt) + '">' + plEsc(sl[hh]) + posBadge + (ex ? '<i class="pl-exdot" title="Exception du jour"></i>' : '') + '</div>';
           } else {
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
-            if (ex) cell += '<div class="pl-off pl-mod pl-click" style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
+            if (ex) cell += '<div class="pl-off pl-mod pl-click"' + clic + ' style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
+            else cell += '<div class="pl-vide pl-click"' + clic + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — repos ; cliquer pour ajouter un créneau">' + (hh ? 'après-midi' : 'matin') + '</div>';
           }
         }
-        cells += '<td class="pl-cell pl-click" onclick="plEditJour(\'' + c.id + '\',\'' + iso + '\')">' + (cell || '<div class="pl-off">repos</div>') + '</td>';
+        // journée entièrement libre : on affiche « repos », et les deux demi-journées
+        // n'apparaissent qu'au survol, pour rester cliquables sans alourdir la lecture
+        const vide2 = !ab[0] && !ab[1] && !sl[0] && !sl[1] && !plExOf(c, iso, 'M') && !plExOf(c, iso, 'AM');
+        cells += '<td class="pl-cell' + (vide2 ? ' pl-repos' : '') + '">'
+          + (vide2 ? '<div class="pl-off pl-restlbl">repos</div>' : '') + cell + '</td>';
       });
       h += '<tr><td class="pl-who"><b>' + plEsc(c.nom) + '</b><small>' + plEsc(c.role || '') + '</small>'
         + '<div class="pl-hrs">' + plFmtH(planned) + '<span style="font-weight:500;color:var(--plmut)"> cette semaine</span></div>'
@@ -877,7 +889,8 @@
   // ---------- sélecteur d'horaires : on choisit, on ne tape pas ----------
   // Un clic sur un créneau ouvre une palette : raccourcis les plus utilisés dans la pharmacie,
   // puis deux menus début / fin par pas de 15 min. Aucune saisie de texte n'est nécessaire.
-  let plPkInp = null, plPkA = null, plPkB = null, plPkPos = null, plPkOnPos = null;
+  let plPkAnc = null, plPkA = null, plPkB = null, plPkPos = null, plPkOnPos = null;
+  let plPkSetV = null, plPkHh = 0, plPkGrp = null, plPkReset = null, plPkPosFixe = null;
 
   function plMinOf(s) {   // "14h30" → 870
     const m = String(s || '').match(/(\d{1,2})h?(\d{2})?/);
@@ -918,8 +931,7 @@
     return o;
   }
   function plPkRender() {
-    const hh = plPkInp ? +(plPkInp.dataset.h || 0) : 0;
-    const grp = plPkInp && plPkInp.dataset.g;
+    const hh = plPkHh, grp = plPkGrp;
     const cour = plPkA != null && plPkB != null ? plHhOf(plPkA) + '-' + plHhOf(plPkB) : '';
     const tops = plTopSlots(hh, grp);
     let h = '<div class="pl-pk-lbl">Créneaux habituels</div><div class="pl-pk-chips">'
@@ -935,18 +947,27 @@
     if (plPkOnPos) {
       h += '<div class="pl-pk-lbl">Poste</div><div class="pl-pk-pos">'
         + ['C', 'B', 'A'].map(p => '<button class="' + (p === plPkPos ? 'pl-act' : '') + '" onclick="plPkPoste(\'' + p + '\')">' + PL_POS_LBL[p] + '</button>').join('') + '</div>';
+    } else if (plPkPosFixe) {
+      h += '<div class="pl-pk-lbl">Poste</div><div style="font-size:11.5px;color:var(--plmut)">'
+        + '<span class="pl-posb pl-pos-' + plPkPosFixe + '" style="display:inline-flex;vertical-align:-3px;margin-right:5px">' + plPkPosFixe + '</span>'
+        + PL_POS_LBL[plPkPosFixe] + ' <span style="opacity:.75">— fixe pour ce métier</span></div>';
     }
-    h += '<div class="pl-pk-ft"><button class="pl-btn pl-ghost pl-mini" onclick="plPkClose()">Fermer</button>'
-      + '<span style="flex:1"></span><span style="font-size:10px;color:var(--plmut);align-self:center">Échap pour fermer</span></div>';
+    h += '<div class="pl-pk-ft">'
+      + (plPkReset ? '<button class="pl-btn pl-ghost pl-mini" onclick="plPkDoReset()">↩ ' + plEsc(plPkReset.lbl) + '</button>' : '')
+      + '<button class="pl-btn pl-ghost pl-mini" onclick="plPkClose()">Fermer</button>'
+      + '<span style="flex:1"></span><span style="font-size:10px;color:var(--plmut);align-self:center">Échap</span></div>';
     document.getElementById('pl-pk-body').innerHTML = h;
   }
   function plPkApply() {
-    if (!plPkInp) return;
+    if (!plPkSetV) return;
     const v = (plPkA != null && plPkB != null && plPkB > plPkA) ? plHhOf(plPkA) + '-' + plHhOf(plPkB) : '';
-    plPkInp.value = v;
-    plPkInp.dispatchEvent(new Event('change', { bubbles: true }));
+    plPkSetV(v);
     plPkRender();
   }
+  window.plPkDoReset = function () { const r = plPkReset; plPkClose(); if (r) r.fn(); };
+  window.plPkCur = function () {
+    return (plPkA != null && plPkB != null && plPkB > plPkA) ? plHhOf(plPkA) + '-' + plHhOf(plPkB) : '';
+  };
   window.plPkSet = function (v) {
     const p = plSplitSlot(v);
     plPkA = p[0]; plPkB = p[1];
@@ -962,14 +983,20 @@
   window.plPkPoste = function (p) { plPkPos = p; if (plPkOnPos) plPkOnPos(p); plPkRender(); };
   window.plPkClose = function () {
     const n = document.getElementById('pl-pick'); if (n) n.classList.remove('pl-on');
-    plPkInp = null; plPkOnPos = null;
+    plPkAnc = null; plPkOnPos = null; plPkSetV = null; plPkReset = null; plPkPosFixe = null;
   };
-  // opts : {titre, sous, pos, onPos}
-  window.plPkOpen = function (inp, opts) {
+  // opts : {val, hh, grp, titre, sous, pos, posFixe, onSet, onPos, reset:{lbl,fn}}
+  window.plPkOpen = function (anc, opts) {
     opts = opts || {};
-    const n = document.getElementById('pl-pick'); if (!n || !inp) return;
-    plPkInp = inp;
-    const p = plSplitSlot(inp.value);
+    const n = document.getElementById('pl-pick'); if (!n || !anc) return;
+    plPkAnc = anc;
+    const estInput = anc.tagName === 'INPUT';
+    const val = opts.val != null ? opts.val : (estInput ? anc.value : '');
+    plPkSetV = opts.onSet || (estInput ? function (v) { anc.value = v; anc.dispatchEvent(new Event('change', { bubbles: true })); } : null);
+    plPkHh = opts.hh != null ? opts.hh : (estInput ? +(anc.dataset.h || 0) : 0);
+    plPkGrp = opts.grp != null ? opts.grp : (estInput ? anc.dataset.g : null);
+    plPkReset = opts.reset || null; plPkPosFixe = opts.posFixe || null;
+    const p = plSplitSlot(val);
     plPkA = p[0]; plPkB = p[1];
     plPkPos = opts.pos || null; plPkOnPos = opts.onPos || null;
     document.getElementById('pl-pk-t').textContent = opts.titre || 'Horaires';
@@ -977,7 +1004,7 @@
     plPkRender();
     n.classList.add('pl-on');
     // positionnement sous la case, en restant dans la fenêtre
-    const r = inp.getBoundingClientRect(), b = n.getBoundingClientRect();
+    const r = anc.getBoundingClientRect(), b = n.getBoundingClientRect();
     let x = r.left + r.width / 2 - b.width / 2, y = r.bottom + 6;
     if (y + b.height > innerHeight - 8) y = Math.max(8, r.top - b.height - 6);
     n.style.left = Math.max(8, Math.min(x, innerWidth - b.width - 8)) + 'px';
@@ -986,7 +1013,7 @@
   document.addEventListener('mousedown', function (e) {
     const n = document.getElementById('pl-pick');
     if (!n || !n.classList.contains('pl-on')) return;
-    if (n.contains(e.target) || e.target === plPkInp) return;
+    if (n.contains(e.target) || (plPkAnc && plPkAnc.contains && plPkAnc.contains(e.target)) || e.target === plPkAnc) return;
     plPkClose();
   });
 
@@ -1096,6 +1123,7 @@
       titre: c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[PL_JOURS.indexOf(jr)] + (hh ? ' après-midi' : ' matin'),
       sous: 'Semaine type ' + rang + ' du cycle — vaut pour toutes les semaines équivalentes',
       pos: PL_POS_CHOIX[c.grp] ? plPosOf(c, rang, jr, hh) : null,
+      posFixe: PL_POS_CHOIX[c.grp] ? null : plPosOf(c, rang, jr, hh),
       onPos: PL_POS_CHOIX[c.grp] ? function (p) {
         if (!c.pos) c.pos = {};
         if (!c.pos[rang]) c.pos[rang] = {};
@@ -1375,7 +1403,43 @@
 
   // ---------- exception du jour (clic sur la vue Semaine) ----------
   let plJourCid = null, plJourIso = null;
-  window.plEditJour = function (cid, iso) {
+  // Un clic sur une demi-journée de la vue Semaine : le sélecteur s'ouvre sur place.
+  // Ce qui est choisi ne vaut QUE pour ce jour — la semaine type n'est pas touchée.
+  window.plJourPick = function (ev, cid, iso, hh) {
+    if (ev) ev.stopPropagation();
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    const anc = (ev && ev.currentTarget) || document.body;
+    const d = new Date(iso + 'T12:00'), demi = hh ? 'AM' : 'M';
+    const trame = plSlotsTrame(c, d), eff = plSlots(c, d);
+    const rang = String(plRang(plRotOf(c), d));
+    const posTrame = plPosOf(c, rang, plDayKey(d), hh);
+    let posCour = plPosEff(c, d, hh);
+    const ecrire = function (horaire, pos) {
+      const memeH = (horaire || null) === (trame[hh] || null);
+      const memeP = pos === posTrame;
+      plDropEx(c.id, iso, demi);
+      if (!memeH || !memeP) {
+        plExceptions.push({ id: plNewId('ex'), contratId: c.id, date: iso, demi: demi, type: 'horaire',
+          horaire: horaire || null, pos: memeP ? null : pos,
+          saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() });
+      }
+      plPersist(); plRender();
+    };
+
+    plPkOpen(anc, {
+      val: eff[hh] || '', hh: hh, grp: c.grp,
+      titre: c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[(d.getDay() + 6) % 7].toLowerCase() + ' ' + d.getDate() + ' ' + PL_MOIS_FR[d.getMonth()] + (hh ? ' après-midi' : ' matin'),
+      sous: 'Ce jour uniquement — semaine type : ' + (trame[hh] || 'repos'),
+      // le poste ne se choisit que là où il a un sens (préparateurs) : un pharmacien est
+      // toujours au comptoir, la logistique et le poste avancé sont fixes (règles R2/R3 du CDC)
+      pos: PL_POS_CHOIX[c.grp] ? posCour : null,
+      posFixe: PL_POS_CHOIX[c.grp] ? null : posCour,
+      onPos: PL_POS_CHOIX[c.grp] ? function (p) { posCour = p; ecrire(plPkCur(), p); } : null,
+      onSet: function (v) { ecrire(v, posCour); },
+      reset: { lbl: 'Semaine type', fn: function () { plDropEx(c.id, iso, demi); plPersist(); plToast('Semaine type rétablie'); plRender(); } }
+    });
+  };
+  window.plEditJourModale = function (cid, iso) {
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     plJourCid = cid; plJourIso = iso;
     const d = new Date(iso + 'T12:00');
@@ -1388,14 +1452,14 @@
       h += '<tr><th>' + (demi === 'M' ? 'Matin' : 'Après-midi') + '</th>'
         + '<td><input id="pl-jr-h-' + hh + '" class="pl-hin" style="width:120px;font-size:12.5px;padding:6px 2px" readonly'
           + ' value="' + plEsc(eff[hh] || '') + '" placeholder="repos — cliquer" data-h="' + hh + '" data-g="' + plEsc(c.grp) + '"'
-          + ' title="Cliquer pour choisir l\'horaire" onclick="plJourPick(this,' + hh + ')"></td>'
+          + ' title="Cliquer pour choisir l\'horaire" onclick="plJourPickModale(this,' + hh + ')"></td>'
         + (posEditable ? '<td><select id="pl-jr-p-' + hh + '" class="pl-inp" style="height:30px">'
           + ['C', 'B', 'A'].map(p => '<option value="' + p + '"' + (posCur === p ? ' selected' : '') + '>' + p + ' · ' + PL_POS_LBL[p] + '</option>').join('') + '</select></td>' : '')
         + '<td style="color:var(--plmut)">' + plEsc(trame[hh] || 'repos') + '</td></tr>';
     });
     h += '</table>';
     document.getElementById('pl-jr-body').innerHTML = h;
-    window.plJourPick = function (el, hh2) {
+    window.plJourPickModale = function (el, hh2) {
       const pEl = document.getElementById('pl-jr-p-' + hh2);
       plPkOpen(el, {
         titre: c.nom.split(' ')[0] + (hh2 ? ' · après-midi' : ' · matin'),
