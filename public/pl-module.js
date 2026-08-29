@@ -402,6 +402,33 @@
   .pl-yr .pl-dt.on{background:#CBDED3}
   .pl-yr .pl-dt.cp{background:var(--plcp)}.pl-yr .pl-dt.mal{background:var(--plmal)}
   .pl-yr .pl-dt.rec{background:var(--plrec)}.pl-yr .pl-dt.for{background:var(--plfor)}
+  /* vue Année zoomable */
+  .pl-anbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .pl-anlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
+  .pl-anhint{font-size:10.5px;color:var(--plmut)}
+  .pl-anseg button{font-size:11.5px;padding:4px 11px}
+  .pl-anscroll{overflow-x:auto}
+  .pl-anhead{display:flex;gap:1px}
+  .pl-anm{flex:0 0 auto;font-size:10px;color:var(--plmut);border-left:1px solid var(--plline);padding-left:3px;
+    overflow:hidden;white-space:nowrap}
+  .pl-and{flex:0 0 auto;font-size:8.5px;color:var(--plmut);text-align:center;font-variant-numeric:tabular-nums}
+  .pl-and.pl-dim{color:#C9CFCB}
+  .pl-yr .pl-dt{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;overflow:hidden}
+  .pl-yr .pl-dt i{font-style:normal;font-size:8.5px;font-weight:700;color:#2A6A52}
+  .pl-yr .pl-dt:hover{outline:1.5px solid var(--plac);outline-offset:0}
+  .pl-yr .pl-dt.pl-dtex{box-shadow:inset 0 0 0 1.5px var(--plwarn)}
+  .pl-ancol{flex:0 0 auto;display:flex;flex-direction:column;gap:1px;cursor:pointer}
+  .pl-anc{height:9px;border-radius:1px;display:flex;align-items:center;justify-content:center;
+    font-size:8px;font-weight:800;font-variant-numeric:tabular-nums}
+  .pl-anc.ok{background:#DDEFE4;color:var(--plok)}
+  .pl-anc.lim{background:#F5E9CC;color:var(--plwarn)}
+  .pl-anc.bad{background:#F6DAD6;color:var(--plcrit)}
+  .pl-ancol:hover .pl-anc{outline:1.5px solid var(--plac)}
+  .pl-anfer{cursor:default}
+  .pl-anfer:hover .pl-anc{outline:none}
+  .pl-anc.pl-fer{background:repeating-linear-gradient(45deg,#F1F3F1,#F1F3F1 2px,#E7EAE8 2px,#E7EAE8 4px)}
+  .pl-yr .pl-dt.pl-dtdim{background:#F4F6F5;cursor:default}
+  .pl-yr .pl-dt.pl-dtdim:hover{outline:none}
   /* modales */
   .pl-ov{position:fixed;inset:0;z-index:11000;display:none;align-items:flex-start;justify-content:center;
     background:rgba(30,20,26,.45);padding:4vh 16px;overflow:auto}
@@ -644,7 +671,7 @@
   window.plNav = function (dir) {
     if (plView === 'sem') plAnchor = plAddD(plAnchor, dir * 7);
     else if (plView === 'mois') { const x = new Date(plAnchor); x.setMonth(x.getMonth() + dir); plAnchor = x; }
-    else plAnchor = new Date(plAnchor.getFullYear() + dir, 0, 5);
+    else { const x = new Date(plAnchor); x.setMonth(x.getMonth() + dir * plAnMois); plAnchor = x; }
     plRender();
   };
   window.plToday = function () { plAnchor = plMonday(new Date()); plRender(); };
@@ -822,31 +849,109 @@
   }
 
   // ── vue Année ──
+  // ── vue Année, zoomable : 12 / 6 / 3 / 1 mois. Plus la fenêtre est courte, plus la
+  // bande s'élargit et plus on lit de détail (numéros de jour, effectif chiffré au comptoir).
+  let plAnMois = 12;
+  const PL_AN_W = { 12: 3, 6: 8, 3: 16, 1: 34 };   // largeur d'un jour en pixels selon le zoom
+  window.plAnZoom = function (n) {
+    plAnMois = n;
+    plAnchor = (n === 12) ? new Date(plAnchor.getFullYear(), 0, 1, 12)
+      : new Date(plAnchor.getFullYear(), plAnchor.getMonth(), 1, 12);
+    plRender();
+  };
+  window.plAnGo = function (iso) {   // clic sur un jour : on bascule sur la semaine correspondante
+    plAnchor = plMonday(new Date(iso + 'T12:00'));
+    plSetView('sem');
+  };
   function plRenderAn() {
-    const y = plAnchor.getFullYear();
-    document.getElementById('pl-lbl').textContent = 'Année ' + y;
-    document.getElementById('pl-info').textContent = 'Les absences ressortent en couleur de motif';
-    const start = new Date(y, 0, 1, 12), end = new Date(y + 1, 0, 1, 12);
-    let heads = '<div style="display:flex">';
-    for (let mm = 0; mm < 12; mm++) { const ndm = new Date(y, mm + 1, 0).getDate(); heads += '<span style="width:' + (ndm * 4) + 'px;flex:0 0 auto;font-size:10px;color:#71787A">' + PL_MOIS_FR[mm].slice(0, 4) + '</span>'; }
-    heads += '</div>';
-    let h = '<div class="pl-card pl-yr"><table><thead><tr><th class="pl-who"></th><th style="padding:6px 6px 2px">' + heads + '</th></tr></thead><tbody>';
+    const w = PL_AN_W[plAnMois] || 4;
+    const start = (plAnMois === 12) ? new Date(plAnchor.getFullYear(), 0, 1, 12)
+      : new Date(plAnchor.getFullYear(), plAnchor.getMonth(), 1, 12);
+    const end = new Date(start.getFullYear(), start.getMonth() + plAnMois, 1, 12);
+    const finAff = plAddD(end, -1);
+    document.getElementById('pl-lbl').textContent = plAnMois === 12 ? 'Année ' + start.getFullYear()
+      : (plAnMois === 1 ? PL_MOIS_FR[start.getMonth()] + ' ' + start.getFullYear()
+        : PL_MOIS_FR[start.getMonth()] + ' → ' + PL_MOIS_FR[finAff.getMonth()] + ' ' + finAff.getFullYear());
+    document.getElementById('pl-info').textContent = 'Cliquer un jour ouvre sa semaine';
+
+    // liste des jours de la fenêtre
+    const jours = [];
+    for (let d = new Date(start); d < end; d = plAddD(d, 1)) jours.push(new Date(d));
+
+    // bandeau de zoom
+    let h = '<div class="pl-anbar"><span class="pl-anlbl">Période affichée</span><div class="pl-seg pl-anseg">'
+      + [[12, '12 mois'], [6, '6 mois'], [3, '3 mois'], [1, '1 mois']].map(z =>
+        '<button class="' + (plAnMois === z[0] ? 'pl-act' : '') + '" onclick="plAnZoom(' + z[0] + ')">' + z[1] + '</button>').join('')
+      + '</div><span class="pl-anhint">' + jours.length + ' jours affichés — zoomez pour lire le détail</span></div>';
+
+    // en-tête : mois, et numéros de jour dès que la place le permet
+    let heads = '<div class="pl-anhead" style="gap:' + (w >= 8 ? 1 : 0) + 'px">';
+    let mm = -1, buf = 0, lblM = '';
+    jours.forEach(d => {
+      if (d.getMonth() !== mm) {
+        if (mm !== -1) heads += '<span class="pl-anm" style="width:' + (buf * w) + 'px">' + lblM + '</span>';
+        mm = d.getMonth(); buf = 0;
+        lblM = plAnMois >= 6 ? PL_MOIS_FR[mm].slice(0, 4) : PL_MOIS_FR[mm] + (plAnMois === 12 ? '' : ' ' + d.getFullYear());
+      }
+      buf++;
+    });
+    heads += '<span class="pl-anm" style="width:' + (buf * w) + 'px">' + lblM + '</span></div>';
+    if (w >= 16) {
+      heads += '<div class="pl-anhead" style="gap:' + (w >= 8 ? 1 : 0) + 'px">' + jours.map(d =>
+        '<span class="pl-and' + (d.getDay() === 0 ? ' pl-dim' : '') + '" style="width:' + w + 'px">'
+        + (w >= 34 ? PL_JOURS_FR[(d.getDay() + 6) % 7].slice(0, 1) + ' ' : '') + d.getDate() + '</span>').join('') + '</div>';
+    }
+
+    const gap = w >= 8 ? 1 : 0;
+    const largeur = jours.length * (w + gap);
+    const stripSty = 'min-width:' + largeur + 'px;gap:' + gap + 'px';
+    let t = '<table><thead><tr><th class="pl-who"></th><th style="padding:6px 6px 2px">' + heads + '</th></tr></thead><tbody>';
+
+    // ── première ligne : effectif au comptoir, matin et après-midi ──
+    let cpt = '';
+    jours.forEach(d => {
+      const iso = plIso(d);
+      if (d.getDay() === 0) {   // dimanche : pharmacie fermée, pas d'alerte d'effectif
+        cpt += '<span class="pl-ancol pl-anfer" style="width:' + w + 'px" title="Dimanche ' + d.getDate() + ' ' + PL_MOIS_FR[d.getMonth()] + ' — fermé">'
+          + '<span class="pl-anc pl-fer"></span><span class="pl-anc pl-fer"></span></span>';
+        return;
+      }
+      const eM = plEffectif(d, 'M'), eA = plEffectif(d, 'AM');
+      const sM = plSeuilComptoir(d, 'M'), sA = plSeuilComptoir(d, 'AM');
+      const kM = eM.cpt < sM ? 'bad' : (eM.cpt === sM ? 'lim' : 'ok');
+      const kA = eA.cpt < sA ? 'bad' : (eA.cpt === sA ? 'lim' : 'ok');
+      const tt = PL_JOURS_FR[(d.getDay() + 6) % 7] + ' ' + d.getDate() + ' ' + PL_MOIS_FR[d.getMonth()]
+        + ' — comptoir matin ' + eM.cpt + '/' + sM + ', après-midi ' + eA.cpt + '/' + sA + ' (hors poste avancé)';
+      const fs = w >= 34 ? ';font-size:11px;height:13px' : (w >= 16 ? ';font-size:9px;height:11px' : '');
+      cpt += '<span class="pl-ancol" style="width:' + w + 'px" title="' + plEsc(tt) + '" onclick="plAnGo(\'' + iso + '\')">'
+        + '<span class="pl-anc ' + kM + '" style="width:100%' + fs + '">' + (w >= 16 ? eM.cpt : '') + '</span>'
+        + '<span class="pl-anc ' + kA + '" style="width:100%' + fs + '">' + (w >= 16 ? eA.cpt : '') + '</span></span>';
+    });
+    t += '<tr class="pl-cntrow"><td class="pl-who pl-cntlbl">Comptoir<br><span style="font-weight:500;text-transform:none;letter-spacing:0">matin / après-midi</span></td>'
+      + '<td><div class="pl-strip" style="' + stripSty + '">' + cpt + '</div></td></tr>';
+
+    // ── une bande par collaborateur ──
     let lastGrp = null;
     plContratsVisibles().forEach(c => {
-      if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td colspan="2">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
-      let strip = '', d = new Date(start);
-      while (d < end) {
-        const sl = plSlots(c, d), ab = plAbs(c, plIso(d));
+      if (c.grp !== lastGrp) { lastGrp = c.grp; t += '<tr class="pl-grp"><td colspan="2">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
+      let strip = '';
+      jours.forEach(d => {
+        const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso);
         let cls = 'pl-dt';
-        if (ab[0] || ab[1]) cls += ' ' + (ab[0] || ab[1]);
-        else if (sl[0] || sl[1]) cls += ' on';
-        strip += '<span class="' + cls + '"></span>';
-        d = plAddD(d, 1);
-      }
-      h += '<tr><td class="pl-who"><b>' + plEsc(c.nom) + '</b></td><td><div class="pl-strip">' + strip + '</div></td></tr>';
+        let tt = PL_JOURS_FR[(d.getDay() + 6) % 7] + ' ' + d.getDate() + ' ' + PL_MOIS_FR[d.getMonth()] + ' — ';
+        if (ab[0] || ab[1]) { cls += ' ' + (ab[0] || ab[1]); tt += (PL_MOTIFS[ab[0] || ab[1]] || ''); }
+        else if (sl[0] || sl[1]) { cls += ' on'; tt += [sl[0], sl[1]].filter(Boolean).join(' · '); }
+        else tt += 'repos';
+        if (plExOf(c, iso, 'M') || plExOf(c, iso, 'AM')) cls += ' pl-dtex';
+        if (d.getDay() === 0) { cls += ' pl-dtdim'; tt = 'Dimanche ' + d.getDate() + ' ' + PL_MOIS_FR[d.getMonth()] + ' — fermé'; }
+        strip += '<span class="' + cls + '" style="width:' + w + 'px" title="' + plEsc(tt) + '"'
+          + (d.getDay() === 0 ? '' : ' onclick="plAnGo(\'' + iso + '\')"') + '>'
+          + (w >= 34 && (sl[0] || sl[1]) ? '<i>' + plEsc((sl[0] || sl[1]).split('-')[0]) + '</i>' : '') + '</span>';
+      });
+      t += '<tr><td class="pl-who"><b>' + plEsc(c.nom) + '</b></td><td><div class="pl-strip" style="' + stripSty + '">' + strip + '</div></td></tr>';
     });
-    h += '</tbody></table></div>';
-    document.getElementById('pl-body').innerHTML = h;
+    t += '</tbody></table>';
+    document.getElementById('pl-body').innerHTML = h + '<div class="pl-card pl-yr pl-anscroll">' + t + '</div>';
   }
 
   // ---------- réglages ----------
