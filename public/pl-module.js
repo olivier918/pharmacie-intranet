@@ -334,6 +334,17 @@
   .pl-dotph{width:7px;height:7px;border-radius:50%;display:inline-block}
   .pl-dotph.ok{background:var(--plok)}.pl-dotph.bad{background:var(--plcrit)}
   .pl-who{padding:8px 10px 8px 14px;width:172px;min-width:172px}
+  /* colonne des collaborateurs figée : elle reste lisible quand on défile vers la droite */
+  .pl-card .pl-who{position:sticky;left:0;z-index:3;background:#fff}
+  .pl-card thead th.pl-who{z-index:5}
+  .pl-grp td.pl-who{background:var(--placs)}
+  .pl-grplbl{display:block;width:148px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pl-mo .pl-who,.pl-yr .pl-who{text-align:left}
+  .pl-card .pl-cntrow td.pl-who{background:#FBFAF9}
+  .pl-card .pl-who::after{content:'';position:absolute;top:0;right:0;bottom:0;width:6px;
+    pointer-events:none;background:linear-gradient(90deg,rgba(70,40,55,.10),rgba(70,40,55,0));
+    opacity:0;transition:opacity .15s}
+  .pl-card.pl-scrolled .pl-who::after{opacity:1}
   .pl-who b{font-size:12.5px;display:block}
   .pl-who small{color:var(--plmut);font-size:10px;font-weight:500}
   .pl-hrs{margin-top:3px;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -345,7 +356,7 @@
   .pl-repos:hover .pl-restlbl{display:none}
   .pl-cyc2{font-size:9.5px;font-weight:600;color:var(--plmut);font-variant-numeric:tabular-nums}
   .pl-cyc2.good{color:var(--plok)}.pl-cyc2.bad{color:var(--plcrit)}
-  .pl-grp td{background:linear-gradient(90deg,var(--placs),#FDF6F9);padding:4px 14px;font-size:10.5px;
+  .pl-grp td{background:var(--placs);padding:4px 14px;font-size:10.5px;
     font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--plac)}
   .pl-cell{padding:5px 6px;min-height:50px}
   .pl-shift{background:var(--placs);border-left:3px solid var(--plac);border-radius:6px;padding:3px 7px;
@@ -383,6 +394,7 @@
   .pl-mo th b{display:block;font-size:11px;color:var(--plink)}
   .pl-mo td{text-align:center}
   .pl-mo .pl-who{border-right:1px solid var(--plline)}
+  .pl-yr .pl-who{border-right:1px solid var(--plline)}
   .pl-dd{display:flex;flex-direction:column;gap:2px;align-items:center;padding:5px 3px}
   .pl-tick{width:15px;height:8px;border-radius:3px;background:#EDF2EF}
   .pl-tick.on{background:var(--plac);opacity:.72}
@@ -702,7 +714,17 @@
     if (plView === 'sem') plRenderSem();
     else if (plView === 'mois') plRenderMois();
     else plRenderAn();
+    plOmbreColonne();
   };
+  // Ombre portée sur la colonne figée dès qu'on défile vers la droite : on voit qu'il y a
+  // de la matière cachée sous la colonne des noms.
+  function plOmbreColonne() {
+    document.querySelectorAll('#pl-body .pl-card').forEach(card => {
+      const maj = function () { card.classList.toggle('pl-scrolled', card.scrollLeft > 2); };
+      card.addEventListener('scroll', maj, { passive: true });
+      maj();
+    });
+  }
 
   // ── vue Semaine ──
   function plRenderSem() {
@@ -756,7 +778,7 @@
     h += '</tr>';
     let lastGrp = null;
     plContratsVisibles().forEach(c => {
-      if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td colspan="7">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
+      if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td class="pl-who"><span class="pl-grplbl" title="' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</span></td><td colspan="6"></td></tr>'; }
       const planned = plHeuresSemaine(c, mon), base = plBase(c);
       // Sur un cycle de 2 à 4 semaines, une semaine seule n'a pas à tomber juste : c'est la
       // moyenne du cycle qui doit égaler le contrat. On affiche donc la semaine, puis le cycle.
@@ -814,7 +836,7 @@
     h += '</tr></thead><tbody>';
     let lastGrp = null;
     plContratsVisibles().forEach(c => {
-      if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td colspan="' + (nd + 1) + '">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
+      if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td class="pl-who"><span class="pl-grplbl" title="' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</span></td><td colspan="' + nd + '"></td></tr>'; }
       h += '<tr><td class="pl-who"><b>' + plEsc(c.nom) + '</b><small>' + plEsc(c.role || '') + '</small></td>';
       for (let d = 1; d <= nd; d++) {
         const dt = new Date(y, m, d, 12), iso = plIso(dt);
@@ -933,7 +955,7 @@
     // ── une bande par collaborateur ──
     let lastGrp = null;
     plContratsVisibles().forEach(c => {
-      if (c.grp !== lastGrp) { lastGrp = c.grp; t += '<tr class="pl-grp"><td colspan="2">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
+      if (c.grp !== lastGrp) { lastGrp = c.grp; t += '<tr class="pl-grp"><td class="pl-who"><span class="pl-grplbl" title="' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</span></td><td></td></tr>'; }
       let strip = '';
       jours.forEach(d => {
         const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso);
