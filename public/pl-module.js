@@ -487,6 +487,12 @@
   .pl-ech-fl{font-size:22px;color:var(--plac);flex:0 0 auto}
   .pl-ech-imp{margin-top:8px;font-size:12px;background:#FBFAF9;border:1px solid var(--plline);border-radius:10px;padding:8px 12px}
   .pl-ech-imp.pl-ko{background:var(--plforb);border-color:#EAD9AE;color:#7A5A10}
+  .pl-aval{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--plforb);border:1px solid #EAD9AE;
+    border-left:4px solid var(--plwarn);border-radius:11px;padding:9px 14px;margin-bottom:12px;font-size:12.5px;color:#6E5210}
+  .pl-aval b{color:#5A430C}
+  .pl-aval .pl-btn{padding:5px 12px;font-size:12px}
+  .pl-shift.pl-echatt{border-style:dashed;box-shadow:inset 0 0 0 1px rgba(52,132,102,.35)}
+  .pl-echdot.pl-att{background:#fff;color:var(--plac);border:1.5px dashed var(--plac)}
   .pl-echdot{position:absolute;left:-4px;bottom:-4px;width:12px;height:12px;border-radius:50%;background:var(--plac);
     color:#fff;font-style:normal;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;
     border:1.5px solid #fff}
@@ -740,6 +746,7 @@
       <span style="font-size:10.5px">Compteurs : <b>présents/seuil</b>, hors poste avancé</span>
       <span style="margin-left:auto" id="pl-info"></span>
     </div>
+    <div id="pl-avalider"></div>
     <div id="pl-body"></div>
     <div class="pl-note">Planning théorique calculé depuis la trame type et les rotations. Un créneau <b>comptoir partiel</b> (ambre)
     ne couvre pas toute la plage d'ouverture (9h00-12h30 / 14h00-19h30) — typiquement une fin à 18h30.
@@ -949,7 +956,7 @@
     else plRenderAn();
     plOmbreColonne();
     try {
-      plHsBadge(); plAbsBadge(); plEchBadge();
+      plHsBadge(); plAbsBadge(); plEchBadge(); plAValider();
       // un collaborateur demande ses congés ; un administrateur déclare directement
       const adm0 = plIsAdmin();
       ['pl-btn-reg', 'pl-btn-trames'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = adm0 ? '' : 'none'; });
@@ -1050,11 +1057,12 @@
             const tt = (ex ? 'Horaire modifié ce jour (trame : ' + (plSlotsTrame(c, d)[hh] || 'repos') + ') — ' : '')
               + (part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '')
               + PL_POS_LBL[pos] + (admin ? ' · cliquer pour modifier ce jour' : '');
-            const ech = plEchOf(c.id, iso);
-            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + kl + '"' + clic
-              + ' title="' + plEsc(tt + (ech ? ' — journée issue d\'un échange' : '')) + '">' + plEsc(sl[hh]) + posBadge
+            const ech = plEchOf(c.id, iso), echAtt = !ech && plEchAttenteOf(c.id, iso);
+            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + (echAtt ? ' pl-echatt' : '') + kl + '"' + clic
+              + ' title="' + plEsc(tt + (ech ? ' — journée issue d\'un échange' : (echAtt ? ' — échange demandé, en attente de validation' : ''))) + '">' + plEsc(sl[hh]) + posBadge
               + (ex && !ech ? '<i class="pl-exdot" title="Exception du jour"></i>' : '')
-              + (ech ? '<i class="pl-echdot" title="Échange de jours validé">⇄</i>' : '') + '</div>';
+              + (ech ? '<i class="pl-echdot" title="Échange de jours validé">⇄</i>' : '')
+              + (echAtt ? '<i class="pl-echdot pl-att" title="Échange demandé — en attente de validation">⇄</i>' : '') + '</div>';
           } else {
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
             if (ex) cell += '<div class="pl-off pl-mod' + kl + '"' + clic + ' style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
@@ -2251,6 +2259,28 @@
     const bilan = sous ? '<b style="color:#B23A2F">' + sous + ' demi-journée' + (sous > 1 ? 's' : '') + ' sous le seuil</b>' : (lim ? '<b style="color:#B26A00">' + lim + ' au seuil juste</b>' : '<b style="color:#1D5C3A">effectif suffisant sur toute la période</b>');
     return '<div class="pl-sub" style="margin-top:6px">Si acceptée — ' + bilan + ' (' + n + ' demi-journée' + (n > 1 ? 's' : '') + ' travaillée' + (n > 1 ? 's' : '') + ') :</div><div class="pl-impact">' + html + '</div>';
   }
+  // Bandeau de notification en tête du planning : ce qui attend une décision de l'administrateur.
+  function plAValider() {
+    const el = document.getElementById('pl-avalider'); if (!el) return;
+    if (!plIsAdmin()) { el.innerHTML = ''; return; }
+    const dem = L('demandes').filter(d => d.statut === 'attente').length;
+    const ech = L('echanges').filter(e => e.statut === 'attente').length;
+    const hs = L('heuresSup').filter(d => d.statut === 'attente').length;
+    if (!dem && !ech && !hs) { el.innerHTML = ''; return; }
+    const bout = (n, sing, plur, vue) => n
+      ? '<button class="pl-btn pl-ghost" onclick="plAllerVue(\'' + vue + '\')">' + n + ' ' + (n > 1 ? plur : sing) + ' →</button>' : '';
+    el.innerHTML = '<div class="pl-aval"><b>En attente de votre validation</b>'
+      + bout(ech, 'échange de jours', 'échanges de jours', 'echanges')
+      + bout(dem, 'demande de congés', 'demandes de congés', 'conges')
+      + bout(hs, 'déclaration d’heures', 'déclarations d’heures', 'compteurs')
+      + '<span style="opacity:.85">Les échanges proposés n’entrent dans le planning qu’après validation.</span></div>';
+  }
+  // bascule vers un écran du menu latéral (page dédiée) ; sans effet dans l'intranet
+  window.plAllerVue = function (v) {
+    const b = document.querySelector('.sb .it[data-v="' + v + '"]');
+    if (b && typeof plVue === 'function') plVue(v, b);
+    else plToast('Ouvrez le planning en pleine page pour accéder à cet écran');
+  };
   function plEchBadge() {
     const b = document.getElementById('pl-ech-badge'); if (!b) return;
     const n = plIsAdmin() ? L('echanges').filter(e => e.statut === 'attente').length : 0;
@@ -2745,6 +2775,13 @@
   // journée), donc la trame n'est jamais touchée et l'annulation les retire proprement.
   const PL_ECH_STATUT = { attente: 'À valider', valide: 'Validé', refuse: 'Refusé', annule: 'Annulé' };
 
+  // échange EN ATTENTE touchant une journée : sert au repérage « demandé, non validé »
+  function plEchAttenteOf(cid, iso) {
+    return L('echanges').find(e => e.statut === 'attente'
+      && ((e.aId === cid && (e.aDate === iso || e.bDate === iso))
+        || (e.bId === cid && (e.aDate === iso || e.bDate === iso)))) || null;
+  }
+  window.plEchAttenteOf = plEchAttenteOf;
   function plEchOf(cid, iso) {
     return L('echanges').find(e => e.statut === 'valide'
       && ((e.aId === cid && e.aDate === iso) || (e.bId === cid && e.bDate === iso)
@@ -2832,13 +2869,18 @@
     if (!aId || !bId || !aDate || !bDate) { plToast('Complétez les deux collaborateurs et les deux dates'); return; }
     if (aId === bId && aDate === bDate) { plToast('Choisissez deux journées différentes'); return; }
     const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    // Un échange n'est JAMAIS appliqué à la proposition : il doit être validé, y compris
+    // quand c'est un administrateur qui le saisit — la validation est l'acte qui l'engage.
+    const enDouble = L('echanges').find(x => x.statut === 'attente'
+      && ((x.aId === aId && x.aDate === aDate) || (x.bId === aId && x.bDate === aDate)
+        || (x.aId === bId && x.aDate === bDate) || (x.bId === bId && x.bDate === bDate)));
+    if (enDouble) { plToast('Une demande d’échange est déjà en attente sur l’une de ces journées'); return; }
     const e = { id: plNewId('ech'), aId: aId, aDate: aDate, bId: bId, bDate: bDate,
-      statut: plIsAdmin() ? 'valide' : 'attente', motif: g('pl-ech-m').value.trim(),
+      statut: 'attente', motif: g('pl-ech-m').value.trim(),
       demandePar: moi, demandeAt: Date.now(), updatedAt: Date.now() };
-    if (e.statut === 'valide') { e.decidePar = moi; e.decideAt = Date.now(); plEchEcrire(e, true); }
     plEchanges.push(e);
     plPersist();
-    plToast(e.statut === 'valide' ? 'Échange validé et appliqué au planning' : 'Échange proposé — en attente de validation');
+    plToast('Échange proposé — il apparaîtra dans le planning une fois validé');
     plEchRender(); plRender();
   };
   window.plEchDecider = function (id, statut) {
@@ -2921,8 +2963,8 @@
       + '<label style="flex:1 1 220px">Motif (facultatif)<input class="pl-inp" id="pl-ech-m" placeholder="rendez-vous, convenance…"></label>'
       + '</div>'
       + '<div id="pl-ech-ap" style="margin-top:12px"></div>'
-      + '<div style="margin-top:12px"><button class="pl-btn pl-pri" onclick="plEchCreer()">'
-      + (admin ? 'Valider et appliquer' : 'Proposer l’échange') + '</button></div></div>';
+      + '<div style="margin-top:12px"><button class="pl-btn pl-pri" onclick="plEchCreer()">Proposer l’échange</button>'
+      + '<span class="pl-sub" style="margin-left:12px">' + (admin ? 'Vous le validerez ensuite dans « À valider ».' : 'Un administrateur le validera.') + '</span></div></div>';
 
     const toutes = L('echanges').filter(e => admin || (monC && (e.aId === monC.id || e.bId === monC.id)));
     const attente = toutes.filter(e => e.statut === 'attente');
