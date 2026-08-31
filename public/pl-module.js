@@ -503,6 +503,7 @@
   .pl-cell.pl-click{cursor:pointer}
   .pl-cell.pl-click:hover{background:#FBF8F6}
   .pl-shift.pl-click{cursor:pointer}
+  .pl-abs.pl-click{cursor:pointer}.pl-abs.pl-click:hover{filter:brightness(.94)}
   .pl-shift.pl-click:hover{filter:brightness(.94);box-shadow:0 1px 4px rgba(70,40,55,.18)}
   .pl-chip.pl-ch-part{background:var(--plforb);color:var(--plwarn)}.pl-chip.pl-ch-part i{background:var(--plwarn)}
   .pl-empty{color:var(--plmut);text-align:center;padding:44px 12px;line-height:1.6}
@@ -764,7 +765,7 @@
     </div>
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-abs"><div class="pl-box" style="width:min(520px,96vw)">
-    <h3>Déclarer une absence</h3>
+    <h3 id="pl-abs-titre">Déclarer une absence</h3>
     <div class="pl-sub">Congés, maternité, maladie, récupération ou formation, sur une ou plusieurs journées.</div>
     <div class="pl-form">
       <label style="flex:1 1 100%">Collaborateur<select id="pl-abs-cid" class="pl-inp"></select></label>
@@ -779,6 +780,7 @@
     </div>
     <div class="pl-sub" id="pl-abs-resume" style="margin-top:10px"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="pl-btn pl-ghost" id="pl-abs-suppr" style="margin-right:auto;color:#C62828;display:none" onclick="plAbsSupprimerCourante()">Supprimer</button>
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-abs')">Annuler</button>
       <button class="pl-btn pl-pri" onclick="plAbsEnregistrer()">Enregistrer</button>
     </div>
@@ -1003,8 +1005,9 @@
           // chaque demi-journée est un point d'entrée : un clic ouvre le sélecteur d'horaires
           const clic = admin ? ' onclick="plJourPick(event,\'' + c.id + '\',\'' + iso + '\',' + hh + ')"' : '';
           const kl = admin ? ' pl-click' : '';
-          if (ab[hh] && plHeuresConservees(ab[hh]) && sl[hh]) cell += '<div class="pl-shift pl-formation" title="En formation — horaire habituel conservé (compte dans les heures), absent de la pharmacie">' + plEsc(sl[hh]) + '<i class="pl-fortag">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</i></div>';
-          else if (ab[hh] && !plHeuresConservees(ab[hh])) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
+          const clicAbs = admin ? ' onclick="plAbsClic(event,\'' + c.id + '\',\'' + iso + '\',' + hh + ')"' : '';
+          if (ab[hh] && plHeuresConservees(ab[hh]) && sl[hh]) cell += '<div class="pl-shift pl-formation' + kl + '"' + clicAbs + ' title="En formation — horaire habituel conservé (compte dans les heures), absent de la pharmacie' + (admin ? ' · cliquer pour modifier' : '') + '">' + plEsc(sl[hh]) + '<i class="pl-fortag">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</i></div>';
+          else if (ab[hh] && !plHeuresConservees(ab[hh])) cell += '<div class="pl-abs ' + ab[hh] + kl + '"' + clicAbs + ' title="' + (PL_MOTIFS_LONG[ab[hh]] || '') + (admin ? ' · cliquer pour modifier' : '') + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
           else if (dm[hh] && sl[hh]) cell += '<div class="pl-abs pl-dem" title="Demande de ' + (PL_MOTIFS_LONG[dm[hh]] || '').toLowerCase() + ' en attente de validation — horaire prévu : ' + plEsc(sl[hh]) + '">' + (PL_MOTIFS[dm[hh]] || dm[hh]) + ' ?</div>';
           else if (sl[hh]) {
             const pos = plPosEff(c, d, hh);
@@ -2022,9 +2025,13 @@
   function plAbsChevauche(a, saufId) {
     return L('absences').find(b => b.id !== saufId && b.contratId === a.contratId && b.debut <= a.fin && b.fin >= a.debut) || null;
   }
-  window.plAbsOuvrir = function (cid) {
+  let plAbsEditId = null;   // absence en cours de modification (null = création)
+  window.plAbsOuvrir = function (cid, absId) {
     if (!plGarde()) return;
     const admin = plIsAdmin();
+    const edit = absId ? L('absences').find(x => x.id === absId) : null;
+    plAbsEditId = edit ? edit.id : null;
+    if (edit) cid = edit.contratId;
     const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
     const monC = moi ? L('contrats').find(c => c.actif !== false && c.staffId === moi) : null;
     const liste = L('contrats').filter(c => c.actif !== false && (admin || (monC && c.id === monC.id))).sort(plCmp);
@@ -2033,10 +2040,13 @@
     const cour = cid || (monC && monC.id) || liste[0].id;
     sel.innerHTML = liste.map(c => '<option value="' + plEsc(c.id) + '"' + (c.id === cour ? ' selected' : '') + '>' + plEsc(c.nom) + '</option>').join('');
     const auj = plIso(new Date());
-    document.getElementById('pl-abs-debut').value = auj; document.getElementById('pl-abs-fin').value = auj;
-    document.getElementById('pl-abs-debutam').checked = false; document.getElementById('pl-abs-finm').checked = false;
-    document.getElementById('pl-abs-com').value = ''; document.getElementById('pl-abs-motif').value = 'cp';
+    document.getElementById('pl-abs-debut').value = edit ? edit.debut : auj; document.getElementById('pl-abs-fin').value = edit ? edit.fin : auj;
+    document.getElementById('pl-abs-debutam').checked = !!(edit && edit.debutAM); document.getElementById('pl-abs-finm').checked = !!(edit && edit.finM);
+    document.getElementById('pl-abs-com').value = edit ? (edit.commentaire || '') : ''; document.getElementById('pl-abs-motif').value = edit ? (edit.motif || 'cp') : 'cp';
     document.getElementById('pl-abs-resume').textContent = '';
+    document.getElementById('pl-abs-titre').textContent = edit ? 'Modifier l\'absence' : 'Déclarer une absence';
+    document.getElementById('pl-abs-suppr').style.display = edit ? '' : 'none';
+    sel.disabled = !!edit;   // on ne transfère pas une absence d'un collaborateur à un autre
     ['pl-abs-cid', 'pl-abs-motif', 'pl-abs-debut', 'pl-abs-fin', 'pl-abs-debutam', 'pl-abs-finm'].forEach(id => { document.getElementById(id).onchange = plAbsResume; });
     plAbsResume();
     plOpen('pl-ov-abs');
@@ -2051,7 +2061,7 @@
     const a = plAbsLire(), el = document.getElementById('pl-abs-resume'); if (!el) return;
     if (!a.debut || !a.fin || a.fin < a.debut) { el.textContent = ''; return; }
     if (a.debut === a.fin && a.debutAM && a.finM) { el.textContent = 'Sur une seule journée, cochez au plus une des deux cases.'; return; }
-    const n = plAbsJours(a), ch = plAbsChevauche(a);
+    const n = plAbsJours(a), ch = plAbsChevauche(a, plAbsEditId);
     el.innerHTML = '<b>' + (n % 1 ? n.toFixed(1).replace('.', ',') : n) + ' jour' + (n > 1 ? 's' : '') + '</b> ouvré' + (n > 1 ? 's' : '') + ' (hors dimanche)'
       + (a.motif === 'for' ? ' — horaire habituel conservé, absent de la pharmacie' : ' — hors planning, retiré des heures et de l\'effectif')
       + (ch ? '<div style="color:#C62828;margin-top:4px">Chevauche une absence déjà déclarée (' + PL_MOTIFS_LONG[ch.motif] + ' du ' + plJoliDate(ch.debut) + ' au ' + plJoliDate(ch.fin) + ').</div>' : '');
@@ -2065,12 +2075,34 @@
     if (!a.debut || !a.fin) { plToast('Indiquez les dates'); return; }
     if (a.fin < a.debut) { plToast('La date de fin précède la date de début'); return; }
     if (a.debut === a.fin && a.debutAM && a.finM) { plToast('Sur une seule journée, cochez au plus une des deux cases'); return; }
-    const ch = plAbsChevauche(a);
+    const ch = plAbsChevauche(a, plAbsEditId);
     if (ch) { plToast('Chevauche une absence déjà déclarée pour ' + c.nom.split(' ')[0] + ' — supprimez-la d\'abord'); return; }
-    a.id = plNewId('abs'); a.saisiPar = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null; a.updatedAt = Date.now();
-    L('absences').push(a); plPersist(); plClose('pl-ov-abs');
-    plToast(PL_MOTIFS_LONG[a.motif] + ' — ' + c.nom.split(' ')[0] + ' du ' + plJoliDate(a.debut) + ' au ' + plJoliDate(a.fin));
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    const edit = plAbsEditId ? L('absences').find(x => x.id === plAbsEditId) : null;
+    if (edit) {
+      edit.motif = a.motif; edit.debut = a.debut; edit.fin = a.fin; edit.debutAM = a.debutAM; edit.finM = a.finM; edit.commentaire = a.commentaire;
+      edit.modifiePar = moi; plStamp(edit);
+    } else {
+      a.id = plNewId('abs'); a.saisiPar = moi; a.updatedAt = Date.now();
+      L('absences').push(a);
+    }
+    plAbsEditId = null; plPersist(); plClose('pl-ov-abs');
+    plToast((edit ? 'Absence modifiée — ' : '') + PL_MOTIFS_LONG[a.motif] + ' — ' + c.nom.split(' ')[0] + ' du ' + plJoliDate(a.debut) + ' au ' + plJoliDate(a.fin));
     plRender(); plAbsRender();
+  };
+  window.plAbsSupprimerCourante = function () {
+    if (!plAbsEditId) return;
+    const id = plAbsEditId; plClose('pl-ov-abs'); plAbsEditId = null;
+    plAbsSupprimer(id);
+  };
+  // clic sur une absence dans le planning : la période déclarée qui couvre cette demi-journée
+  window.plAbsClic = function (ev, cid, iso, hh) {
+    if (ev) ev.stopPropagation();
+    if (!plGarde()) return;
+    const a = L('absences').find(x => x.contratId === cid && x.debut <= iso && x.fin >= iso
+      && !(iso === x.debut && x.debutAM && hh === 0) && !(iso === x.fin && x.finM && hh === 1));
+    if (a) plAbsOuvrir(cid, a.id);
+    else plJourPick(ev, cid, iso, hh);   // absence ponctuelle saisie au jour : on retombe sur le sélecteur du jour
   };
   window.plAbsSupprimer = function (id) {
     const arr = L('absences'); const i = arr.findIndex(x => x.id === id); if (i < 0) return;
@@ -2096,7 +2128,7 @@
           return '<tr><td style="text-align:left"><b>' + plEsc(c ? c.nom : '—') + '</b></td><td>' + chip(a.motif) + '</td>'
             + '<td>' + plJoliDate(a.debut) + (a.debutAM ? ' <small>ap.-midi</small>' : '') + '</td><td>' + plJoliDate(a.fin) + (a.finM ? ' <small>midi</small>' : '') + '</td>'
             + '<td>' + (n % 1 ? n.toFixed(1).replace('.', ',') : n) + '</td><td style="text-align:left">' + plEsc(a.commentaire || '') + '</td><td style="font-size:11px;color:var(--plmut)">' + plEsc(plQui(a.saisiPar)) + '</td>'
-            + '<td>' + (admin ? '<button class="pl-btn pl-mini pl-ghost" onclick="plAbsSupprimer(\'' + a.id + '\')" title="Supprimer">✕</button>' : '') + '</td></tr>'; }).join('')
+            + '<td style="white-space:nowrap">' + (admin ? '<button class="pl-btn pl-mini pl-ghost" onclick="plAbsOuvrir(null,\'' + a.id + '\')" title="Modifier">✎</button> <button class="pl-btn pl-mini pl-ghost" onclick="plAbsSupprimer(\'' + a.id + '\')" title="Supprimer">✕</button>' : '') + '</td></tr>'; }).join('')
         + '</table>'
       : '<div class="pl-empty" style="padding:18px 12px">' + vide + '</div>';
     host.innerHTML = '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
