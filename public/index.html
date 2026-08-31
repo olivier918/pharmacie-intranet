@@ -5482,7 +5482,7 @@ function updLocStatus(id,s){
 // L'ordonnance initiale et tous les renouvellements, au même endroit.
 function locOrdos(l){
   const out=[];
-  if(l.scan||l.scanData) out.push({titre:'Ordonnance initiale', date:l.datePresc||l.dateDebut, nom:l.scan, type:l.scanType, data:l.scanData, dur:l.duree});
+  if(l.scan||l.scanData) out.push({titre:'Ordonnance initiale', date:l.datePresc||l.dateDebut, nom:l.scan, type:l.scanType, data:l.scanData, dur:l.duree, initiale:true});
   (l.renewals||[]).forEach(function(r,i){
     out.push({titre:'Renouvellement n°'+(i+1), date:r.datePresc, nom:r.scan, type:r.scanType, data:r.scanData, dur:r.duree, by:r.addedBy});
   });
@@ -5505,11 +5505,33 @@ function openLocOrdos(id){
         +'<div style="font-size:.78rem;color:var(--gray-500)">Ordonnance du '+d+(o.dur?' · '+o.dur+' sem.':'')+(o.nom?' · '+o.nom:'')+'</div></div>'
         +(dispo
            ? '<button class="btn bs sm" onclick="viewLocOrdo('+l.id+','+i+')">'+ico('voir')+' Voir</button>'
+             +'<button class="btn bd sm" onclick="delLocOrdo('+l.id+','+i+')" title="Supprimer ce document du dossier">'+ico('corbeille')+' Supprimer</button>'
            : '<span style="font-size:.76rem;color:var(--gray-500)">Fichier non joint</span>')
         +'</div>';
     }).join('');
   }
   openModal('ordo-modal');
+}
+// Supprime le document d'une ordonnance (par ex. un scan joint par erreur au
+// mauvais patient). Les informations du renouvellement (date, durée) restent :
+// seul le fichier disparaît, et la suppression est tracée dans l'historique.
+function delLocOrdo(id,idx){
+  const l=locations.find(x=>x.id===id); if(!l) return;
+  const o=locOrdos(l)[idx]; if(!o) return;
+  if(!confirm('Supprimer le document « '+(o.nom||o.titre)+' » ('+o.titre+') du dossier de '+l.nom+' '+l.prenom+' ?\n\nLe fichier sera effacé définitivement. La date et la durée de l\u2019ordonnance sont conservées.')) return;
+  // L'index 0 est l'ordonnance initiale si le dossier en a une ; ensuite viennent
+  // les renouvellements dans l'ordre. On retrouve la cible par ce même calcul.
+  const initiale=!!(l.scan||l.scanData);
+  if(initiale&&idx===0){
+    l.scan=null; l.scanType=null; l.scanData=null;
+  } else {
+    const r=(l.renewals||[])[initiale?idx-1:idx];
+    if(r){ r.scan=null; r.scanType=null; r.scanData=null; }
+  }
+  l.updatedAt=Date.now();
+  locAddComment(l,'Document supprimé : '+o.titre+(o.nom?' ('+o.nom+')':''), true);
+  openLocOrdos(id);
+  renderLocs();
 }
 function viewLocOrdo(id,idx){
   const l=locations.find(x=>x.id===id); if(!l) return;
