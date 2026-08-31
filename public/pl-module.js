@@ -66,6 +66,7 @@
       case 'trames': if (!Array.isArray(plTrames)) plTrames = []; return plTrames;
       case 'exceptions': if (!Array.isArray(plExceptions)) plExceptions = []; return plExceptions;
       case 'heuresSup': if (typeof plHeuresSup === 'undefined' || !Array.isArray(plHeuresSup)) window.plHeuresSup = []; return plHeuresSup;
+      case 'absences': if (typeof plAbsences === 'undefined' || !Array.isArray(plAbsences)) window.plAbsences = []; return plAbsences;
     }
     return [];
   }
@@ -243,6 +244,7 @@
   }
   // exposés pour l'inspection et les tests (lecture seule)
   window.plSlotsTrame = plSlotsTrame; window.plVerAt = plVerAt; window.plTrameAt = plTrameAt;
+  window.plAbs = plAbs; window.plSlots = plSlots; window.plEffectif = plEffectif;
   // exception d'horaire du jour (type 'horaire') pour une demi-journée : record ou null
   function plExOf(c, iso, demi) {
     return L('exceptions').find(x => x.contratId === c.id && x.date === iso && x.type === 'horaire' && x.demi === demi) || null;
@@ -266,12 +268,25 @@
   }
   // absence validée (exception de type absence) pour un contrat à une date → {motif} ou null par demi-journée
   function plAbs(c, iso) {
+    const out = [null, null];
+    // périodes déclarées (congés, maternité, maladie, récupération, formation)
+    L('absences').forEach(a => {
+      if (a.contratId !== c.id || !a.debut || !a.fin || iso < a.debut || iso > a.fin) return;
+      if (!(iso === a.debut && a.debutAM)) out[0] = a.motif || 'cp';
+      if (!(iso === a.fin && a.finM)) out[1] = a.motif || 'cp';
+    });
+    // absences ponctuelles saisies au jour (exception de type absence)
     const e = L('exceptions').filter(x => x.contratId === c.id && x.date === iso && x.type === 'absence');
-    if (!e.length) return [null, null];
     const m = e.find(x => x.demi === 'M' || x.journee), a = e.find(x => x.demi === 'AM' || x.journee);
-    return [m ? (m.motif || 'cp') : null, a ? (a.motif || 'cp') : null];
+    if (m) out[0] = m.motif || 'cp';
+    if (a) out[1] = a.motif || 'cp';
+    return out;
   }
-  const PL_MOTIFS = { cp: 'Congés', mal: 'Maladie', rec: 'Récup.', for: 'Formation' };
+  const PL_MOTIFS = { cp: 'Congés', mat: 'Maternité', mal: 'Maladie', rec: 'Récup.', for: 'Formation' };
+  const PL_MOTIFS_LONG = { cp: 'Vacances / congés payés', mat: 'Congé maternité', mal: 'Arrêt maladie', rec: 'Récupération', for: 'Formation' };
+  // en formation, l'horaire habituel est conservé (il compte dans les heures) mais le
+  // collaborateur est absent de la pharmacie : hors effectif, affiché en grisé
+  function plHeuresConservees(motif) { return motif === 'for'; }
 
   // ── amplitude d'ouverture (par défaut : 9h00-12h30 / 14h00-19h30, lundi-samedi) ──
   // surchargée par plParams.ouverture = { M:[540,750], AM:[840,1170] } (minutes depuis minuit)
@@ -317,8 +332,8 @@
     for (let k = 0; k < 7; k++) {
       const d = plAddD(monday, k), iso = plIso(d);
       const sl = plSlots(c, d), ab = plAbs(c, iso);
-      if (sl[0] && !ab[0]) tot += plDurOf(sl[0]);
-      if (sl[1] && !ab[1]) tot += plDurOf(sl[1]);
+      if (sl[0] && (!ab[0] || plHeuresConservees(ab[0]))) tot += plDurOf(sl[0]);
+      if (sl[1] && (!ab[1] || plHeuresConservees(ab[1]))) tot += plDurOf(sl[1]);
     }
     return Math.round(tot * 4) / 4;
   }
@@ -378,7 +393,7 @@
     --plac:#348466;--placs:#E6F1EB;--plrose:#D26E96;--plroses:#FAEAF1;--plrosei:#B04A74;
     --plok:#2E8564;--plwarn:#B8821C;--plcrit:#C4544A;
     --plcp:#4173AC;--plcpb:#E8EFF7;--plmal:#C4544A;--plmalb:#FAE9E7;
-    --plrec:#8A63C9;--plrecb:#F0EAFA;--plfor:#B8821C;--plforb:#F8F0DE}
+    --plrec:#8A63C9;--plrecb:#F0EAFA;--plfor:#B8821C;--plforb:#F8F0DE;--plmat:#C2559A;--plmatb:#F9E7F1}
   .pl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
   .pl-title{font-size:1.05rem;font-weight:700;margin-right:4px}
   .pl-title .t2{color:var(--plrosei)}
@@ -405,6 +420,7 @@
   .pl-ch-mal{background:var(--plmalb);color:var(--plmal)}.pl-ch-mal i{background:var(--plmal)}
   .pl-ch-rec{background:var(--plrecb);color:var(--plrec)}.pl-ch-rec i{background:var(--plrec)}
   .pl-ch-for{background:var(--plforb);color:var(--plfor)}.pl-ch-for i{background:var(--plfor)}
+  .pl-ch-mat{background:var(--plmatb);color:var(--plmat)}.pl-ch-mat i{background:var(--plmat)}
   .pl-card{background:#fff;border:1px solid var(--plline);border-radius:16px;overflow:auto;
     box-shadow:0 2px 10px rgba(70,40,55,.05)}
   .pl-card table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -453,6 +469,9 @@
     text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
   .pl-abs.cp{background:var(--plcpb);color:var(--plcp)}.pl-abs.mal{background:var(--plmalb);color:var(--plmal)}
   .pl-abs.rec{background:var(--plrecb);color:var(--plrec)}.pl-abs.for{background:var(--plforb);color:var(--plfor)}
+  .pl-abs.mat{background:var(--plmatb);color:var(--plmat)}
+  .pl-shift.pl-formation{background:#EDEDED;color:#8E9395;border-left-color:#B9BEC0;text-decoration:none}
+  .pl-shift.pl-formation .pl-fortag{display:block;font-style:normal;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--plfor);margin-top:1px}
   .pl-off{color:#C3CDC7;font-size:10px;padding:6px 7px}
   .pl-cntrow td{background:#FBFAF9;border-bottom:2px solid var(--plline);padding:5px 6px}
   .pl-cntlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
@@ -486,7 +505,7 @@
   .pl-tick{width:15px;height:8px;border-radius:3px;background:#EDF2EF}
   .pl-tick.on{background:var(--plac);opacity:.72}
   .pl-tick.cp{background:var(--plcp)}.pl-tick.mal{background:var(--plmal)}
-  .pl-tick.rec{background:var(--plrec)}.pl-tick.for{background:var(--plfor)}
+  .pl-tick.rec{background:var(--plrec)}.pl-tick.for{background:var(--plfor)}.pl-tick.mat{background:var(--plmat)}
   .pl-wee{background:#F7F4F2}
   .pl-mnp{width:17px;margin:1px auto;border-radius:4px;font-size:8.5px;font-weight:800;line-height:12px;
     text-align:center;font-variant-numeric:tabular-nums}
@@ -500,7 +519,7 @@
   .pl-yr .pl-dt{width:3px;height:14px;border-radius:1px;background:#EFF3F0;flex:0 0 auto}
   .pl-yr .pl-dt.on{background:#CBDED3}
   .pl-yr .pl-dt.cp{background:var(--plcp)}.pl-yr .pl-dt.mal{background:var(--plmal)}
-  .pl-yr .pl-dt.rec{background:var(--plrec)}.pl-yr .pl-dt.for{background:var(--plfor)}
+  .pl-yr .pl-dt.rec{background:var(--plrec)}.pl-yr .pl-dt.for{background:var(--plfor)}.pl-yr .pl-dt.mat{background:var(--plmat)}
   /* vue Année zoomable */
   .pl-anbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .pl-anlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
@@ -660,15 +679,17 @@
       </div>
       <span class="pl-grow"></span>
       <select class="pl-sel" id="pl-fgrp" onchange="plFiltre(this.value)"><option value="">Toute l'équipe</option></select>
+      <button class="pl-btn pl-ghost" onclick="plAbsOuvrir()">🏖 Déclarer une absence</button>
       <button class="pl-btn pl-rose" onclick="plOpenTrames()">🗓 Trames horaires</button>
       <button class="pl-btn pl-ghost" id="pl-btn-reg" onclick="plOpenReglages()">⚙ Réglages</button>
     </div>
     <div class="pl-legend">
       <span style="font-weight:700;color:var(--plink)">Motifs</span>
       <span class="pl-chip pl-ch-cp"><i></i>Congés</span>
+      <span class="pl-chip pl-ch-mat"><i></i>Maternité</span>
       <span class="pl-chip pl-ch-mal"><i></i>Maladie</span>
       <span class="pl-chip pl-ch-rec"><i></i>Récupération</span>
-      <span class="pl-chip pl-ch-for"><i></i>Formation</span>
+      <span class="pl-chip pl-ch-for" title="Horaire habituel conservé, mais absent de la pharmacie"><i></i>Formation</span>
       <span class="pl-chip pl-ch-part"><i></i>Comptoir partiel</span>
       <span style="font-size:10.5px">Compteurs : <b>présents/seuil</b>, hors poste avancé</span>
       <span style="margin-left:auto" id="pl-info"></span>
@@ -677,7 +698,7 @@
     <div class="pl-note">Planning théorique calculé depuis la trame type et les rotations. Un créneau <b>comptoir partiel</b> (ambre)
     ne couvre pas toute la plage d'ouverture (9h00-12h30 / 14h00-19h30) — typiquement une fin à 18h30.
     🚚 = aucun logisticien présent sur la fenêtre de livraisons (15h-18h) : désigner un responsable des livraisons ce jour-là.
-    Les absences, demandes de congés et compteurs arrivent aux lots suivants.</div>
+    Une absence de plusieurs jours se déclare avec le bouton <b>Déclarer une absence</b> ; en <b>formation</b>, l'horaire habituel est conservé (il compte dans les heures) mais le collaborateur apparaît grisé et hors effectif.</div>
   </div>`;
 
   // ---------- modales (réglages + trame) ----------
@@ -709,6 +730,26 @@
     <div class="pl-actions">
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-trame')">Annuler</button>
       <button class="pl-btn pl-pri" onclick="plSaveTrame()">Enregistrer la trame</button>
+    </div>
+  </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-abs"><div class="pl-box" style="width:min(520px,96vw)">
+    <h3>Déclarer une absence</h3>
+    <div class="pl-sub">Congés, maternité, maladie, récupération ou formation, sur une ou plusieurs journées.</div>
+    <div class="pl-form">
+      <label style="flex:1 1 100%">Collaborateur<select id="pl-abs-cid" class="pl-inp"></select></label>
+      <label style="flex:1 1 100%">Motif<select id="pl-abs-motif" class="pl-inp">
+        <option value="cp">Vacances / congés payés</option><option value="mat">Congé maternité</option><option value="mal">Arrêt maladie</option>
+        <option value="rec">Récupération</option><option value="for">Formation (horaire conservé, absent de la pharmacie)</option></select></label>
+      <label style="flex:1 1 45%">Du<input type="date" id="pl-abs-debut" class="pl-inp"></label>
+      <label style="flex:1 1 45%">Au<input type="date" id="pl-abs-fin" class="pl-inp"></label>
+      <label style="flex:1 1 45%;flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="pl-abs-debutam"> commence l'après-midi</label>
+      <label style="flex:1 1 45%;flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="pl-abs-finm"> se termine le midi</label>
+      <label style="flex:1 1 100%">Commentaire (facultatif)<input type="text" id="pl-abs-com" class="pl-inp" placeholder="Ex. formation DPC à Caen"></label>
+    </div>
+    <div class="pl-sub" id="pl-abs-resume" style="margin-top:10px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-abs')">Annuler</button>
+      <button class="pl-btn pl-pri" onclick="plAbsEnregistrer()">Enregistrer</button>
     </div>
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-imput"><div class="pl-box" style="width:min(480px,96vw)">
@@ -921,7 +962,8 @@
         for (let hh = 0; hh < 2; hh++) {
           // chaque demi-journée est un point d'entrée : un clic ouvre le sélecteur d'horaires
           const clic = ' onclick="plJourPick(event,\'' + c.id + '\',\'' + iso + '\',' + hh + ')"';
-          if (ab[hh]) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
+          if (ab[hh] && plHeuresConservees(ab[hh]) && sl[hh]) cell += '<div class="pl-shift pl-formation" title="En formation — horaire habituel conservé (compte dans les heures), absent de la pharmacie">' + plEsc(sl[hh]) + '<i class="pl-fortag">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</i></div>';
+          else if (ab[hh] && !plHeuresConservees(ab[hh])) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
           else if (sl[hh]) {
             const pos = plPosEff(c, d, hh);
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
@@ -939,7 +981,7 @@
         }
         // journée entièrement libre : on affiche « repos », et les deux demi-journées
         // n'apparaissent qu'au survol, pour rester cliquables sans alourdir la lecture
-        const vide2 = !ab[0] && !ab[1] && !sl[0] && !sl[1] && !plExOf(c, iso, 'M') && !plExOf(c, iso, 'AM');
+        const vide2 = (!ab[0] || plHeuresConservees(ab[0])) && (!ab[1] || plHeuresConservees(ab[1])) && !sl[0] && !sl[1] && !plExOf(c, iso, 'M') && !plExOf(c, iso, 'AM');
         cells += '<td class="pl-cell' + (vide2 ? ' pl-repos' : '') + '">'
           + (vide2 ? '<div class="pl-off pl-restlbl">repos</div>' : '') + cell + '</td>';
       });
@@ -970,7 +1012,7 @@
         let cell = '';
         for (let hh = 0; hh < 2; hh++) {
           let cls = 'pl-tick';
-          if (ab[hh]) cls += ' ' + ab[hh];
+          if (ab[hh] && (!plHeuresConservees(ab[hh]) || sl[hh])) cls += ' ' + ab[hh];
           else if (sl[hh]) cls += ' on';
           cell += '<span class="' + cls + '"></span>';
         }
@@ -1087,7 +1129,8 @@
         const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso);
         let cls = 'pl-dt';
         let tt = PL_JOURS_FR[(d.getDay() + 6) % 7] + ' ' + d.getDate() + ' ' + PL_MOIS_FR[d.getMonth()] + ' — ';
-        if (ab[0] || ab[1]) { cls += ' ' + (ab[0] || ab[1]); tt += (PL_MOTIFS[ab[0] || ab[1]] || ''); }
+        const abv = [0, 1].map(k => ab[k] && (!plHeuresConservees(ab[k]) || sl[k]) ? ab[k] : null);
+        if (abv[0] || abv[1]) { cls += ' ' + (abv[0] || abv[1]); tt += (PL_MOTIFS[abv[0] || abv[1]] || ''); }
         else if (sl[0] || sl[1]) { cls += ' on'; tt += [sl[0], sl[1]].filter(Boolean).join(' · '); }
         else tt += 'repos';
         if (plExOf(c, iso, 'M') || plExOf(c, iso, 'AM')) cls += ' pl-dtex';
@@ -1909,6 +1952,112 @@
     const c = L('contrats').find(x => x.id === plJourCid); if (!c) return;
     plDropEx(c.id, plJourIso, 'M'); plDropEx(c.id, plJourIso, 'AM');
     plPersist(); plClose('pl-ov-jour'); plToast('Trame rétablie'); plRender();
+  };
+
+  // ═══════════ ABSENCES DE PLUSIEURS JOURS ═══════════
+  // plAbsences[] : { id, contratId, motif (cp|mat|mal|rec|for), debut, fin (ISO), debutAM, finM,
+  //                  commentaire, saisiPar, updatedAt }. Lues par plAbs() demi-journée par demi-journée.
+  function plAbsPeut(c) {
+    if (plIsAdmin()) return true;
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    return !!(c && moi && c.staffId === moi);
+  }
+  function plAbsJours(a) {
+    // journées ouvrées (hors dimanche) couvertes, en demi-journées / 2
+    let n = 0;
+    for (let d = new Date(a.debut + 'T12:00'); plIso(d) <= a.fin; d = plAddD(d, 1)) {
+      if (d.getDay() === 0) continue;
+      const iso = plIso(d);
+      n += (iso === a.debut && a.debutAM) ? 0 : 1;
+      n += (iso === a.fin && a.finM) ? 0 : 1;
+    }
+    return n / 2;
+  }
+  function plAbsChevauche(a, saufId) {
+    return L('absences').find(b => b.id !== saufId && b.contratId === a.contratId && b.debut <= a.fin && b.fin >= a.debut) || null;
+  }
+  window.plAbsOuvrir = function (cid) {
+    const admin = plIsAdmin();
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    const monC = moi ? L('contrats').find(c => c.actif !== false && c.staffId === moi) : null;
+    const liste = L('contrats').filter(c => c.actif !== false && (admin || (monC && c.id === monC.id))).sort(plCmp);
+    if (!liste.length) { plToast(admin ? 'Aucun contrat de planning' : 'Votre compte n\'est rattaché à aucun contrat de planning'); return; }
+    const sel = document.getElementById('pl-abs-cid');
+    const cour = cid || (monC && monC.id) || liste[0].id;
+    sel.innerHTML = liste.map(c => '<option value="' + plEsc(c.id) + '"' + (c.id === cour ? ' selected' : '') + '>' + plEsc(c.nom) + '</option>').join('');
+    const auj = plIso(new Date());
+    document.getElementById('pl-abs-debut').value = auj; document.getElementById('pl-abs-fin').value = auj;
+    document.getElementById('pl-abs-debutam').checked = false; document.getElementById('pl-abs-finm').checked = false;
+    document.getElementById('pl-abs-com').value = ''; document.getElementById('pl-abs-motif').value = 'cp';
+    document.getElementById('pl-abs-resume').textContent = '';
+    ['pl-abs-cid', 'pl-abs-motif', 'pl-abs-debut', 'pl-abs-fin', 'pl-abs-debutam', 'pl-abs-finm'].forEach(id => { document.getElementById(id).onchange = plAbsResume; });
+    plAbsResume();
+    plOpen('pl-ov-abs');
+  };
+  function plAbsLire() {
+    return { contratId: document.getElementById('pl-abs-cid').value, motif: document.getElementById('pl-abs-motif').value,
+      debut: document.getElementById('pl-abs-debut').value, fin: document.getElementById('pl-abs-fin').value,
+      debutAM: document.getElementById('pl-abs-debutam').checked, finM: document.getElementById('pl-abs-finm').checked,
+      commentaire: document.getElementById('pl-abs-com').value.trim() };
+  }
+  function plAbsResume() {
+    const a = plAbsLire(), el = document.getElementById('pl-abs-resume'); if (!el) return;
+    if (!a.debut || !a.fin || a.fin < a.debut) { el.textContent = ''; return; }
+    if (a.debut === a.fin && a.debutAM && a.finM) { el.textContent = 'Sur une seule journée, cochez au plus une des deux cases.'; return; }
+    const n = plAbsJours(a), ch = plAbsChevauche(a);
+    el.innerHTML = '<b>' + (n % 1 ? n.toFixed(1).replace('.', ',') : n) + ' jour' + (n > 1 ? 's' : '') + '</b> ouvré' + (n > 1 ? 's' : '') + ' (hors dimanche)'
+      + (a.motif === 'for' ? ' — horaire habituel conservé, absent de la pharmacie' : ' — hors planning, retiré des heures et de l\'effectif')
+      + (ch ? '<div style="color:#C62828;margin-top:4px">Chevauche une absence déjà déclarée (' + PL_MOTIFS_LONG[ch.motif] + ' du ' + plJoliDate(ch.debut) + ' au ' + plJoliDate(ch.fin) + ').</div>' : '');
+  }
+  window.plAbsEnregistrer = function () {
+    const a = plAbsLire();
+    const c = L('contrats').find(x => x.id === a.contratId);
+    if (!c) { plToast('Choisissez un collaborateur'); return; }
+    if (!plAbsPeut(c)) { plToast('Vous ne pouvez déclarer que vos propres absences'); return; }
+    if (!a.debut || !a.fin) { plToast('Indiquez les dates'); return; }
+    if (a.fin < a.debut) { plToast('La date de fin précède la date de début'); return; }
+    if (a.debut === a.fin && a.debutAM && a.finM) { plToast('Sur une seule journée, cochez au plus une des deux cases'); return; }
+    const ch = plAbsChevauche(a);
+    if (ch) { plToast('Chevauche une absence déjà déclarée pour ' + c.nom.split(' ')[0] + ' — supprimez-la d\'abord'); return; }
+    a.id = plNewId('abs'); a.saisiPar = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null; a.updatedAt = Date.now();
+    L('absences').push(a); plPersist(); plClose('pl-ov-abs');
+    plToast(PL_MOTIFS_LONG[a.motif] + ' — ' + c.nom.split(' ')[0] + ' du ' + plJoliDate(a.debut) + ' au ' + plJoliDate(a.fin));
+    plRender(); plAbsRender();
+  };
+  window.plAbsSupprimer = function (id) {
+    const arr = L('absences'); const i = arr.findIndex(x => x.id === id); if (i < 0) return;
+    const c = L('contrats').find(x => x.id === arr[i].contratId);
+    if (!plAbsPeut(c)) { plToast('Réservé aux administrateurs'); return; }
+    if (!confirm('Supprimer cette absence ?')) return;
+    arr.splice(i, 1); plPersist(); plRender(); plAbsRender();
+  };
+  // ── écran Congés & absences ──
+  window.plAbsRender = function () {
+    const host = document.getElementById('pl-abs-host'); if (!host) return;
+    const admin = plIsAdmin(), auj = plIso(new Date());
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    const monC = moi ? L('contrats').find(c => c.actif !== false && c.staffId === moi) : null;
+    const toutes = L('absences').filter(a => admin || (monC && a.contratId === monC.id));
+    const enCours = toutes.filter(a => a.debut <= auj && a.fin >= auj).sort((x, y) => x.fin.localeCompare(y.fin));
+    const aVenir = toutes.filter(a => a.debut > auj).sort((x, y) => x.debut.localeCompare(y.debut));
+    const passees = toutes.filter(a => a.fin < auj).sort((x, y) => y.fin.localeCompare(x.fin));
+    const chip = m => '<span class="pl-chip pl-ch-' + m + '"><i></i>' + (PL_MOTIFS_LONG[m] || m) + '</span>';
+    const table = (liste, vide) => liste.length
+      ? '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Motif</th><th>Du</th><th>Au</th><th>Jours</th><th>Commentaire</th><th>Saisi par</th><th></th></tr>'
+        + liste.map(a => { const c = L('contrats').find(x => x.id === a.contratId); const n = plAbsJours(a);
+          return '<tr><td style="text-align:left"><b>' + plEsc(c ? c.nom : '—') + '</b></td><td>' + chip(a.motif) + '</td>'
+            + '<td>' + plJoliDate(a.debut) + (a.debutAM ? ' <small>ap.-midi</small>' : '') + '</td><td>' + plJoliDate(a.fin) + (a.finM ? ' <small>midi</small>' : '') + '</td>'
+            + '<td>' + (n % 1 ? n.toFixed(1).replace('.', ',') : n) + '</td><td style="text-align:left">' + plEsc(a.commentaire || '') + '</td><td style="font-size:11px;color:var(--plmut)">' + plEsc(plQui(a.saisiPar)) + '</td>'
+            + '<td>' + (plAbsPeut(c) ? '<button class="pl-btn pl-mini pl-ghost" onclick="plAbsSupprimer(\'' + a.id + '\')" title="Supprimer">✕</button>' : '') + '</td></tr>'; }).join('')
+        + '</table>'
+      : '<div class="pl-empty" style="padding:18px 12px">' + vide + '</div>';
+    host.innerHTML = '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:260px"><b style="font-size:14px">Congés &amp; absences</b>'
+      + '<div class="pl-sub" style="margin:4px 0 0">Vacances, congé maternité, arrêt maladie, récupération ou formation. En formation, l\'horaire habituel est conservé mais le collaborateur apparaît grisé et hors effectif dans le planning.</div></div>'
+      + '<button class="pl-btn pl-pri" onclick="plAbsOuvrir()">🏖 Déclarer une absence</button></div>'
+      + '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">En cours</b>' + table(enCours, 'Personne n\'est absent aujourd\'hui.') + '</div>'
+      + '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">À venir</b>' + table(aVenir, 'Aucune absence à venir.') + '</div>'
+      + '<div class="pl-card" style="padding:16px 18px"><b style="font-size:14px">Passées</b>' + table(passees.slice(0, 100), 'Aucune absence passée.') + '</div>';
   };
 
   // ═══════════ HEURES SUPPLÉMENTAIRES & COMPTE-TEMPS ═══════════
