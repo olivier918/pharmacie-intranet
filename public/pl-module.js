@@ -44,7 +44,17 @@
   function plPersist() { try { if (typeof schedSave === 'function') schedSave(); else if (typeof saveAll === 'function') saveAll(); } catch (e) { console.warn('pl save', e); } }
   function plStamp(o) { o.updatedAt = Date.now(); return o; }
   function plNewId(pfx) { return pfx + ':' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-  function plIsAdmin() { try { return !!(typeof currentUser !== 'undefined' && currentUser && (currentUser.admin || currentUser.role === 'admin' || currentUser.plRole === 'titulaire' || currentUser.plRole === 'responsable')); } catch (e) { return false; } }
+  function plIsAdmin() {
+    try {
+      if (typeof currentUser === 'undefined' || !currentUser) return false;
+      if (currentUser.admin || currentUser.role === 'admin' || currentUser.plRole === 'titulaire' || currentUser.plRole === 'responsable') return true;
+      // même repli que l'intranet : tant qu'aucun collaborateur ne porte le drapeau admin,
+      // les titulaires (OF, AF) le sont d'office
+      const staff = (typeof staffDB !== 'undefined' && Array.isArray(staffDB)) ? staffDB : [];
+      if (!staff.some(s => s && s.admin === true)) return currentUser.id === 'OF' || currentUser.id === 'AF';
+      return false;
+    } catch (e) { return false; }
+  }
 
   // accès sûrs aux globales (index.html les déclare ; garde-fou si module chargé isolément)
   function P() { if (typeof plParams === 'undefined' || !plParams || typeof plParams !== 'object') window.plParams = {}; return plParams; }
@@ -55,6 +65,7 @@
       case 'contrats': if (!Array.isArray(plContrats)) plContrats = []; return plContrats;
       case 'trames': if (!Array.isArray(plTrames)) plTrames = []; return plTrames;
       case 'exceptions': if (!Array.isArray(plExceptions)) plExceptions = []; return plExceptions;
+      case 'heuresSup': if (typeof plHeuresSup === 'undefined' || !Array.isArray(plHeuresSup)) window.plHeuresSup = []; return plHeuresSup;
     }
     return [];
   }
@@ -698,6 +709,16 @@
     <div class="pl-actions">
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-trame')">Annuler</button>
       <button class="pl-btn pl-pri" onclick="plSaveTrame()">Enregistrer la trame</button>
+    </div>
+  </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-imput"><div class="pl-box" style="width:min(480px,96vw)">
+    <h3>Heures en plus de la trame</h3>
+    <div class="pl-sub" id="pl-imput-sub">Ce créneau s'ajoute sur une demi-journée de repos.</div>
+    <div style="display:flex;flex-direction:column;gap:9px;margin:14px 0 4px">
+      <button class="pl-btn pl-pri" style="display:block;width:100%;padding:12px 14px;height:auto;text-align:left;line-height:1.35" onclick="plImputChoisir('hs')">
+        <b>Heures supplémentaires</b><br><span style="font-weight:400;font-size:11.5px;opacity:.9">S'ajoutent aux heures habituelles, remontées sur la navette des salaires.</span></button>
+      <button class="pl-btn pl-ghost" style="display:block;width:100%;padding:12px 14px;height:auto;text-align:left;line-height:1.35" onclick="plImputChoisir('compte')">
+        <b>Compte-temps</b><br><span style="font-weight:400;font-size:11.5px;color:var(--plmut)">Créditées sur le compte-temps du collaborateur, à récupérer plus tard.</span></button>
     </div>
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-jour"><div class="pl-box" style="width:min(560px,96vw)">
@@ -1791,11 +1812,15 @@
     const ecrire = function (horaire, pos) {
       const memeH = (horaire || null) === (trame[hh] || null);
       const memeP = pos === posTrame;
+      const ancienne = plExOf(c, iso, demi);
       plDropEx(c.id, iso, demi);
       if (!memeH || !memeP) {
-        plExceptions.push({ id: plNewId('ex'), contratId: c.id, date: iso, demi: demi, type: 'horaire',
+        const ex = { id: plNewId('ex'), contratId: c.id, date: iso, demi: demi, type: 'horaire',
           horaire: horaire || null, pos: memeP ? null : pos,
-          saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() });
+          saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() };
+        if (ancienne && ancienne.imputation) ex.imputation = ancienne.imputation;
+        plExceptions.push(ex);
+        plImputSiBesoin(ex, c, trame[hh]);
       }
       plPersist(); plRender();
     };
@@ -1865,11 +1890,15 @@
       const posVal = pEl ? pEl.value : posTrame;
       const memeHoraire = (val || null) === (trame[hh] || null);
       const memePos = posVal === posTrame;
+      const ancienne = plExOf(c, plJourIso, demi);
       plDropEx(c.id, plJourIso, demi);
       if (!memeHoraire || !memePos) {
-        plExceptions.push({ id: plNewId('ex'), contratId: c.id, date: plJourIso, demi: demi, type: 'horaire',
+        const ex = { id: plNewId('ex'), contratId: c.id, date: plJourIso, demi: demi, type: 'horaire',
           horaire: val, pos: (pEl && !memePos) ? posVal : null,
-          saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() });
+          saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() };
+        if (ancienne && ancienne.imputation) ex.imputation = ancienne.imputation;
+        plExceptions.push(ex);
+        plImputSiBesoin(ex, c, trame[hh]);
       }
     });
     plPersist(); plClose('pl-ov-jour');
@@ -1880,6 +1909,229 @@
     const c = L('contrats').find(x => x.id === plJourCid); if (!c) return;
     plDropEx(c.id, plJourIso, 'M'); plDropEx(c.id, plJourIso, 'AM');
     plPersist(); plClose('pl-ov-jour'); plToast('Trame rétablie'); plRender();
+  };
+
+  // ═══════════ HEURES SUPPLÉMENTAIRES & COMPTE-TEMPS ═══════════
+  // Deux sources d'heures en plus :
+  //  · une DÉCLARATION du collaborateur (date, durée, motif) → l'admin la valide en
+  //    l'affectant au compte-temps (à récupérer) ou en heures sup (navette), ou la refuse ;
+  //  · un CRÉNEAU AJOUTÉ sur un repos dans le planning → l'imputation (hs / compte)
+  //    est demandée au moment de l'ajout.
+  // Le compte-temps d'un collaborateur = somme de ce qui lui a été crédité.
+  const PL_HS_STATUT = { attente: 'À valider', validee: 'Validée', refusee: 'Refusée' };
+  const PL_HS_AFFECT = { compte: 'Compte-temps', navette: 'Heures sup · navette' };
+  const PL_IMPUT = { hs: 'Heures sup · navette', compte: 'Compte-temps' };
+
+  // créneau ajouté là où la trame prévoyait un repos ?
+  function plExEstAjout(ex, c) {
+    if (!ex || ex.type !== 'horaire' || !ex.horaire) return false;
+    c = c || L('contrats').find(x => x.id === ex.contratId); if (!c) return false;
+    const d = new Date(ex.date + 'T12:00');
+    const tr = plSlotsTrame(c, d);
+    return !tr[ex.demi === 'AM' ? 1 : 0];
+  }
+  // file d'attente : une journée peut ajouter deux créneaux (matin + après-midi) d'un coup
+  let plImputFile = [];
+  function plImputOuvrir() {
+    const ex = plImputFile[0]; if (!ex) return;
+    const c = L('contrats').find(x => x.id === ex.contratId);
+    const s = document.getElementById('pl-imput-sub');
+    if (s) s.textContent = (c ? c.nom.split(' ')[0] : '') + ' — ' + ex.date.split('-').reverse().join('/')
+      + (ex.demi === 'AM' ? ' après-midi' : ' matin') + ' · ' + ex.horaire + ' (' + plFmtH(plDurOf(ex.horaire)) + ') : comment compter ces heures ?';
+    plOpen('pl-ov-imput');
+  }
+  function plImputSiBesoin(ex, c, horaireTrame) {
+    if (horaireTrame || !ex.horaire) return;          // pas un ajout sur un repos
+    if (ex.imputation) return;                          // déjà choisi (on rééditait le créneau)
+    ex.imputation = 'hs';                               // défaut sûr : heures sup
+    plImputFile.push(ex);
+    if (plImputFile.length === 1) setTimeout(plImputOuvrir, 60);
+  }
+  window.plImputChoisir = function (v) {
+    const cour = plImputFile.shift();
+    const ex = cour && L('exceptions').find(x => x.id === cour.id);
+    if (ex) { ex.imputation = v; plStamp(ex); plPersist(); }
+    plClose('pl-ov-imput');
+    plToast(v === 'compte' ? 'Créneau crédité sur le compte-temps' : 'Créneau compté en heures supplémentaires');
+    plRender();
+    if (document.getElementById('vue-compteurs') && document.getElementById('vue-compteurs').classList.contains('on')) plHsRender();
+    if (plImputFile.length) setTimeout(plImputOuvrir, 120);
+  };
+  window.plImputChanger = function (exId, v) {
+    const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
+    ex.imputation = v; plStamp(ex); plPersist(); plHsRender();
+  };
+
+  function plContratDe(staffId) { return L('contrats').find(c => c.actif !== false && c.staffId === staffId) || null; }
+  function plMonContrat() { return (typeof currentUser !== 'undefined' && currentUser) ? plContratDe(currentUser.id) : null; }
+  function plNomC(c) { return c ? c.nom : '—'; }
+  function plQui(sid) {
+    const s = plStaffList().find(x => x.id === sid);
+    return s ? (s.prenom + ' ' + (s.nom || '').charAt(0) + '.') : (sid || '—');
+  }
+  function plJoliDate(iso) { return iso ? iso.split('-').reverse().join('/') : '—'; }
+
+  // créneaux ajoutés sur repos d'un contrat, avec durée et imputation
+  function plAjoutsDe(c) {
+    return L('exceptions').filter(ex => ex.contratId === c.id && plExEstAjout(ex, c))
+      .map(ex => ({ ex: ex, h: plDurOf(ex.horaire), imp: ex.imputation || 'hs' }));
+  }
+  // soldes d'un contrat
+  function plSoldes(c) {
+    let compte = 0, navette = 0, attente = 0;
+    L('heuresSup').forEach(d => {
+      if (d.contratId !== c.id) return;
+      if (d.statut === 'attente') attente += +d.heures || 0;
+      if (d.statut === 'validee') { if (d.affectation === 'compte') compte += +d.heures || 0; else navette += +d.heures || 0; }
+    });
+    plAjoutsDe(c).forEach(a => { if (a.imp === 'compte') compte += a.h; else navette += a.h; });
+    return { compte: compte, navette: navette, attente: attente };
+  }
+  // exposés pour l'inspection et les tests (lecture seule)
+  window.plIsAdmin = plIsAdmin; window.plSoldes = plSoldes;
+  function plHsMoisCourant(c) {
+    const m = plIso(new Date()).slice(0, 7);
+    let n = 0;
+    L('heuresSup').forEach(d => { if (d.contratId === c.id && d.statut === 'validee' && d.affectation === 'navette' && (d.date || '').slice(0, 7) === m) n += +d.heures || 0; });
+    plAjoutsDe(c).forEach(a => { if (a.imp === 'hs' && (a.ex.date || '').slice(0, 7) === m) n += a.h; });
+    return n;
+  }
+
+  // ── déclaration ──
+  window.plHsDeclarer = function () {
+    const cidEl = document.getElementById('pl-hs-cid');
+    const c = cidEl ? L('contrats').find(x => x.id === cidEl.value) : plMonContrat();
+    if (!c) { plToast('Aucun contrat de planning rattaché à votre compte — voyez avec un administrateur'); return; }
+    const date = (document.getElementById('pl-hs-date') || {}).value;
+    const heures = parseFloat((document.getElementById('pl-hs-h') || {}).value);
+    const motif = ((document.getElementById('pl-hs-motif') || {}).value || '').trim();
+    if (!date) { plToast('Indiquez la date'); return; }
+    if (!heures || heures <= 0) { plToast('Indiquez la durée'); return; }
+    if (!motif) { plToast('Indiquez le motif'); return; }
+    L('heuresSup').push({ id: plNewId('hs'), contratId: c.id, staffId: c.staffId || null, date: date, heures: heures, motif: motif,
+      statut: 'attente', affectation: null,
+      declarePar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, declareAt: plIso(new Date()), updatedAt: Date.now() });
+    plPersist(); plToast(plFmtH(heures) + ' déclarée' + (heures > 1 ? 's' : '') + ' pour ' + c.nom.split(' ')[0] + ' — en attente de validation');
+    const mEl = document.getElementById('pl-hs-motif'); if (mEl) mEl.value = '';
+    plHsRender();
+  };
+  // ── décision admin ──
+  window.plHsDecider = function (id, statut, affectation) {
+    if (!plIsAdmin()) { plToast('Réservé aux administrateurs'); return; }
+    const d = L('heuresSup').find(x => x.id === id); if (!d) return;
+    if (statut === 'refusee') {
+      const m = prompt('Motif du refus (facultatif) :', d.refusMotif || '');
+      if (m === null) return;
+      d.refusMotif = m.trim();
+    }
+    d.statut = statut; d.affectation = statut === 'validee' ? affectation : null;
+    d.decidePar = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    d.decideAt = plIso(new Date()); plStamp(d); plPersist();
+    plToast(statut === 'validee' ? ('Validée → ' + PL_HS_AFFECT[affectation]) : 'Déclaration refusée');
+    plHsRender();
+  };
+  window.plHsSupprimer = function (id) {
+    const d = L('heuresSup').find(x => x.id === id); if (!d) return;
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    if (!plIsAdmin() && !(d.statut === 'attente' && d.declarePar === moi)) { plToast('Seule une déclaration en attente peut être retirée'); return; }
+    if (!confirm('Retirer cette déclaration ?')) return;
+    const arr = L('heuresSup'); const i = arr.findIndex(x => x.id === id); if (i >= 0) arr.splice(i, 1);
+    plPersist(); plHsRender();
+  };
+
+  function plHsBadge() {
+    const b = document.getElementById('pl-hs-badge'); if (!b) return;
+    const n = plIsAdmin() ? L('heuresSup').filter(d => d.statut === 'attente').length : 0;
+    b.textContent = n ? String(n) : ''; b.style.display = n ? '' : 'none';
+    if (n) { b.style.background = '#E65100'; b.style.color = '#fff'; }
+  }
+
+  // ── écran ──
+  window.plHsRender = function () {
+    const host = document.getElementById('pl-hs-host'); if (!host) return;
+    const admin = plIsAdmin();
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    const monC = plMonContrat();
+    const contrats = L('contrats').filter(c => c.actif !== false).sort(plCmp);
+    const H = [];
+    const chip = (txt, bg, col) => '<span class="pl-chip" style="background:' + bg + ';color:' + col + '">' + txt + '</span>';
+    const statutChip = d => d.statut === 'attente' ? chip('À valider', '#FFF3E0', '#E65100')
+      : d.statut === 'validee' ? chip('Validée · ' + PL_HS_AFFECT[d.affectation], d.affectation === 'compte' ? '#E3F2FD' : '#E8F5E9', d.affectation === 'compte' ? '#0D47A1' : '#1D5C3A')
+      : chip('Refusée', '#FFEBEE', '#C62828');
+    const durees = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8];
+
+    // 1. Déclarer
+    H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Déclarer des heures supplémentaires</b>'
+      + '<div class="pl-sub" style="margin:4px 0 12px">Notez les heures faites en plus de la trame : elles sont soumises à validation. '
+      + 'Un administrateur les crédite ensuite sur le compte-temps (à récupérer) ou en heures supplémentaires sur la navette des salaires.</div>'
+      + '<div class="pl-form" style="align-items:flex-end">'
+      + (admin ? '<label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--plmut)">Collaborateur<select id="pl-hs-cid" class="pl-inp" style="height:32px">'
+          + contrats.map(c => '<option value="' + plEsc(c.id) + '"' + (monC && c.id === monC.id ? ' selected' : '') + '>' + plEsc(c.nom) + '</option>').join('') + '</select></label>'
+        : (monC ? '<div style="font-size:12px;padding:6px 0"><b>' + plEsc(monC.nom) + '</b></div>' : '<div style="font-size:12px;color:#C62828">Votre compte n\'est rattaché à aucun contrat de planning.</div>'))
+      + '<label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--plmut)">Date<input type="date" id="pl-hs-date" class="pl-inp" style="height:32px" value="' + plIso(new Date()) + '"></label>'
+      + '<label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--plmut)">Durée<select id="pl-hs-h" class="pl-inp" style="height:32px">'
+      + durees.map(x => '<option value="' + x + '"' + (x === 1 ? ' selected' : '') + '>' + plFmtH(x) + '</option>').join('') + '</select></label>'
+      + '<label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--plmut);flex:1;min-width:220px">Motif<input type="text" id="pl-hs-motif" class="pl-inp" style="height:32px" placeholder="Ex. fermeture tardive, inventaire, remplacement…"></label>'
+      + '<button class="pl-btn pl-pri" style="height:32px" onclick="plHsDeclarer()">Déclarer</button>'
+      + '</div></div>');
+
+    // 2. À valider (admin)
+    const attente = L('heuresSup').filter(d => d.statut === 'attente').sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    if (admin) {
+      H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">À valider</b>'
+        + (attente.length ? ' <span class="pl-chip" style="background:#FFF3E0;color:#E65100">' + attente.length + '</span>' : '')
+        + '<div class="pl-sub" style="margin:4px 0 10px">Pour chaque déclaration : compte-temps (le collaborateur récupérera ces heures) ou heures sup (payées via la navette), ou refus.</div>'
+        + (attente.length ? '<table class="pl-tt"><tr><th>Collaborateur</th><th>Date</th><th>Durée</th><th>Motif</th><th>Déclaré par</th><th></th></tr>'
+          + attente.map(d => { const c = L('contrats').find(x => x.id === d.contratId);
+            return '<tr><td><b>' + plEsc(plNomC(c)) + '</b></td><td>' + plJoliDate(d.date) + '</td><td><b>' + plFmtH(d.heures) + '</b></td><td style="text-align:left">' + plEsc(d.motif || '') + '</td><td>' + plEsc(plQui(d.declarePar)) + '</td>'
+              + '<td style="white-space:nowrap"><button class="pl-btn pl-mini" style="background:#E3F2FD;color:#0D47A1" onclick="plHsDecider(\'' + d.id + '\',\'validee\',\'compte\')" title="Créditer le compte-temps">Compte-temps</button> '
+              + '<button class="pl-btn pl-mini pl-pri" onclick="plHsDecider(\'' + d.id + '\',\'validee\',\'navette\')" title="Heures supplémentaires payées">Heures sup</button> '
+              + '<button class="pl-btn pl-mini pl-ghost" style="color:#C62828" onclick="plHsDecider(\'' + d.id + '\',\'refusee\')">Refuser</button></td></tr>'; }).join('')
+          + '</table>' : '<div class="pl-empty">Aucune déclaration en attente.</div>')
+        + '</div>');
+    }
+
+    // 3. Compteurs
+    const listeC = admin ? contrats : (monC ? [monC] : []);
+    H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Compteurs</b>'
+      + '<div class="pl-sub" style="margin:4px 0 10px">Compte-temps = heures à récupérer. Heures sup = ce qui remonte sur la navette des salaires (déclarations validées + créneaux ajoutés sur un repos et comptés en heures sup).</div>'
+      + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Compte-temps</th><th>Heures sup ce mois</th><th>Heures sup cumulées</th><th>En attente</th></tr>'
+      + listeC.map(c => { const s = plSoldes(c);
+          return '<tr><td style="text-align:left"><b>' + plEsc(c.nom) + '</b></td>'
+            + '<td><b style="color:#0D47A1">' + plFmtH(s.compte) + '</b></td><td>' + plFmtH(plHsMoisCourant(c)) + '</td><td>' + plFmtH(s.navette) + '</td>'
+            + '<td>' + (s.attente ? '<span style="color:#E65100;font-weight:700">' + plFmtH(s.attente) + '</span>' : '—') + '</td></tr>'; }).join('')
+      + '</table></div>');
+
+    // 4. Créneaux ajoutés sur un repos (imputation modifiable par l'admin)
+    const ajouts = [];
+    listeC.forEach(c => plAjoutsDe(c).forEach(a => ajouts.push({ c: c, a: a })));
+    ajouts.sort((x, y) => (y.a.ex.date || '').localeCompare(x.a.ex.date || ''));
+    if (ajouts.length) {
+      H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Créneaux ajoutés sur un repos</b>'
+        + '<div class="pl-sub" style="margin:4px 0 10px">Saisis directement dans le planning. L\'imputation choisie à l\'ajout peut être changée ici' + (admin ? '' : ' par un administrateur') + '.</div>'
+        + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Date</th><th>Créneau</th><th>Durée</th><th>Imputation</th></tr>'
+        + ajouts.slice(0, 60).map(x => '<tr><td style="text-align:left"><b>' + plEsc(x.c.nom) + '</b></td><td>' + plJoliDate(x.a.ex.date) + (x.a.ex.demi === 'AM' ? ' ap.-midi' : ' matin') + '</td><td>' + plEsc(x.a.ex.horaire) + '</td><td>' + plFmtH(x.a.h) + '</td>'
+          + '<td>' + (admin ? '<select class="pl-inp" style="height:26px;font-size:11.5px" onchange="plImputChanger(\'' + x.a.ex.id + '\',this.value)">'
+              + Object.keys(PL_IMPUT).map(k => '<option value="' + k + '"' + (x.a.imp === k ? ' selected' : '') + '>' + PL_IMPUT[k] + '</option>').join('') + '</select>'
+            : chip(PL_IMPUT[x.a.imp], x.a.imp === 'compte' ? '#E3F2FD' : '#E8F5E9', x.a.imp === 'compte' ? '#0D47A1' : '#1D5C3A')) + '</td></tr>').join('')
+        + '</table></div>');
+    }
+
+    // 5. Historique des déclarations
+    const hist = L('heuresSup').filter(d => admin || d.contratId === (monC && monC.id) || d.declarePar === moi)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.updatedAt || 0) - (a.updatedAt || 0));
+    H.push('<div class="pl-card" style="padding:16px 18px"><b style="font-size:14px">' + (admin ? 'Toutes les déclarations' : 'Mes déclarations') + '</b>'
+      + (hist.length ? '<table class="pl-tt" style="margin-top:10px"><tr><th style="text-align:left">Collaborateur</th><th>Date</th><th>Durée</th><th>Motif</th><th>Statut</th><th>Décision</th><th></th></tr>'
+        + hist.slice(0, 200).map(d => { const c = L('contrats').find(x => x.id === d.contratId);
+            const peutRetirer = admin || (d.statut === 'attente' && d.declarePar === moi);
+            return '<tr><td style="text-align:left"><b>' + plEsc(plNomC(c)) + '</b></td><td>' + plJoliDate(d.date) + '</td><td>' + plFmtH(d.heures) + '</td><td style="text-align:left">' + plEsc(d.motif || '') + (d.refusMotif ? '<div style="font-size:10.5px;color:#C62828">Refus : ' + plEsc(d.refusMotif) + '</div>' : '') + '</td>'
+              + '<td>' + statutChip(d) + '</td><td style="font-size:11px;color:var(--plmut)">' + (d.decidePar ? plEsc(plQui(d.decidePar)) + ' · ' + plJoliDate(d.decideAt) : '—') + '</td>'
+              + '<td>' + (peutRetirer ? '<button class="pl-btn pl-mini pl-ghost" onclick="plHsSupprimer(\'' + d.id + '\')" title="Retirer">✕</button>' : '') + '</td></tr>'; }).join('')
+        + '</table>' : '<div class="pl-empty" style="margin-top:8px">Aucune déclaration.</div>')
+      + '</div>');
+
+    host.innerHTML = H.join('');
+    plHsBadge();
   };
 
   // ---------- éditeur de trame ----------

@@ -596,7 +596,8 @@ function applyTombstones(arr, tombs, coll) {
 // Collections synchronisées « à id » : réconciliation par enregistrement + tombstones.
 const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'locTypes', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives', 'patients', 'medecins', 'smsLog', 'smsTemplates',
   // Module Planning (Lot 1) : collections à id, fusion par enregistrement + tombstones
-  'plPostes', 'plRotations', 'plContrats', 'plTrames', 'plExceptions', 'plDemandes', 'plReels', 'plNotifs', 'plClotures'];
+  'plPostes', 'plRotations', 'plContrats', 'plTrames', 'plExceptions', 'plDemandes', 'plReels', 'plNotifs', 'plClotures',
+  'plHeuresSup'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des

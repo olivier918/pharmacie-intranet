@@ -123,7 +123,7 @@ main{padding:18px 22px 30px;min-width:0}
     <button class="it" data-v="echanges" onclick="plVue('echanges',this)"><i class="p"></i>Échanges de jours<span class="bientot">bientôt</span></button>
 
     <div class="grp">Paie</div>
-    <button class="it" data-v="compteurs" onclick="plVue('compteurs',this)"><i class="p"></i>Compteurs de temps<span class="bientot">bientôt</span></button>
+    <button class="it" data-v="compteurs" onclick="plVue('compteurs',this)"><i class="p"></i>Heures sup &amp; compte-temps<span class="bientot" id="pl-hs-badge" style="display:none"></span></button>
     <button class="it" data-v="navette" onclick="plVue('navette',this)"><i class="p"></i>Navette mensuelle<span class="bientot">bientôt</span></button>
 
     <div class="grp">Paramètres</div>
@@ -162,16 +162,7 @@ main{padding:18px 22px 30px;min-width:0}
       </ul>
     </div></div>
 
-    <div class="vue" id="vue-compteurs"><div class="attente">
-      <h2>Compteurs de temps</h2>
-      <p>Heures réalisées face aux heures contractuelles, cumul des récupérations et des heures supplémentaires.</p>
-      <ul>
-        <li>Écart entre le planning théorique et les heures réellement faites</li>
-        <li>Compteur de récupération par collaborateur</li>
-        <li>Signature mensuelle de l’emploi du temps</li>
-      </ul>
-      <p style="margin-top:12px">L’écran Trames contrôle déjà le respect du temps contractuel sur l’ensemble du cycle.</p>
-    </div></div>
+    <div class="vue" id="vue-compteurs"><div id="pl-hs-host" class="pl-vars" style="padding:18px 22px"></div></div>
 
     <div class="vue" id="vue-navette"><div class="attente">
       <h2>Navette mensuelle</h2>
@@ -269,6 +260,7 @@ function plVue(v, btn){
   if (el) el.classList.add('on');
   document.querySelectorAll('.sb .it').forEach(b=>b.classList.remove('on'));
   if (btn) btn.classList.add('on');
+  if (v === 'compteurs' && typeof plHsRender === 'function') plHsRender();
 }
 /* pl-module appelle showSec sur l'intranet ; ici la navigation est locale */
 function showSec(){ }
