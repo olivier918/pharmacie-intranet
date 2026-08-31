@@ -784,13 +784,23 @@
   window.plToday = function () { plAnchor = plMonday(new Date()); plRender(); };
   window.plFiltre = function (g) { plFiltreGrp = g; plRender(); };
 
-  function plTit(c) { return /titulaire/i.test(c.role || '') ? 0 : 1; }
+  // Ordre d'affichage commun à tous les écrans (trames, planning, contrats) :
+  // par groupe, puis les titulaires en tête — Anouck d'abord, Olivier ensuite —,
+  // puis par ordre alphabétique.
+  function plTit(c) {
+    if (c.id === 'ct:anouck') return 0;
+    if (c.id === 'ct:olivier') return 1;
+    return /titulaire/i.test(c.role || '') ? 2 : 3;
+  }
+  function plCmp(a, b) {
+    return (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord
+      || plTit(a) - plTit(b) || (a.nom || '').localeCompare(b.nom || '');
+  }
   function plContratsVisibles() {
     return L('contrats')
       .filter(c => c.actif !== false)
       .filter(c => !plFiltreGrp || c.grp === plFiltreGrp)
-      .sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord
-        || plTit(a) - plTit(b) || (a.nom || '').localeCompare(b.nom || ''));
+      .sort(plCmp);
   }
 
   // ---------- rendu principal ----------
@@ -1597,7 +1607,7 @@
         + '<th title="Total de la semaine affichée, et écart entre la moyenne du cycle et la base du contrat">Total<br><span style="font-weight:500;text-transform:none;letter-spacing:0">vs contrat</span></th></tr>';
       let lastG = null;
       L('contrats').filter(c => c.actif !== false)
-        .sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord || (a.nom || '').localeCompare(b.nom || ''))
+        .sort(plCmp)
         .forEach(c => {
           if (c.grp !== lastG) { lastG = c.grp; h += '<tr><td colspan="8" style="text-align:left;background:linear-gradient(90deg,var(--placs),#FDF6F9);font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--plac)">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
           const rang = rangDe(c);
@@ -1648,7 +1658,7 @@
 
       const staff = plStaffList();
       let h = '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Compte intranet</th><th>Base hebdo</th><th>Rotation</th><th>Trame</th></tr>';
-      L('contrats').filter(c => c.actif !== false).sort((a, b) => (PL_GRPS[a.grp] || { ord: 99 }).ord - (PL_GRPS[b.grp] || { ord: 99 }).ord).forEach(c => {
+      L('contrats').filter(c => c.actif !== false).sort(plCmp).forEach(c => {
         const rot = plRotOf(c), st = plStaffOf(c);
         let lien;
         if (st) lien = '<span class="pl-av" style="background:' + plEsc(st.col || '#888') + '"></span>' + plEsc(st.prenom + ' ' + st.nom)
