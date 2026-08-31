@@ -45,6 +45,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
+// Page dédiée du module Planning : /planning (adresse propre, sans .html).
+// C'est un client indépendant de la même base — il ne renvoie que ses rubriques.
+app.get('/planning', (req, res) => res.sendFile(path.join(__dirname, 'public', 'planning.html')));
+
 // ─── DATABASE SETUP ───
 let db = null;
 let dbError = null;      // dernier message d'erreur de connexion (diagnostic)

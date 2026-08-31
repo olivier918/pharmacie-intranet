@@ -73,9 +73,84 @@
   const PL_POS_DEFAUT = { ph: 'C', prep: 'C', avance: 'A', secr: 'B', logi: 'B', entretien: 'B', renfort: 'C' };
   const PL_POS_CHOIX = { prep: ['C', 'B', 'A'] };   // seuls les préparateurs choisissent leur position
   const PL_POS_LBL = { C: 'Comptoir', B: 'Back-office', A: 'Poste avancé' };
-  function plPosOf(c, rang, jour, hh) {
-    if (PL_POS_CHOIX[c.grp] && c.pos && c.pos[rang] && c.pos[rang][jour] && c.pos[rang][jour][hh]) return c.pos[rang][jour][hh];
+  function plPosOf(c, rang, jour, hh, pos) {
+    const P = pos !== undefined ? pos : c.pos;
+    if (PL_POS_CHOIX[c.grp] && P && P[rang] && P[rang][jour] && P[rang][jour][hh]) return P[rang][jour][hh];
     return PL_POS_DEFAUT[c.grp] || 'C';
+  }
+
+  let plVerEdit = null;    // id de la version éditée dans l'écran Trames (null = trame de base)
+  // ═══ VERSIONS DE TRAME ═══════════════════════════════════════════════════
+  // Une modification de la semaine type ne doit pas réécrire le passé : chaque trame est
+  // datée. Une version porte { debut, fin (ou null), typeDebut } et le contenu de toute
+  // l'équipe. Une version « brouillon » n'est jamais lue par le planning : elle sert à
+  // préparer une réorganisation, à la comparer, puis à la mettre en place à une date.
+  // Stockage : collection plTrames (synchronisée, fusion par id + tombstones).
+  function plVersions() { return L('trames').slice().sort((a, b) => String(a.debut || '').localeCompare(String(b.debut || ''))); }
+  function plVerActives() { return plVersions().filter(v => v.statut !== 'brouillon' && v.debut); }
+  function plVerBrouillons() { return plVersions().filter(v => v.statut === 'brouillon'); }
+  // version en vigueur à une date donnée (la plus récente dont la fenêtre couvre la date)
+  function plVerAt(date) {
+    const iso = plIso(date);
+    let best = null;
+    plVerActives().forEach(v => {
+      if (v.debut > iso) return;
+      if (v.fin && v.fin < iso) return;
+      if (!best || v.debut > best.debut) best = v;
+    });
+    return best;
+  }
+  function plVerData(v, cid) { return (v && v.data && v.data[cid]) || null; }
+  function plVerEditObj() { return plVerEdit ? L('trames').find(v => v.id === plVerEdit) : null; }
+  // sem/pos de la cible d'édition, créés à la volée depuis la trame de base
+  function plEdSlot(c) {
+    const v = plVerEditObj();
+    if (!v) {
+      if (!c.sem) c.sem = {};
+      if (!c.pos) c.pos = {};
+      return { sem: c.sem, pos: c.pos, obj: c };
+    }
+    if (!v.data) v.data = {};
+    if (!v.data[c.id]) v.data[c.id] = { rang0: 1, sem: JSON.parse(JSON.stringify(c.sem || {})), pos: JSON.parse(JSON.stringify(c.pos || {})) };
+    const d = v.data[c.id];
+    if (!d.sem) d.sem = {};
+    if (!d.pos) d.pos = {};
+    return { sem: d.sem, pos: d.pos, obj: v };
+  }
+  // Hors de l'écran Trames, on ne doit JAMAIS lire un brouillon : le planning affiche
+  // la version en vigueur à la date consultée.
+  function plSemCtx(c) {
+    const reg = document.getElementById('pl-ov-reg');
+    if (reg && reg.classList.contains('pl-on') && plRegView === 't') return plEdSlot(c).sem;
+    return plTrameAt(c, plAnchor || new Date()).sem;
+  }
+  function plVerLbl(v) {
+    if (!v) return 'Trame de base';
+    if (v.statut === 'brouillon') return 'Brouillon · ' + (v.nom || 'sans nom');
+    return 'Depuis le ' + plJoli(v.debut) + (v.fin ? ' → ' + plJoli(v.fin) : '');
+  }
+  function plJoli(iso) { return iso ? iso.split('-').reverse().join('/') : ''; }
+  // rang du cycle d'un contrat à une date, ancré sur la version en vigueur
+  function plRangAt(c, date, v) {
+    const rot = plRotOf(c), L2 = (rot && rot.longueur) || 1;
+    if (v && v.debut) {
+      const d0 = plVerData(v, c.id);
+      const r0 = (d0 && d0.rang0) || 1;
+      const w = plWeeksBetween(v.debut, date);
+      return ((w % L2) + L2 + r0 - 1) % L2 + 1;
+    }
+    return plRang(rot, date);
+  }
+  // trame (sem/pos) applicable à un contrat à une date : version en vigueur, sinon trame de base
+  let plVerForce = null;   // version en cours d'édition : l'écran Trames lit celle-là, pas la date
+  function plTrameAt(c, date) {
+    if (plVerForce) {
+      const d1 = plVerData(plVerForce, c.id);
+      return { v: plVerForce, sem: (d1 && d1.sem) || {}, pos: (d1 && d1.pos) || {}, rang: String(plRang(plRotOf(c), date)) };
+    }
+    const v = plVerAt(date);
+    const d0 = plVerData(v, c.id);
+    return { v: v, sem: (d0 && d0.sem) || c.sem || {}, pos: (d0 && d0.pos) || c.pos || {}, rang: String(plRangAt(c, date, d0 ? v : null)) };
   }
   // migration douce des anciens groupes du seed initial (dermo→secr, pda→logi)
   // + ajout des titulaires Anouck et Olivier s'ils manquent (idempotent par id)
@@ -147,15 +222,16 @@
     const w = plWeeksBetween(rot.ancrage, date);
     return ((w % rot.longueur) + rot.longueur + (rot.rangAncrage || 1) - 1) % rot.longueur + 1;
   }
-  // horaires de la TRAME [matin, aprem] d'un contrat à une date
+  // horaires de la TRAME [matin, aprem] d'un contrat à une date (version en vigueur ce jour-là)
   function plSlotsTrame(c, date) {
-    const rot = plRotOf(c);
-    const rang = String(plRang(rot, date));
-    const sem = (c.sem && (c.sem[rang] || c.sem['1'])) || null;
+    const t = plTrameAt(c, date);
+    const sem = t.sem[t.rang] || t.sem['1'];
     if (!sem) return [null, null];
     const day = sem[plDayKey(date)];
     return Array.isArray(day) ? [day[0] || null, day[1] || null] : [null, null];
   }
+  // exposés pour l'inspection et les tests (lecture seule)
+  window.plSlotsTrame = plSlotsTrame; window.plVerAt = plVerAt; window.plTrameAt = plTrameAt;
   // exception d'horaire du jour (type 'horaire') pour une demi-journée : record ou null
   function plExOf(c, iso, demi) {
     return L('exceptions').find(x => x.contratId === c.id && x.date === iso && x.type === 'horaire' && x.demi === demi) || null;
@@ -174,8 +250,8 @@
   function plPosEff(c, date, hh) {
     const ex = plExOf(c, plIso(date), hh ? 'AM' : 'M');
     if (ex && ex.pos) return ex.pos;
-    const rang = String(plRang(plRotOf(c), date));
-    return plPosOf(c, rang, plDayKey(date), hh);
+    const t = plTrameAt(c, date);
+    return plPosOf(c, t.rang, plDayKey(date), hh, t.pos);
   }
   // absence validée (exception de type absence) pour un contrat à une date → {motif} ou null par demi-journée
   function plAbs(c, iso) {
@@ -461,6 +537,12 @@
   .pl-ov.pl-full .pl-actions{display:none}
   .pl-ov.pl-full .pl-tt{font-size:12px}
   .pl-ov.pl-full .pl-shift{font-size:11px!important}
+  .pl-verbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-bottom:8px}
+  .pl-verlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
+  .pl-verinfo{font-size:11px;color:var(--plmut);background:#FBFAF9;border:1px solid var(--plline);
+    border-radius:9px;padding:6px 10px;margin-bottom:9px;line-height:1.45}
+  .pl-verinfo.pl-br{background:var(--plforb);border-color:#EAD9AE;color:#7A5A10}
+  .pl-verinfo.pl-ac{background:var(--placs);border-color:#CFE7DA;color:#1F5C46}
   .pl-trtop{background:#fff}
   .pl-ov.pl-full .pl-trtop{position:sticky;top:0;z-index:6;padding:8px 0 6px;
     box-shadow:0 6px 12px -10px rgba(70,40,55,.55)}
@@ -630,6 +712,15 @@
       <button class="pl-btn pl-pri" onclick="plSaveJour()">Enregistrer</button>
     </div>
   </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-mep"><div class="pl-box" style="width:min(520px,96vw)">
+    <h3>Mise en place de la trame</h3>
+    <div class="pl-sub">La trame affichée ne s’appliquera qu’à partir de la date choisie. Les semaines antérieures gardent la trame précédente ; les modifications ponctuelles déjà saisies sur des journées ne sont pas touchées.</div>
+    <div id="pl-mep-body"></div>
+    <div class="pl-actions">
+      <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-mep')">Annuler</button>
+      <button class="pl-btn pl-pri" onclick="plVerMepValider()">Mettre en place</button>
+    </div>
+  </div></div>
   <div class="pl-pick pl-vars" id="pl-pick">
     <h4 id="pl-pk-t">Horaires</h4>
     <div class="pl-pk-sub" id="pl-pk-s"></div>
@@ -641,23 +732,27 @@
   function plInject() {
     if (document.getElementById('pl-css')) return;
     const st = document.createElement('style'); st.id = 'pl-css'; st.textContent = PL_CSS; document.head.appendChild(st);
+    // Page dédiée /planning : un hôte est déjà en place, on s'y installe sans toucher au menu
+    const host = document.getElementById('pl-host');
+    if (host) {
+      host.innerHTML = PL_SECTION;
+      const fg2 = document.getElementById('pl-fgrp');
+      if (fg2) Object.keys(PL_GRPS).forEach(g => { const o = document.createElement('option'); o.value = g; o.textContent = PL_GRPS[g].lbl; fg2.appendChild(o); });
+      if (!document.getElementById('pl-ov-reg')) document.body.insertAdjacentHTML('beforeend', PL_MODALS);
+      return;
+    }
+    // Intranet : le menu ouvre la page dédiée dans un nouvel onglet. Le planning est
+    // devenu un métier à part entière (trames, congés, compteurs, navette) : il lui faut
+    // son propre écran et son propre menu, sans celui des autres modules.
     const navRef = document.querySelector('.sb-item[data-sec="caisse"]') || document.querySelector('.sb-item[data-sec="livraisons"]');
-    if (navRef && !document.querySelector('.sb-item[data-sec="planning"]')) {
+    if (navRef && !document.querySelector('.sb-item[data-pl="1"]')) {
       const b = document.createElement('button');
-      b.className = 'sb-item'; b.setAttribute('data-sec', 'planning');
-      b.setAttribute('onclick', "showSec('planning',this)");
-      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-calendrier"></use></svg><span class="sb-label">Planning</span>';
+      b.className = 'sb-item'; b.setAttribute('data-pl', '1');
+      b.setAttribute('onclick', "window.open('/planning','_blank')");
+      b.title = 'Ouvre le planning dans un nouvel onglet';
+      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-calendrier"></use></svg><span class="sb-label">Planning ↗</span>';
       navRef.insertAdjacentElement('afterend', b);
     }
-    const secRef = document.getElementById('sec-livraisons');
-    if (secRef && !document.getElementById('sec-planning')) {
-      const sec = document.createElement('section');
-      sec.id = 'sec-planning'; sec.className = 'sec'; sec.innerHTML = PL_SECTION;
-      secRef.parentNode.appendChild(sec);
-      const fg = document.getElementById('pl-fgrp');
-      Object.keys(PL_GRPS).forEach(g => { const o = document.createElement('option'); o.value = g; o.textContent = PL_GRPS[g].lbl; fg.appendChild(o); });
-    }
-    if (!document.getElementById('pl-ov-reg')) document.body.insertAdjacentHTML('beforeend', PL_MODALS);
   }
   window.plOpen = function (id) { document.getElementById(id).classList.add('pl-on'); };
   window.plClose = function (id) { document.getElementById(id).classList.remove('pl-on'); try { plPkClose(); } catch (_e) { } };
@@ -782,7 +877,7 @@
       const planned = plHeuresSemaine(c, mon), base = plBase(c);
       // Sur un cycle de 2 à 4 semaines, une semaine seule n'a pas à tomber juste : c'est la
       // moyenne du cycle qui doit égaler le contrat. On affiche donc la semaine, puis le cycle.
-      const ci = plCycleInfo(c);
+      const ci = plCycleInfo(c, plTrameAt(c, mon).sem);
       const cls = (base == null || ci.ecart == null) ? '' : (ci.ecart === 0 ? 'good' : (Math.abs(ci.ecart) <= 0.25 ? '' : 'bad'));
       const cycHtml = (base == null) ? ''
         : '<div class="pl-cyc2 ' + cls + '" title="' + plEsc((ci.nb > 1 ? ci.tot.map((t, i) => 'S' + (i + 1) + ' ' + plFmtH(t)).join(' · ') + ' → moyenne ' + plFmtH(ci.moy) : 'semaine ' + plFmtH(ci.moy)) + ' pour un contrat de ' + plFmtH(base)) + '">'
@@ -1034,9 +1129,10 @@
     L('contrats').forEach(c => {
       if (c.actif === false) return;
       const poids = (grp && c.grp === grp) ? 3 : 1;   // priorité aux collègues du même métier
-      Object.keys(c.sem || {}).forEach(w => {
+      const sem0 = plSemCtx(c);
+      Object.keys(sem0).forEach(w => {
         PL_JOURS.slice(0, 6).forEach(j => {
-          const v = (c.sem[w][j] || [])[hh];
+          const v = (sem0[w][j] || [])[hh];
           if (v) cnt[v] = (cnt[v] || 0) + poids;
         });
       });
@@ -1187,11 +1283,12 @@
   }
   // Contrôle du temps contractuel : un cycle de 1 à 4 semaines doit retomber, EN MOYENNE,
   // sur la base hebdomadaire du contrat (ex. 34h30 + 35h30 sur 2 semaines = 35 h).
-  function plCycleInfo(c) {
+  function plCycleInfo(c, semSrc) {
     const rot = plRotOf(c), nb = rot ? rot.longueur : 1;
     const tot = [];
+    const semC = semSrc || plSemCtx(c);
     for (let w = 1; w <= nb; w++) {
-      const sem = (c.sem && (c.sem[String(w)] || c.sem['1'])) || {};
+      const sem = semC[String(w)] || semC['1'] || {};
       let t = 0;
       PL_JOURS.slice(0, 6).forEach(j => { const d = sem[j] || [null, null]; t += plDurOf(d[0]) + plDurOf(d[1]); });
       tot.push(Math.round(t * 4) / 4);
@@ -1235,13 +1332,15 @@
   }
   function plTrCntRefresh() {
     const el = document.getElementById('pl-trcnt');
-    if (el && plTrRef) el.innerHTML = plTrCntHtml(plTrRef);
+    if (!el || !plTrRef) return;
+    plVerForce = plVerEditObj();
+    try { el.innerHTML = plTrCntHtml(plTrRef); } finally { plVerForce = null; }
   }
   // La ligne affichée peut retomber sur la semaine 1 quand le rang n'existe pas : on la matérialise avant d'écrire.
   function plSemOf(c, rang) {
-    if (!c.sem) c.sem = {};
-    if (!c.sem[rang]) c.sem[rang] = JSON.parse(JSON.stringify(c.sem['1'] || {}));
-    return c.sem[rang];
+    const e = plEdSlot(c);
+    if (!e.sem[rang]) e.sem[rang] = JSON.parse(JSON.stringify(e.sem['1'] || {}));
+    return e.sem[rang];
   }
   window.plGridPick = function (el) {
     const c = L('contrats').find(x => x.id === el.dataset.c); if (!c) return;
@@ -1249,13 +1348,13 @@
     plPkOpen(el, {
       titre: c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[PL_JOURS.indexOf(jr)] + (hh ? ' après-midi' : ' matin'),
       sous: 'Semaine type ' + rang + ' du cycle — vaut pour toutes les semaines équivalentes',
-      pos: PL_POS_CHOIX[c.grp] ? plPosOf(c, rang, jr, hh) : null,
-      posFixe: PL_POS_CHOIX[c.grp] ? null : plPosOf(c, rang, jr, hh),
+      pos: PL_POS_CHOIX[c.grp] ? plPosOf(c, rang, jr, hh, plEdSlot(c).pos) : null,
+      posFixe: PL_POS_CHOIX[c.grp] ? null : plPosOf(c, rang, jr, hh, plEdSlot(c).pos),
       onPos: PL_POS_CHOIX[c.grp] ? function (p) {
-        if (!c.pos) c.pos = {};
-        if (!c.pos[rang]) c.pos[rang] = {};
-        if (!c.pos[rang][jr]) c.pos[rang][jr] = ['C', 'C'];
-        c.pos[rang][jr][hh] = p; plStamp(c); plPersist();
+        const e = plEdSlot(c);
+        if (!e.pos[rang]) e.pos[rang] = {};
+        if (!e.pos[rang][jr]) e.pos[rang][jr] = ['C', 'C'];
+        e.pos[rang][jr][hh] = p; plStamp(e.obj); plPersist();
         el.classList.remove('pl-hB', 'pl-hA', 'pl-hpart');
         if (p !== 'C') el.classList.add('pl-h' + p);
         else if (el.value && plPartiel(el.value, hh ? 'AM' : 'M')) el.classList.add('pl-hpart');
@@ -1275,9 +1374,9 @@
     const sem = plSemOf(c, rang);
     if (!sem[jr]) sem[jr] = [null, null];
     sem[jr][hh] = n.val;
-    plStamp(c); plPersist();
+    plStamp(plEdSlot(c).obj); plPersist();
     // mise à jour ciblée : on ne reconstruit pas la grille, la saisie continue au clavier
-    const pos = plPosOf(c, rang, jr, hh);
+    const pos = plPosOf(c, rang, jr, hh, plEdSlot(c).pos);
     const part = n.val && pos === 'C' && plPartiel(n.val, hh ? 'AM' : 'M');
     el.classList.toggle('pl-hpart', !!part);
     // la pastille de poste suit la case : elle apparaît dès qu'un horaire est saisi (sans casser la frappe)
@@ -1309,13 +1408,125 @@
   window.plRowCopy = function (cid, rang) {
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const rot = plRotOf(c), nb = rot ? rot.longueur : 1;
-    const src = plSemOf(c, rang);
+    const src = plSemOf(c, rang), e = plEdSlot(c);
     for (let w = 1; w <= nb; w++) {
       if (String(w) === String(rang)) continue;
-      c.sem[String(w)] = JSON.parse(JSON.stringify(src));
-      if (c.pos && c.pos[rang]) c.pos[String(w)] = JSON.parse(JSON.stringify(c.pos[rang]));
+      e.sem[String(w)] = JSON.parse(JSON.stringify(src));
+      if (e.pos[rang]) e.pos[String(w)] = JSON.parse(JSON.stringify(e.pos[rang]));
     }
-    plStamp(c); plPersist(); plToast(c.nom.split(' ')[0] + ' · semaine recopiée sur tout le cycle');
+    plStamp(e.obj); plPersist(); plToast(c.nom.split(' ')[0] + ' · semaine recopiée sur tout le cycle');
+    plRegRender(); plRender();
+  };
+
+  // ---------- versions de trame : brouillons et mise en place ----------
+  // Le contenu d'une version est un instantané de toute l'équipe : chaque contrat y a
+  // sa semaine type et ses positions, plus rang0 = la semaine de son cycle à la date de début.
+  function plSnapshot(rangType) {
+    const data = {};
+    L('contrats').filter(c => c.actif !== false).forEach(c => {
+      const e = plEdSlot(c);
+      data[c.id] = {
+        rang0: rangType ? +rangType(c) : 1,
+        sem: JSON.parse(JSON.stringify(e.sem)),
+        pos: JSON.parse(JSON.stringify(e.pos))
+      };
+    });
+    return data;
+  }
+  // semaine de référence d'un « Type » : sert à savoir dans quelle semaine de son cycle
+  // se trouve chaque collaborateur au moment de la mise en place
+  function plRefType(k) {
+    const rots = L('rotations').filter(r => L('contrats').some(c => c.actif !== false && c.rotationId === r.id));
+    const anc0 = rots.length ? rots.map(r => r.ancrage).sort()[0] : plIso(new Date());
+    return plAddD(plMonday(new Date(anc0 + 'T12:00')), (k - 1) * 7);
+  }
+  function plNbTypes() {
+    const rots = L('rotations').filter(r => L('contrats').some(c => c.actif !== false && c.rotationId === r.id));
+    function pgcd(a, b) { return b ? pgcd(b, a % b) : a; }
+    let n = 1; rots.forEach(r => { n = n * r.longueur / pgcd(n, r.longueur); });
+    return Math.min(n, 12);
+  }
+  window.plVerSel = function (id) { plVerEdit = id; plRegRender(); };
+  window.plVerBrouillon = function () {
+    // pas de question au moment de créer : on nomme après, avec ✎ (le geste doit rester léger)
+    const n = plVerBrouillons().length + 1;
+    const nom = 'Brouillon ' + n + ' · ' + plJoli(plIso(new Date()));
+    const v = { id: plNewId('tr'), nom: nom, statut: 'brouillon', debut: null, fin: null,
+      typeDebut: plTrRangSel || 1, data: plSnapshot(null), updatedAt: Date.now() };
+    plTrames.push(v);
+    plVerEdit = v.id; plPersist();
+    plToast('Brouillon créé — invisible dans le planning ; ✎ pour le renommer'); plRegRender();
+  };
+  window.plVerRenommer = function () {
+    const v = plVerEditObj(); if (!v) return;
+    const nom = prompt('Nom de cette version', v.nom || '');
+    if (nom === null) return;
+    v.nom = nom.trim(); plStamp(v); plPersist(); plRegRender();
+  };
+  window.plVerSuppr = function () {
+    const v = plVerEditObj(); if (!v) return;
+    if (!confirm(v.statut === 'brouillon'
+      ? 'Supprimer le brouillon « ' + (v.nom || '') + ' » ?'
+      : 'Supprimer la mise en place du ' + plJoli(v.debut) + ' ? Le planning repassera à la trame précédente sur cette période.')) return;
+    const i = plTrames.findIndex(x => x.id === v.id);
+    if (i >= 0) plTrames.splice(i, 1);
+    plVerEdit = null; plPersist(); plToast('Version supprimée'); plRegRender(); plRender();
+  };
+  window.plVerMepOuvrir = function () {
+    const v = plVerEditObj();
+    const nb = plNbTypes();
+    const lundiProchain = plIso(plMonday(plAddD(new Date(), 7)));
+    const deb = (v && v.debut) || lundiProchain;
+    let h = '<div class="pl-form" style="flex-direction:column;gap:14px">'
+      + '<label style="width:100%">Date de mise en place <span style="font-weight:400">— la trame s’applique à partir de ce jour</span>'
+      + '<input type="date" class="pl-inp" id="pl-mep-deb" value="' + deb + '"></label>'
+      + '<label style="width:100%"><span style="display:flex;align-items:center;gap:8px">Date de fin'
+      + '<input type="checkbox" id="pl-mep-sf" ' + (v && v.fin ? '' : 'checked') + ' onchange="document.getElementById(\'pl-mep-fin\').disabled=this.checked">'
+      + '<span style="font-weight:400">pas de fin (jusqu’à nouvel ordre)</span></span>'
+      + '<input type="date" class="pl-inp" id="pl-mep-fin" value="' + ((v && v.fin) || '') + '"' + (v && v.fin ? '' : ' disabled') + '></label>'
+      + '<label style="width:100%">Semaine de début du cycle'
+      + '<select class="pl-inp" id="pl-mep-type">';
+    for (let k = 1; k <= nb; k++) {
+      const dk = plRefType(k);
+      const det = L('rotations').filter(r => L('contrats').some(c => c.actif !== false && c.rotationId === r.id))
+        .map(r => plEsc(r.lbl) + ' S' + plRang(r, dk)).join(' · ');
+      h += '<option value="' + k + '"' + ((v && v.typeDebut === k) || (!v && plTrRangSel === k) ? ' selected' : '') + '>Semaine type ' + k + (det ? ' — ' + det : '') + '</option>';
+    }
+    h += '</select><span style="font-weight:400;font-size:10.5px;margin-top:4px">La première semaine appliquée sera celle-ci ; le cycle se déroule ensuite normalement.</span></label></div>';
+    document.getElementById('pl-mep-body').innerHTML = h;
+    plOpen('pl-ov-mep');
+  };
+  window.plVerMepValider = function () {
+    const deb = document.getElementById('pl-mep-deb').value;
+    if (!deb) { plToast('Choisissez une date de mise en place'); return; }
+    const sansFin = document.getElementById('pl-mep-sf').checked;
+    const fin = sansFin ? null : (document.getElementById('pl-mep-fin').value || null);
+    if (fin && fin < deb) { plToast('La date de fin doit suivre la date de mise en place'); return; }
+    const k = +document.getElementById('pl-mep-type').value || 1;
+    const refK = plRefType(k);
+    const rangType = function (c) { return plRang(plRotOf(c), refK); };
+    let v = plVerEditObj();
+    if (v) {   // un brouillon (ou une version déjà datée) devient la trame en vigueur
+      v.statut = 'actif'; v.debut = deb; v.fin = fin; v.typeDebut = k;
+      const snap = plSnapshot(rangType);
+      Object.keys(snap).forEach(cid => {
+        if (!v.data[cid]) v.data[cid] = snap[cid];
+        else v.data[cid].rang0 = snap[cid].rang0;
+      });
+      plStamp(v);
+    } else {   // depuis la trame de base : on crée une version datée qui la reprend
+      v = { id: plNewId('tr'), nom: 'Trame du ' + plJoli(deb), statut: 'actif', debut: deb, fin: fin,
+        typeDebut: k, data: plSnapshot(rangType), updatedAt: Date.now() };
+      plTrames.push(v);
+    }
+    // la version précédente s'arrête la veille, pour ne pas se chevaucher
+    const veille = plIso(plAddD(new Date(deb + 'T12:00'), -1));
+    plVerActives().forEach(o => {
+      if (o.id === v.id) return;
+      if (o.debut < v.debut && (!o.fin || o.fin >= v.debut)) { o.fin = veille; plStamp(o); }
+    });
+    plVerEdit = v.id; plPersist(); plClose('pl-ov-mep');
+    plToast('Trame en place à partir du ' + plJoli(deb));
     plRegRender(); plRender();
   };
 
@@ -1344,7 +1555,31 @@
       const anc0 = rots.length ? rots.map(r => r.ancrage).sort()[0] : plIso(new Date());
       const refDate = plAddD(plMonday(new Date(anc0 + 'T12:00')), (plTrRangSel - 1) * 7);
       function rangDe(c) { return String(plRang(plRotOf(c), refDate)); }
-      let selHtml = '<div class="pl-trtop"><div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">'
+      const vEd = plVerEditObj();
+      plVerForce = vEd;   // tout ce qui suit (compteurs compris) lit la version éditée
+      // ── choix de la trame éditée : en vigueur, versions datées, brouillons ──
+      let verHtml = '<div class="pl-trtop"><div class="pl-verbar">'
+        + '<span class="pl-verlbl">Trame modifiée</span>'
+        + '<button class="pl-btn ' + (!plVerEdit ? 'pl-pri' : 'pl-ghost') + ' pl-mini" onclick="plVerSel(null)">Trame de base</button>';
+      plVerActives().forEach(v => {
+        verHtml += '<button class="pl-btn ' + (plVerEdit === v.id ? 'pl-pri' : 'pl-ghost') + ' pl-mini" title="En vigueur ' + plEsc(plVerLbl(v)) + '" onclick="plVerSel(\'' + v.id + '\')">📅 ' + plJoli(v.debut) + (v.fin ? '→' + plJoli(v.fin) : '') + '</button>';
+      });
+      plVerBrouillons().forEach(v => {
+        verHtml += '<button class="pl-btn ' + (plVerEdit === v.id ? 'pl-pri' : 'pl-ghost') + ' pl-mini" onclick="plVerSel(\'' + v.id + '\')">✎ ' + plEsc(v.nom || 'brouillon') + '</button>';
+      });
+      verHtml += '<span style="flex:1"></span>'
+        + '<button class="pl-btn pl-ghost pl-mini" title="Copier la trame affichée dans un brouillon qui n’affecte pas le planning" onclick="plVerBrouillon()">＋ Nouveau brouillon</button>'
+        + '<button class="pl-btn pl-rose pl-mini" title="Choisir la date à partir de laquelle cette trame s’applique" onclick="plVerMepOuvrir()">📅 Mise en place…</button>'
+        + (vEd ? '<button class="pl-btn pl-ghost pl-mini" title="Renommer" onclick="plVerRenommer()">✎</button>'
+          + '<button class="pl-btn pl-ghost pl-mini" title="Supprimer cette version" onclick="plVerSuppr()">🗑</button>' : '')
+        + '</div>';
+      verHtml += '<div class="pl-verinfo ' + (vEd && vEd.statut === 'brouillon' ? 'pl-br' : (vEd ? 'pl-ac' : '')) + '">'
+        + (!vEd ? 'Vous modifiez la <b>trame de base</b> : elle s’applique à toutes les dates qu’aucune mise en place ne couvre. Pour qu’un changement ne vaille qu’à partir d’une date, passez par <b>Mise en place</b>.'
+          : (vEd.statut === 'brouillon'
+            ? '<b>Brouillon « ' + plEsc(vEd.nom || 'sans nom') + ' »</b> — rien de ceci n’apparaît dans le planning. Testez, comparez les compteurs, puis <b>Mise en place</b> quand c’est bon.'
+            : 'Version en vigueur <b>à partir du ' + plJoli(vEd.debut) + '</b>' + (vEd.fin ? ' et jusqu’au <b>' + plJoli(vEd.fin) + '</b>' : ' (sans date de fin)') + '. Les semaines antérieures ne bougent pas.'))
+        + '</div>';
+      let selHtml = verHtml + '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">'
         + '<span style="font-size:11.5px;font-weight:700;color:var(--plmut);text-transform:uppercase;letter-spacing:.4px">Semaine type :</span>';
       for (let k = 1; k <= nbTypes; k++) {
         const dk = plAddD(plMonday(new Date(anc0 + 'T12:00')), (k - 1) * 7);
@@ -1366,7 +1601,8 @@
         .forEach(c => {
           if (c.grp !== lastG) { lastG = c.grp; h += '<tr><td colspan="8" style="text-align:left;background:linear-gradient(90deg,var(--placs),#FDF6F9);font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--plac)">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</td></tr>'; }
           const rang = rangDe(c);
-          const sem = (c.sem && (c.sem[rang] || c.sem['1'])) || {};
+          const edC = plEdSlot(c);
+          const sem = edC.sem[rang] || edC.sem['1'] || {};
           const posEd = !!PL_POS_CHOIX[c.grp];
           let tot = 0, cells = '';
           PL_JOURS.slice(0, 6).forEach(jr => {
@@ -1375,7 +1611,7 @@
             for (let hh = 0; hh < 2; hh++) {
               const v = day[hh] || '';
               tot += plDurOf(v);
-              const pos = plPosOf(c, rang, jr, hh);
+              const pos = plPosOf(c, rang, jr, hh, edC.pos);
               const part = v && pos === 'C' && plPartiel(v, hh ? 'AM' : 'M');
               // pas d'horaire = pas de poste : la pastille ne s'affiche que sur un créneau travaillé
               const badge = !v ? '<i class="pl-posb pl-posv"></i>'
@@ -1407,6 +1643,7 @@
         + 'Chaque ligne affiche la semaine du cycle propre au collaborateur (Prép sur 2 semaines pour l’alternance du samedi, Ph sur 3…) — la longueur des cycles se règle dans l’onglet Rotations (1 à 4 semaines). '
         + 'Les compteurs du haut se recalculent à chaque enregistrement : c’est ici qu’on vérifie que la trame met le bon nombre de personnes au bon endroit.</div>';
       el.innerHTML = h;
+      plVerForce = null;
     } else if (plRegView === 'c') {
 
       const staff = plStaffList();
@@ -1481,14 +1718,14 @@
   // La modification s'applique à la SEMAINE TYPE (elle vaut pour toutes les semaines de ce rang).
   window.plCyclePos = function (cid, rang, jour, hh) {
     const c = L('contrats').find(x => x.id === cid); if (!c || !PL_POS_CHOIX[c.grp]) return;
-    if (!c.pos) c.pos = {};
-    if (!c.pos[rang]) c.pos[rang] = {};
-    if (!c.pos[rang][jour]) c.pos[rang][jour] = ['C', 'C'];
-    const cur = c.pos[rang][jour][hh] || 'C';
+    const e = plEdSlot(c);
+    if (!e.pos[rang]) e.pos[rang] = {};
+    if (!e.pos[rang][jour]) e.pos[rang][jour] = ['C', 'C'];
+    const cur = e.pos[rang][jour][hh] || 'C';
     const suite = { C: 'B', B: 'A', A: 'C' };
-    c.pos[rang][jour][hh] = suite[cur] || 'C';
-    const pos = c.pos[rang][jour][hh];
-    plStamp(c); plPersist();
+    e.pos[rang][jour][hh] = suite[cur] || 'C';
+    const pos = e.pos[rang][jour][hh];
+    plStamp(e.obj); plPersist();
     plToast(c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[PL_JOURS.indexOf(jour)] + ' ' + (hh ? 'après-midi' : 'matin') + ' → ' + PL_POS_LBL[pos]);
     plRender();
     // mise à jour ciblée de la grille (on garde la position de défilement et le focus)
@@ -1538,8 +1775,8 @@
     const anc = (ev && ev.currentTarget) || document.body;
     const d = new Date(iso + 'T12:00'), demi = hh ? 'AM' : 'M';
     const trame = plSlotsTrame(c, d), eff = plSlots(c, d);
-    const rang = String(plRang(plRotOf(c), d));
-    const posTrame = plPosOf(c, rang, plDayKey(d), hh);
+    const tr = plTrameAt(c, d);
+    const posTrame = plPosOf(c, tr.rang, plDayKey(d), hh, tr.pos);
     let posCour = plPosEff(c, d, hh);
     const ecrire = function (horaire, pos) {
       const memeH = (horaire || null) === (trame[hh] || null);
@@ -1609,12 +1846,12 @@
   window.plSaveJour = function () {
     const c = L('contrats').find(x => x.id === plJourCid); if (!c) return;
     const d = new Date(plJourIso + 'T12:00'), trame = plSlotsTrame(c, d);
-    const rang = String(plRang(plRotOf(c), d));
+    const tr2 = plTrameAt(c, d);
     ['M', 'AM'].forEach((demi, hh) => {
       const hEl = document.getElementById('pl-jr-h-' + hh); if (!hEl) return;
       const val = hEl.value.trim() || null;
       const pEl = document.getElementById('pl-jr-p-' + hh);
-      const posTrame = plPosOf(c, rang, plDayKey(d), hh);
+      const posTrame = plPosOf(c, tr2.rang, plDayKey(d), hh, tr2.pos);
       const posVal = pEl ? pEl.value : posTrame;
       const memeHoraire = (val || null) === (trame[hh] || null);
       const memePos = posVal === posTrame;
@@ -1644,12 +1881,12 @@
     document.getElementById('pl-tr-title').textContent = 'Horaires type — ' + c.nom;
     let h = '';
     for (let w = 1; w <= nb; w++) {
-      const sem = (c.sem && c.sem[String(w)]) || {};
+      const sem = plEdSlot(c).sem[String(w)] || {};
       h += '<b style="font-size:12.5px;display:block;margin-top:' + (w > 1 ? '14px' : '0') + '">Semaine ' + w + ' du cycle'
         + (nb > 1 ? ' <button class="pl-btn pl-ghost pl-mini" onclick="plCopySem(' + w + ')">⧉ copier vers les autres</button>' : '') + '</b>';
       h += '<table class="pl-tt"><tr><th></th>' + PL_JOURS_FR.slice(0, 6).map(j => '<th>' + j + '</th>').join('') + '<th>Total</th></tr>';
       const posEditable = !!PL_POS_CHOIX[c.grp];
-      const posSem = (c.pos && c.pos[String(w)]) || {};
+      const posSem = plEdSlot(c).pos[String(w)] || {};
       ['M', 'AM'].forEach((demi, hh) => {
         h += '<tr><th>' + (demi === 'M' ? 'Matin' : 'Après-midi') + '</th>';
         PL_JOURS.slice(0, 6).forEach(jr => {
@@ -1693,7 +1930,8 @@
       const v = i.value.trim();
       sem[w][jr][hh] = v || null;
     });
-    c.sem = sem;
+    const eT = plEdSlot(c);
+    if (eT.obj === c) c.sem = sem; else eT.obj.data[c.id].sem = sem;
     if (PL_POS_CHOIX[c.grp]) {
       const pos = {};
       document.querySelectorAll('#pl-tr-body select[data-pw]').forEach(sel => {
@@ -1702,9 +1940,9 @@
         if (!pos[w][jr]) pos[w][jr] = ['C', 'C'];
         pos[w][jr][hh] = sel.value;
       });
-      c.pos = pos;
+      if (eT.obj === c) c.pos = pos; else eT.obj.data[c.id].pos = pos;
     }
-    plStamp(c); plPersist();
+    plStamp(eT.obj); plPersist();
     plClose('pl-ov-trame'); plToast('Trame de ' + c.nom + ' enregistrée'); plRender();
     if (document.getElementById('pl-ov-reg').classList.contains('pl-on')) plRegRender();
   };

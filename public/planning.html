@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning — Pharmacie du Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F8F5F4; --surface:#fff; --ink:#25282A; --mut:#71787A; --line:#E9E2E1;
+  --accent:#348466; --accent-soft:#E6F1EB; --rose:#D26E96; --rose-soft:#FAEAF1; --rose-ink:#B04A74;
+  --ok:#2E8564; --warn:#B8821C; --crit:#C4544A;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 'Schibsted Grotesk',-apple-system,'Segoe UI',sans-serif;
+  font-variant-numeric:tabular-nums}
+button{font-family:inherit}
+
+/* ── écrans d'accès ── */
+.scr{position:fixed;inset:0;background:linear-gradient(150deg,#2C6E55,#348466 55%,#3E9070);
+  display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px}
+.scr .card{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.22);border-radius:20px;
+  padding:26px 28px;width:min(360px,100%);backdrop-filter:blur(8px)}
+.scr h1{margin:0 0 2px;font-size:1.15rem;color:#fff;font-weight:700}
+.scr p{margin:0 0 20px;color:#D8EDE2;font-size:12.5px}
+.scr label{display:block;color:#fff;font-size:11.5px;font-weight:700;margin:0 0 5px}
+.scr input{width:100%;height:40px;border-radius:9px;border:1px solid rgba(255,255,255,.28);
+  background:rgba(255,255,255,.14);color:#fff;padding:0 12px;font-size:14px;font-family:inherit;margin-bottom:14px}
+.scr input::placeholder{color:rgba(255,255,255,.55)}
+.scr input:focus{outline:none;border-color:#fff;background:rgba(255,255,255,.22)}
+.scr .go{width:100%;height:42px;border:none;border-radius:10px;background:#fff;color:var(--accent);
+  font-weight:700;font-size:14px;cursor:pointer}
+.scr .err{color:#FFD9D4;font-size:12px;min-height:17px;margin-top:8px}
+.scr .lien{display:block;text-align:center;margin-top:14px;color:#D8EDE2;font-size:11.5px;text-decoration:none}
+.dots{display:flex;gap:10px;justify-content:center;margin:6px 0 16px}
+.dot{width:12px;height:12px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5)}
+.dot.on{background:#fff;border-color:#fff}
+.kp{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.kp button{height:46px;border-radius:11px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.12);
+  color:#fff;font-size:17px;font-weight:600;cursor:pointer}
+.kp button:active{background:rgba(255,255,255,.3)}
+#pin-who{text-align:center;color:#fff;font-weight:700;min-height:20px;margin-bottom:6px}
+
+/* ── ossature ── */
+#app{display:none;grid-template-columns:214px 1fr;min-height:100vh}
+.sb{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:3px;
+  position:sticky;top:0;height:100vh;overflow:auto}
+.marque{font-size:1.02rem;font-weight:700;padding:2px 8px 4px;letter-spacing:-.2px}
+.marque .v{color:var(--accent)}.marque .r{color:var(--rose-ink)}
+.sous{font-size:10.5px;color:var(--mut);padding:0 8px 14px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.grp{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);padding:12px 8px 5px}
+.it{display:flex;align-items:center;gap:9px;width:100%;border:none;background:none;padding:8px 10px;border-radius:9px;
+  font-size:13px;font-weight:500;color:#3A4240;cursor:pointer;text-align:left}
+.it:hover{background:var(--bg)}
+.it.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.it .p{width:8px;height:8px;border-radius:3px;background:#CFD6D2;flex:0 0 auto}
+.it.on .p{background:var(--accent)}
+.it .bientot{margin-left:auto;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  color:var(--rose-ink);background:var(--rose-soft);border-radius:5px;padding:1px 5px}
+.pied{margin-top:auto;padding-top:14px;border-top:1px solid var(--line);font-size:11px;color:var(--mut)}
+.pied b{display:block;color:var(--ink);font-size:12px}
+.pl-sync{display:inline-block;width:7px;height:7px;border-radius:50%;background:#CFD6D2;margin-right:5px}
+.pl-sync.ok{background:var(--ok)}.pl-sync.err{background:var(--crit)}
+.retour{display:block;margin-top:10px;color:var(--accent);font-size:11.5px;text-decoration:none;font-weight:600}
+.retour:hover{text-decoration:underline}
+main{padding:18px 22px 30px;min-width:0}
+.vue{display:none}.vue.on{display:block}
+.attente{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px 28px;max-width:640px;
+  box-shadow:0 2px 10px rgba(70,40,55,.05)}
+.attente h2{margin:0 0 6px;font-size:1.05rem}
+.attente p{margin:0 0 4px;color:var(--mut);font-size:13px}
+.attente ul{margin:12px 0 0;padding-left:18px;color:var(--mut);font-size:12.5px;line-height:1.7}
+@media(max-width:820px){#app{grid-template-columns:1fr}.sb{position:static;height:auto;flex-direction:row;flex-wrap:wrap}}
+</style>
+</head>
+<body>
+
+<!-- ── connexion administrateur ── -->
+<div class="scr" id="login-screen">
+  <div class="card">
+    <h1>Planning · Pharmacie du Centre</h1>
+    <p>Espace réservé — accès administrateur</p>
+    <label for="li-mail">Adresse e-mail</label>
+    <input id="li-mail" type="email" autocomplete="username" placeholder="prenom.nom@pharmacie-mondeville.fr">
+    <label for="li-pw">Mot de passe</label>
+    <input id="li-pw" type="password" autocomplete="current-password" placeholder="••••••••">
+    <button class="go" onclick="plLogin()">Connexion</button>
+    <div class="err" id="li-err"></div>
+    <a class="lien" href="/">← Revenir à l’intranet</a>
+  </div>
+</div>
+
+<!-- ── identification par code ── -->
+<div class="scr" id="pin-screen" style="display:none">
+  <div class="card">
+    <h1>Qui utilise le planning ?</h1>
+    <p>Composez votre code à 4 chiffres</p>
+    <div id="pin-who"></div>
+    <div class="dots"><i class="dot"></i><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>
+    <div class="kp">
+      <button onclick="plKp('1')">1</button><button onclick="plKp('2')">2</button><button onclick="plKp('3')">3</button>
+      <button onclick="plKp('4')">4</button><button onclick="plKp('5')">5</button><button onclick="plKp('6')">6</button>
+      <button onclick="plKp('7')">7</button><button onclick="plKp('8')">8</button><button onclick="plKp('9')">9</button>
+      <button onclick="plKp('del')">←</button><button onclick="plKp('0')">0</button><button onclick="plKp('ok')">✓</button>
+    </div>
+    <div class="err" id="pin-err"></div>
+  </div>
+</div>
+
+<div id="app">
+  <nav class="sb">
+    <div class="marque"><span class="v">Plan</span><span class="r">ning</span></div>
+    <div class="sous">Pharmacie du Centre · Mondeville</div>
+
+    <div class="grp">Consulter</div>
+    <button class="it on" data-v="planning" onclick="plVue('planning',this)"><i class="p"></i>Planning</button>
+
+    <div class="grp">Organiser</div>
+    <button class="it" data-v="trames" onclick="plVue('trames',this)"><i class="p"></i>Trames horaires</button>
+    <button class="it" data-v="conges" onclick="plVue('conges',this)"><i class="p"></i>Congés &amp; absences<span class="bientot">bientôt</span></button>
+    <button class="it" data-v="echanges" onclick="plVue('echanges',this)"><i class="p"></i>Échanges de jours<span class="bientot">bientôt</span></button>
+
+    <div class="grp">Paie</div>
+    <button class="it" data-v="compteurs" onclick="plVue('compteurs',this)"><i class="p"></i>Compteurs de temps<span class="bientot">bientôt</span></button>
+    <button class="it" data-v="navette" onclick="plVue('navette',this)"><i class="p"></i>Navette mensuelle<span class="bientot">bientôt</span></button>
+
+    <div class="grp">Paramètres</div>
+    <button class="it" data-v="reglages" onclick="plVue('reglages',this)"><i class="p"></i>Contrats et seuils</button>
+
+    <div class="pied">
+      <b id="pl-qui">—</b>
+      <span><i class="pl-sync" id="pl-sync"></i><span id="pl-sync-txt">synchronisé</span></span>
+      <a class="retour" href="/">← Intranet</a>
+      <a class="retour" href="#" onclick="plQuitter();return false">Fermer la session</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="vue on" id="vue-planning"><div id="pl-host"></div></div>
+
+    <div class="vue" id="vue-conges"><div class="attente">
+      <h2>Congés &amp; absences</h2>
+      <p>Cet écran arrive au lot suivant. Il permettra à chaque collaborateur de poser ses demandes et à vous de les valider.</p>
+      <ul>
+        <li>Demande par le collaborateur, validation par vous ou Anouck</li>
+        <li>Simulation de l’impact sur les effectifs avant d’accepter</li>
+        <li>Quatre motifs : congés, maladie, récupération, formation</li>
+        <li>Notification des collaborateurs concernés</li>
+      </ul>
+      <p style="margin-top:12px">En attendant, une absence ponctuelle se saisit directement dans le planning en vidant la demi-journée.</p>
+    </div></div>
+
+    <div class="vue" id="vue-echanges"><div class="attente">
+      <h2>Échanges de jours</h2>
+      <p>Deux collaborateurs échangent une journée ; le planning garde la trace des deux mouvements et vérifie que les seuils tiennent.</p>
+      <ul>
+        <li>Proposition, acceptation, validation</li>
+        <li>Contrôle automatique des effectifs de comptoir avant validation</li>
+        <li>Repérage visuel ⇄ sur les deux journées concernées</li>
+      </ul>
+    </div></div>
+
+    <div class="vue" id="vue-compteurs"><div class="attente">
+      <h2>Compteurs de temps</h2>
+      <p>Heures réalisées face aux heures contractuelles, cumul des récupérations et des heures supplémentaires.</p>
+      <ul>
+        <li>Écart entre le planning théorique et les heures réellement faites</li>
+        <li>Compteur de récupération par collaborateur</li>
+        <li>Signature mensuelle de l’emploi du temps</li>
+      </ul>
+      <p style="margin-top:12px">L’écran Trames contrôle déjà le respect du temps contractuel sur l’ensemble du cycle.</p>
+    </div></div>
+
+    <div class="vue" id="vue-navette"><div class="attente">
+      <h2>Navette mensuelle</h2>
+      <p>Génération du fichier destiné au cabinet comptable, au format exact de la navette actuelle.</p>
+      <ul>
+        <li>Heures complémentaires (≤ 10 % et &gt; 10 %) et supplémentaires (125 % / 150 %)</li>
+        <li>Congés payés en jours ouvrés, absences par motif</li>
+        <li>Éléments variables de paie, export au format du cabinet</li>
+      </ul>
+    </div></div>
+
+    <div class="vue" id="vue-reglages"><div class="attente">
+      <h2>Contrats et seuils</h2>
+      <p>Ces réglages s’ouvrent dans la fenêtre dédiée : contrats et lien avec les comptes intranet, rotations, seuils d’alerte du comptoir et des pharmaciens.</p>
+      <p style="margin-top:14px"><button class="go" style="width:auto;padding:0 18px;background:var(--accent);color:#fff" onclick="plOpenReglages()">Ouvrir les réglages</button></p>
+    </div></div>
+  </main>
+</div>
+
+<script src="pl-core.js"></script>
+<script src="pl-module.js"></script>
+<script>
+/* ── accès ─────────────────────────────────────────────────────────────── */
+let pinStr = '';
+
+async function plDemarrer(){
+  await loadAll();                       // ADMIN et staffDB viennent de la base
+  if (!plSessionValide()) { plEcran('login'); return; }
+  if (!staffDB.some(x=>x.pin)) { plSansPin(); return; }
+  plEcran('pin');
+}
+function plSansPin(){
+  currentUser = null;
+  document.getElementById('pl-qui').textContent = 'Administrateur';
+  plEcran('app'); plRender(); plCoreSync();
+}
+function plEcran(q){
+  document.getElementById('login-screen').style.display = q==='login' ? 'flex':'none';
+  document.getElementById('pin-screen').style.display   = q==='pin'   ? 'flex':'none';
+  document.getElementById('app').style.display          = q==='app'   ? 'grid':'none';
+}
+function plLogin(){
+  const m = document.getElementById('li-mail').value.trim();
+  const p = document.getElementById('li-pw').value;
+  if (m === ADMIN.mail && p === ADMIN.pw){
+    plSessionOuvrir(); pinStr=''; plDots();
+    // aucun code enregistré (première installation) : on n'enferme personne dehors
+    if (!staffDB.some(x=>x.pin)) { plSansPin(); return; }
+    plEcran('pin');
+  }
+  else {
+    const e = document.getElementById('li-err');
+    e.textContent = 'Identifiants incorrects.';
+    setTimeout(()=>e.textContent='', 3000);
+  }
+}
+function plDots(){
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('on', i<pinStr.length));
+  const q = document.getElementById('pin-who');
+  const u = pinStr.length===4 ? staffDB.find(x=>x.pin===pinStr) : null;
+  q.textContent = u ? u.prenom+' '+u.nom : '';
+}
+function plKp(v){
+  if (v==='del'){ pinStr = pinStr.slice(0,-1); plDots(); return; }
+  if (v==='ok'){ plEntrer(); return; }
+  if (pinStr.length<4){ pinStr += v; plDots(); if (pinStr.length===4) setTimeout(plEntrer,180); }
+}
+function plEntrer(){
+  const u = staffDB.find(x=>x.pin===pinStr);
+  if (!u){
+    const e = document.getElementById('pin-err');
+    e.textContent = 'Code inconnu.';
+    setTimeout(()=>{ e.textContent=''; }, 2500);
+    pinStr=''; plDots(); return;
+  }
+  currentUser = u;
+  document.getElementById('pl-qui').textContent = u.prenom+' '+u.nom;
+  plEcran('app');
+  plRender();
+  plCoreSync();
+}
+function plQuitter(){ plSessionFermer(); location.reload(); }
+document.addEventListener('keydown', e=>{
+  if (document.getElementById('pin-screen').style.display==='none') return;
+  if (/^[0-9]$/.test(e.key)) plKp(e.key);
+  else if (e.key==='Backspace') plKp('del');
+});
+
+/* ── navigation du menu ────────────────────────────────────────────────── */
+function plVue(v, btn){
+  // les trames s'ouvrent dans leur fenêtre pleine page : le menu reste sur le planning
+  if (v === 'trames'){ plOpenTrames(); return; }
+  document.querySelectorAll('.vue').forEach(x=>x.classList.remove('on'));
+  const el = document.getElementById('vue-'+v);
+  if (el) el.classList.add('on');
+  document.querySelectorAll('.sb .it').forEach(b=>b.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+}
+/* pl-module appelle showSec sur l'intranet ; ici la navigation est locale */
+function showSec(){ }
+
+plDemarrer();
+</script>
+</body>
+</html>
