@@ -118,16 +118,16 @@ main{padding:18px 22px 30px;min-width:0}
     <button class="it on" data-v="planning" onclick="plVue('planning',this)"><i class="p"></i>Planning</button>
 
     <div class="grp">Organiser</div>
-    <button class="it" data-v="trames" onclick="plVue('trames',this)"><i class="p"></i>Trames horaires</button>
+    <button class="it" data-v="trames" data-admin="1" onclick="plVue('trames',this)"><i class="p"></i>Trames horaires</button>
     <button class="it" data-v="conges" onclick="plVue('conges',this)"><i class="p"></i>Congés &amp; absences<span class="bientot" id="pl-abs-badge" style="display:none"></span></button>
     <button class="it" data-v="echanges" onclick="plVue('echanges',this)"><i class="p"></i>Échanges de jours<span class="bientot">bientôt</span></button>
 
     <div class="grp">Paie</div>
     <button class="it" data-v="compteurs" onclick="plVue('compteurs',this)"><i class="p"></i>Heures sup &amp; compte-temps<span class="bientot" id="pl-hs-badge" style="display:none"></span></button>
-    <button class="it" data-v="navette" onclick="plVue('navette',this)"><i class="p"></i>Navette mensuelle<span class="bientot">bientôt</span></button>
+    <button class="it" data-v="navette" data-admin="1" onclick="plVue('navette',this)"><i class="p"></i>Navette mensuelle<span class="bientot">bientôt</span></button>
 
-    <div class="grp">Paramètres</div>
-    <button class="it" data-v="reglages" onclick="plVue('reglages',this)"><i class="p"></i>Contrats et seuils</button>
+    <div class="grp" data-admin="1">Paramètres</div>
+    <button class="it" data-v="reglages" data-admin="1" onclick="plVue('reglages',this)"><i class="p"></i>Contrats et seuils</button>
 
     <div class="pied">
       <b id="pl-qui">—</b>
@@ -185,9 +185,18 @@ async function plDemarrer(){
   plEcran('pin');
 }
 function plSansPin(){
-  currentUser = null;
+  // première installation, aucun code enregistré : session administrateur
+  currentUser = null; window.plInstall = true;
   document.getElementById('pl-qui').textContent = 'Administrateur';
-  plEcran('app'); plRender(); plCoreSync();
+  plDroits(); plEcran('app'); plRender(); plCoreSync();
+}
+/* ── droits : un collaborateur consulte le planning, déclare ses heures sup, demande ses congés
+   et suit son compte-temps ; trames, navette, contrats et seuils sont réservés aux administrateurs ── */
+function plDroits(){
+  const admin = (typeof plIsAdmin === 'function') && plIsAdmin();
+  document.querySelectorAll('[data-admin]').forEach(el => { el.style.display = admin ? '' : 'none'; });
+  const q = document.getElementById('pl-qui');
+  if (q && currentUser) q.textContent = currentUser.prenom + ' ' + currentUser.nom + (admin ? '' : ' · consultation');
 }
 function plEcran(q){
   document.getElementById('login-screen').style.display = q==='login' ? 'flex':'none';
@@ -230,6 +239,7 @@ function plEntrer(){
   }
   currentUser = u;
   document.getElementById('pl-qui').textContent = u.prenom+' '+u.nom;
+  plDroits();
   plEcran('app');
   plRender();
   plCoreSync();
@@ -243,6 +253,7 @@ document.addEventListener('keydown', e=>{
 
 /* ── navigation du menu ────────────────────────────────────────────────── */
 function plVue(v, btn){
+  if (['trames','navette','reglages'].includes(v) && typeof plGarde === 'function' && !plGarde()) return;
   // les trames s'ouvrent dans leur fenêtre pleine page : le menu reste sur le planning
   if (v === 'trames'){ plOpenTrames(); return; }
   document.querySelectorAll('.vue').forEach(x=>x.classList.remove('on'));

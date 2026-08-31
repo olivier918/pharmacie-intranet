@@ -41,11 +41,16 @@
     t.textContent = msg; t.classList.add('pl-on');
     clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('pl-on'), 2600);
   }
+  // garde d'accès : toute fonction d'organisation (trames, réglages, modification du planning,
+  // absences, validations) passe par là. Un collaborateur ne fait que consulter et déclarer.
+  function plGarde() { if (plIsAdmin()) return true; plToast('Réservé aux administrateurs'); return false; }
+  window.plGarde = plGarde;
   function plPersist() { try { if (typeof schedSave === 'function') schedSave(); else if (typeof saveAll === 'function') saveAll(); } catch (e) { console.warn('pl save', e); } }
   function plStamp(o) { o.updatedAt = Date.now(); return o; }
   function plNewId(pfx) { return pfx + ':' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function plIsAdmin() {
     try {
+      if (window.plInstall === true) return true;   // première installation, aucun code PIN encore saisi
       if (typeof currentUser === 'undefined' || !currentUser) return false;
       if (currentUser.admin || currentUser.role === 'admin' || currentUser.plRole === 'titulaire' || currentUser.plRole === 'responsable') return true;
       // même repli que l'intranet : tant qu'aucun collaborateur ne porte le drapeau admin,
@@ -207,11 +212,13 @@
     if (ch) plPersist();
   }
   window.plSetStaff = function (cid, sid) {
+    if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     c.staffId = sid || null; plStamp(c); plPersist(); plRegRender(); plRender();
   };
   // créer un contrat pour un collaborateur du site qui n'en a pas encore
   window.plCreateFromStaff = function (sid) {
+    if (!plGarde()) return;
     const st = plStaffList().find(s => s.id === sid); if (!st) return;
     const grp = /pharmacien/i.test(st.poste || '') ? 'ph' : 'prep';
     plContrats.push({
@@ -685,7 +692,7 @@
       <span class="pl-grow"></span>
       <select class="pl-sel" id="pl-fgrp" onchange="plFiltre(this.value)"><option value="">Toute l'équipe</option></select>
       <button class="pl-btn pl-ghost" id="pl-btn-abs" onclick="plAbsOuvrir()">🏖 Déclarer une absence</button>
-      <button class="pl-btn pl-rose" onclick="plOpenTrames()">🗓 Trames horaires</button>
+      <button class="pl-btn pl-rose" id="pl-btn-trames" onclick="plOpenTrames()">🗓 Trames horaires</button>
       <button class="pl-btn pl-ghost" id="pl-btn-reg" onclick="plOpenReglages()">⚙ Réglages</button>
     </div>
     <div class="pl-legend">
@@ -909,6 +916,8 @@
     try {
       plHsBadge(); plAbsBadge();
       // un collaborateur demande ses congés ; un administrateur déclare directement
+      const adm0 = plIsAdmin();
+      ['pl-btn-reg', 'pl-btn-trames'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = adm0 ? '' : 'none'; });
       const bA = document.getElementById('pl-btn-abs');
       if (bA) { const adm = plIsAdmin(); bA.textContent = adm ? '🏖 Déclarer une absence' : '✉ Demander des congés'; bA.onclick = adm ? plAbsOuvrir : plDemOuvrir; }
     } catch (e) { }
@@ -925,6 +934,7 @@
 
   // ── vue Semaine ──
   function plRenderSem() {
+    const admin = plIsAdmin();
     const mon = plMonday(plAnchor);
     document.getElementById('pl-lbl').textContent = 'Semaine du ' + mon.getDate() + ' ' + PL_MOIS_FR[mon.getMonth()] + ' ' + mon.getFullYear();
     const days = []; for (let k = 0; k < 6; k++) days.push(plAddD(mon, k));
@@ -991,7 +1001,8 @@
         let cell = '';
         for (let hh = 0; hh < 2; hh++) {
           // chaque demi-journée est un point d'entrée : un clic ouvre le sélecteur d'horaires
-          const clic = ' onclick="plJourPick(event,\'' + c.id + '\',\'' + iso + '\',' + hh + ')"';
+          const clic = admin ? ' onclick="plJourPick(event,\'' + c.id + '\',\'' + iso + '\',' + hh + ')"' : '';
+          const kl = admin ? ' pl-click' : '';
           if (ab[hh] && plHeuresConservees(ab[hh]) && sl[hh]) cell += '<div class="pl-shift pl-formation" title="En formation — horaire habituel conservé (compte dans les heures), absent de la pharmacie">' + plEsc(sl[hh]) + '<i class="pl-fortag">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</i></div>';
           else if (ab[hh] && !plHeuresConservees(ab[hh])) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
           else if (dm[hh] && sl[hh]) cell += '<div class="pl-abs pl-dem" title="Demande de ' + (PL_MOTIFS_LONG[dm[hh]] || '').toLowerCase() + ' en attente de validation — horaire prévu : ' + plEsc(sl[hh]) + '">' + (PL_MOTIFS[dm[hh]] || dm[hh]) + ' ?</div>';
@@ -1002,12 +1013,12 @@
             const part = pos === 'C' && plPartiel(sl[hh], hh ? 'AM' : 'M');
             const tt = (ex ? 'Horaire modifié ce jour (trame : ' + (plSlotsTrame(c, d)[hh] || 'repos') + ') — ' : '')
               + (part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '')
-              + PL_POS_LBL[pos] + ' · cliquer pour modifier ce jour';
-            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + ' pl-click"' + clic + ' title="' + plEsc(tt) + '">' + plEsc(sl[hh]) + posBadge + (ex ? '<i class="pl-exdot" title="Exception du jour"></i>' : '') + '</div>';
+              + PL_POS_LBL[pos] + (admin ? ' · cliquer pour modifier ce jour' : '');
+            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + kl + '"' + clic + ' title="' + plEsc(tt) + '">' + plEsc(sl[hh]) + posBadge + (ex ? '<i class="pl-exdot" title="Exception du jour"></i>' : '') + '</div>';
           } else {
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
-            if (ex) cell += '<div class="pl-off pl-mod pl-click"' + clic + ' style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
-            else cell += '<div class="pl-vide pl-click"' + clic + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — repos ; cliquer pour ajouter un créneau">' + (hh ? 'après-midi' : 'matin') + '</div>';
+            if (ex) cell += '<div class="pl-off pl-mod' + kl + '"' + clic + ' style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
+            else cell += '<div class="pl-vide' + kl + '"' + clic + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — repos' + (admin ? ' ; cliquer pour ajouter un créneau' : '') + '">' + (hh ? 'après-midi' : 'matin') + '</div>';
           }
         }
         // journée entièrement libre : on affiche « repos », et les deux demi-journées
@@ -1208,9 +1219,9 @@
       } else if (++n > 300) clearInterval(t);   // 2 min d'attente maximum (le temps de se connecter)
     }, 400);
   }
-  window.plOpenReglages = function () { plRegView = 'c'; plRegFull = false; plApplyFull(); plRegRender(); plOpen('pl-ov-reg'); };
+  window.plOpenReglages = function () { if (!plGarde()) return; plRegView = 'c'; plRegFull = false; plApplyFull(); plRegRender(); plOpen('pl-ov-reg'); };
   // La trame d'équipe s'ouvre en pleine page : c'est un exercice qui demande toute la largeur.
-  window.plOpenTrames = function () { plRegView = 't'; plRegFull = true; plApplyFull(); plRegRender(); plOpen('pl-ov-reg'); };
+  window.plOpenTrames = function () { if (!plGarde()) return; plRegView = 't'; plRegFull = true; plApplyFull(); plRegRender(); plOpen('pl-ov-reg'); };
   window.plRegTab = function (t) { plRegView = t; plRegRender(); };
   window.plTrSel = function (rid, rang) { if (rid) plTrRotSel = rid; plTrRangSel = +rang; plRegRender(); };
   // ---------- sélecteur d'horaires : on choisit, on ne tape pas ----------
@@ -1469,7 +1480,7 @@
       } : null
     });
   };
-  window.plGridSet = function (el) {
+  window.plGridSet = function (el) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === el.dataset.c); if (!c) return;
     const rang = el.dataset.r, jr = el.dataset.j, hh = +el.dataset.h;
     const n = plNormHoraire(el.value);
@@ -1510,7 +1521,7 @@
     el.blur();
     if (next) { next.focus(); next.select(); }
   };
-  window.plRowCopy = function (cid, rang) {
+  window.plRowCopy = function (cid, rang) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const rot = plRotOf(c), nb = rot ? rot.longueur : 1;
     const src = plSemOf(c, rang), e = plEdSlot(c);
@@ -1552,7 +1563,7 @@
     return Math.min(n, 12);
   }
   window.plVerSel = function (id) { plVerEdit = id; plRegRender(); };
-  window.plVerBrouillon = function () {
+  window.plVerBrouillon = function () { if (!plGarde()) return;
     // pas de question au moment de créer : on nomme après, avec ✎ (le geste doit rester léger)
     const n = plVerBrouillons().length + 1;
     const nom = 'Brouillon ' + n + ' · ' + plJoli(plIso(new Date()));
@@ -1562,13 +1573,13 @@
     plVerEdit = v.id; plPersist();
     plToast('Brouillon créé — invisible dans le planning ; ✎ pour le renommer'); plRegRender();
   };
-  window.plVerRenommer = function () {
+  window.plVerRenommer = function () { if (!plGarde()) return;
     const v = plVerEditObj(); if (!v) return;
     const nom = prompt('Nom de cette version', v.nom || '');
     if (nom === null) return;
     v.nom = nom.trim(); plStamp(v); plPersist(); plRegRender();
   };
-  window.plVerSuppr = function () {
+  window.plVerSuppr = function () { if (!plGarde()) return;
     const v = plVerEditObj(); if (!v) return;
     if (!confirm(v.statut === 'brouillon'
       ? 'Supprimer le brouillon « ' + (v.nom || '') + ' » ?'
@@ -1601,7 +1612,7 @@
     document.getElementById('pl-mep-body').innerHTML = h;
     plOpen('pl-ov-mep');
   };
-  window.plVerMepValider = function () {
+  window.plVerMepValider = function () { if (!plGarde()) return;
     const deb = document.getElementById('pl-mep-deb').value;
     if (!deb) { plToast('Choisissez une date de mise en place'); return; }
     const sansFin = document.getElementById('pl-mep-sf').checked;
@@ -1821,7 +1832,7 @@
   }
   // clic sur une plage horaire d'un préparateur : fait tourner la position C → B → A.
   // La modification s'applique à la SEMAINE TYPE (elle vaut pour toutes les semaines de ce rang).
-  window.plCyclePos = function (cid, rang, jour, hh) {
+  window.plCyclePos = function (cid, rang, jour, hh) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c || !PL_POS_CHOIX[c.grp]) return;
     const e = plEdSlot(c);
     if (!e.pos[rang]) e.pos[rang] = {};
@@ -1848,22 +1859,22 @@
       if (reg && reg.classList.contains('pl-on')) plRegRender();
     }
   };
-  window.plSetBase = function (cid, v) {
+  window.plSetBase = function (cid, v) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const n = parseFloat(String(v).replace(',', '.'));
     c.base = isNaN(n) ? null : n; plStamp(c); plPersist(); plRender();
   };
-  window.plSetLongueur = function (rid, v) {
+  window.plSetLongueur = function (rid, v) { if (!plGarde()) return;
     const r = L('rotations').find(x => x.id === rid); if (!r) return;
     const n = Math.max(1, Math.min(4, parseInt(v, 10) || 1));
     r.longueur = n; if ((r.rangAncrage || 1) > n) r.rangAncrage = 1;
     plStamp(r); plPersist(); plRegRender(); plRender();
   };
-  window.plSetAncrage = function (rid, v) {
+  window.plSetAncrage = function (rid, v) { if (!plGarde()) return;
     const r = L('rotations').find(x => x.id === rid); if (!r || !v) return;
     r.ancrage = v; plStamp(r); plPersist(); plRegRender(); plRender();
   };
-  window.plSetSeuil = function (listName, jour, demi, v) {
+  window.plSetSeuil = function (listName, jour, demi, v) { if (!plGarde()) return;
     const p = P(); if (!Array.isArray(p[listName])) p[listName] = [];
     let s = p[listName].find(x => x.jour === jour && x.demi === demi);
     if (!s) { s = { id: listName + ':' + jour + ':' + demi, jour: jour, demi: demi }; p[listName].push(s); }
@@ -1876,6 +1887,7 @@
   // Ce qui est choisi ne vaut QUE pour ce jour — la semaine type n'est pas touchée.
   window.plJourPick = function (ev, cid, iso, hh) {
     if (ev) ev.stopPropagation();
+    if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const anc = (ev && ev.currentTarget) || document.body;
     const d = new Date(iso + 'T12:00'), demi = hh ? 'AM' : 'M';
@@ -1913,6 +1925,7 @@
     });
   };
   window.plEditJourModale = function (cid, iso) {
+    if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     plJourCid = cid; plJourIso = iso;
     const d = new Date(iso + 'T12:00');
@@ -1953,6 +1966,7 @@
     }
   }
   window.plSaveJour = function () {
+    if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === plJourCid); if (!c) return;
     const d = new Date(plJourIso + 'T12:00'), trame = plSlotsTrame(c, d);
     const tr2 = plTrameAt(c, d);
@@ -1980,6 +1994,7 @@
     plRender();
   };
   window.plResetJour = function () {
+    if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === plJourCid); if (!c) return;
     plDropEx(c.id, plJourIso, 'M'); plDropEx(c.id, plJourIso, 'AM');
     plPersist(); plClose('pl-ov-jour'); plToast('Trame rétablie'); plRender();
@@ -2008,6 +2023,7 @@
     return L('absences').find(b => b.id !== saufId && b.contratId === a.contratId && b.debut <= a.fin && b.fin >= a.debut) || null;
   }
   window.plAbsOuvrir = function (cid) {
+    if (!plGarde()) return;
     const admin = plIsAdmin();
     const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
     const monC = moi ? L('contrats').find(c => c.actif !== false && c.staffId === moi) : null;
@@ -2041,6 +2057,7 @@
       + (ch ? '<div style="color:#C62828;margin-top:4px">Chevauche une absence déjà déclarée (' + PL_MOTIFS_LONG[ch.motif] + ' du ' + plJoliDate(ch.debut) + ' au ' + plJoliDate(ch.fin) + ').</div>' : '');
   }
   window.plAbsEnregistrer = function () {
+    if (!plGarde()) return;
     const a = plAbsLire();
     const c = L('contrats').find(x => x.id === a.contratId);
     if (!c) { plToast('Choisissez un collaborateur'); return; }
@@ -2058,7 +2075,7 @@
   window.plAbsSupprimer = function (id) {
     const arr = L('absences'); const i = arr.findIndex(x => x.id === id); if (i < 0) return;
     const c = L('contrats').find(x => x.id === arr[i].contratId);
-    if (!plAbsPeut(c) || (arr[i].demandeId && !plIsAdmin())) { plToast('Des congés accordés ne se retirent que par un administrateur'); return; }
+    if (!plGarde()) return;
     if (!confirm('Supprimer cette absence ?')) return;
     arr.splice(i, 1); plPersist(); plRender(); plAbsRender();
   };
@@ -2079,7 +2096,7 @@
           return '<tr><td style="text-align:left"><b>' + plEsc(c ? c.nom : '—') + '</b></td><td>' + chip(a.motif) + '</td>'
             + '<td>' + plJoliDate(a.debut) + (a.debutAM ? ' <small>ap.-midi</small>' : '') + '</td><td>' + plJoliDate(a.fin) + (a.finM ? ' <small>midi</small>' : '') + '</td>'
             + '<td>' + (n % 1 ? n.toFixed(1).replace('.', ',') : n) + '</td><td style="text-align:left">' + plEsc(a.commentaire || '') + '</td><td style="font-size:11px;color:var(--plmut)">' + plEsc(plQui(a.saisiPar)) + '</td>'
-            + '<td>' + ((admin || (plAbsPeut(c) && !a.demandeId)) ? '<button class="pl-btn pl-mini pl-ghost" onclick="plAbsSupprimer(\'' + a.id + '\')" title="Supprimer">✕</button>' : '') + '</td></tr>'; }).join('')
+            + '<td>' + (admin ? '<button class="pl-btn pl-mini pl-ghost" onclick="plAbsSupprimer(\'' + a.id + '\')" title="Supprimer">✕</button>' : '') + '</td></tr>'; }).join('')
         + '</table>'
       : '<div class="pl-empty" style="padding:18px 12px">' + vide + '</div>';
     host.innerHTML = '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
@@ -2317,6 +2334,7 @@
     if (plImputFile.length) setTimeout(plImputOuvrir, 120);
   };
   window.plImputChanger = function (exId, v) {
+    if (!plGarde()) return;
     const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
     ex.imputation = v; plStamp(ex); plPersist(); plHsRender();
   };
@@ -2495,7 +2513,7 @@
 
   // ---------- éditeur de trame ----------
   let plTrEditId = null;
-  window.plEditTrame = function (cid) {
+  window.plEditTrame = function (cid) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     plTrEditId = cid;
     const rot = plRotOf(c); const nb = rot ? rot.longueur : 1;
@@ -2534,14 +2552,14 @@
     inputs.forEach(i => { tot[i.dataset.w] = (tot[i.dataset.w] || 0) + plDurOf(i.value); });
     Object.keys(tot).forEach(w => { const el = document.getElementById('pl-tr-tot-' + w); if (el) el.textContent = plFmtH(Math.round(tot[w] * 4) / 4); });
   };
-  window.plCopySem = function (fromW) {
+  window.plCopySem = function (fromW) { if (!plGarde()) return;
     const inputs = [...document.querySelectorAll('#pl-tr-body input')];
     const src = {};
     inputs.filter(i => +i.dataset.w === fromW).forEach(i => { src[i.dataset.j + '|' + i.dataset.h] = i.value; });
     inputs.filter(i => +i.dataset.w !== fromW).forEach(i => { i.value = src[i.dataset.j + '|' + i.dataset.h] || ''; });
     plTrTotal();
   };
-  window.plSaveTrame = function () {
+  window.plSaveTrame = function () { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === plTrEditId); if (!c) return;
     const sem = {};
     document.querySelectorAll('#pl-tr-body input').forEach(i => {
@@ -2571,6 +2589,7 @@
   // ---------- seed : trame du 01/09/2026 ----------
   const PL_SEED = [{"nom": "Anouck", "grp": "ph", "role": "Pharmacienne titulaire", "ph": true, "base": null, "sem": {}}, {"nom": "Olivier", "grp": "ph", "role": "Pharmacien titulaire", "ph": true, "base": null, "sem": {}}, {"nom": "Hervine Lhullier", "grp": "ph", "role": "Pharmacienne adjointe", "ph": true, "base": 27.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": [null, null], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Alexis Baguelin", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Jules Palvadeau", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Enzo Doré", "grp": "ph", "role": "Pharmacien adjoint", "ph": true, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "3": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Céline Bourdon", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}}}, {"nom": "Elodie Rivognac", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 27.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Mathilde Binet", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 16.0, "sem": {"1": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}, "2": {"lun": ["9h-12h30", null], "mar": [null, "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", null], "ven": ["9h-12h30", null], "sam": [null, null]}}}, {"nom": "Jean-Claude Tran Van", "grp": "prep", "role": "Préparateur", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h00"], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": [null, null], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Marion Noyée", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-18h15"], "ven": ["9h-12h30", "14h-19h15"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-18h45"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Julie Nicolas", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 32.75, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-18h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": [null, null]}, "2": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-19h30"], "jeu": [null, "14h-19h30"], "ven": ["9h-12h30", "14h-18h30"], "sam": ["8h30-12h30", "14h-19h"]}}}, {"nom": "Hortense Le Pont", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": [null, null]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-18h30"], "mer": ["9h-12h30", "14h-19h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Elise Lamy", "grp": "prep", "role": "Préparatrice", "ph": false, "base": 35.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": ["9h-12h30", "14h-19h30"], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}}}, {"nom": "Violette Gente", "grp": "renfort", "role": "Étudiante", "ph": false, "base": 9.0, "sem": {"1": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}, "2": {"lun": [null, null], "mar": [null, null], "mer": [null, null], "jeu": [null, null], "ven": [null, null], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Allison Courvalet", "grp": "avance", "role": "Esthéticienne", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "14h-19h30"], "mar": ["9h-12h30", "14h-19h30"], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-19h30"], "mar": [null, null], "mer": ["9h-12h30", "14h-18h30"], "jeu": [null, null], "ven": ["9h-12h30", "14h-19h30"], "sam": ["9h-12h30", "14h-19h30"]}}}, {"nom": "Paloma Petit", "grp": "secr", "role": "Secrétaire", "ph": false, "base": 28.0, "sem": {"1": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}, "2": {"lun": ["9h-12h30", "14h-17h30"], "mar": ["9h-12h30", "14h-17h30"], "mer": [null, null], "jeu": ["9h-12h30", "14h-17h30"], "ven": ["9h-12h30", "14h-17h30"], "sam": [null, null]}}}, {"nom": "Brunilde Marti", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}, "2": {"lun": ["6h-13h30", null], "mar": ["6h-13h30", null], "mer": ["6h-11h", null], "jeu": ["6h-13h30", null], "ven": ["6h-13h30", null], "sam": [null, null]}}}, {"nom": "Quentin Debons", "grp": "logi", "role": "Logistique", "ph": false, "base": 35.0, "sem": {"1": {"lun": ["9h-12h30", "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": ["8h30-11h", null]}, "2": {"lun": [null, "13h30-18h"], "mar": ["9h30-12h30", "13h30-18h"], "mer": ["9h-12h30", "13h30-18h"], "jeu": [null, "13h30-18h30"], "ven": ["9h30-12h30", "13h30-18h"], "sam": [null, null]}}}, {"nom": "Corinne Porey", "grp": "entretien", "role": "Entretien", "ph": false, "base": 12.5, "sem": {"1": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}, "2": {"lun": ["6h-8h30", null], "mar": ["6h-8h30", null], "mer": ["6h-8h30", null], "jeu": ["6h-8h30", null], "ven": ["6h-8h30", null], "sam": [null, null]}}, "inactif": true}];
   window.plSeed = function () {
+    if (!plGarde()) return;
     if (L('contrats').length) { plToast('Des contrats existent déjà.'); return; }
     const now = Date.now();
     // rotations — ancrage : semaine du 07/09/2026 = Prép S1 · Ph S1 · PDA S4 (planning 2026)
