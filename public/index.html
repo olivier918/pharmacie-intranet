@@ -613,11 +613,12 @@ tr:hover td{background:#fafffe}
         <div class="fgrid">
           <div class="fg" style="position:relative">
             <label>Nom patient <span class="req">*</span></label>
-            <input type="text" id="p-nom" placeholder="NOM" oninput="acPatient('p-nom','p-prenom','p-dob','p-ac')" autocomplete="off">
+            <input type="text" id="p-nom" placeholder="NOM" oninput="acPatient('p-nom','p-prenom','p-dob','p-ac','p-tel')" autocomplete="off">
             <div id="p-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="p-prenom" placeholder="Prénom"></div>
           <div class="fg"><label>Date de naissance</label><input type="date" id="p-dob"></div>
+          <div class="fg"><label>Téléphone portable <span style="font-weight:400;color:var(--gray-500)">(pour prévenir par SMS)</span></label><input type="tel" id="p-tel" placeholder="06 …" inputmode="tel"></div>
           <div class="fg" style="position:relative">
             <label>Médecin prescripteur</label>
             <input type="text" id="p-med" placeholder="Dr …" oninput="acMedecin('p-med','p-med-ac')" autocomplete="off">
@@ -3381,22 +3382,23 @@ function savePrep(){
   if(!nom||!prenom){alert('Le nom et le prénom du patient sont obligatoires.');return}
   const type=document.getElementById('p-type').value;
   const dob=document.getElementById('p-dob').value;
+  const tel=document.getElementById('p-tel').value.trim();
   const med=document.getElementById('p-med').value.trim();
   const prep=document.getElementById('p-prep').value.trim();
   const now=new Date();
-  const p={id:Date.now(),nom,prenom,dob,med,prep,type,
+  const p={id:Date.now(),nom,prenom,dob,tel,med,prep,type,
     operateur:currentUser?`${currentUser.prenom} ${currentUser.nom}`:'Opérateur',
     by:currentUser?.id||null,
     date:now.toISOString().split('T')[0],
     heure:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
     status:PREP_TYPES[type].devis?'attente devis':'en cours',
     updatedAt:Date.now()};
-  upsertPatient({nom,prenom,dob});
+  upsertPatient({nom,prenom,dob,tel});
   if(med){ const parts=med.replace(/^Dr\.?\s*/i,'').trim().split(' ');
     const mn=parts[parts.length-1].toUpperCase(); const mp=parts.slice(0,-1).join(' ');
     if(mn) upsertMedecin({nom:mn,prenom:mp}); }
   preps.unshift(p);
-  ['p-nom','p-prenom','p-dob','p-med','p-prep'].forEach(i=>document.getElementById(i).value='');
+  ['p-nom','p-prenom','p-dob','p-tel','p-med','p-prep'].forEach(i=>document.getElementById(i).value='');
   const st=document.getElementById('prep-send-status');
   if(st){ st.style.display='block'; st.style.color='#2E7D32'; st.textContent='✅ Demande enregistrée.'; setTimeout(function(){ st.style.display='none'; },2500); }
   renderPreps();
@@ -3458,15 +3460,16 @@ function prepCard(p){
     <div class="dc-left">
       <div class="dc-row1">
         <span class="dc-name">${p.nom} ${p.prenom}</span>
-        <span class="dc-lieu">${p.dob?'🎂 '+p.dob:''}${p.med?' · '+ico('medecin')+' '+p.med:''}</span>
+        <span class="dc-lieu">${p.dob?'🎂 '+p.dob:''}${prepTel(p)?' · '+ico('telephone')+' '+prepTel(p):''}${p.med?' · '+ico('medecin')+' '+p.med:''}</span>
         <span class="badge" style="${T.col};padding:3px 10px;border-radius:6px;font-size:.7rem;font-weight:700">${T.lbl}</span>
         ${attente}
       </div>
       ${p.prep?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${p.prep}</span></div>`:''}
-      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}</span></div>
+      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}`:''}</span></div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
+      ${p.status==='prête'?`<button class="btn bs btn-ico" onclick="openPrepSms(${p.id})" title="${p.smsAt?'SMS déjà envoyé le '+new Date(p.smsAt).toLocaleDateString('fr-FR'):'Prévenir le patient par SMS'}"${p.smsAt?' style="border-color:#A5D6A7;background:#E8F5E9"':''}>${ico('messagerie')}</button>`:''}
       ${!archived?`<button class="btn bd btn-ico" onclick="abandonPrep(${p.id})" title="Abandonner">${ico('fermer')}</button>`:''}
     </div>
   </div>`;
@@ -3489,9 +3492,39 @@ function askPrepStep(id, target){
     if(!recul){ p[st.key]=new Date().toISOString().split('T')[0]; p[st.key+'By']=currentUser?.id||null; }
     else { steps.slice(target+1).forEach(function(s){ delete p[s.key]; delete p[s.key+'By']; }); }
     closeModal('confirm-modal'); renderPreps();
+    // Préparée / réceptionnée : on propose aussitôt de prévenir le patient.
+    if(!recul && nouveau==='prête') setTimeout(function(){ openPrepSms(p.id); },250);
   };
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
+}
+
+// Téléphone : l'annuaire patients d'abord (à jour), la saisie de la demande en secours.
+function prepTel(p){
+  const pt=patients.find(x=>(x.nom||'').toUpperCase()===(p.nom||'').toUpperCase() && (x.prenom||'').toLowerCase()===(p.prenom||'').toLowerCase());
+  return (pt&&pt.tel)||p.tel||'';
+}
+// Prévenir le patient que sa préparation est prête (préparée ici ou réceptionnée de Kerangal).
+function openPrepSms(id){
+  const p=preps.find(x=>x.id===id); if(!p) return;
+  const T=PREP_TYPES[p.type]||PREP_TYPES['realisation-kerangal'];
+  const quoi=p.prep?(' ('+p.prep.slice(0,60)+(p.prep.length>60?'…':'')+')'):'';
+  openSmsModal({
+    titre:'SMS au patient — préparation prête',
+    tel:prepTel(p), nom:p.nom, prenom:p.prenom, source:'preparation',
+    tag:'preparation',
+    info:`<strong>${p.nom} ${p.prenom}</strong> · ${T.lbl}${p.prep?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">${p.prep}</div>`:''}`,
+    templates:[
+      {lbl:'Préparation prête à retirer',
+       text:`Bonjour, votre preparation est prete a la Pharmacie du Centre. Vous pouvez venir la retirer aux heures d'ouverture. 02 31 52 15 71.`},
+      {lbl:'Prête — ordonnance à apporter',
+       text:`Bonjour, votre preparation est prete a la Pharmacie du Centre. Merci de venir la retirer avec votre ordonnance aux heures d'ouverture. 02 31 52 15 71.`}
+    ],
+    onSent:(r)=>{
+      p.smsAt=new Date().toISOString(); p.smsBy=currentUser?.id||'?'; p.smsId=r.id||null;
+      p.updatedAt=Date.now(); renderPreps();
+    }
+  });
 }
 
 function abandonPrep(id){
