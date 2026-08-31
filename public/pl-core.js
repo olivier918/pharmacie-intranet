@@ -21,6 +21,7 @@
   window.plExceptions = []; window.plDemandes = []; window.plReels = []; window.plNotifs = []; window.plClotures = [];
   window.plHeuresSup = [];      // heures supplémentaires déclarées par les collaborateurs (validation admin)
   window.plAbsences = [];       // périodes d'absence (congés, maternité, maladie, récupération, formation)
+  window.plEchanges = [];       // échanges de jours entre collaborateurs (ou permutation de ses propres jours)
   window.staffDB = [];          // lecture seule ici : sert aux noms et à l'identification par PIN
   window.currentUser = null;
   window.ADMIN = { mail: 'admin@pharmacie-mondeville.fr', pw: 'pharma2026' };
@@ -29,7 +30,7 @@
   // Rubriques que CETTE page a le droit d'écrire. Ne jamais y ajouter une rubrique
   // d'un autre module : ce qui n'est pas dans cette liste n'est jamais envoyé.
   const PL_COLLS = ['plPostes', 'plRotations', 'plContrats', 'plTrames', 'plExceptions',
-    'plDemandes', 'plReels', 'plNotifs', 'plClotures', 'plHeuresSup', 'plAbsences'];
+    'plDemandes', 'plReels', 'plNotifs', 'plClotures', 'plHeuresSup', 'plAbsences', 'plEchanges'];
   const PLPARAMS_SUBS = ['periodes', 'seuilsComptoir', 'seuilsPharmaciens', 'seuilsPostes', 'motifsAbsence'];
 
   function ref(n) { return window[n]; }

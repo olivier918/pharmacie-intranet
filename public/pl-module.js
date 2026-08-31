@@ -44,6 +44,11 @@
   // garde d'accès : toute fonction d'organisation (trames, réglages, modification du planning,
   // absences, validations) passe par là. Un collaborateur ne fait que consulter et déclarer.
   function plGarde() { if (plIsAdmin()) return true; plToast('Réservé aux administrateurs'); return false; }
+  // Les titulaires ne sont pas des salariés : ils tiennent le comptoir et comptent dans les
+  // effectifs, mais ni leurs heures ni leur contrat n'ont à être décomptés (pas de base
+  // hebdomadaire, pas de compteur, pas de navette). Réglable par contrat.
+  function plHorsTemps(c) { return !!(c && c.horsTemps); }
+  window.plHorsTemps = plHorsTemps;
   window.plGarde = plGarde;
   function plPersist() { try { if (typeof schedSave === 'function') schedSave(); else if (typeof saveAll === 'function') saveAll(); } catch (e) { console.warn('pl save', e); } }
   function plStamp(o) { o.updatedAt = Date.now(); return o; }
@@ -73,6 +78,7 @@
       case 'demandes': if (typeof plDemandes === 'undefined' || !Array.isArray(plDemandes)) window.plDemandes = []; return plDemandes;
       case 'heuresSup': if (typeof plHeuresSup === 'undefined' || !Array.isArray(plHeuresSup)) window.plHeuresSup = []; return plHeuresSup;
       case 'absences': if (typeof plAbsences === 'undefined' || !Array.isArray(plAbsences)) window.plAbsences = []; return plAbsences;
+      case 'echanges': if (typeof plEchanges === 'undefined' || !Array.isArray(plEchanges)) window.plEchanges = []; return plEchanges;
     }
     return [];
   }
@@ -183,12 +189,17 @@
        { id: 'ct:olivier', nom: 'Olivier', role: 'Pharmacien titulaire' }].forEach(t => {
         if (!L('contrats').some(c => c.id === t.id)) {
           plContrats.push({ id: t.id, nom: t.nom, grp: 'ph', role: t.role, estPharmacien: true,
-            base: null, tempsPartiel: false, rotationId: 'rot:ph', sem: {}, actif: true, updatedAt: Date.now() });
+            base: null, tempsPartiel: false, horsTemps: true, rotationId: 'rot:ph', sem: {}, actif: true, updatedAt: Date.now() });
           ch = true;
         }
       });
       // l'entretien ne fait pas partie du planning (demande d'Olivier du 28/08/2026)
       L('contrats').forEach(c => { if (c.grp === 'entretien' && c.actif !== false) { c.actif = false; plStamp(c); ch = true; } });
+      // les titulaires sortent du décompte de temps par défaut (réglable dans Contrats)
+      ['ct:anouck', 'ct:olivier'].forEach(id => {
+        const c = L('contrats').find(x => x.id === id);
+        if (c && c.horsTemps === undefined) { c.horsTemps = true; plStamp(c); ch = true; }
+      });
     }
     if (ch) plPersist();
     plLinkStaff();
@@ -465,6 +476,20 @@
   .pl-cell:hover .pl-vide{color:#B9C2BD;border-color:var(--plline)}
   .pl-cell .pl-vide:hover{border-color:var(--plac);color:var(--plac);background:var(--placs)}
   .pl-repos:hover .pl-restlbl{display:none}
+  /* échanges de jours */
+  .pl-ech-form{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-top:10px}
+  .pl-ech-form label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:600;color:var(--plmut)}
+  .pl-ech-form .pl-inp{height:34px;min-width:170px}
+  .pl-ech-fl2{font-size:20px;color:var(--plac);padding:0 2px 6px}
+  .pl-ech-res{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:var(--placs);border-radius:11px;padding:10px 14px;font-size:12.5px}
+  .pl-ech-col{flex:1 1 220px;line-height:1.6}
+  .pl-ech-t{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plac);margin-bottom:2px}
+  .pl-ech-fl{font-size:22px;color:var(--plac);flex:0 0 auto}
+  .pl-ech-imp{margin-top:8px;font-size:12px;background:#FBFAF9;border:1px solid var(--plline);border-radius:10px;padding:8px 12px}
+  .pl-ech-imp.pl-ko{background:var(--plforb);border-color:#EAD9AE;color:#7A5A10}
+  .pl-echdot{position:absolute;left:-4px;bottom:-4px;width:12px;height:12px;border-radius:50%;background:var(--plac);
+    color:#fff;font-style:normal;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;
+    border:1.5px solid #fff}
   .pl-cyc2{font-size:9.5px;font-weight:600;color:var(--plmut);font-variant-numeric:tabular-nums}
   .pl-cyc2.good{color:var(--plok)}.pl-cyc2.bad{color:var(--plcrit)}
   .pl-grp td{background:var(--placs);padding:4px 14px;font-size:10.5px;
@@ -924,7 +949,7 @@
     else plRenderAn();
     plOmbreColonne();
     try {
-      plHsBadge(); plAbsBadge();
+      plHsBadge(); plAbsBadge(); plEchBadge();
       // un collaborateur demande ses congés ; un administrateur déclare directement
       const adm0 = plIsAdmin();
       ['pl-btn-reg', 'pl-btn-trames'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = adm0 ? '' : 'none'; });
@@ -996,12 +1021,12 @@
     let lastGrp = null;
     plContratsVisibles().forEach(c => {
       if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td class="pl-who"><span class="pl-grplbl" title="' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</span></td><td colspan="6"></td></tr>'; }
-      const planned = plHeuresSemaine(c, mon), base = plBase(c);
+      const planned = plHeuresSemaine(c, mon), base = plBase(c), hors = plHorsTemps(c);
       // Sur un cycle de 2 à 4 semaines, une semaine seule n'a pas à tomber juste : c'est la
       // moyenne du cycle qui doit égaler le contrat. On affiche donc la semaine, puis le cycle.
       const ci = plCycleInfo(c, plTrameAt(c, mon).sem);
       const cls = (base == null || ci.ecart == null) ? '' : (ci.ecart === 0 ? 'good' : (Math.abs(ci.ecart) <= 0.25 ? '' : 'bad'));
-      const cycHtml = (base == null) ? ''
+      const cycHtml = hors ? '<div class="pl-cyc2" style="opacity:.8">hors décompte de temps</div>' : (base == null) ? ''
         : '<div class="pl-cyc2 ' + cls + '" title="' + plEsc((ci.nb > 1 ? ci.tot.map((t, i) => 'S' + (i + 1) + ' ' + plFmtH(t)).join(' · ') + ' → moyenne ' + plFmtH(ci.moy) : 'semaine ' + plFmtH(ci.moy)) + ' pour un contrat de ' + plFmtH(base)) + '">'
           + (ci.ecart === 0 ? '✓ contrat ' + plFmtH(base) : 'contrat ' + plFmtH(base) + ' · ' + plEcartTxt(ci.ecart))
           + (ci.nb > 1 ? ' <span style="opacity:.75">sur ' + ci.nb + ' sem.</span>' : '') + '</div>';
@@ -1025,7 +1050,11 @@
             const tt = (ex ? 'Horaire modifié ce jour (trame : ' + (plSlotsTrame(c, d)[hh] || 'repos') + ') — ' : '')
               + (part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '')
               + PL_POS_LBL[pos] + (admin ? ' · cliquer pour modifier ce jour' : '');
-            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + kl + '"' + clic + ' title="' + plEsc(tt) + '">' + plEsc(sl[hh]) + posBadge + (ex ? '<i class="pl-exdot" title="Exception du jour"></i>' : '') + '</div>';
+            const ech = plEchOf(c.id, iso);
+            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + kl + '"' + clic
+              + ' title="' + plEsc(tt + (ech ? ' — journée issue d\'un échange' : '')) + '">' + plEsc(sl[hh]) + posBadge
+              + (ex && !ech ? '<i class="pl-exdot" title="Exception du jour"></i>' : '')
+              + (ech ? '<i class="pl-echdot" title="Échange de jours validé">⇄</i>' : '') + '</div>';
           } else {
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
             if (ex) cell += '<div class="pl-off pl-mod' + kl + '"' + clic + ' style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
@@ -1039,7 +1068,7 @@
           + (vide2 ? '<div class="pl-off pl-restlbl">repos</div>' : '') + cell + '</td>';
       });
       h += '<tr><td class="pl-who"><b>' + plEsc(c.nom) + '</b><small>' + plEsc(c.role || '') + '</small>'
-        + '<div class="pl-hrs">' + plFmtH(planned) + '<span style="font-weight:500;color:var(--plmut)"> cette semaine</span></div>'
+        + (hors ? '' : '<div class="pl-hrs">' + plFmtH(planned) + '<span style="font-weight:500;color:var(--plmut)"> cette semaine</span></div>')
         + cycHtml + '</td>' + cells + '</tr>';
     });
     h += '</tbody></table></div>';
@@ -1442,7 +1471,9 @@
     const ci = plCycleInfo(c);
     const semTot = ci.tot[(+rang || 1) - 1] != null ? ci.tot[(+rang || 1) - 1] : 0;
     let h = '<div style="font-weight:700">' + plFmtH(semTot) + '</div>';
-    if (c.base == null) {
+    if (plHorsTemps(c)) {
+      h += '<div class="pl-cyc" style="color:var(--plmut)">hors décompte</div>';
+    } else if (c.base == null) {
       h += '<div class="pl-cyc" style="color:var(--plmut)">contrat non renseigné</div>';
     } else {
       const det = (ci.nb > 1 ? ci.tot.map((t, i) => 'S' + (i + 1) + ' ' + plFmtH(t)).join(' · ') + ' → moyenne ' + plFmtH(ci.moy) : 'semaine ' + plFmtH(ci.moy))
@@ -1455,7 +1486,7 @@
   }
   function plEcartsHtml() {
     const ko = [];
-    L('contrats').filter(c => c.actif !== false && c.base != null).forEach(c => {
+    L('contrats').filter(c => c.actif !== false && c.base != null && !plHorsTemps(c)).forEach(c => {
       const ci = plCycleInfo(c);
       if (ci.ecart !== 0) ko.push({ c: c, e: ci.ecart, k: plEcartKind(ci.ecart) });
     });
@@ -1783,7 +1814,7 @@
     } else if (plRegView === 'c') {
 
       const staff = plStaffList();
-      let h = '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Compte intranet</th><th>Base hebdo</th><th>Rotation</th><th>Trame</th></tr>';
+      let h = '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Compte intranet</th><th>Base hebdo</th><th title="Décoché pour les titulaires : présents au comptoir mais sans décompte d’heures, de compteur ni de navette">Temps décompté</th><th>Rotation</th><th>Trame</th></tr>';
       L('contrats').filter(c => c.actif !== false).sort(plCmp).forEach(c => {
         const rot = plRotOf(c), st = plStaffOf(c);
         let lien;
@@ -1795,7 +1826,8 @@
         h += '<tr><td><b>' + plEsc(c.nom) + '</b>' + (c.estPharmacien ? ' <span class="pl-chip pl-ch-cp" style="font-size:9.5px">Pharmacien</span>' : '') + '</td>'
           + '<td>' + plEsc(c.role || '') + '</td>'
           + '<td>' + lien + '</td>'
-          + '<td><input class="pl-inp" style="width:70px;height:30px" value="' + (c.base != null ? c.base : '') + '" onchange="plSetBase(\'' + c.id + '\',this.value)"> h</td>'
+          + '<td><input class="pl-inp" style="width:70px;height:30px" value="' + (c.base != null ? c.base : '') + '"' + (plHorsTemps(c) ? ' disabled title="Contrat hors décompte de temps"' : '') + ' onchange="plSetBase(\'' + c.id + '\',this.value)"> h</td>'
+          + '<td style="text-align:center"><input type="checkbox"' + (plHorsTemps(c) ? '' : ' checked') + ' title="Décocher pour un titulaire : il reste compté dans les effectifs mais sort des heures, des compteurs et de la navette" onchange="plSetTemps(\'' + c.id + '\',this.checked)"></td>'
           + '<td>' + (rot ? plEsc(rot.lbl) + ' (' + rot.longueur + ' sem)' : '—') + '</td>'
           + '<td><button class="pl-btn pl-ghost pl-mini" onclick="plEditTrame(\'' + c.id + '\')">✎ Horaires</button></td></tr>';
       });
@@ -1878,6 +1910,13 @@
       const reg = document.getElementById('pl-ov-reg');
       if (reg && reg.classList.contains('pl-on')) plRegRender();
     }
+  };
+  window.plSetTemps = function (cid, compte) {
+    if (!plGarde()) return;
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    c.horsTemps = !compte;
+    plStamp(c); plPersist(); plRegRender(); plRender();
+    plToast(c.nom.split(' ')[0] + (compte ? ' · temps décompté' : ' · hors décompte de temps'));
   };
   window.plSetBase = function (cid, v) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
@@ -2212,6 +2251,12 @@
     const bilan = sous ? '<b style="color:#B23A2F">' + sous + ' demi-journée' + (sous > 1 ? 's' : '') + ' sous le seuil</b>' : (lim ? '<b style="color:#B26A00">' + lim + ' au seuil juste</b>' : '<b style="color:#1D5C3A">effectif suffisant sur toute la période</b>');
     return '<div class="pl-sub" style="margin-top:6px">Si acceptée — ' + bilan + ' (' + n + ' demi-journée' + (n > 1 ? 's' : '') + ' travaillée' + (n > 1 ? 's' : '') + ') :</div><div class="pl-impact">' + html + '</div>';
   }
+  function plEchBadge() {
+    const b = document.getElementById('pl-ech-badge'); if (!b) return;
+    const n = plIsAdmin() ? L('echanges').filter(e => e.statut === 'attente').length : 0;
+    b.textContent = n ? String(n) : ''; b.style.display = n ? '' : 'none';
+    if (n) { b.style.background = '#E65100'; b.style.color = '#fff'; }
+  }
   function plAbsBadge() {
     const b = document.getElementById('pl-abs-badge'); if (!b) return;
     const n = plIsAdmin() ? L('demandes').filter(d => d.statut === 'attente').length : 0;
@@ -2518,7 +2563,7 @@
     }
 
     // 3. Compteurs
-    const listeC = admin ? contrats : (monC ? [monC] : []);
+    const listeC = (admin ? contrats : (monC ? [monC] : [])).filter(c => !plHorsTemps(c));
     H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Compteurs</b>'
       + '<div class="pl-sub" style="margin:4px 0 10px">Compte-temps = heures à récupérer. Heures sup = ce qui remonte sur la navette des salaires (déclarations validées + créneaux ajoutés sur un repos et comptés en heures sup).</div>'
       + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Compte-temps</th><th>Heures sup ce mois</th><th>Heures sup cumulées</th><th>En attente</th></tr>'
@@ -2686,6 +2731,238 @@
     }));
     p.updatedAt = now;
     plPersist(); plToast('Trame du 01/09/2026 importée — 18 collaborateurs'); plRender();
+  };
+
+
+  // ═══════════ ÉCHANGES DE JOURS ═══════════
+  // plEchanges[] : { id, aId, aDate, bId, bDate, statut: attente|valide|refuse|annule,
+  //   demandePar, demandeAt, decidePar, decideAt, motif, refusMotif, updatedAt }
+  //
+  // Deux cas d'usage, un seul mécanisme :
+  //   · échange entre DEUX collaborateurs — A prend la journée de B, B prend celle de A ;
+  //   · permutation de SES PROPRES jours (aId = bId) — « je travaille lundi au lieu de mardi ».
+  // Un échange validé s'écrit en exceptions datées (les mêmes que la modification d'une
+  // journée), donc la trame n'est jamais touchée et l'annulation les retire proprement.
+  const PL_ECH_STATUT = { attente: 'À valider', valide: 'Validé', refuse: 'Refusé', annule: 'Annulé' };
+
+  function plEchOf(cid, iso) {
+    return L('echanges').find(e => e.statut === 'valide'
+      && ((e.aId === cid && e.aDate === iso) || (e.bId === cid && e.bDate === iso)
+        || (e.aId === cid && e.bDate === iso) || (e.bId === cid && e.aDate === iso))) || null;
+  }
+  window.plEchOf = plEchOf;
+
+  // Ce que donnerait l'échange, exprimé en journées cibles { contrat, date, horaires }.
+  // Deux personnes : chacune prend la journée de l'autre. Une seule personne : ses deux
+  // journées permutent (le cas « je travaille lundi au lieu de mardi »), sinon les quatre
+  // écritures se contrediraient sur les mêmes cases.
+  function plEchCible(e) {
+    const A = L('contrats').find(c => c.id === e.aId), B = L('contrats').find(c => c.id === e.bId);
+    if (!A || !B || !e.aDate || !e.bDate) return null;
+    const dA = new Date(e.aDate + 'T12:00'), dB = new Date(e.bDate + 'T12:00');
+    const trA = plSlotsTrame(A, dA), trB = plSlotsTrame(B, dB);
+    const memePersonne = A.id === B.id;
+    const cibles = memePersonne
+      ? [{ c: A, iso: e.aDate, val: plSlotsTrame(A, dB) },      // sa journée A prend le contenu de B
+         { c: A, iso: e.bDate, val: trA }]                      // et sa journée B celui de A
+      : [{ c: A, iso: e.aDate, val: [null, null] },             // A ne travaille plus sa journée
+         { c: A, iso: e.bDate, val: trB },                      // A prend la journée de B
+         { c: B, iso: e.bDate, val: [null, null] },             // B ne travaille plus sa journée
+         { c: B, iso: e.aDate, val: trA }];                     // B prend la journée de A
+    return {
+      A: A, B: B, dA: dA, dB: dB, memePersonne: memePersonne, cibles: cibles,
+      trA: trA, trB: trB,
+      aprA: memePersonne ? plSlotsTrame(A, dB) : trB,
+      aprB: memePersonne ? trA : trA
+    };
+  }
+  // écrit (ou retire) les demi-journées concernées
+  function plEchEcrire(e, poser) {
+    const k = plEchCible(e); if (!k) return;
+    k.cibles.forEach(p => {
+      ['M', 'AM'].forEach((demi, hh) => {
+        plDropEx(p.c.id, p.iso, demi);
+        if (!poser) return;
+        const trame = plSlotsTrame(p.c, new Date(p.iso + 'T12:00'));
+        const v = p.val[hh] || null;
+        if ((v || null) === (trame[hh] || null)) return;        // identique à la trame : rien à stocker
+        plExceptions.push({ id: plNewId('ex'), contratId: p.c.id, date: p.iso, demi: demi, type: 'horaire',
+          horaire: v, pos: null, echangeId: e.id,
+          saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() });
+      });
+    });
+  }
+  // effectif comptoir avant / après, sur les deux journées : c'est ce qui décide d'accepter
+  function plEchImpact(e) {
+    const k = plEchCible(e); if (!k) return '';
+    const avant = {};
+    [e.aDate, e.bDate].forEach(iso => {
+      const d = new Date(iso + 'T12:00');
+      avant[iso] = { M: plEffectif(d, 'M').cpt, AM: plEffectif(d, 'AM').cpt };
+    });
+    plEchEcrire(e, true);                       // simulation
+    const apres = {};
+    [e.aDate, e.bDate].forEach(iso => {
+      const d = new Date(iso + 'T12:00');
+      apres[iso] = { M: plEffectif(d, 'M').cpt, AM: plEffectif(d, 'AM').cpt };
+    });
+    plEchEcrire(e, false);                      // on retire la simulation
+    let html = '', alerte = false;
+    [e.aDate, e.bDate].forEach(iso => {
+      const d = new Date(iso + 'T12:00');
+      let cel = '';
+      ['M', 'AM'].forEach(demi => {
+        const s = plSeuilComptoir(d, demi), av = avant[iso][demi], ap = apres[iso][demi];
+        const k2 = ap < s ? 'bad' : (ap === s ? 'lim' : 'ok');
+        if (ap < s) alerte = true;
+        cel += '<span class="pl-pill ' + k2 + '" style="padding:1px 6px" title="Comptoir ' + (demi === 'M' ? 'matin' : 'après-midi') + ' : ' + av + ' avant, ' + ap + ' après, seuil ' + s + '">'
+          + (demi === 'M' ? 'M ' : 'AM ') + av + ' → <b>' + ap + '</b>/' + s + '</span> ';
+      });
+      html += '<div style="margin-top:4px"><b>' + plJoliDate(iso) + '</b> ' + cel + '</div>';
+    });
+    return '<div class="pl-ech-imp' + (alerte ? ' pl-ko' : '') + '">'
+      + (alerte ? '<b>Attention : le comptoir passe sous le seuil</b>' : '<b>Les seuils du comptoir restent tenus</b>')
+      + html + '</div>';
+  }
+
+  window.plEchCreer = function () {
+    const g = id => document.getElementById(id);
+    const aId = g('pl-ech-a').value, bId = g('pl-ech-b').value;
+    const aDate = g('pl-ech-da').value, bDate = g('pl-ech-db').value;
+    if (!aId || !bId || !aDate || !bDate) { plToast('Complétez les deux collaborateurs et les deux dates'); return; }
+    if (aId === bId && aDate === bDate) { plToast('Choisissez deux journées différentes'); return; }
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    const e = { id: plNewId('ech'), aId: aId, aDate: aDate, bId: bId, bDate: bDate,
+      statut: plIsAdmin() ? 'valide' : 'attente', motif: g('pl-ech-m').value.trim(),
+      demandePar: moi, demandeAt: Date.now(), updatedAt: Date.now() };
+    if (e.statut === 'valide') { e.decidePar = moi; e.decideAt = Date.now(); plEchEcrire(e, true); }
+    plEchanges.push(e);
+    plPersist();
+    plToast(e.statut === 'valide' ? 'Échange validé et appliqué au planning' : 'Échange proposé — en attente de validation');
+    plEchRender(); plRender();
+  };
+  window.plEchDecider = function (id, statut) {
+    if (!plGarde()) return;
+    const e = L('echanges').find(x => x.id === id); if (!e) return;
+    if (statut === 'valide') {
+      const k = plEchCible(e);
+      if (!k) { plToast('Collaborateur introuvable'); return; }
+      plEchEcrire(e, true);
+    } else if (e.statut === 'valide') {
+      plEchEcrire(e, false);
+    }
+    if (statut === 'refuse') {
+      const m = prompt('Motif du refus (facultatif)', e.refusMotif || '');
+      if (m === null) return;
+      e.refusMotif = m.trim();
+    }
+    e.statut = statut;
+    e.decidePar = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    e.decideAt = Date.now();
+    plStamp(e); plPersist();
+    plToast(statut === 'valide' ? 'Échange validé' : (statut === 'refuse' ? 'Échange refusé' : 'Échange annulé, planning rétabli'));
+    plEchRender(); plRender();
+  };
+  window.plEchSuppr = function (id) {
+    if (!plGarde()) return;
+    const arr = L('echanges'); const i = arr.findIndex(x => x.id === id); if (i < 0) return;
+    if (!confirm('Supprimer cet échange ? Les journées reviennent à la semaine type.')) return;
+    if (arr[i].statut === 'valide') plEchEcrire(arr[i], false);
+    arr.splice(i, 1); plPersist(); plToast('Échange supprimé'); plEchRender(); plRender();
+  };
+  // aperçu vivant du formulaire
+  window.plEchApercu = function () {
+    const g = id => document.getElementById(id);
+    const box = g('pl-ech-ap'); if (!box) return;
+    const aId = g('pl-ech-a').value, bId = g('pl-ech-b').value;
+    const aDate = g('pl-ech-da').value, bDate = g('pl-ech-db').value;
+    if (!aId || !bId || !aDate || !bDate) { box.innerHTML = '<div class="pl-sub">Choisissez les deux collaborateurs et les deux journées pour voir l’effet sur le comptoir.</div>'; return; }
+    const e = { id: '__sim', aId: aId, aDate: aDate, bId: bId, bDate: bDate };
+    const k = plEchCible(e);
+    if (!k) { box.innerHTML = ''; return; }
+    const dit = (c, iso, sl) => '<b>' + plEsc(c.nom.split(' ')[0]) + '</b> ' + plJoliDate(iso) + ' : '
+      + (sl[0] || sl[1] ? [sl[0], sl[1]].filter(Boolean).join(' · ') : '<i style="color:var(--plmut)">repos</i>');
+    const avant = k.memePersonne
+      ? dit(k.A, e.aDate, k.trA) + '</div><div>' + dit(k.A, e.bDate, plSlotsTrame(k.A, k.dB))
+      : dit(k.A, e.aDate, k.trA) + '</div><div>' + dit(k.B, e.bDate, k.trB);
+    const apres = k.memePersonne
+      ? dit(k.A, e.aDate, plSlotsTrame(k.A, k.dB)) + '</div><div>' + dit(k.A, e.bDate, k.trA)
+      : dit(k.A, e.bDate, k.trB) + '</div><div>' + dit(k.B, e.aDate, k.trA);
+    box.innerHTML = '<div class="pl-ech-res">'
+      + '<div class="pl-ech-col"><div class="pl-ech-t">Aujourd’hui</div><div>' + avant + '</div></div>'
+      + '<div class="pl-ech-fl">⇄</div>'
+      + '<div class="pl-ech-col"><div class="pl-ech-t">' + (k.memePersonne ? 'Après la permutation' : 'Après l’échange') + '</div><div>' + apres + '</div></div></div>'
+      + plEchImpact(e);
+  };
+
+  // ── écran Échanges de jours ──
+  window.plEchRender = function () {
+    const host = document.getElementById('pl-ech-host'); if (!host) return;
+    const admin = plIsAdmin(), auj = plIso(new Date());
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    const monC = moi ? L('contrats').find(c => c.actif !== false && c.staffId === moi) : null;
+    const contrats = plContratsVisibles();
+    const nom = id => { const c = L('contrats').find(x => x.id === id); return c ? c.nom : '—'; };
+    const opts = (sel) => contrats.map(c => '<option value="' + c.id + '"' + (c.id === sel ? ' selected' : '') + '>' + plEsc(c.nom) + '</option>').join('');
+    const lundi = plIso(plMonday(plAddD(new Date(), 7)));
+
+    let H = '<h2 style="margin:0 0 4px;font-size:1.1rem">Échanges de jours</h2>'
+      + '<div class="pl-sub" style="margin-bottom:16px">Deux collaborateurs permutent une journée, ou l’un déplace l’un de ses jours en choisissant deux fois son nom. '
+      + 'La semaine type n’est pas modifiée : l’échange s’écrit sur les deux journées concernées et s’annule d’un clic.</div>';
+
+    // formulaire
+    H += '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Nouvel échange</b>'
+      + '<div class="pl-ech-form">'
+      + '<label>Qui<select class="pl-inp" id="pl-ech-a" onchange="plEchApercu()">' + opts(monC ? monC.id : '') + '</select></label>'
+      + '<label>Ne travaille pas le<input type="date" class="pl-inp" id="pl-ech-da" value="' + lundi + '" onchange="plEchApercu()"></label>'
+      + '<div class="pl-ech-fl2">⇄</div>'
+      + '<label>Échange avec<select class="pl-inp" id="pl-ech-b" onchange="plEchApercu()">' + opts('') + '</select></label>'
+      + '<label>Qui ne travaille pas le<input type="date" class="pl-inp" id="pl-ech-db" value="' + lundi + '" onchange="plEchApercu()"></label>'
+      + '<label style="flex:1 1 220px">Motif (facultatif)<input class="pl-inp" id="pl-ech-m" placeholder="rendez-vous, convenance…"></label>'
+      + '</div>'
+      + '<div id="pl-ech-ap" style="margin-top:12px"></div>'
+      + '<div style="margin-top:12px"><button class="pl-btn pl-pri" onclick="plEchCreer()">'
+      + (admin ? 'Valider et appliquer' : 'Proposer l’échange') + '</button></div></div>';
+
+    const toutes = L('echanges').filter(e => admin || (monC && (e.aId === monC.id || e.bId === monC.id)));
+    const attente = toutes.filter(e => e.statut === 'attente');
+    const valides = toutes.filter(e => e.statut === 'valide').sort((x, y) => (y.aDate || '').localeCompare(x.aDate || ''));
+    const autres = toutes.filter(e => e.statut === 'refuse' || e.statut === 'annule').sort((x, y) => (y.decideAt || 0) - (x.decideAt || 0));
+
+    const ligne = (e, actions) => '<tr><td style="text-align:left"><b>' + plEsc(nom(e.aId)) + '</b><br><span style="color:var(--plmut);font-size:11px">ne travaille pas le ' + plJoliDate(e.aDate) + '</span></td>'
+      + '<td style="font-size:16px;color:var(--plac)">⇄</td>'
+      + '<td style="text-align:left"><b>' + plEsc(nom(e.bId)) + '</b><br><span style="color:var(--plmut);font-size:11px">ne travaille pas le ' + plJoliDate(e.bDate) + '</span></td>'
+      + '<td>' + (e.motif ? plEsc(e.motif) : '—') + '</td>'
+      + '<td>' + actions + '</td></tr>';
+
+    if (attente.length) {
+      H += '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">À valider</b>'
+        + '<div class="pl-sub" style="margin:4px 0 10px">' + (admin ? 'Vérifiez l’effet sur le comptoir avant d’accepter.' : 'En attente d’une validation.') + '</div>'
+        + '<table class="pl-tt">' + attente.map(e => ligne(e, admin
+          ? '<button class="pl-btn pl-mini pl-pri" onclick="plEchDecider(\'' + e.id + '\',\'valide\')">Valider</button> '
+            + '<button class="pl-btn pl-mini pl-ghost" style="color:#C62828" onclick="plEchDecider(\'' + e.id + '\',\'refuse\')">Refuser</button>'
+          : '<span class="pl-pill lim" style="padding:1px 7px">' + PL_ECH_STATUT.attente + '</span>')
+          + (admin ? '' : '')).join('') + '</table>'
+        + (admin ? attente.map(e => '<div style="margin-top:10px">' + plEchImpact(e) + '</div>').join('') : '') + '</div>';
+    }
+
+    H += '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Échanges en place</b>'
+      + (valides.length
+        ? '<table class="pl-tt">' + valides.map(e => ligne(e, admin
+            ? '<button class="pl-btn pl-mini pl-ghost" title="Rétablir la semaine type sur les deux journées" onclick="plEchDecider(\'' + e.id + '\',\'annule\')">Annuler</button> '
+              + '<button class="pl-btn pl-mini pl-ghost" style="color:#C62828" onclick="plEchSuppr(\'' + e.id + '\')">🗑</button>'
+            : '<span class="pl-pill ok" style="padding:1px 7px">' + PL_ECH_STATUT.valide + '</span>')).join('') + '</table>'
+        : '<div class="pl-empty">Aucun échange en place.</div>') + '</div>';
+
+    if (autres.length) {
+      H += '<div class="pl-card" style="padding:16px 18px"><b style="font-size:14px">Historique</b>'
+        + '<table class="pl-tt">' + autres.slice(0, 40).map(e => ligne(e,
+          '<span class="pl-pill nt" style="padding:1px 7px">' + (PL_ECH_STATUT[e.statut] || e.statut) + '</span>'
+          + (e.refusMotif ? '<div style="font-size:11px;color:var(--plmut);margin-top:2px">' + plEsc(e.refusMotif) + '</div>' : ''))).join('') + '</table></div>';
+    }
+
+    host.innerHTML = H;
+    plEchApercu();
   };
 
   // ---------- init ----------

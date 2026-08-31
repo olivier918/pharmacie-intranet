@@ -120,7 +120,7 @@ main{padding:18px 22px 30px;min-width:0}
     <div class="grp">Organiser</div>
     <button class="it" data-v="trames" data-admin="1" onclick="plVue('trames',this)"><i class="p"></i>Trames horaires</button>
     <button class="it" data-v="conges" onclick="plVue('conges',this)"><i class="p"></i>Congés &amp; absences<span class="bientot" id="pl-abs-badge" style="display:none"></span></button>
-    <button class="it" data-v="echanges" onclick="plVue('echanges',this)"><i class="p"></i>Échanges de jours<span class="bientot">bientôt</span></button>
+    <button class="it" data-v="echanges" onclick="plVue('echanges',this)"><i class="p"></i>Échanges de jours<span class="bientot" id="pl-ech-badge" style="display:none"></span></button>
 
     <div class="grp">Paie</div>
     <button class="it" data-v="compteurs" onclick="plVue('compteurs',this)"><i class="p"></i>Heures sup &amp; compte-temps<span class="bientot" id="pl-hs-badge" style="display:none"></span></button>
@@ -142,15 +142,7 @@ main{padding:18px 22px 30px;min-width:0}
 
     <div class="vue" id="vue-conges"><div id="pl-abs-host" class="pl-vars" style="padding:18px 22px"></div></div>
 
-    <div class="vue" id="vue-echanges"><div class="attente">
-      <h2>Échanges de jours</h2>
-      <p>Deux collaborateurs échangent une journée ; le planning garde la trace des deux mouvements et vérifie que les seuils tiennent.</p>
-      <ul>
-        <li>Proposition, acceptation, validation</li>
-        <li>Contrôle automatique des effectifs de comptoir avant validation</li>
-        <li>Repérage visuel ⇄ sur les deux journées concernées</li>
-      </ul>
-    </div></div>
+    <div class="vue" id="vue-echanges"><div id="pl-ech-host" class="pl-vars" style="padding:18px 22px"></div></div>
 
     <div class="vue" id="vue-compteurs"><div id="pl-hs-host" class="pl-vars" style="padding:18px 22px"></div></div>
 
@@ -263,6 +255,7 @@ function plVue(v, btn){
   if (btn) btn.classList.add('on');
   if (v === 'compteurs' && typeof plHsRender === 'function') plHsRender();
   if (v === 'conges' && typeof plAbsRender === 'function') plAbsRender();
+  if (v === 'echanges' && typeof plEchRender === 'function') plEchRender();
 }
 /* pl-module appelle showSec sur l'intranet ; ici la navigation est locale */
 function showSec(){ }
