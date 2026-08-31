@@ -4558,8 +4558,18 @@ const CRED_ETAPE_HINT = {
 // Conservé pour les messages archivés avant le passage à 5 étapes.
 const CRED_NIVEAU_LBL = {1:'🤝 Amical', 2:'⚠️ Ferme', 3:'📨 Recommandé (LRAR)'};
 
+// Le champ fichier de l'ordonnance n'était jamais vidé : le scan joint à un
+// dossier restait « chargé » dans le formulaire et se retrouvait enregistré
+// sur chaque dossier créé ou modifié ensuite.
+function lcResetScan(){
+  const f=document.getElementById('lc-scan'); if(f) f.value='';
+  const n=document.getElementById('lc-scan-name'); if(n) n.textContent='Aucun fichier';
+  const p=document.getElementById('lc-scan-preview'); if(p) p.style.display='none';
+  const i=document.getElementById('lc-scan-img'); if(i) i.src='';
+}
 function toggleLocForm(){
   lcFinTouchee=false;
+  lcResetScan();
   const ff=document.getElementById('lc-date-fin'); if(ff) ff.value='';
   const fh=document.getElementById('lc-fin-hint'); if(fh) fh.textContent='';
   const c=document.getElementById('loc-form-card');
@@ -4568,7 +4578,7 @@ function toggleLocForm(){
   if(!shown){
     locEditId=null;
     document.getElementById('loc-form-title').textContent='Nouvelle location';
-    ['lc-nom','lc-prenom','lc-prescripteur','lc-num'].forEach(i=>document.getElementById(i).value='');
+    ['lc-nom','lc-prenom','lc-prescripteur','lc-num','lc-tel','lc-mail','lc-dob-pat'].forEach(i=>document.getElementById(i).value='');
     ['lc-date-presc','lc-date-debut'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('lc-duree').value='';
     document.getElementById('lc-type').value='';
@@ -4653,6 +4663,7 @@ function saveLoc(){
       locations.unshift({id:Date.now(),...obj,updatedAt:Date.now()});
     }
     toggleLocForm();
+    lcResetScan();
     renderLocs();
   };
   if(scanFile){
@@ -5566,6 +5577,7 @@ function deleteLoc(id){
 }
 function editLoc(id){
   const l=locations.find(x=>x.id===id);if(!l)return;
+  lcResetScan();   // ne pas hériter du fichier choisi pour un autre dossier
   locEditId=id;
   document.getElementById('loc-form-card').style.display='block';
   document.getElementById('loc-form-title').textContent='Modifier la location';
