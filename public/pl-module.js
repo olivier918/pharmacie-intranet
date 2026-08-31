@@ -610,6 +610,9 @@
     border:1px solid var(--plline);border-radius:9px;height:38px;background:#fff;color:var(--plac);
     font-variant-numeric:tabular-nums;cursor:pointer}
   .pl-pk-hm select:focus{outline:none;border-color:var(--plac);box-shadow:0 0 0 2px rgba(52,132,102,.18)}
+  /* aucun horaire encore choisi : l'heure affichée n'est qu'une suggestion, elle est grisée
+     et n'est pas appliquée tant qu'on n'a pas choisi soi-même */
+  .pl-pk-hm select.pl-pk-vide{color:#A7AEB0;border-style:dashed;background:#FBFAF9;font-weight:600}
   .pl-pk-ar{color:var(--plmut);font-weight:700}
   .pl-pk-dur{text-align:center;font-size:11px;color:var(--plmut);margin-top:7px}
   .pl-pk-dur b{color:var(--plac);font-size:13px;font-variant-numeric:tabular-nums}
@@ -1267,8 +1270,12 @@
     });
     return Object.keys(canon).sort((a, b) => canon[b] - canon[a] || plMinOf(a) - plMinOf(b)).slice(0, 6);
   }
-  function plPkOpts(sel) {
-    let o = '';
+  function plPkOpts(sel, suggestion) {
+    // sel = null : rien n'est encore choisi. On met en tête une entrée « — h — » sélectionnée
+    // (grisée par .pl-pk-vide) : ainsi n'importe quelle heure choisie déclenche un change,
+    // alors qu'avant, cliquer sur l'heure déjà affichée ne changeait rien et le créneau
+    // restait inapplicable — il fallait passer par un créneau habituel.
+    let o = sel == null ? '<option value="" selected>— h —</option>' : '';
     for (let m = 360; m <= 1290; m += 15) o += '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + plHhOf(m) + '</option>';
     return o;
   }
@@ -1280,12 +1287,14 @@
       + tops.map(v => '<button class="pl-pk-chip' + (v === cour ? ' pl-act' : '') + '" onclick="plPkSet(\'' + v + '\')">' + v + '</button>').join('')
       + '<button class="pl-pk-chip pl-off" onclick="plPkSet(\'\')">Repos</button></div>'
       + '<div class="pl-pk-lbl">Ou choisir précisément</div>'
-      + '<div class="pl-pk-hm"><select id="pl-pk-a" onchange="plPkBorne(0,this.value)">' + plPkOpts(plPkA == null ? (hh ? 840 : 540) : plPkA) + '</select>'
+      + '<div class="pl-pk-hm"><select id="pl-pk-a" class="' + (plPkA == null ? 'pl-pk-vide' : '') + '" onchange="plPkBorne(0,this.value)">' + plPkOpts(plPkA) + '</select>'
       + '<span class="pl-pk-ar">→</span>'
-      + '<select id="pl-pk-b" onchange="plPkBorne(1,this.value)">' + plPkOpts(plPkB == null ? (hh ? 1170 : 750) : plPkB) + '</select></div>'
+      + '<select id="pl-pk-b" class="' + (plPkB == null ? 'pl-pk-vide' : '') + '" onchange="plPkBorne(1,this.value)">' + plPkOpts(plPkB) + '</select></div>'
       + '<div class="pl-pk-dur">' + (plPkA != null && plPkB != null && plPkB > plPkA
         ? 'durée <b>' + plFmtH(Math.round((plPkB - plPkA) / 15) / 4) + '</b>'
-        : (plPkA == null ? 'aucun horaire — <b>repos</b>' : '<span style="color:var(--plcrit)">la fin doit suivre le début</span>')) + '</div>';
+        : (plPkA == null && plPkB == null ? 'aucun horaire — <b>repos</b> ; choisissez un début, la fin suit'
+          : (plPkA == null ? 'choisissez l\'heure de début' : (plPkB == null ? 'choisissez l\'heure de fin'
+            : '<span style="color:var(--plcrit)">la fin doit suivre le début</span>')))) + '</div>';
     if (plPkOnPos) {
       h += '<div class="pl-pk-lbl">Poste</div><div class="pl-pk-pos">'
         + ['C', 'B', 'A'].map(p => '<button class="' + (p === plPkPos ? 'pl-act' : '') + '" onclick="plPkPoste(\'' + p + '\')">' + PL_POS_LBL[p] + '</button>').join('') + '</div>';
@@ -1317,9 +1326,10 @@
     if (v) plPkClose();   // un raccourci = un seul geste
   };
   window.plPkBorne = function (i, val) {
+    if (val === '' || val == null) return;   // retour sur l'entrée « — h — » : on ne fait rien
     const m = +val;
     if (i === 0) { plPkA = m; if (plPkB == null || plPkB <= m) plPkB = Math.min(1290, m + 210); }
-    else { plPkB = m; if (plPkA == null) plPkA = Math.max(360, m - 210); }
+    else { plPkB = m; if (plPkA == null || plPkA >= m) plPkA = Math.max(360, m - 210); }
     plPkApply();
   };
   window.plPkPoste = function (p) { plPkPos = p; if (plPkOnPos) plPkOnPos(p); plPkRender(); };
