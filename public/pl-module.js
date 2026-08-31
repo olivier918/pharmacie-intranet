@@ -65,6 +65,7 @@
       case 'contrats': if (!Array.isArray(plContrats)) plContrats = []; return plContrats;
       case 'trames': if (!Array.isArray(plTrames)) plTrames = []; return plTrames;
       case 'exceptions': if (!Array.isArray(plExceptions)) plExceptions = []; return plExceptions;
+      case 'demandes': if (typeof plDemandes === 'undefined' || !Array.isArray(plDemandes)) window.plDemandes = []; return plDemandes;
       case 'heuresSup': if (typeof plHeuresSup === 'undefined' || !Array.isArray(plHeuresSup)) window.plHeuresSup = []; return plHeuresSup;
       case 'absences': if (typeof plAbsences === 'undefined' || !Array.isArray(plAbsences)) window.plAbsences = []; return plAbsences;
     }
@@ -470,6 +471,10 @@
   .pl-abs.cp{background:var(--plcpb);color:var(--plcp)}.pl-abs.mal{background:var(--plmalb);color:var(--plmal)}
   .pl-abs.rec{background:var(--plrecb);color:var(--plrec)}.pl-abs.for{background:var(--plforb);color:var(--plfor)}
   .pl-abs.mat{background:var(--plmatb);color:var(--plmat)}
+  .pl-abs.pl-dem{background:repeating-linear-gradient(135deg,#fff 0 4px,var(--plcpb) 4px 8px);color:var(--plcp);border:1px dashed var(--plcp);opacity:.9}
+  .pl-impact{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+  .pl-impact span{font-size:10.5px;border-radius:6px;padding:2px 7px;background:#F1F3F2;color:#4A5250;white-space:nowrap}
+  .pl-impact span.bad{background:#FAE9E7;color:#B23A2F;font-weight:700}.pl-impact span.lim{background:#FFF3E0;color:#B26A00}
   .pl-shift.pl-formation{background:#EDEDED;color:#8E9395;border-left-color:#B9BEC0;text-decoration:none}
   .pl-shift.pl-formation .pl-fortag{display:block;font-style:normal;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--plfor);margin-top:1px}
   .pl-off{color:#C3CDC7;font-size:10px;padding:6px 7px}
@@ -679,7 +684,7 @@
       </div>
       <span class="pl-grow"></span>
       <select class="pl-sel" id="pl-fgrp" onchange="plFiltre(this.value)"><option value="">Toute l'équipe</option></select>
-      <button class="pl-btn pl-ghost" onclick="plAbsOuvrir()">🏖 Déclarer une absence</button>
+      <button class="pl-btn pl-ghost" id="pl-btn-abs" onclick="plAbsOuvrir()">🏖 Déclarer une absence</button>
       <button class="pl-btn pl-rose" onclick="plOpenTrames()">🗓 Trames horaires</button>
       <button class="pl-btn pl-ghost" id="pl-btn-reg" onclick="plOpenReglages()">⚙ Réglages</button>
     </div>
@@ -730,6 +735,25 @@
     <div class="pl-actions">
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-trame')">Annuler</button>
       <button class="pl-btn pl-pri" onclick="plSaveTrame()">Enregistrer la trame</button>
+    </div>
+  </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-dem"><div class="pl-box" style="width:min(520px,96vw)">
+    <h3>Demander des congés</h3>
+    <div class="pl-sub">La demande est transmise à Olivier et Anouck, qui l'acceptent ou la refusent après avoir vérifié l'effectif.</div>
+    <div class="pl-form">
+      <label style="flex:1 1 100%">Collaborateur<select id="pl-dem-cid" class="pl-inp"></select></label>
+      <label style="flex:1 1 100%">Nature<select id="pl-dem-motif" class="pl-inp">
+        <option value="cp">Vacances / congés payés</option><option value="rec">Récupération (compte-temps)</option></select></label>
+      <label style="flex:1 1 45%">Du<input type="date" id="pl-dem-debut" class="pl-inp"></label>
+      <label style="flex:1 1 45%">Au<input type="date" id="pl-dem-fin" class="pl-inp"></label>
+      <label style="flex:1 1 45%;flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="pl-dem-debutam"> commence l'après-midi</label>
+      <label style="flex:1 1 45%;flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="pl-dem-finm"> se termine le midi</label>
+      <label style="flex:1 1 100%">Commentaire (facultatif)<input type="text" id="pl-dem-com" class="pl-inp" placeholder="Ex. mariage, déménagement…"></label>
+    </div>
+    <div class="pl-sub" id="pl-dem-resume" style="margin-top:10px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-dem')">Annuler</button>
+      <button class="pl-btn pl-pri" onclick="plDemEnvoyer()">Envoyer la demande</button>
     </div>
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-abs"><div class="pl-box" style="width:min(520px,96vw)">
@@ -882,6 +906,12 @@
     else if (plView === 'mois') plRenderMois();
     else plRenderAn();
     plOmbreColonne();
+    try {
+      plHsBadge(); plAbsBadge();
+      // un collaborateur demande ses congés ; un administrateur déclare directement
+      const bA = document.getElementById('pl-btn-abs');
+      if (bA) { const adm = plIsAdmin(); bA.textContent = adm ? '🏖 Déclarer une absence' : '✉ Demander des congés'; bA.onclick = adm ? plAbsOuvrir : plDemOuvrir; }
+    } catch (e) { }
   };
   // Ombre portée sur la colonne figée dès qu'on défile vers la droite : on voit qu'il y a
   // de la matière cachée sous la colonne des noms.
@@ -957,13 +987,14 @@
           + (ci.nb > 1 ? ' <span style="opacity:.75">sur ' + ci.nb + ' sem.</span>' : '') + '</div>';
       let cells = '';
       days.forEach(d => {
-        const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso);
+        const iso = plIso(d), sl = plSlots(c, d), ab = plAbs(c, iso), dm = plDemAttente(c, iso);
         let cell = '';
         for (let hh = 0; hh < 2; hh++) {
           // chaque demi-journée est un point d'entrée : un clic ouvre le sélecteur d'horaires
           const clic = ' onclick="plJourPick(event,\'' + c.id + '\',\'' + iso + '\',' + hh + ')"';
           if (ab[hh] && plHeuresConservees(ab[hh]) && sl[hh]) cell += '<div class="pl-shift pl-formation" title="En formation — horaire habituel conservé (compte dans les heures), absent de la pharmacie">' + plEsc(sl[hh]) + '<i class="pl-fortag">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</i></div>';
           else if (ab[hh] && !plHeuresConservees(ab[hh])) cell += '<div class="pl-abs ' + ab[hh] + '">' + (PL_MOTIFS[ab[hh]] || ab[hh]) + '</div>';
+          else if (dm[hh] && sl[hh]) cell += '<div class="pl-abs pl-dem" title="Demande de ' + (PL_MOTIFS_LONG[dm[hh]] || '').toLowerCase() + ' en attente de validation — horaire prévu : ' + plEsc(sl[hh]) + '">' + (PL_MOTIFS[dm[hh]] || dm[hh]) + ' ?</div>';
           else if (sl[hh]) {
             const pos = plPosEff(c, d, hh);
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
@@ -2027,7 +2058,7 @@
   window.plAbsSupprimer = function (id) {
     const arr = L('absences'); const i = arr.findIndex(x => x.id === id); if (i < 0) return;
     const c = L('contrats').find(x => x.id === arr[i].contratId);
-    if (!plAbsPeut(c)) { plToast('Réservé aux administrateurs'); return; }
+    if (!plAbsPeut(c) || (arr[i].demandeId && !plIsAdmin())) { plToast('Des congés accordés ne se retirent que par un administrateur'); return; }
     if (!confirm('Supprimer cette absence ?')) return;
     arr.splice(i, 1); plPersist(); plRender(); plAbsRender();
   };
@@ -2048,17 +2079,196 @@
           return '<tr><td style="text-align:left"><b>' + plEsc(c ? c.nom : '—') + '</b></td><td>' + chip(a.motif) + '</td>'
             + '<td>' + plJoliDate(a.debut) + (a.debutAM ? ' <small>ap.-midi</small>' : '') + '</td><td>' + plJoliDate(a.fin) + (a.finM ? ' <small>midi</small>' : '') + '</td>'
             + '<td>' + (n % 1 ? n.toFixed(1).replace('.', ',') : n) + '</td><td style="text-align:left">' + plEsc(a.commentaire || '') + '</td><td style="font-size:11px;color:var(--plmut)">' + plEsc(plQui(a.saisiPar)) + '</td>'
-            + '<td>' + (plAbsPeut(c) ? '<button class="pl-btn pl-mini pl-ghost" onclick="plAbsSupprimer(\'' + a.id + '\')" title="Supprimer">✕</button>' : '') + '</td></tr>'; }).join('')
+            + '<td>' + ((admin || (plAbsPeut(c) && !a.demandeId)) ? '<button class="pl-btn pl-mini pl-ghost" onclick="plAbsSupprimer(\'' + a.id + '\')" title="Supprimer">✕</button>' : '') + '</td></tr>'; }).join('')
         + '</table>'
       : '<div class="pl-empty" style="padding:18px 12px">' + vide + '</div>';
     host.innerHTML = '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
       + '<div style="flex:1;min-width:260px"><b style="font-size:14px">Congés &amp; absences</b>'
-      + '<div class="pl-sub" style="margin:4px 0 0">Vacances, congé maternité, arrêt maladie, récupération ou formation. En formation, l\'horaire habituel est conservé mais le collaborateur apparaît grisé et hors effectif dans le planning.</div></div>'
-      + '<button class="pl-btn pl-pri" onclick="plAbsOuvrir()">🏖 Déclarer une absence</button></div>'
+      + '<div class="pl-sub" style="margin:4px 0 0">' + (admin
+          ? 'Les demandes de congés des collaborateurs arrivent ici pour validation. Une absence connue (maternité, maladie, formation…) se déclare directement.'
+          : 'Demandez vos congés ici : Olivier ou Anouck valident après avoir vérifié l\'effectif, et la réponse s\'affiche dans « Mes demandes ».') + '</div></div>'
+      + '<button class="pl-btn ' + (admin ? 'pl-ghost' : 'pl-pri') + '" onclick="plDemOuvrir()">✉ Demander des congés</button>'
+      + (admin ? '<button class="pl-btn pl-pri" onclick="plAbsOuvrir()">🏖 Déclarer une absence</button>' : '') + '</div>'
+      + plDemCartes(admin, monC, moi)
       + '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">En cours</b>' + table(enCours, 'Personne n\'est absent aujourd\'hui.') + '</div>'
       + '<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">À venir</b>' + table(aVenir, 'Aucune absence à venir.') + '</div>'
       + '<div class="pl-card" style="padding:16px 18px"><b style="font-size:14px">Passées</b>' + table(passees.slice(0, 100), 'Aucune absence passée.') + '</div>';
   };
+
+  // ═══════════ DEMANDES DE CONGÉS ═══════════
+  // plDemandes[] : { id, contratId, motif (cp|rec), debut, fin, debutAM, finM, commentaire,
+  //   statut: attente|acceptee|refusee, demandePar, demandeAt, decidePar, decideAt, refusMotif, absenceId, updatedAt }
+  // Une demande acceptée devient une absence (plAbsences) liée par absenceId.
+  const PL_DEM_STATUT = { attente: 'À valider', acceptee: 'Acceptée', refusee: 'Refusée' };
+  function plDemCouvre(d, iso) {
+    if (!d.debut || !d.fin || iso < d.debut || iso > d.fin) return [false, false];
+    return [!(iso === d.debut && d.debutAM), !(iso === d.fin && d.finM)];
+  }
+  // demandes en attente d'un contrat à une date → [motif matin, motif après-midi]
+  function plDemAttente(c, iso) {
+    const out = [null, null];
+    L('demandes').forEach(d => {
+      if (d.contratId !== c.id || d.statut !== 'attente') return;
+      const k = plDemCouvre(d, iso);
+      if (k[0]) out[0] = d.motif || 'cp';
+      if (k[1]) out[1] = d.motif || 'cp';
+    });
+    return out;
+  }
+  function plDemChevauche(a) {
+    return L('demandes').find(b => b.id !== a.id && b.contratId === a.contratId && b.statut === 'attente' && b.debut <= a.fin && b.fin >= a.debut) || null;
+  }
+  function plDemPeriode(a) {
+    return 'du ' + plJoliDate(a.debut) + (a.debutAM ? ' (après-midi)' : '') + ' au ' + plJoliDate(a.fin) + (a.finM ? ' (midi)' : '');
+  }
+  // impact sur l'effectif comptoir si la demande est acceptée : une pastille par demi-journée travaillée
+  function plDemImpact(d) {
+    const c = L('contrats').find(x => x.id === d.contratId); if (!c) return '';
+    const tmp = { id: '__sim', contratId: c.id, motif: d.motif, debut: d.debut, fin: d.fin, debutAM: d.debutAM, finM: d.finM };
+    const arr = L('absences'); arr.push(tmp);
+    let html = '', sous = 0, lim = 0, n = 0;
+    try {
+      for (let dt = new Date(d.debut + 'T12:00'); plIso(dt) <= d.fin; dt = plAddD(dt, 1)) {
+        if (dt.getDay() === 0) continue;
+        const iso = plIso(dt), k = plDemCouvre(d, iso), sl = plSlots(c, dt);
+        ['M', 'AM'].forEach((demi, hh) => {
+          if (!k[hh] || !sl[hh]) return;            // ne travaillait pas : aucun impact
+          n++;
+          const e = plEffectif(dt, demi), s = plSeuilComptoir(dt, demi);
+          const cls = e.cpt < s ? 'bad' : (e.cpt === s ? 'lim' : '');
+          if (cls === 'bad') sous++; else if (cls === 'lim') lim++;
+          html += '<span class="' + cls + '" title="' + PL_JOURS_FR[(dt.getDay() + 6) % 7] + ' ' + dt.getDate() + ' ' + PL_MOIS_FR[dt.getMonth()] + ' ' + (demi === 'M' ? 'matin' : 'après-midi') + ' : ' + e.cpt + ' au comptoir pour un seuil de ' + s + (e.ph < 1 ? ' — aucun pharmacien' : '') + '">'
+            + PL_JOURS_FR[(dt.getDay() + 6) % 7].slice(0, 3).toLowerCase() + ' ' + dt.getDate() + ' ' + demi + ' <b>' + e.cpt + '</b>/' + s + (e.ph < 1 ? ' ⚠' : '') + '</span>';
+        });
+      }
+    } finally { const i = arr.indexOf(tmp); if (i >= 0) arr.splice(i, 1); }
+    if (!n) return '<div class="pl-sub" style="margin-top:6px">Aucune demi-journée travaillée sur la période : sans impact sur l\'effectif.</div>';
+    const bilan = sous ? '<b style="color:#B23A2F">' + sous + ' demi-journée' + (sous > 1 ? 's' : '') + ' sous le seuil</b>' : (lim ? '<b style="color:#B26A00">' + lim + ' au seuil juste</b>' : '<b style="color:#1D5C3A">effectif suffisant sur toute la période</b>');
+    return '<div class="pl-sub" style="margin-top:6px">Si acceptée — ' + bilan + ' (' + n + ' demi-journée' + (n > 1 ? 's' : '') + ' travaillée' + (n > 1 ? 's' : '') + ') :</div><div class="pl-impact">' + html + '</div>';
+  }
+  function plAbsBadge() {
+    const b = document.getElementById('pl-abs-badge'); if (!b) return;
+    const n = plIsAdmin() ? L('demandes').filter(d => d.statut === 'attente').length : 0;
+    b.textContent = n ? String(n) : ''; b.style.display = n ? '' : 'none';
+    if (n) { b.style.background = '#E65100'; b.style.color = '#fff'; }
+  }
+  window.plDemOuvrir = function () {
+    const admin = plIsAdmin();
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    const monC = moi ? L('contrats').find(c => c.actif !== false && c.staffId === moi) : null;
+    const liste = L('contrats').filter(c => c.actif !== false && (admin || (monC && c.id === monC.id))).sort(plCmp);
+    if (!liste.length) { plToast('Votre compte n\'est rattaché à aucun contrat de planning — voyez avec un administrateur'); return; }
+    const sel = document.getElementById('pl-dem-cid');
+    const cour = (monC && monC.id) || liste[0].id;
+    sel.innerHTML = liste.map(c => '<option value="' + plEsc(c.id) + '"' + (c.id === cour ? ' selected' : '') + '>' + plEsc(c.nom) + '</option>').join('');
+    const auj = plIso(new Date());
+    document.getElementById('pl-dem-debut').value = auj; document.getElementById('pl-dem-fin').value = auj;
+    document.getElementById('pl-dem-debutam').checked = false; document.getElementById('pl-dem-finm').checked = false;
+    document.getElementById('pl-dem-com').value = ''; document.getElementById('pl-dem-motif').value = 'cp';
+    ['pl-dem-cid', 'pl-dem-motif', 'pl-dem-debut', 'pl-dem-fin', 'pl-dem-debutam', 'pl-dem-finm'].forEach(id => { document.getElementById(id).onchange = plDemResume; });
+    plDemResume();
+    plOpen('pl-ov-dem');
+  };
+  function plDemLire() {
+    return { contratId: document.getElementById('pl-dem-cid').value, motif: document.getElementById('pl-dem-motif').value,
+      debut: document.getElementById('pl-dem-debut').value, fin: document.getElementById('pl-dem-fin').value,
+      debutAM: document.getElementById('pl-dem-debutam').checked, finM: document.getElementById('pl-dem-finm').checked,
+      commentaire: document.getElementById('pl-dem-com').value.trim() };
+  }
+  function plDemResume() {
+    const a = plDemLire(), el = document.getElementById('pl-dem-resume'); if (!el) return;
+    if (!a.debut || !a.fin || a.fin < a.debut) { el.textContent = ''; return; }
+    const c = L('contrats').find(x => x.id === a.contratId);
+    const n = plAbsJours(a), ch = plAbsChevauche(a), chd = plDemChevauche(a);
+    let solde = '';
+    if (a.motif === 'rec' && c) { const s = plSoldes(c); solde = ' — compte-temps actuel : <b>' + plFmtH(s.compte) + '</b>'; }
+    el.innerHTML = '<b>' + (n % 1 ? n.toFixed(1).replace('.', ',') : n) + ' jour' + (n > 1 ? 's' : '') + '</b> ouvré' + (n > 1 ? 's' : '') + ' (hors dimanche)' + solde
+      + (ch ? '<div style="color:#C62828;margin-top:4px">Chevauche une absence déjà enregistrée (' + PL_MOTIFS_LONG[ch.motif] + ' ' + plDemPeriode(ch) + ').</div>' : '')
+      + (chd ? '<div style="color:#C62828;margin-top:4px">Une demande est déjà en attente sur ces dates (' + plDemPeriode(chd) + ').</div>' : '');
+  }
+  window.plDemEnvoyer = function () {
+    const a = plDemLire();
+    const c = L('contrats').find(x => x.id === a.contratId);
+    if (!c) { plToast('Choisissez un collaborateur'); return; }
+    if (!plAbsPeut(c)) { plToast('Vous ne pouvez demander que pour vous-même'); return; }
+    if (!a.debut || !a.fin) { plToast('Indiquez les dates'); return; }
+    if (a.fin < a.debut) { plToast('La date de fin précède la date de début'); return; }
+    if (a.debut === a.fin && a.debutAM && a.finM) { plToast('Sur une seule journée, cochez au plus une des deux cases'); return; }
+    if (plAbsChevauche(a)) { plToast('Ces dates chevauchent une absence déjà enregistrée'); return; }
+    if (plDemChevauche(a)) { plToast('Une demande est déjà en attente sur ces dates'); return; }
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    a.id = plNewId('dem'); a.statut = 'attente'; a.demandePar = moi; a.demandeAt = plIso(new Date()); a.updatedAt = Date.now();
+    L('demandes').push(a); plPersist(); plClose('pl-ov-dem');
+    plToast('Demande envoyée — ' + plDemPeriode(a) + '. Vous serez prévenu' + (currentUser && /e$/i.test(currentUser.prenom || '') ? 'e' : '') + ' ici de la réponse.');
+    plRender(); plAbsRender();
+  };
+  window.plDemAnnuler = function (id) {
+    const arr = L('demandes'); const i = arr.findIndex(x => x.id === id); if (i < 0) return;
+    const d = arr[i], c = L('contrats').find(x => x.id === d.contratId);
+    if (d.statut !== 'attente' && !plIsAdmin()) { plToast('Seule une demande en attente peut être retirée'); return; }
+    if (!plAbsPeut(c)) { plToast('Réservé aux administrateurs'); return; }
+    if (!confirm('Retirer cette demande ?')) return;
+    arr.splice(i, 1); plPersist(); plRender(); plAbsRender();
+  };
+  window.plDemDecider = function (id, statut) {
+    if (!plIsAdmin()) { plToast('Réservé aux administrateurs'); return; }
+    const d = L('demandes').find(x => x.id === id); if (!d || d.statut !== 'attente') return;
+    const c = L('contrats').find(x => x.id === d.contratId); if (!c) return;
+    const moi = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    if (statut === 'refusee') {
+      const m = prompt('Motif du refus (visible par ' + c.nom.split(' ')[0] + ', facultatif) :', '');
+      if (m === null) return;
+      d.refusMotif = m.trim();
+    } else {
+      if (plAbsChevauche(d)) { plToast('Une absence chevauche déjà ces dates — supprimez-la d\'abord'); return; }
+      const abs = { id: plNewId('abs'), contratId: d.contratId, motif: d.motif, debut: d.debut, fin: d.fin, debutAM: !!d.debutAM, finM: !!d.finM,
+        commentaire: d.commentaire || '', demandeId: d.id, saisiPar: moi, updatedAt: Date.now() };
+      L('absences').push(abs); d.absenceId = abs.id;
+    }
+    d.statut = statut; d.decidePar = moi; d.decideAt = plIso(new Date()); plStamp(d); plPersist();
+    plToast((statut === 'acceptee' ? 'Congés accordés à ' : 'Demande refusée pour ') + c.nom.split(' ')[0] + ' — ' + plDemPeriode(d));
+    plRender(); plAbsRender();
+  };
+  // rendu des cartes de demandes (appelé par plAbsRender)
+  function plDemCartes(admin, monC, moi) {
+    const H = [];
+    const chipS = d => d.statut === 'attente' ? '<span class="pl-chip" style="background:#FFF3E0;color:#E65100">À valider</span>'
+      : d.statut === 'acceptee' ? '<span class="pl-chip" style="background:#E8F5E9;color:#1D5C3A">Acceptée</span>'
+      : '<span class="pl-chip" style="background:#FFEBEE;color:#C62828">Refusée</span>';
+    const nomC = d => { const c = L('contrats').find(x => x.id === d.contratId); return c ? c.nom : '—'; };
+    const jours = d => { const n = plAbsJours(d); return (n % 1 ? n.toFixed(1).replace('.', ',') : n) + ' j'; };
+    // 1. à valider (admin)
+    if (admin) {
+      const att = L('demandes').filter(d => d.statut === 'attente').sort((x, y) => x.debut.localeCompare(y.debut));
+      H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Demandes à valider</b>'
+        + (att.length ? ' <span class="pl-chip" style="background:#FFF3E0;color:#E65100">' + att.length + '</span>' : '')
+        + '<div class="pl-sub" style="margin:4px 0 10px">L\'effectif au comptoir est recalculé comme si la demande était acceptée, demi-journée par demi-journée, en tenant compte des absences déjà accordées.</div>'
+        + (att.length ? att.map(d => '<div style="border:1px solid var(--plline);border-radius:12px;padding:12px 14px;margin-top:8px">'
+            + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b>' + plEsc(nomC(d)) + '</b><span class="pl-chip pl-ch-' + d.motif + '"><i></i>' + (PL_MOTIFS_LONG[d.motif] || d.motif) + '</span>'
+            + '<span>' + plDemPeriode(d) + ' · <b>' + jours(d) + '</b></span>'
+            + (d.commentaire ? '<span style="color:var(--plmut)">« ' + plEsc(d.commentaire) + ' »</span>' : '')
+            + '<span style="font-size:11px;color:var(--plmut)">demandé le ' + plJoliDate(d.demandeAt) + '</span>'
+            + '<span style="margin-left:auto;white-space:nowrap"><button class="pl-btn pl-mini pl-pri" onclick="plDemDecider(\'' + d.id + '\',\'acceptee\')">Accepter</button> '
+            + '<button class="pl-btn pl-mini pl-ghost" style="color:#C62828" onclick="plDemDecider(\'' + d.id + '\',\'refusee\')">Refuser</button></span></div>'
+            + plDemImpact(d) + '</div>').join('')
+          : '<div class="pl-empty" style="padding:18px 12px">Aucune demande en attente.</div>')
+        + '</div>');
+    }
+    // 2. historique
+    const mines = L('demandes').filter(d => admin || (monC && d.contratId === monC.id) || d.demandePar === moi)
+      .sort((x, y) => (y.demandeAt || '').localeCompare(x.demandeAt || '') || (y.updatedAt || 0) - (x.updatedAt || 0));
+    H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">' + (admin ? 'Toutes les demandes' : 'Mes demandes') + '</b>'
+      + (mines.length ? '<table class="pl-tt" style="margin-top:10px"><tr><th style="text-align:left">Collaborateur</th><th>Nature</th><th>Période</th><th>Jours</th><th>Commentaire</th><th>Statut</th><th>Décision</th><th></th></tr>'
+        + mines.slice(0, 150).map(d => { const c = L('contrats').find(x => x.id === d.contratId);
+          const peut = d.statut === 'attente' ? plAbsPeut(c) : admin;
+          return '<tr><td style="text-align:left"><b>' + plEsc(nomC(d)) + '</b></td><td><span class="pl-chip pl-ch-' + d.motif + '"><i></i>' + (PL_MOTIFS[d.motif] || d.motif) + '</span></td>'
+            + '<td>' + plDemPeriode(d).replace(/^du /, '') + '</td><td>' + jours(d) + '</td><td style="text-align:left">' + plEsc(d.commentaire || '') + (d.refusMotif ? '<div style="font-size:10.5px;color:#C62828">Refus : ' + plEsc(d.refusMotif) + '</div>' : '') + '</td>'
+            + '<td>' + chipS(d) + '</td><td style="font-size:11px;color:var(--plmut)">' + (d.decidePar ? plEsc(plQui(d.decidePar)) + ' · ' + plJoliDate(d.decideAt) : '—') + '</td>'
+            + '<td>' + (peut ? '<button class="pl-btn pl-mini pl-ghost" onclick="plDemAnnuler(\'' + d.id + '\')" title="Retirer">✕</button>' : '') + '</td></tr>'; }).join('')
+        + '</table>' : '<div class="pl-empty" style="padding:18px 12px">' + (admin ? 'Aucune demande.' : 'Vous n\'avez pas encore fait de demande.') + '</div>')
+      + '</div>');
+    return H.join('');
+  }
 
   // ═══════════ HEURES SUPPLÉMENTAIRES & COMPTE-TEMPS ═══════════
   // Deux sources d'heures en plus :
