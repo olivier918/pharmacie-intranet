@@ -516,6 +516,7 @@ tr:hover td{background:#fafffe}
             <option value="wait">À préparer</option>
             <option value="prep">Préparé</option>
             <option value="done">Livrée</option>
+            <option value="facturer">Facturation à finaliser</option>
           </select>
           <select id="dv-lieu" onchange="renderD()">
             <option value="">Tous lieux</option>
@@ -2769,6 +2770,25 @@ function setView(v,btn){
   if(btn)btn.classList.add('active');
   renderD();
 }
+// Une livraison cochée « Ordonnance à récupérer » n'a pas pu être facturée au
+// départ : une fois livrée (ordonnance en main), il reste à finaliser la
+// facturation. Le dossier reste signalé, toutes dates confondues, jusqu'au
+// clic « Facturé ».
+function dAFacturer(d){ return !!(d && d.ordo && d.status==='done' && !d.factureAt); }
+function marquerFacture(id){
+  const d=deliveries.find(x=>x.id===id); if(!d) return;
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  d.factureAt=new Date().toISOString();
+  d.factureBy=currentUser.id;
+  d.updatedAt=Date.now();
+  renderD();
+}
+function annulerFacture(id){
+  const d=deliveries.find(x=>x.id===id); if(!d) return;
+  if(!confirm('Remettre ce dossier dans la liste « facturation à finaliser » ?')) return;
+  delete d.factureAt; delete d.factureBy; d.updatedAt=Date.now();
+  renderD();
+}
 function renderD(){
   const date=document.getElementById('dv-date').value;
   const sf=document.getElementById('dv-status').value;
@@ -2790,7 +2810,9 @@ function renderD(){
   const cnt={wait:0,prep:0,done:0};
   periodData.forEach(d=>cnt[d.status]=(cnt[d.status]||0)+1);
   const activeFilter=sf||lf;
+  const nFact=deliveries.filter(dAFacturer).length;   // toutes dates confondues
   document.getElementById('dstats').innerHTML=`
+    <div class="scard" style="cursor:pointer${sf==='facturer'?';outline:2px solid #E65100;outline-offset:2px':''}${nFact?';background:#FFF8F1':''}" onclick="quickFilter('facturer')" title="Livrées avec ordonnance récupérée, facturation non finalisée (toutes dates)"><div class="slabel">À facturer</div><div class="sval" style="color:#E65100">${nFact}</div></div>`+`
     <div class="scard" style="cursor:pointer${sf==='wait'?';outline:2px solid #F57F17;outline-offset:2px':''}" onclick="quickFilter('wait')" title="Filtrer : À préparer"><div class="slabel">À préparer</div><div class="sval" style="color:#F57F17">${cnt.wait||0}</div></div>
     <div class="scard" style="cursor:pointer${sf==='prep'?';outline:2px solid var(--b-mid);outline-offset:2px':''}" onclick="quickFilter('prep')" title="Filtrer : Préparé"><div class="slabel">Préparé</div><div class="sval" style="color:var(--b-mid)">${cnt.prep||0}</div></div>
     <div class="scard" style="cursor:pointer${sf==='done'?';outline:2px solid #2E7D32;outline-offset:2px':''}" onclick="quickFilter('done')" title="Filtrer : Livrées"><div class="slabel">Livrées</div><div class="sval" style="color:#2E7D32">${cnt.done||0}</div></div>
@@ -2798,7 +2820,8 @@ function renderD(){
 
   // Filtered list for display
   let data=[...periodData];
-  if(sf)data=data.filter(d=>d.status===sf);
+  if(sf==='facturer') data=deliveries.filter(dAFacturer);   // liste de travail : toutes dates
+  else if(sf)data=data.filter(d=>d.status===sf);
   if(lf)data=data.filter(d=>d.lieu===lf);
 
   const el=document.getElementById('dlist');
@@ -2811,7 +2834,7 @@ function renderD(){
     return days[dt.getDay()]+' '+d+'/'+m+'/'+y;
   }
 
-  if(delivView==='jour'){
+  if(delivView==='jour' && sf!=='facturer'){
     // Single date header then list
     const dateLabel=fmtDate(date);
     const cnt=data.length;
@@ -2924,12 +2947,15 @@ function dCard(d){
       </div>
       ${d.prepNotes?`<div class="dc-row2"><span class="dc-prep-inline">${ico('realisation')} ${d.prepNotes}</span></div>`:''}
       ${d.notes?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${d.notes}</span></div>`:''}
+      ${dAFacturer(d)?`<div class="dc-row2"><span class="badge" style="background:#FFF3E0;color:#BF360C;border:1px solid #FFCC80;font-weight:700;padding:3px 9px">${ico('alerte')} Facturation à finaliser — ordonnance récupérée à la livraison</span></div>`:''}
+      ${d.factureAt?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('valider')} Facturé le ${new Date(d.factureAt).toLocaleDateString('fr-FR')} par ${staffName(d.factureBy)} <span onclick="annulerFacture(${d.id})" style="cursor:pointer;color:var(--gray-500);text-decoration:underline;margin-left:6px" title="Remettre en attente">annuler</span></span></div>`:''}
       <div class="dc-row2 no-print" style="margin-top:1px">
         <span class="dc-track">Préparé : ${prep} · Livré : ${livr}${d.smsAt?` · SMS envoyé le ${new Date(d.smsAt).toLocaleDateString('fr-FR')} par ${staffName(d.smsBy)}`:''}</span>
       </div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
+      ${dAFacturer(d)?`<button class="btn bp sm" onclick="marquerFacture(${d.id})" title="La facturation de ce dossier est finalisée">${ico('valider')} Facturé</button>`:''}
       <button class="btn bs btn-ico" onclick="openDelivSms(${d.id})" title="${d.smsAt?'SMS déjà envoyé le '+new Date(d.smsAt).toLocaleDateString('fr-FR'):'Prévenir le patient par SMS'}"${d.smsAt?' style="border-color:#A5D6A7;background:#E8F5E9"':''}>${ico('messagerie')}</button>
       <button class="btn bs btn-ico" onclick="openDForm(${d.id})" title="Modifier">${ico('modifier')}</button>
       <button class="btn bs btn-ico" onclick="openTicket(${d.id})" title="Ticket">${ico('ticket')}</button>
