@@ -1050,6 +1050,22 @@
     let h = '<div class="pl-card pl-mo"><table><thead><tr><th class="pl-who"></th>';
     for (let d = 1; d <= nd; d++) { const dt = new Date(y, m, d); h += '<th class="' + (dt.getDay() === 0 ? 'pl-wee' : '') + '">' + PL_JOURS_FR[(dt.getDay() + 6) % 7].slice(0, 2).toLowerCase() + '<b>' + d + '</b></th>'; }
     h += '</tr></thead><tbody>';
+    // ── compteur Comptoir par jour (M/AM vs seuil, hors poste avancé), en tête de tableau
+    //    comme dans la vue Semaine : on lit l'effectif avant de parcourir les collaborateurs ──
+    h += '<tr class="pl-cntrow"><td class="pl-who pl-cntlbl">Comptoir<br><span style="font-weight:500;text-transform:none;letter-spacing:0">matin / après-midi</span></td>';
+    for (let d = 1; d <= nd; d++) {
+      const dt = new Date(y, m, d, 12);
+      let cell = '';
+      if (dt.getDay() !== 0) {
+        ['M', 'AM'].forEach(demi => {
+          const e = plEffectif(dt, demi), s2 = plSeuilComptoir(dt, demi);
+          const k = e.cpt < s2 ? 'bad' : (e.cpt === s2 ? 'lim' : 'ok');
+          cell += '<div class="pl-mnp pl-mnp-' + k + '" title="' + PL_JOURS_FR[(dt.getDay() + 6) % 7] + ' ' + d + ' · ' + (demi === 'M' ? 'matin' : 'après-midi') + ' : ' + e.cpt + ' disponibles au comptoir / seuil ' + s2 + ' (hors poste avancé)">' + e.cpt + '</div>';
+        });
+      }
+      h += '<td class="' + (dt.getDay() === 0 ? 'pl-wee' : '') + '">' + cell + '</td>';
+    }
+    h += '</tr>';
     let lastGrp = null;
     plContratsVisibles().forEach(c => {
       if (c.grp !== lastGrp) { lastGrp = c.grp; h += '<tr class="pl-grp"><td class="pl-who"><span class="pl-grplbl" title="' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '">' + plEsc((PL_GRPS[c.grp] || { lbl: c.grp }).lbl) + '</span></td><td colspan="' + nd + '"></td></tr>'; }
@@ -1068,21 +1084,7 @@
       }
       h += '</tr>';
     });
-    // ── compteur Comptoir par jour (M/AM vs seuil, hors poste avancé) ──
-    h += '</tbody><tfoot><tr><td class="pl-who pl-cntlbl" style="border-top:2px solid var(--plline)">Comptoir</td>';
-    for (let d = 1; d <= nd; d++) {
-      const dt = new Date(y, m, d, 12);
-      let cell = '';
-      if (dt.getDay() !== 0) {
-        ['M', 'AM'].forEach(demi => {
-          const e = plEffectif(dt, demi), s2 = plSeuilComptoir(dt, demi);
-          const k = e.cpt < s2 ? 'bad' : (e.cpt === s2 ? 'lim' : 'ok');
-          cell += '<div class="pl-mnp pl-mnp-' + k + '" title="' + PL_JOURS_FR[(dt.getDay() + 6) % 7] + ' ' + d + ' · ' + (demi === 'M' ? 'matin' : 'après-midi') + ' : ' + e.cpt + ' disponibles au comptoir / seuil ' + s2 + ' (hors poste avancé)">' + e.cpt + '</div>';
-        });
-      }
-      h += '<td class="' + (dt.getDay() === 0 ? 'pl-wee' : '') + '" style="border-top:2px solid var(--plline)">' + cell + '</td>';
-    }
-    h += '</tr></tfoot></table></div>';
+    h += '</tbody></table></div>';
     document.getElementById('pl-body').innerHTML = h;
   }
 
