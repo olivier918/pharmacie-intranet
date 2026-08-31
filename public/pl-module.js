@@ -662,6 +662,11 @@
   .pl-tt input{width:86px;border:none;font-family:inherit;font-size:12px;text-align:center;outline:none;
     font-variant-numeric:tabular-nums}
   .pl-tt input:focus{background:var(--plroses)}
+  /* cases du cycle : on choisit dans le sélecteur, on ne tape pas */
+  .pl-tt input.pl-trpick{cursor:pointer;border-radius:6px;padding:3px 2px;font-weight:600;
+    background:var(--placs);color:#1F5C46;border:1px solid transparent;border-left:3px solid var(--plac)}
+  .pl-tt input.pl-trpick:placeholder-shown{background:transparent;border-left-color:var(--plline);color:var(--plmut)}
+  .pl-tt input.pl-trpick:hover{border-color:var(--plac)}
   .pl-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
   .pl-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(120px);z-index:12000;
     background:#25282A;color:#fff;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;
@@ -741,7 +746,7 @@
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-trame"><div class="pl-box">
     <h3 id="pl-tr-title">Trame</h3>
-    <div class="pl-sub">Horaires type par demi-journée (format <b>9h-12h30</b>). Laisser vide = repos. Le total se recalcule en direct.</div>
+    <div class="pl-sub">Cliquez une case pour choisir l'horaire : créneaux habituels, ou début et fin par pas de 15 min. « Repos » vide la case ; le total se recalcule en direct.</div>
     <div id="pl-tr-body"></div>
     <div class="pl-actions">
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-trame')">Annuler</button>
@@ -2580,7 +2585,7 @@
             posSel = '<br><select data-pw="' + w + '" data-pj="' + jr + '" data-ph="' + hh + '" style="font-size:9.5px;border:1px solid var(--plline);border-radius:5px;margin-top:2px">'
               + ['C', 'B', 'A'].map(p => '<option value="' + p + '"' + (cur === p ? ' selected' : '') + '>' + p + ' · ' + PL_POS_LBL[p] + '</option>').join('') + '</select>';
           }
-          h += '<td><input data-w="' + w + '" data-j="' + jr + '" data-h="' + hh + '" value="' + plEsc(v) + '" placeholder="—" oninput="plTrTotal()">' + posSel + '</td>';
+          h += '<td><input class="pl-trpick" readonly data-w="' + w + '" data-j="' + jr + '" data-h="' + hh + '" value="' + plEsc(v) + '" placeholder="repos" title="Cliquer pour choisir l\'horaire" onclick="plTrPick(this)">' + posSel + '</td>';
         });
         h += (hh === 0 ? '<td rowspan="2" style="font-weight:700;font-variant-numeric:tabular-nums" id="pl-tr-tot-' + w + '"></td>' : '') + '</tr>';
       });
@@ -2589,6 +2594,19 @@
     document.getElementById('pl-tr-body').innerHTML = h;
     plTrTotal();
     plOpen('pl-ov-trame');
+  };
+  // Une case du cycle ouvre le même sélecteur d'horaires que le planning : créneaux
+  // habituels en un clic, ou début / fin par pas de 15 min. Plus aucune saisie au clavier.
+  window.plTrPick = function (el) {
+    if (!plGarde()) return;
+    const c = L('contrats').find(x => x.id === plTrEditId); if (!c) return;
+    const jr = el.dataset.j, hh = +el.dataset.h, w = el.dataset.w;
+    plPkOpen(el, {
+      val: el.value, hh: hh, grp: c.grp,
+      titre: c.nom.split(' ')[0] + ' · ' + PL_JOURS_FR[PL_JOURS.indexOf(jr)] + (hh ? ' après-midi' : ' matin'),
+      sous: 'Semaine ' + w + ' du cycle — horaire type, pas encore enregistré',
+      onSet: function (v) { el.value = v; plTrTotal(); }
+    });
   };
   window.plTrTotal = function () {
     const inputs = document.querySelectorAll('#pl-tr-body input');
