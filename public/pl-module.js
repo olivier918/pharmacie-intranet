@@ -1580,19 +1580,6 @@
     el.blur();
     if (next) { next.focus(); next.select(); }
   };
-  window.plRowCopy = function (cid, rang) { if (!plGarde()) return;
-    const c = L('contrats').find(x => x.id === cid); if (!c) return;
-    const rot = plRotOf(c), nb = rot ? rot.longueur : 1;
-    const src = plSemOf(c, rang), e = plEdSlot(c);
-    for (let w = 1; w <= nb; w++) {
-      if (String(w) === String(rang)) continue;
-      e.sem[String(w)] = JSON.parse(JSON.stringify(src));
-      if (e.pos[rang]) e.pos[String(w)] = JSON.parse(JSON.stringify(e.pos[rang]));
-    }
-    plStamp(e.obj); plPersist(); plToast(c.nom.split(' ')[0] + ' · semaine recopiée sur tout le cycle');
-    plRegRender(); plRender();
-  };
-
   // ---------- versions de trame : brouillons et mise en place ----------
   // Le contenu d'une version est un instantané de toute l'équipe : chaque contrat y a
   // sa semaine type et ses positions, plus rang0 = la semaine de son cycle à la date de début.
@@ -1806,12 +1793,12 @@
           const rot = plRotOf(c);
           h += '<tr><td style="text-align:left;white-space:nowrap"><b>' + plEsc(c.nom) + '</b> <span style="font-size:9px;color:var(--plmut)">' + (rot ? plEsc(rot.lbl) + ' S' + rang : '') + '</span><br>'
             + '<button class="pl-btn pl-ghost pl-mini" style="margin-top:2px" title="Voir et modifier toutes les semaines du cycle de ce collaborateur" onclick="plEditTrame(\'' + c.id + '\')">✎ cycle complet</button>'
-            + (rot && rot.longueur > 1 ? ' <button class="pl-btn pl-ghost pl-mini" style="margin-top:2px" title="Recopier cette semaine sur les autres semaines du cycle" onclick="plRowCopy(\'' + c.id + '\',\'' + rang + '\')">⧉</button>' : '') + '</td>'
+            + '</td>'
             + cells + '<td style="font-variant-numeric:tabular-nums;min-width:96px" id="pl-trtot-' + c.id + '">' + plRowTotHtml(c, rang) + '</td></tr>';
         });
       h += '</table></div><div class="pl-note"><b>Pour modifier un horaire :</b> cliquez sur la case — les créneaux habituels de l’équipe s’appliquent en un clic, sinon on règle le début et la fin au quart d’heure, et « Repos » vide la demi-journée. '
         + 'Les compteurs du haut se recalculent aussitôt. Au clavier, Entrée ou ↓ passe à la case suivante et on peut taper directement (<b>9h-12h30</b>). La pastille <i class="pl-posb pl-pos-C">C</i> à droite change le poste (préparateurs). '
-        + '<b>⧉</b> recopie la semaine affichée sur les autres semaines du cycle, <b>✎ cycle complet</b> ouvre les 2 à 4 semaines d’un collaborateur côte à côte.<br>'
+        + '<b>✎ cycle complet</b> ouvre les 2 à 4 semaines d’un collaborateur côte à côte.<br>'
         + '<b>Colonne Total :</b> en haut le total de la semaine affichée, en dessous l’écart entre la <b>moyenne du cycle</b> et la base du contrat — un cycle de 2 à 4 semaines n’a pas besoin d’être équilibré semaine par semaine (34h30 + 35h30 = 35 h de moyenne), '
         + 'c’est la moyenne qui doit tomber juste. Le bandeau du haut récapitule les collaborateurs encore en écart.<br>'
         + 'Positions : <i class="pl-posb pl-pos-C">C</i> comptoir · <i class="pl-posb pl-pos-B">B</i> back-office · <i class="pl-posb pl-pos-A">A</i> poste avancé. '

@@ -544,12 +544,35 @@ async function snapshotCurrent() {
 // collaborateur sans sa signature (parce qu'il ne l'a pas encore reçue) n'écrase pas la
 // signature (ni le RPPS, ni le PIN) enregistrée par un autre poste — la valeur existante
 // est conservée quand l'envoi ne contient pas ce champ.
+// staffDB : fusion AU CHAMP par id (préserve PIN, signature, RPPS, photo), mais surtout UNION.
+// Avant, cette fonction renvoyait la seule liste entrante : un poste dont l'onglet datait
+// d'avant la création d'un collaborateur le faisait disparaître pour tout le monde à sa
+// première sauvegarde, sans qu'aucune suppression n'ait été demandée. Un collaborateur ne
+// doit sortir de la liste que par une suppression explicite, c'est-à-dire un tombstone.
 function mergeStaff(existingArr, incomingArr) {
   if (!Array.isArray(existingArr)) return incomingArr;
   if (!Array.isArray(incomingArr)) return existingArr;
-  const byId = {};
-  existingArr.forEach(r => { if (r && r.id != null) byId[r.id] = r; });
-  return incomingArr.map(inc => (inc && inc.id != null && byId[inc.id]) ? Object.assign({}, byId[inc.id], inc) : inc);
+  const inc = {};
+  incomingArr.forEach(r => { if (r && r.id != null) inc[r.id] = r; });
+  const seen = {};
+  const out = [];
+  existingArr.forEach(r => {
+    if (!r || r.id == null) { out.push(r); return; }
+    if (seen[r.id]) return; seen[r.id] = 1;
+    const i = inc[r.id];
+    if (!i) { out.push(r); return; }                    // absent de l'envoi : on le garde
+    // champ par champ ; à égalité l'entrant gagne, mais une version serveur plus récente
+    // n'est pas écrasée par un onglet en retard (ex. un PIN modifié entre-temps)
+    out.push(((i.updatedAt || 0) >= (r.updatedAt || 0))
+      ? Object.assign({}, r, i)
+      : Object.assign({}, i, r));
+  });
+  incomingArr.forEach(r => {
+    if (!r || r.id == null) { out.push(r); return; }
+    if (seen[r.id]) return; seen[r.id] = 1;
+    out.push(r);                                        // nouveau collaborateur
+  });
+  return out;
 }
 // ── Sync : réconciliation par enregistrement + suppressions horodatées ──
 // Union par id en conservant, pour chaque id, la version au `updatedAt` le plus récent,
