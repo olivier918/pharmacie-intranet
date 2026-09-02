@@ -88,6 +88,7 @@
   .dp-alerte{background:#FFF6E5;border:1px solid #F0DCB0;border-left:4px solid #B8821C;border-radius:10px;
     padding:9px 13px;font-size:12.5px;color:#6E5210;margin-top:12px}
   .dp-ok{background:#E9F5EE;border-color:#C7E4D4;border-left-color:#1D5C3A;color:#1D5C3A}
+  .dp-ko{background:#FBE9E7;border-color:#F3C9C2;border-left-color:#B23A2F;color:#8A2B22}
   .dp-st{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 8px}
   .dp-st.brouillon{background:#EFEFEF;color:#555}
   .dp-st.envoye{background:#E3F2FD;color:#0D47A1}
@@ -343,6 +344,10 @@
 
     const btn = document.getElementById('dp-env-' + id);
     if (btn) { btn.disabled = true; btn.textContent = 'Envoi…'; }
+    // Chaque tentative laisse une trace sur le bon, réussie OU non : un envoi qui
+    // échoue ne doit pas disparaître sans laisser de trace, et un envoi réussi
+    // doit porter l'identifiant rendu par le service de messagerie.
+    if (!Array.isArray(rec.envois)) rec.envois = [];
     try {
       const r = await fetch('/api/send-mail', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -358,15 +363,32 @@
       rec.statut = 'envoye';
       rec.envoyeA = dest;
       rec.envoyeLe = Date.now();
+      rec.envoiId = j.id || '';
+      rec.envois.push({ at: rec.envoyeLe, ok: true, to: dest, id: j.id || '', par: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null });
       rec.updatedAt = Date.now();
-      persist(); dpRender();
-      alert('Bon envoyé à ' + dest + '.');
+      // enregistrement IMMÉDIAT : on n'attend pas le délai habituel, pour qu'un
+      // onglet fermé dans la foulée ne fasse pas perdre la trace de l'envoi.
+      await dpEnregistrerMaintenant();
+      dpRender();
+      alert('Bon envoyé à ' + dest + '.' + (j.id ? '\n\nRéférence de l’envoi : ' + j.id : ''));
     } catch (e) {
-      if (btn) { btn.disabled = false; btn.textContent = '✉ Envoyer'; }
-      alert("L'envoi a échoué : " + (e && e.message ? e.message : 'erreur inconnue')
-        + "\n\nLe bon reste enregistré : téléchargez-le et envoyez-le depuis votre messagerie.");
+      const motif = (e && e.message) ? e.message : 'erreur inconnue';
+      rec.envois.push({ at: Date.now(), ok: false, to: dest, err: motif, par: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null });
+      rec.updatedAt = Date.now();
+      await dpEnregistrerMaintenant();
+      dpRender();
+      alert("L'envoi a échoué : " + motif
+        + "\n\nLe bon N'EST PAS parti. Il reste en préparation, avec le motif de l'échec affiché : "
+        + "téléchargez-le et envoyez-le depuis votre messagerie, ou réessayez.");
     }
   };
+
+  // Enregistrement immédiat, sans le délai de regroupement : utilisé après un envoi,
+  // où la perte de l'information coûterait un doute sur ce qui est parti ou non.
+  async function dpEnregistrerMaintenant() {
+    try { if (typeof saveAll === 'function') await saveAll(); else persist(); }
+    catch (e) { persist(); }
+  }
 
   // ── création / modification ─────────────────────────────────────────────────
   function dpMoi() {
@@ -464,6 +486,18 @@
     return { texte: avant ? '24 h' : '48 h', le: iso(d), avant: avant };
   }
 
+  // Dernière tentative d'envoi ratée : elle reste affichée sur le bon tant qu'il
+  // n'est pas parti, pour qu'un échec ne passe jamais pour un envoi.
+  function dpEchecHtml(rec) {
+    const t = (rec.envois || []).slice().reverse().find(x => x && !x.ok);
+    if (!t || rec.statut === 'envoye') return '';
+    const q = new Date(t.at);
+    return '<div class="dp-alerte dp-ko"><b>Ce bon n’est pas parti.</b> Dernière tentative le '
+      + joli(iso(q)) + ' à ' + String(q.getHours()).padStart(2, '0') + 'h' + String(q.getMinutes()).padStart(2, '0')
+      + ' — ' + E(String(t.err || 'motif inconnu').replace(/\s*\.\s*$/, ''))
+      + '. Réessayez, ou téléchargez le bon et envoyez-le depuis votre messagerie.</div>';
+  }
+
   window.dpRender = function () {
     const host = document.getElementById('dp-body'); if (!host) return;
     const arr = L().slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -510,6 +544,7 @@
         + '</table>'
         + '<div style="margin-top:8px"><button class="btn bs sm dp-mini" onclick="dpAddLigne(\'' + rec.id + '\')">＋ Ajouter un produit</button></div>'
         + (rec.sig ? '' : '<div class="dp-alerte">Aucune signature enregistrée pour vous : le bon partira sans signature. Back Office → Collaborateurs → bouton Signature.</div>')
+        + dpEchecHtml(rec)
         + '<div class="dp-alerte ' + (d.avant ? 'dp-ok' : '') + '">'
         + (d.avant
           ? 'Envoyé maintenant, ce bon est annoncé en <b>24 h</b> — livraison attendue le <b>' + joli(d.le) + '</b>.'
@@ -537,7 +572,13 @@
             + (l.cip ? '<br><span class="dp-cip">CIP ' + E(l.cip) + '</span>' : '') + '</div>').join('');
           return '<tr><td><b>' + E(rec.ref || '—') + '</b><br><span class="dp-cip">bon du ' + joli(rec.dateBon) + '</span></td>'
             + '<td>' + (prods || '—') + '</td>'
-            + '<td>' + (rec.envoyeLe ? joli(iso(new Date(rec.envoyeLe))) : '—') + '</td>'
+            + '<td>' + (rec.envoyeLe
+              ? joli(iso(new Date(rec.envoyeLe)))
+                + '<br><span class="dp-cip">' + String(new Date(rec.envoyeLe).getHours()).padStart(2, '0') + 'h'
+                + String(new Date(rec.envoyeLe).getMinutes()).padStart(2, '0')
+                + (rec.envoyeA ? ' → ' + E(rec.envoyeA) : '') + '</span>'
+                + (rec.envoiId ? '<br><span class="dp-cip" title="Référence rendue par le service d’envoi">n° ' + E(rec.envoiId) + '</span>' : '')
+              : '—') + '</td>'
             + '<td><select class="dp-inp" style="height:30px;font-size:12px" onchange="dpSet(\'' + rec.id + '\',\'statut\',this.value)">'
             + Object.keys(DP_STATUTS).map(k => '<option value="' + k + '"' + (rec.statut === k ? ' selected' : '') + '>' + DP_STATUTS[k] + '</option>').join('')
             + '</select></td>'
@@ -549,7 +590,8 @@
     }
     H += '<div class="dp-note">Le bon est reproduit à l’identique du formulaire ' + E(DP_FOURNISSEUR.nom)
       + ', pré-rempli avec les coordonnées de l’officine et la signature du pharmacien connecté, puis envoyé en pièce jointe à '
-      + E(DP_FOURNISSEUR.mail) + '. Le numéro de référence est à usage unique : une nouvelle commande demande un nouvel appel au '
+      + E(DP_FOURNISSEUR.mail) + '. Chaque tentative d’envoi laisse une trace sur le bon, réussie ou non : '
+      + 'un bon qui reste en préparation n’est jamais parti. En cas de doute, le service relation clients répond au '
       + E(DP_FOURNISSEUR.tel) + '.</div></div>';
 
     host.innerHTML = H;
