@@ -487,7 +487,7 @@ tr:hover td{background:#fafffe}
     <button class="sb-item" data-sec="controles" onclick="showSec('controles',this)"><svg class="ico sb-ico"><use href="#ic-securite"></use></svg><span class="sb-label">Contrôle lits</span></button>
     <button class="sb-item" data-sec="formulaires" onclick="showSec('formulaires',this)"><svg class="ico sb-ico"><use href="#ic-document"></use></svg><span class="sb-label">Formulaires</span></button>
     <button class="sb-item" data-sec="retours" onclick="showSec('retours',this)"><svg class="ico sb-ico"><use href="#ic-retour"></use></svg><span class="sb-label">Retours Bluestone</span></button>
-    <button class="sb-item" data-sec="credits" onclick="showSec('credits',this)"><svg class="ico sb-ico"><use href="#ic-euro"></use></svg><span class="sb-label">Crédits</span></button>
+    <button class="sb-item" data-sec="credits" onclick="showSec('credits',this)"><svg class="ico sb-ico"><use href="#ic-euro"></use></svg><span class="sb-label">Crédits</span><span class="sb-badge" id="navb-cred" onclick="event.stopPropagation();goCredFollow()" style="cursor:pointer"></span></button>
     <button class="sb-item" data-sec="caisse" onclick="showSec('caisse',this)"><svg class="ico sb-ico"><use href="#ic-caisse"></use></svg><span class="sb-label">Caisse</span></button>
     <button class="sb-item" data-sec="backoffice" onclick="showSec('backoffice',this)"><svg class="ico sb-ico"><use href="#ic-reglages"></use></svg><span class="sb-label">Back Office</span></button>
   </aside>
@@ -2735,6 +2735,24 @@ function updateNavBadges(){
         ? 'Ordonnances à préparer — au moins une est due aujourd’hui ou en retard'
         : 'Ordonnances à préparer dans les 7 prochains jours';
     } else { rn.textContent=''; }
+  }
+  // Crédits : ROUGE pour VOS relances restées sans nouvelle depuis 14 jours —
+  // c'est à vous que le dossier revient. ORANGE pour celles des autres, pour
+  // qu'un dossier ne dorme pas pendant les congés de qui l'a ouvert.
+  const cr=document.getElementById('navb-cred');
+  if(cr){
+    const mine=(typeof credDueMine==='function')?credDueMine().length:0;
+    const tous=(typeof credDueList==='function')?credDueList().length:0;
+    cr.classList.remove('on','red','orange');
+    if(mine>0){
+      cr.textContent=mine>99?'99+':String(mine);
+      cr.classList.add('on','red');
+      cr.title='Vos relances sans nouvelle depuis '+CRED_FOLLOWUP_DAYS+' jours ou plus';
+    } else if(tous>0){
+      cr.textContent=tous>99?'99+':String(tous);
+      cr.classList.add('on','orange');
+      cr.title='Relances d’autres collaborateurs sans nouvelle depuis '+CRED_FOLLOWUP_DAYS+' jours ou plus';
+    } else { cr.textContent=''; }
   }
 }
 
@@ -5634,6 +5652,33 @@ function credNeedsFollowup(c){
   const d=credDaysSinceContact(c);
   return d!==null && d>=CRED_FOLLOWUP_DAYS;
 }
+// ── Relances laissées sans nouvelle ────────────────────────────────────────
+// Un dossier revient à CELUI OU CELLE QUI A FAIT la dernière relance : c'est
+// cette personne qui a parlé au patient et qui sait ce qui a été dit. À défaut
+// de relance, il revient à qui a ouvert le crédit.
+function credResponsable(c){
+  const last=credLastRelance(c);          // même dernière relance que le filtre « opérateur »
+  return (last&&last.by)||c.createdBy||null;
+}
+function credDueList(){
+  try{ return credits.filter(c=>c.status==='en cours' && credNeedsFollowup(c)); }catch(e){ return []; }
+}
+function credDueMine(){
+  const me=currentUser&&currentUser.id; if(!me) return [];
+  return credDueList().filter(c=>credResponsable(c)===me);
+}
+// Ouvre les crédits directement sur les dossiers en attente : la pastille
+// mène à ce qu'elle annonce, sans avoir à chercher le filtre.
+function goCredFollow(){
+  const btn=document.querySelector('.sb-item[data-sec="credits"]');
+  showSec('credits', btn);
+  const mine=credDueMine().length;
+  credQuickFilter='follow';
+  const op=document.getElementById('cred-op-filter');
+  if(op) op.value = mine>0 ? (currentUser&&currentUser.id||'') : '';
+  renderCreds();
+}
+
 function setCredQuickFilter(k){
   credQuickFilter=(credQuickFilter===k)?'':k;
   renderCreds();
