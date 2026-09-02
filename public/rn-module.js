@@ -62,15 +62,15 @@
   .rn-t-retard{background:#FDECEC;color:#c62828}
   .rn-t-jour{background:#E8F5E9;color:#2E7D32}
   .rn-t-avenir{background:#E3F2FD;color:#1565C0}
-  .rn-card{background:#fff;border:1px solid #e2ebe5;border-radius:12px;padding:13px 15px;margin-bottom:9px;display:flex;gap:14px;align-items:flex-start;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .rn-card{background:#fff;border:1px solid #e2ebe5;border-radius:12px;padding:9px 12px;margin-bottom:6px;display:flex;gap:12px;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,.03)}
   .rn-card.rn-retard{border-left:4px solid #c62828}
   .rn-card.rn-jour{border-left:4px solid #2E7D32}
   .rn-card.rn-avenir{border-left:4px solid #1565C0}
   .rn-card .rn-main{flex:1;min-width:0}
   .rn-who{font-weight:700;font-size:15px}
   .rn-who .rn-dob{font-weight:400;color:#6b7a72;font-size:12.5px;margin-left:6px}
-  .rn-lib{font-size:13.5px;margin:3px 0 5px}
-  .rn-meta{font-size:12.5px;color:#6b7a72;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .rn-lib{font-size:13.5px;font-weight:400;color:#37474F;margin-left:10px;padding-left:10px;border-left:1px solid #dfe8e2}
+  .rn-meta{font-size:12.5px;color:#6b7a72;display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:3px}
   .rn-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;display:inline-block}
   .rn-b-liv{background:#EDE7F6;color:#5E35B1}.rn-b-comp{background:#E0F2F1;color:#00695C}
   .rn-b-last{background:#FFF3E0;color:#E65100}.rn-b-frigo{background:#E1F5FE;color:#0277BD}
@@ -78,7 +78,17 @@
   .rn-b-due{background:#C62828;color:#fff;box-shadow:0 0 0 2px rgba(198,40,40,.14)}
   .rn-b-soon{background:#EF6C00;color:#fff;box-shadow:0 0 0 2px rgba(239,108,0,.13)}
   .rn-chip{color:#fff;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;display:inline-block}
-  .rn-acts{display:flex;flex-direction:column;gap:6px;min-width:150px}
+  .rn-acts{display:flex;flex-direction:row;gap:5px;align-items:flex-start;flex:none}
+  /* Boutons réduits à leur icône : une ligne d'ordonnance tient sur trois lignes
+     de texte au lieu de cinq boutons empilés. Le libellé reste au survol (title). */
+  .rn-ib{width:32px;height:32px;padding:0;border:1px solid #dfe8e2;background:#fff;border-radius:9px;
+    font-size:15px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .rn-ib:hover{border-color:#1D5C3A;background:#f6faf8}
+  .rn-ib.rn-ib-pri{background:#1D5C3A;border-color:#1D5C3A;color:#fff}
+  .rn-ib.rn-ib-pri:hover{background:#164a2e}
+  .rn-ib.rn-ib-del:hover{border-color:#c62828;background:#fdf1f1}
+  .rn-ib.rn-ib-on{border-color:#a5d6a7;background:#e8f5e9}
+  .rn-ib.rn-ib-att{border-color:#e0d7c3;background:#faf7f0}
   .rn-empty{color:#6b7a72;text-align:center;padding:40px;background:#fff;border:1px dashed #dfe8e2;border-radius:12px}
   .rn-ov{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:16px;z-index:10000}
   .rn-ov.rn-on{display:flex}
@@ -338,20 +348,40 @@
     return '';
   }
   function rnMainHtml(it) {
-    return '<div class="rn-who">' + rnEsc(it.nom) + ' ' + rnEsc(it.prenom) + '<span class="rn-dob">' + rnFmtFr(it.dob) + '</span></div>' +
-      '<div class="rn-lib">' + rnEsc(it.lib) + '</div>' +
+    return '<div class="rn-who">' + rnEsc(it.nom) + ' ' + rnEsc(it.prenom) + '<span class="rn-dob">' + rnFmtFr(it.dob) + '</span>'
+      + (it.lib ? '<span class="rn-lib">' + rnEsc(it.lib) + '</span>' : '') + '</div>' +
       '<div class="rn-meta">' + (it.presc ? '<span>👨‍⚕️ ' + rnEsc(it.presc) + '</span>' : '') + (it.tel ? '<span>📞 ' + rnEsc(it.tel) + '</span>' : '') + (it.notes ? '<span>📝 ' + rnEsc(it.notes) + '</span>' : '') + '<span>' + rnBadges(it) + '</span></div>';
   }
+  // Fabrique un bouton réduit à son icône. Le libellé n'est pas perdu : il
+  // s'affiche au survol, et l'icône seule suffit dès qu'on a fait le geste deux fois.
+  function rnIb(fn, it, ico, titre, cls) {
+    return '<button class="rn-ib' + (cls ? ' ' + cls : '') + '" title="' + rnEsc(titre)
+      + '" onclick="' + fn + '(' + it.id + ')">' + ico + '</button>';
+  }
+  // Demande de confirmation : l'état se lit à la couleur du bouton — vert quand le
+  // patient a répondu, sable quand on attend encore.
+  function rnIbConf(it) {
+    const c = it.conf;
+    const cls = (c && c.choix) ? 'rn-ib-on' : (c && c.sentAt) ? 'rn-ib-att' : '';
+    const t = (c && c.choix) ? 'Le patient a répondu — sa décision est définitive'
+      : (c && c.sentAt) ? 'Demande envoyée le ' + rnFmtFr(c.sentAt.slice(0, 10)) + ' — sans réponse'
+        : 'Demander confirmation au patient (SMS)';
+    return rnIb('rnDemandeConf', it, '\u2709', t, cls);
+  }
+  function rnIbLien(it) {
+    if (!it.conf || !it.conf.token) return '';
+    return rnIb('rnVoirLien', it, '\uD83D\uDD17', 'Ouvrir la page que voit le patient — sans envoyer de SMS');
+  }
+
   function rnCard(it) {
     const diff = rnDayDiff(it.date); const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
     return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' + rnMainHtml(it) +
       '</div><div class="rn-acts">' +
-      '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnDemandeConf(' + it.id + ')"' + rnConfBtnStyle(it) + '>\u2709 Confirmation</button>' +
-      (it.conf && it.conf.token ? '<button class="rn-btn rn-ghost rn-mini" title="Ouvrir la page que voit le patient — sans envoyer de SMS" onclick="rnVoirLien(' + it.id + ')">\uD83D\uDD17</button>' : '') +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter / Annuler</button>' +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
+      rnIb('rnPrep', it, '\u2713', 'Préparer l’ordonnance', 'rn-ib-pri') +
+      rnIbConf(it) +
+      rnIbLien(it) +
+      rnIb('rnReport', it, '\uD83D\uDCC5', 'Reporter ou annuler') +
+      rnIb('rnOpenForm', it, '\u270E', 'Modifier') +
       '</div></div>';
   }
   // Vue « Programmés » : TOUS les renouvellements, sans filtre de date,
@@ -381,13 +411,12 @@
     const diff = rnDayDiff(it.date); const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
     return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' + rnMainHtml(it) +
       '</div><div class="rn-acts">' +
-      '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnDemandeConf(' + it.id + ')"' + rnConfBtnStyle(it) + '>\u2709 Confirmation</button>' +
-      (it.conf && it.conf.token ? '<button class="rn-btn rn-ghost rn-mini" title="Ouvrir la page que voit le patient — sans envoyer de SMS" onclick="rnVoirLien(' + it.id + ')">\uD83D\uDD17</button>' : '') +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
-      '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter</button>' +
-      '<button class="rn-btn rn-ghost rn-mini" style="color:#c62828;border-color:#f0cccc" onclick="rnDelete(' + it.id + ')">🗑 Supprimer</button>' +
+      rnIb('rnPrep', it, '\u2713', 'Préparer l’ordonnance', 'rn-ib-pri') +
+      rnIbConf(it) +
+      rnIbLien(it) +
+      rnIb('rnReport', it, '\uD83D\uDCC5', 'Reporter') +
+      rnIb('rnOpenForm', it, '\u270E', 'Modifier') +
+      rnIb('rnDelete', it, '\uD83D\uDDD1', 'Supprimer', 'rn-ib-del') +
       '</div></div>';
   }
   window.rnDelete = function (id) {
@@ -631,23 +660,10 @@
     rnCurId = null; rnPendingNext = null; rnPersist(); rnRender();
   };
 
-  // ---------- SMS au patient (brique partagée définie dans index.html) ----------
-  window.rnSms = function (id) {
-    const it = rnList().find(x => x.id === id); if (!it) return;
-    if (typeof window.openRenouvSms !== 'function') { rnToast('Module SMS indisponible.'); return; }
-    window.openRenouvSms({
-      nom: it.nom, prenom: it.prenom, tel: it.tel || '', lib: it.lib || '',
-      dateFr: rnFmtFr(it.date),
-      onSent: function (r) {
-        it.smsAt = new Date().toISOString();
-        it.smsBy = rnUser().id;
-        it.smsId = r && r.id || null;
-        it.updatedAt = Date.now();
-        rnToast('SMS noté sur le dossier de ' + it.nom + ' ' + it.prenom + '.');
-        rnPersist(); rnRender();
-      }
-    });
-  };
+  // Le SMS libre au patient a été retiré des lignes : il fait doublon avec
+  // « Prévenir le patient », proposé au moment de la préparation, qui envoie le
+  // bon message au bon moment. Restent ici la demande de confirmation (avant
+  // préparation) et la page patient.
 
 
   // Le nombre de dossiers en attente de vérification s'affiche sur l'onglet :
