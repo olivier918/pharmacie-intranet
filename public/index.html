@@ -33,6 +33,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#f0f4f1;color:var(--
 
 /* ── PIN ── */
 #pin-screen{position:fixed;inset:0;background:var(--g-dark);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:9998}
+.pin-logo{margin-bottom:1.1rem}
+.pin-logo img{display:block;height:64px;width:auto;background:#fff;border-radius:14px;padding:7px}
+@media(max-height:640px){.pin-logo{display:none}}
 .pin-label{color:rgba(255,255,255,.7);font-size:.85rem;margin-bottom:.75rem}
 .pin-who{color:#fff;font-size:1.3rem;font-weight:600;margin-bottom:1.5rem}
 .pin-chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:340px;margin-bottom:1.5rem}
@@ -437,6 +440,7 @@ tr:hover td{background:#fafffe}
 
 <!-- ═══ PIN ═══ -->
 <div id="pin-screen">
+  <div class="pin-logo"><img src="/pilot-mark.png" alt="PILOT"></div>
   <div class="pin-label">Entrez votre code PIN</div>
   <div class="pin-who" id="pin-who" style="min-height:1.8rem"> </div>
   <div class="pin-dots" id="pin-dots">
