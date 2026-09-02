@@ -1,13 +1,13 @@
 /* ════════════════════════════════════════════════════════════════════════════
    Module DÉPANNAGE — bons de commande de dépannage (Secours Pharma / Movianto)
    ────────────────────────────────────────────────────────────────────────────
-   Le circuit réel : on appelle le service relation clients, ils renvoient un bon
-   pré-rempli portant un numéro de référence à usage unique, la pharmacie le
-   complète (coordonnées, date, lieu, signature) et le retourne par e-mail au
-   dépositaire, qui livre en 24 h si le bon part avant 15 h, 48 h sinon.
+   Le circuit réel : on appelle le service relation clients, la pharmacie complète
+   le bon (produit, quantité, coordonnées, date, signature) et le retourne par
+   e-mail au dépositaire, qui livre en 24 h si le bon part avant 15 h, 48 h sinon.
 
-   Ce module reproduit ce bon, pré-rempli avec les coordonnées de l'officine et
-   la signature du pharmacien connecté, l'enregistre et l'envoie sur demande.
+   Ce module reproduit ce bon entièrement pré-rempli — numéro de référence,
+   produit habituel, coordonnées de l'officine, signature du pharmacien connecté :
+   il ne reste que la QUANTITÉ à saisir. Il l'enregistre et l'envoie sur demande.
    Isolé sous le préfixe dp- : rien d'existant n'est modifié.
    Collection synchronisée : depannages[] (déclarée dans index.html).
    ════════════════════════════════════════════════════════════════════════════ */
@@ -45,6 +45,10 @@
   // Produit habituellement dépanné par ce circuit : le bon s'ouvre déjà rempli,
   // il ne reste que la quantité à saisir. Modifiable ligne à ligne si besoin.
   const DP_PRODUIT_HABITUEL = { cip: '300.285.82', produit: 'REPATHA 140 mg Stylo pré-rempli Sureclick' };
+  // Le numéro de référence de ce circuit ne change pas : il est pré-rempli, jamais à saisir.
+  // S'il venait à changer, il suffit de le corriger une fois sur un bon : dpDernier() reprend
+  // ensuite toujours la dernière valeur utilisée.
+  const DP_REF = 'P260831014421';
   const DP_CHIFFRES = ['zéro', 'une', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix',
     'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf', 'vingt'];
   // « 3 » saisi au comptoir devient « 3 (trois) » et « Pour 3 patients », comme sur leur bon
@@ -373,7 +377,7 @@
     const now = new Date();
     const moi = dpMoi();
     const rec = {
-      id: newId(), ref: '', date: iso(now), dateBon: iso(now),
+      id: newId(), ref: dpDernier('ref', DP_REF), date: iso(now), dateBon: iso(now),
       heure: String(now.getHours()).padStart(2, '0') + 'h' + String(now.getMinutes()).padStart(2, '0'),
       lignes: [{ cip: DP_PRODUIT_HABITUEL.cip, produit: DP_PRODUIT_HABITUEL.produit, qte: '', patients: '' }],
       pharmacien: moi.nom, sig: moi.sig, statut: 'brouillon',
@@ -383,7 +387,7 @@
     };
     L().unshift(rec);
     persist(); dpRender();
-    setTimeout(() => { const e = document.getElementById('dp-f-' + rec.id + '-ref'); if (e) e.focus(); }, 60);
+    setTimeout(() => { const e = document.getElementById('dp-l-' + rec.id + '-0-nb'); if (e) e.focus(); }, 60);
   };
   window.dpSet = function (id, champ, val) {
     const rec = L().find(x => x.id === id); if (!rec) return;
@@ -438,7 +442,7 @@
     const src = L().find(x => x.id === id); if (!src) return;
     const now = new Date(), moi = dpMoi();
     const rec = {
-      id: newId(), ref: '', date: iso(now), dateBon: iso(now),
+      id: newId(), ref: src.ref || dpDernier('ref', DP_REF), date: iso(now), dateBon: iso(now),
       heure: String(now.getHours()).padStart(2, '0') + 'h' + String(now.getMinutes()).padStart(2, '0'),
       lignes: (src.lignes || []).map(l => ({ cip: l.cip, produit: l.produit, qte: l.qte, patients: '' })),
       pharmacien: moi.nom, sig: moi.sig, statut: 'brouillon',
@@ -447,7 +451,7 @@
       updatedAt: Date.now()
     };
     L().unshift(rec); persist(); dpRender();
-    setTimeout(() => { const e = document.getElementById('dp-f-' + rec.id + '-ref'); if (e) e.focus(); }, 60);
+    setTimeout(() => { const e = document.getElementById('dp-l-' + rec.id + '-0-nb'); if (e) e.focus(); }, 60);
   };
 
   // ── rendu ───────────────────────────────────────────────────────────────────
@@ -467,6 +471,7 @@
     // Un brouillon ouvert avant le pré-remplissage (ligne entièrement vide) reçoit
     // le produit habituel : on ne laisse jamais un bon partir sans sa ligne produit.
     brouillons.forEach(rec => {
+      if (!rec.ref) rec.ref = dpDernier('ref', DP_REF);
       const l = rec.lignes && rec.lignes.length === 1 ? rec.lignes[0] : null;
       if (l && !l.cip && !l.produit && !l.qte) { l.cip = DP_PRODUIT_HABITUEL.cip; l.produit = DP_PRODUIT_HABITUEL.produit; }
     });
@@ -482,7 +487,7 @@
       H += '<div class="dp-card">'
         + '<b>Bon en préparation</b>'
         + '<div class="dp-form">'
-        + '<label style="flex:1 1 210px">N° de référence <span style="font-weight:400">— celui du bon reçu</span>'
+        + '<label style="flex:1 1 210px">N° de référence <span style="font-weight:400">— toujours le même, déjà rempli</span>'
         + '<input class="dp-inp" id="dp-f-' + rec.id + '-ref" value="' + E(rec.ref) + '" placeholder="P26-0831014421" onchange="dpSet(\'' + rec.id + '\',\'ref\',this.value.trim())"></label>'
         + '<label>Date du bon<input type="date" class="dp-inp" id="dp-f-' + rec.id + '-dateBon" value="' + E(rec.dateBon) + '" onchange="dpSet(\'' + rec.id + '\',\'dateBon\',this.value)"></label>'
         + '<label>Fait le<input type="date" class="dp-inp" id="dp-f-' + rec.id + '-date" value="' + E(rec.date) + '" onchange="dpSet(\'' + rec.id + '\',\'date\',this.value)"></label>'
