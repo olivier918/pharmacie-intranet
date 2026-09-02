@@ -11,6 +11,10 @@
 // ─────────────────────────────────────────────────────────────
 const fs = require('fs');
 
+// Meme regle que dans server.js : en mode heberge, le disque est ephemere et ne
+// doit jamais servir de stockage de repli (voir refuserDisque()).
+const MODE_HEBERGE = !!process.env.DATABASE_URL || process.env.REQUIRE_DB === '1';
+
 const DELIV_DAYS = parseInt(process.env.RETENTION_DELIVERIES_DAYS || '15', 10);
 const PREPS_DAYS = parseInt(process.env.RETENTION_PREPS_DAYS || '90', 10);
 const HISTORY_MIN_INTERVAL_MIN = parseInt(process.env.HISTORY_MIN_INTERVAL_MIN || '5', 10);
@@ -84,7 +88,7 @@ async function pruneStored(db, dataFile) {
           return true;
         }
       }
-    } else if (dataFile && fs.existsSync(dataFile)) {
+    } else if (!MODE_HEBERGE && dataFile && fs.existsSync(dataFile)) {
       const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
       const pruned = pruneRetention(data);
       if (changed(data, pruned)) {

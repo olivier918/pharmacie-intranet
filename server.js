@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 // Identifiant de version : change à chaque déploiement Railway (commit) ou,
 // en local, à chaque redémarrage du serveur. Sert à l'auto-rafraîchissement
 // des postes (voir /api/version).
-const BUILD_ID = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.BUILD_ID || String(Date.now());
+const BUILD_ID = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || process.env.BUILD_ID || String(Date.now());
 const DATA_FILE = path.join(__dirname, 'data', 'pharmacie-data.json');
 const HISTORY_DIR = path.join(__dirname, 'data', 'history');
 const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de données)
@@ -54,6 +54,30 @@ let db = null;
 let dbError = null;      // dernier message d'erreur de connexion (diagnostic)
 let dbConnectedAt = null;
 const DATABASE_URL = process.env.DATABASE_URL;
+
+// ─── Politique de persistance ─────────────────────────────────────────────
+// Sur un hebergeur (Scalingo, Railway, Heroku...), le disque du conteneur est
+// EPHEMERE : il revient a l'etat du depot Git a chaque deploiement, chaque
+// redemarrage et chaque deplacement de la machine. Une ecriture dans data/ y
+// disparait sans le moindre message. La regle est donc sans exception :
+//   - DATABASE_URL definie -> PostgreSQL obligatoire, aucun repli sur disque.
+//   - DATABASE_URL absente -> installation locale (PC de l'officine), mode fichier.
+// REQUIRE_DB=1 couvre le dernier cas dangereux : la variable oubliee sur l'hebergeur.
+const REQUIRE_DB = process.env.REQUIRE_DB === '1';
+const MODE_HEBERGE = !!DATABASE_URL || REQUIRE_DB;
+
+// Garde-fou : toute ecriture disque de donnees metier passe par ici. En mode
+// heberge elle echoue bruyamment plutot que d'ecrire dans le vide. Le poste
+// recoit alors une erreur et affiche « Modifications NON enregistrees » —
+// mille fois preferable a une sauvegarde silencieuse qui sera effacee.
+function refuserDisque(operation) {
+  if (MODE_HEBERGE) {
+    throw new Error(
+      'Ecriture disque refusee (' + operation + ') : serveur en mode heberge, ' +
+      'les donnees doivent etre ecrites en base PostgreSQL.'
+    );
+  }
+}
 
 // ─── ENVOI D'E-MAILS ───
 // Deux méthodes possibles :
@@ -154,6 +178,14 @@ function sendViaBrevo({ to, cc, subject, text, from, attachments }) {
 
 async function initDB() {
   if (!DATABASE_URL) {
+    if (REQUIRE_DB) {
+      console.error('');
+      console.error('  ⛔ REQUIRE_DB=1 mais DATABASE_URL est absente : arret du serveur.');
+      console.error('     Le disque de ce serveur est ephemere. Demarrer en mode fichier');
+      console.error('     ferait perdre toute la saisie au prochain redemarrage.');
+      console.error('');
+      process.exit(1);
+    }
     console.log('  📁 Mode fichier local (pas de DATABASE_URL)');
     return;
   }
@@ -189,9 +221,14 @@ async function initDB() {
     console.log('  🐘 Base PostgreSQL connectée !');
   } catch (err) {
     dbError = err.message;
-    console.error('  ❌ Erreur connexion PostgreSQL:', err.message);
-    console.log('  📁 Repli sur fichier local');
     db = null;
+    console.error('');
+    console.error('  ⛔ Connexion PostgreSQL impossible :', err.message);
+    console.error('     AUCUN repli sur le disque : il est ephemere sur un hebergeur,');
+    console.error('     la saisie de la journee y serait perdue en silence.');
+    console.error('     Le serveur s\'arrete ; la plateforme le relancera.');
+    console.error('');
+    process.exit(1);
   }
 }
 
@@ -301,6 +338,9 @@ app.get('/api/sonnette/last', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({
     mode: db ? 'postgresql' : 'fichier',
+    heberge: MODE_HEBERGE,
+    degrade: MODE_HEBERGE && !db,
+    sessionSecret: !!process.env.SESSION_SECRET,
     hasDatabaseUrl: !!DATABASE_URL,
     dbConnectedAt,
     dbError,
@@ -488,6 +528,7 @@ async function marquerCreditPaye(creditId, info) {
     await db.query('UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(data)]);
     return true;
   }
+  refuserDisque('credit paye');
   if (!fs.existsSync(DATA_FILE)) return false;
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   if (!appliquer(data)) return false;
@@ -516,6 +557,7 @@ async function snapshotCurrent() {
         );
       }
     } else {
+      refuserDisque('snapshot historique');
       if (fs.existsSync(DATA_FILE)) {
         if (!fs.existsSync(HISTORY_DIR)) fs.mkdirSync(HISTORY_DIR, { recursive: true });
         // Throttle : dernier snapshot trop récent ?
@@ -736,8 +778,11 @@ app.get('/api/data', async (req, res) => {
       return res.json(null);
     }
   } catch (err) {
+    // Surtout PAS `res.json(null)` : un 200 au corps vide, le poste le lit comme
+    // « la base est vide », il s'autorise a sauvegarder et ecrase l'etat reel.
+    // Un 503 verrouille les sauvegardes cote client (_loadedOK reste a false).
     console.error('Erreur lecture:', err.message);
-    res.json(null);
+    res.status(503).json({ ok: false, error: 'Base de donnees injoignable' });
   }
 });
 
@@ -760,6 +805,7 @@ app.post('/api/data', async (req, res) => {
       );
     } else {
       // Fichier local — même logique de fusion
+      refuserDisque('sauvegarde /api/data');
       const dir = path.dirname(DATA_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       let existing = {};
@@ -802,6 +848,7 @@ async function renouvLire() {
 }
 async function renouvEcrire(etat) {
   if (db) { await db.query('UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(etat)]); return; }
+  refuserDisque('confirmation renouvellement');
   const dir = path.dirname(DATA_FILE);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify(etat, null, 2), 'utf8');
@@ -914,6 +961,10 @@ app.get('/api/backups/:id', async (req, res) => {
 // ─── Start server ───
 async function start() {
   await initDB();
+  if (MODE_HEBERGE && !process.env.SESSION_SECRET) {
+    console.warn('  ⚠️  SESSION_SECRET non definie : le secret est regenere a chaque');
+    console.warn('     redemarrage, donc tout le monde est deconnecte a chaque deploiement.');
+  }
   initMail();
   logSmsStatus();
   paiement.logStatus();
