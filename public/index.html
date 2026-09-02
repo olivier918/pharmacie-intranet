@@ -5824,6 +5824,7 @@ function renderCreds(){
             ${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avance du ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}
           </div>
           ${c.produits?`<div style="font-size:.75rem;color:var(--gray-700);margin-top:2px">${c.produits}</div>`:''}
+          ${credDerniereNoteHtml(c)}
           ${closed}${huis}${pay}
         </div>
         <div style="flex:none;text-align:right">
@@ -6038,6 +6039,69 @@ function saveCredSolder(){
   renderCreds();
 }
 
+// ── Notes datées ───────────────────────────────────────────────────────────
+// Un fil de notes propre au dossier : ce que le patient a dit, ce qu'on a
+// promis, ce qu'on attend. Distinct des relances, qui sont la procédure :
+// une note ne relance rien et ne remet pas à zéro le compteur des 14 jours.
+function credNotes(c){ return Array.isArray(c.journal) ? c.journal : (c.journal=[]); }
+function credJournalHtml(c){
+  const n=credNotes(c).slice().sort((a,b)=>String(b.date+(b.at||'')).localeCompare(String(a.date+(a.at||''))));
+  const lignes = n.length ? n.map(x=>`
+    <div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--gray-100)">
+      <div style="min-width:74px;font-size:.74rem;color:var(--gray-500);font-variant-numeric:tabular-nums;padding-top:1px">${x.date?new Date(x.date).toLocaleDateString('fr-FR'):'—'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.84rem;color:var(--gray-800);white-space:pre-wrap">${ctlEsc(x.texte||'')}</div>
+        <div style="font-size:.7rem;color:var(--gray-500);margin-top:2px">${staffName(x.by)}</div>
+      </div>
+      ${(isAdmin()||(currentUser&&currentUser.id===x.by))?`<button class="btn bd btn-ico sm no-print" title="Supprimer cette note" onclick="credNoteSupprimer(${c.id},'${x.id}')">${ico('corbeille')}</button>`:''}
+    </div>`).join('')
+    : '<div style="font-size:.8rem;color:var(--gray-500);padding:6px 0">Aucune note pour ce dossier.</div>';
+  return `
+    <div style="font-weight:600;font-size:.85rem;color:var(--g-dark);margin-bottom:.4rem">Notes datées (${n.length})</div>
+    <div style="border:1px solid var(--gray-200);border-radius:9px;padding:8px 12px;margin-bottom:1rem">
+      ${lignes}
+      <div style="display:flex;gap:7px;align-items:flex-start;margin-top:9px;flex-wrap:wrap">
+        <input type="date" id="cred-note-date-${c.id}" value="${todayStr()}" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 9px;font-size:.8rem">
+        <textarea id="cred-note-txt-${c.id}" rows="1" placeholder="Ce que le patient a dit, ce qui a été convenu…" style="flex:1;min-width:200px;border:1px solid var(--gray-200);border-radius:7px;padding:6px 9px;font-size:.83rem;font-family:inherit;resize:vertical"></textarea>
+        <button class="btn bs sm" onclick="credNoteAjouter(${c.id})">${ico('valider')} Ajouter</button>
+      </div>
+    </div>`;
+}
+// La note la plus récente s'affiche sur la carte : c'est elle qu'on veut lire
+// avant de décrocher le téléphone, sans avoir à ouvrir le dossier.
+function credDerniereNoteHtml(c){
+  const j=credNotes(c);
+  if(!j.length) return '';
+  const d=j.slice().sort((a,b)=>String(b.date+(b.at||'')).localeCompare(String(a.date+(a.at||''))))[0];
+  const t=String(d.texte||'');
+  return `<div style="font-size:.75rem;color:var(--gray-700);margin-top:4px;background:var(--gray-100);border-radius:7px;padding:5px 9px">
+    ${ico('document')} <span style="color:var(--gray-500);font-variant-numeric:tabular-nums">${d.date?new Date(d.date).toLocaleDateString('fr-FR'):''}</span>
+    ${ctlEsc(t.length>140?t.slice(0,140)+'…':t)}${j.length>1?`<span style="color:var(--gray-500)"> · ${j.length} notes</span>`:''}</div>`;
+}
+function credNoteAjouter(id){
+  const c=credits.find(x=>x.id===id); if(!c) return;
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  const ta=document.getElementById('cred-note-txt-'+id);
+  const dt=document.getElementById('cred-note-date-'+id);
+  const texte=(ta&&ta.value||'').trim();
+  if(!texte){ if(ta) ta.focus(); return; }
+  credNotes(c).push({
+    id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    date:(dt&&dt.value)||todayStr(),
+    at:new Date().toISOString(),
+    texte:texte, by:currentUser.id
+  });
+  c.updatedAt=Date.now();
+  schedSave(); renderCreds(); openCredDetail(id);
+}
+function credNoteSupprimer(id, noteId){
+  const c=credits.find(x=>x.id===id); if(!c) return;
+  const j=credNotes(c); const i=j.findIndex(x=>x.id===noteId); if(i<0) return;
+  if(!isAdmin() && !(currentUser&&currentUser.id===j[i].by)){ alert('Seul l’auteur de la note, ou un administrateur, peut la supprimer.'); return; }
+  j.splice(i,1); c.updatedAt=Date.now();
+  schedSave(); renderCreds(); openCredDetail(id);
+}
+
 function openCredDetail(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   document.getElementById('cred-detail-title').textContent=`${c.nom} ${c.prenom}`;
@@ -6091,6 +6155,8 @@ function openCredDetail(id){
       <div style="grid-column:1/-1"><span style="color:var(--gray-500);font-size:.75rem">Produits avancés</span><div>${c.produits||'—'}</div></div>
       ${c.notes?`<div style="grid-column:1/-1"><span style="color:var(--gray-500);font-size:.75rem">Notes internes</span><div>${c.notes}</div></div>`:''}
     </div>
+
+    ${credJournalHtml(c)}
 
     <div style="font-weight:600;font-size:.85rem;color:var(--g-dark);margin-bottom:.4rem">Historique des relances (${rels.length})</div>
     ${relsHtml}
