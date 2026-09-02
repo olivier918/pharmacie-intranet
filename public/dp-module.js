@@ -42,6 +42,14 @@
   };
 
   const DP_STATUTS = { brouillon: 'Brouillon', envoye: 'Envoyé', recu: 'Reçu', annule: 'Annulé' };
+  // Produit habituellement dépanné par ce circuit : le bon s'ouvre déjà rempli,
+  // il ne reste que la quantité à saisir. Modifiable ligne à ligne si besoin.
+  const DP_PRODUIT_HABITUEL = { cip: '300.285.82', produit: 'REPATHA 140 mg Stylo pré-rempli Sureclick' };
+  const DP_CHIFFRES = ['zéro', 'une', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix',
+    'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf', 'vingt'];
+  // « 3 » saisi au comptoir devient « 3 (trois) » et « Pour 3 patients », comme sur leur bon
+  function dpQte(n) { return n + ' (' + (DP_CHIFFRES[n] || n) + ')'; }
+  function dpPatients(n) { return 'Pour ' + n + ' patient' + (n > 1 ? 's' : ''); }
   // horaires d'ouverture portés sur le bon (le formulaire les demande)
   const DP_HORAIRES = '9h00-12h30 / 14h00-19h30, du lundi au samedi';
   // dernière valeur saisie pour un champ qui ne change jamais : on la propose d'office
@@ -69,6 +77,8 @@
   .dp-lig th{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-500,#6b6b6b);text-align:left;padding:6px 8px;border-bottom:2px solid var(--gray-200,#e6e6e6)}
   .dp-lig td{padding:5px 8px;border-bottom:1px solid var(--gray-200,#e6e6e6);vertical-align:middle}
   .dp-lig .dp-inp{height:32px;width:100%}
+  .dp-qte{text-align:center;font-weight:700;font-size:15px!important}
+  .dp-qte:placeholder-shown{font-weight:400;color:#9aa0a0}
   .dp-mini{padding:4px 10px;font-size:12px;border-radius:7px}
   .dp-note{font-size:11.5px;color:var(--gray-500,#6b6b6b);line-height:1.55;margin-top:10px}
   .dp-alerte{background:#FFF6E5;border:1px solid #F0DCB0;border-left:4px solid #B8821C;border-radius:10px;
@@ -256,26 +266,61 @@
     return d;
   }
 
+  /* Relit ce qui est RÉELLEMENT à l'écran avant de fabriquer le PDF.
+     Un champ encore en cours de saisie (dont l'événement onchange n'est pas
+     encore parti : on clique droit sur « Envoyer », on garde le curseur dans
+     la case, le navigateur avale l'événement…) ne peut donc plus manquer
+     sur le bon : ce qu'on voit est ce qui s'imprime. */
+  function dpSyncDom(rec) {
+    if (!rec) return rec;
+    let chg = false;
+    const g = k => { const e = document.getElementById('dp-f-' + rec.id + '-' + k); return e ? e.value : null; };
+    ['ref', 'dateBon', 'date', 'pharmacien', 'fax', 'horaires'].forEach(c => {
+      const v = g(c); if (v == null) return;
+      const t = (c === 'dateBon' || c === 'date') ? v : v.trim();
+      if ((rec[c] || '') !== t) { rec[c] = t; chg = true; }
+    });
+    (rec.lignes || []).forEach((l, i) => {
+      const gl = k => { const e = document.getElementById('dp-l-' + rec.id + '-' + i + '-' + k); return e ? e.value : null; };
+      const q = gl('nb');
+      if (q != null) {
+        const n = parseInt(String(q).replace(/\D+/g, ''), 10) || null;
+        if ((l.nb || null) !== n) {
+          l.nb = n; l.qte = n ? dpQte(n) : '';
+          if (!l.patientsManuel) l.patients = n ? dpPatients(n) : '';
+          chg = true;
+        }
+      }
+      ['cip', 'produit', 'patients'].forEach(c => {
+        const v = gl(c); if (v == null) return;
+        const t = v.trim();
+        if ((l[c] || '') !== t) { l[c] = t; chg = true; }
+      });
+    });
+    if (chg) { rec.updatedAt = Date.now(); persist(); }
+    return rec;
+  }
+
   function dpNomFichier(rec) {
     return 'bon-depannage-' + String(rec.ref || 'sans-ref').replace(/[^\w.-]+/g, '-') + '.pdf';
   }
 
   window.dpApercu = function (id) {
-    const rec = L().find(x => x.id === id); if (!rec) return;
+    const rec = dpSyncDom(L().find(x => x.id === id)); if (!rec) return;
     const doc = dpPdf(rec);
     if (!doc) { alert("Le générateur de PDF n'est pas disponible sur ce poste."); return; }
     try { window.open(doc.output('bloburl'), '_blank'); }
     catch (e) { doc.save(dpNomFichier(rec)); }
   };
   window.dpTelecharger = function (id) {
-    const rec = L().find(x => x.id === id); if (!rec) return;
+    const rec = dpSyncDom(L().find(x => x.id === id)); if (!rec) return;
     const doc = dpPdf(rec); if (!doc) return;
     doc.save(dpNomFichier(rec));
   };
 
   // ── envoi au dépositaire ────────────────────────────────────────────────────
   window.dpEnvoyer = async function (id) {
-    const rec = L().find(x => x.id === id); if (!rec) return;
+    const rec = dpSyncDom(L().find(x => x.id === id)); if (!rec) return;
     if (!rec.lignes || !rec.lignes.length || !rec.lignes.some(l => l.produit)) { alert('Ajoutez au moins un produit avant d’envoyer.'); return; }
     if (!rec.ref) { alert('Le numéro de référence du bon est obligatoire : c’est lui qui identifie la commande.'); return; }
     const dest = DP_FOURNISSEUR.mail;
@@ -330,7 +375,7 @@
     const rec = {
       id: newId(), ref: '', date: iso(now), dateBon: iso(now),
       heure: String(now.getHours()).padStart(2, '0') + 'h' + String(now.getMinutes()).padStart(2, '0'),
-      lignes: [{ cip: '', produit: '', qte: '', patients: '' }],
+      lignes: [{ cip: DP_PRODUIT_HABITUEL.cip, produit: DP_PRODUIT_HABITUEL.produit, qte: '', patients: '' }],
       pharmacien: moi.nom, sig: moi.sig, statut: 'brouillon',
       fax: dpDernier('fax', ''), horaires: dpDernier('horaires', DP_HORAIRES),
       creePar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null,
@@ -338,7 +383,7 @@
     };
     L().unshift(rec);
     persist(); dpRender();
-    setTimeout(() => { const e = document.getElementById('dp-ref-' + rec.id); if (e) e.focus(); }, 60);
+    setTimeout(() => { const e = document.getElementById('dp-f-' + rec.id + '-ref'); if (e) e.focus(); }, 60);
   };
   window.dpSet = function (id, champ, val) {
     const rec = L().find(x => x.id === id); if (!rec) return;
@@ -349,6 +394,25 @@
     const rec = L().find(x => x.id === id); if (!rec || !rec.lignes || !rec.lignes[i]) return;
     rec.lignes[i][champ] = val; rec.updatedAt = Date.now(); persist();
   };
+  // saisie de la quantité en chiffres : on écrit la mention en lettres et le nombre de patients
+  window.dpSetQte = function (id, i, val) {
+    const rec = L().find(x => x.id === id); if (!rec || !rec.lignes || !rec.lignes[i]) return;
+    const n = parseInt(String(val).replace(/\D+/g, ''), 10);
+    const l = rec.lignes[i];
+    if (!n) { l.nb = null; l.qte = ''; if (!l.patientsManuel) l.patients = ''; }
+    else {
+      l.nb = n; l.qte = dpQte(n);
+      if (!l.patientsManuel) l.patients = dpPatients(n);
+    }
+    rec.updatedAt = Date.now(); persist(); dpRender();
+  };
+  window.dpSetPatients = function (id, i, val) {
+    const rec = L().find(x => x.id === id); if (!rec || !rec.lignes || !rec.lignes[i]) return;
+    const l = rec.lignes[i];
+    l.patients = val;
+    l.patientsManuel = !!val && val !== dpPatients(l.nb || 0);
+    rec.updatedAt = Date.now(); persist();
+  };
   window.dpAddLigne = function (id) {
     const rec = L().find(x => x.id === id); if (!rec) return;
     if (!Array.isArray(rec.lignes)) rec.lignes = [];
@@ -358,7 +422,7 @@
   window.dpDelLigne = function (id, i) {
     const rec = L().find(x => x.id === id); if (!rec || !rec.lignes) return;
     rec.lignes.splice(i, 1);
-    if (!rec.lignes.length) rec.lignes.push({ cip: '', produit: '', qte: '', patients: '' });
+    if (!rec.lignes.length) rec.lignes.push({ cip: DP_PRODUIT_HABITUEL.cip, produit: DP_PRODUIT_HABITUEL.produit, qte: '', patients: '' });
     rec.updatedAt = Date.now(); persist(); dpRender();
   };
   window.dpSupprimer = function (id) {
@@ -383,7 +447,7 @@
       updatedAt: Date.now()
     };
     L().unshift(rec); persist(); dpRender();
-    setTimeout(() => { const e = document.getElementById('dp-ref-' + rec.id); if (e) e.focus(); }, 60);
+    setTimeout(() => { const e = document.getElementById('dp-f-' + rec.id + '-ref'); if (e) e.focus(); }, 60);
   };
 
   // ── rendu ───────────────────────────────────────────────────────────────────
@@ -400,6 +464,12 @@
     const host = document.getElementById('dp-body'); if (!host) return;
     const arr = L().slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     const brouillons = arr.filter(r => r.statut === 'brouillon');
+    // Un brouillon ouvert avant le pré-remplissage (ligne entièrement vide) reçoit
+    // le produit habituel : on ne laisse jamais un bon partir sans sa ligne produit.
+    brouillons.forEach(rec => {
+      const l = rec.lignes && rec.lignes.length === 1 ? rec.lignes[0] : null;
+      if (l && !l.cip && !l.produit && !l.qte) { l.cip = DP_PRODUIT_HABITUEL.cip; l.produit = DP_PRODUIT_HABITUEL.produit; }
+    });
     const suite = arr.filter(r => r.statut !== 'brouillon');
     let H = '';
 
@@ -413,22 +483,24 @@
         + '<b>Bon en préparation</b>'
         + '<div class="dp-form">'
         + '<label style="flex:1 1 210px">N° de référence <span style="font-weight:400">— celui du bon reçu</span>'
-        + '<input class="dp-inp" id="dp-ref-' + rec.id + '" value="' + E(rec.ref) + '" placeholder="P26-0831014421" onchange="dpSet(\'' + rec.id + '\',\'ref\',this.value.trim())"></label>'
-        + '<label>Date du bon<input type="date" class="dp-inp" value="' + E(rec.dateBon) + '" onchange="dpSet(\'' + rec.id + '\',\'dateBon\',this.value)"></label>'
-        + '<label>Fait le<input type="date" class="dp-inp" value="' + E(rec.date) + '" onchange="dpSet(\'' + rec.id + '\',\'date\',this.value)"></label>'
+        + '<input class="dp-inp" id="dp-f-' + rec.id + '-ref" value="' + E(rec.ref) + '" placeholder="P26-0831014421" onchange="dpSet(\'' + rec.id + '\',\'ref\',this.value.trim())"></label>'
+        + '<label>Date du bon<input type="date" class="dp-inp" id="dp-f-' + rec.id + '-dateBon" value="' + E(rec.dateBon) + '" onchange="dpSet(\'' + rec.id + '\',\'dateBon\',this.value)"></label>'
+        + '<label>Fait le<input type="date" class="dp-inp" id="dp-f-' + rec.id + '-date" value="' + E(rec.date) + '" onchange="dpSet(\'' + rec.id + '\',\'date\',this.value)"></label>'
         + '<label style="flex:1 1 200px">Pharmacien signataire'
-        + '<input class="dp-inp" value="' + E(rec.pharmacien) + '" onchange="dpSet(\'' + rec.id + '\',\'pharmacien\',this.value)"></label>'
+        + '<input class="dp-inp" id="dp-f-' + rec.id + '-pharmacien" value="' + E(rec.pharmacien) + '" onchange="dpSet(\'' + rec.id + '\',\'pharmacien\',this.value)"></label>'
         + '<label style="flex:1 1 150px">Fax <span style="font-weight:400">— si vous en avez un</span>'
-        + '<input class="dp-inp" value="' + E(rec.fax || '') + '" placeholder="—" onchange="dpSet(\'' + rec.id + '\',\'fax\',this.value.trim())"></label>'
+        + '<input class="dp-inp" id="dp-f-' + rec.id + '-fax" value="' + E(rec.fax || '') + '" placeholder="—" onchange="dpSet(\'' + rec.id + '\',\'fax\',this.value.trim())"></label>'
         + '<label style="flex:1 1 260px">Horaires d’ouverture <span style="font-weight:400">— demandés sur le bon</span>'
-        + '<input class="dp-inp" value="' + E(rec.horaires || '') + '" onchange="dpSet(\'' + rec.id + '\',\'horaires\',this.value.trim())"></label>'
+        + '<input class="dp-inp" id="dp-f-' + rec.id + '-horaires" value="' + E(rec.horaires || '') + '" onchange="dpSet(\'' + rec.id + '\',\'horaires\',this.value.trim())"></label>'
         + '</div>'
-        + '<table class="dp-lig"><tr><th style="width:120px">CIP</th><th>Produit</th><th style="width:110px">Quantité</th><th style="width:150px">Précision</th><th style="width:36px"></th></tr>'
+        + '<table class="dp-lig"><tr><th style="width:120px">CIP</th><th>Produit</th><th style="width:90px">Quantité</th><th style="width:170px">Mention sur le bon</th><th style="width:36px"></th></tr>'
         + (rec.lignes || []).map((l, i) => '<tr>'
-          + '<td><input class="dp-inp" value="' + E(l.cip) + '" placeholder="300.285.82" onchange="dpSetLigne(\'' + rec.id + '\',' + i + ',\'cip\',this.value.trim())"></td>'
-          + '<td><input class="dp-inp" value="' + E(l.produit) + '" placeholder="REPATHA 140 mg stylo pré-rempli SureClick" onchange="dpSetLigne(\'' + rec.id + '\',' + i + ',\'produit\',this.value.trim())"></td>'
-          + '<td><input class="dp-inp" value="' + E(l.qte) + '" placeholder="3 (trois)" onchange="dpSetLigne(\'' + rec.id + '\',' + i + ',\'qte\',this.value.trim())"></td>'
-          + '<td><input class="dp-inp" value="' + E(l.patients) + '" placeholder="Pour 3 patients" onchange="dpSetLigne(\'' + rec.id + '\',' + i + ',\'patients\',this.value.trim())"></td>'
+          + '<td><input class="dp-inp" id="dp-l-' + rec.id + '-' + i + '-cip" value="' + E(l.cip) + '" onchange="dpSetLigne(\'' + rec.id + '\',' + i + ',\'cip\',this.value.trim())"></td>'
+          + '<td><input class="dp-inp" id="dp-l-' + rec.id + '-' + i + '-produit" value="' + E(l.produit) + '" onchange="dpSetLigne(\'' + rec.id + '\',' + i + ',\'produit\',this.value.trim())"></td>'
+          + '<td><input class="dp-inp dp-qte" id="dp-l-' + rec.id + '-' + i + '-nb" type="number" min="1" max="20" value="' + (l.nb != null ? l.nb : '') + '" placeholder="3"'
+          + ' title="Nombre de boîtes — la mention en lettres et le nombre de patients se remplissent tout seuls"'
+          + ' oninput="dpSetQte(\'' + rec.id + '\',' + i + ',this.value)"></td>'
+          + '<td><input class="dp-inp" id="dp-l-' + rec.id + '-' + i + '-patients" value="' + E(l.patients) + '" onchange="dpSetPatients(\'' + rec.id + '\',' + i + ',this.value.trim())"></td>'
           + '<td><button class="btn bs sm dp-mini" title="Retirer cette ligne" onclick="dpDelLigne(\'' + rec.id + '\',' + i + ')">✕</button></td></tr>').join('')
         + '</table>'
         + '<div style="margin-top:8px"><button class="btn bs sm dp-mini" onclick="dpAddLigne(\'' + rec.id + '\')">＋ Ajouter un produit</button></div>'
