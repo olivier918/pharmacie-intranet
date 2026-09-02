@@ -349,6 +349,7 @@
       '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnDemandeConf(' + it.id + ')"' + rnConfBtnStyle(it) + '>\u2709 Confirmation</button>' +
+      (it.conf && it.conf.token ? '<button class="rn-btn rn-ghost rn-mini" title="Ouvrir la page que voit le patient — sans envoyer de SMS" onclick="rnVoirLien(' + it.id + ')">\uD83D\uDD17</button>' : '') +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter / Annuler</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
       '</div></div>';
@@ -383,6 +384,7 @@
       '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnDemandeConf(' + it.id + ')"' + rnConfBtnStyle(it) + '>\u2709 Confirmation</button>' +
+      (it.conf && it.conf.token ? '<button class="rn-btn rn-ghost rn-mini" title="Ouvrir la page que voit le patient — sans envoyer de SMS" onclick="rnVoirLien(' + it.id + ')">\uD83D\uDD17</button>' : '') +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter</button>' +
       '<button class="rn-btn rn-ghost rn-mini" style="color:#c62828;border-color:#f0cccc" onclick="rnDelete(' + it.id + ')">🗑 Supprimer</button>' +
@@ -683,9 +685,16 @@
 
     // Le lien reste valable tant que le patient n'a pas répondu : on garde le
     // jeton déjà émis pour qu'un premier SMS conservé sur le téléphone marche encore.
-    if (!it.conf || !it.conf.token) it.conf = Object.assign({}, it.conf, { token: rnJeton() });
+    // Le jeton est ENREGISTRÉ TOUT DE SUITE : s'il n'existait qu'en mémoire jusqu'à
+    // l'envoi, un rafraîchissement (toutes les 8 s) l'effacerait et le lien du SMS
+    // ouvrirait sur « lien non valable ».
+    if (!it.conf || !it.conf.token) {
+      it.conf = Object.assign({}, it.conf, { token: rnJeton() });
+      it.updatedAt = Date.now();
+      rnPersist();
+    }
     const lien = location.origin + '/r/' + it.conf.token;
-    const texte = 'Pharmacie du Centre : merci de confirmer votre renouvellement ici : ' + lien;
+    const texte = rnTexteSms(it, lien);
 
     window.openSmsModal({
       titre: 'Demande de confirmation au patient',
@@ -699,12 +708,39 @@
         it.conf.sentAt = new Date().toISOString();
         it.conf.sentBy = rnUser().id;
         it.conf.smsId = (r && r.id) || null;
+        it.conf.envois = (it.conf.envois || 0) + 1;
         it.updatedAt = Date.now();
         rnToast('Demande envoyée à ' + it.prenom + ' ' + it.nom + '.');
         rnPersist(); rnRender();
       }
     });
   };
+  // Deux SMS ne sont jamais rigoureusement identiques : le prénom, et la mention
+  // « rappel » à partir du deuxième envoi, les distinguent — utile face aux filtres
+  // anti-doublon des opérateurs, et plus clair pour le patient. Le prénom est ramené
+  // à l'alphabet latin simple : un seul caractère accentué exotique ferait basculer
+  // tout le message en Unicode, donc de 160 à 70 caractères par SMS.
+  function rnAscii(t) {
+    return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9 '\-]/g, '').trim();
+  }
+  function rnTexteSms(it, lien) {
+    const rappel = (it.conf && it.conf.envois > 0);
+    const faire = p => 'Pharmacie du Centre : ' + (p ? p + ', ' : '')
+      + (rappel ? 'rappel, ' : '') + 'merci de confirmer votre renouvellement : ' + lien;
+    const avec = faire(rnAscii(it.prenom));
+    // Un prénom long ferait basculer le message sur deux SMS : dans ce cas on
+    // s'en passe plutôt que de facturer un SMS de plus à chaque envoi.
+    return avec.length <= 160 ? avec : faire('');
+  }
+
+  // Vérifier le lien soi-même, sans envoyer de SMS : indispensable pour lever un
+  // doute (« le patient dit que ça ne marche pas ») en deux secondes.
+  window.rnVoirLien = function (id) {
+    const it = rnList().find(x => x.id === id); if (!it) return;
+    if (!it.conf || !it.conf.token) { rnToast('Aucune demande envoyée pour l’instant.'); return; }
+    window.open(location.origin + '/r/' + it.conf.token, '_blank');
+  };
+
   // Copie du lien : utile si le patient n'a pas de mobile mais consulte ses mails,
   // ou pour le lui dicter au téléphone.
   window.rnCopierLien = function (id) {

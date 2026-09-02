@@ -8161,6 +8161,7 @@ function smsLogPush(o){
     id:smsNewId(), date:new Date().toISOString(),
     nom:o.nom||'', prenom:o.prenom||'', tel:o.tel||'', to:o.to||o.tel||'',
     text:o.text||'', smsId:o.smsId||null, source:o.source||'module', manual:!!o.manual,
+    erreur:o.erreur||null,
     by:(currentUser&&currentUser.id)||'?', updatedAt:Date.now()
   });
 }
@@ -8297,6 +8298,7 @@ function renderSmsLog(){
         ${isAdmin()?`<button class="btn bd btn-ico no-print" onclick="deleteSmsLog(${r.id})" title="Supprimer de l'historique">${ico('corbeille')}</button>`:''}
       </div>
       <div style="font-size:.82rem;color:var(--gray-700);margin-top:7px;white-space:pre-wrap;background:var(--gray-100);border-radius:8px;padding:8px 11px">${ctlEsc(r.text||'')}</div>
+      ${r.erreur?`<div style="font-size:.78rem;color:#B23A2F;background:#FBE9E7;border:1px solid #F3C9C2;border-radius:8px;padding:7px 11px;margin-top:6px"><strong>Non parti</strong> — ${ctlEsc(r.erreur)}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -8562,8 +8564,13 @@ function doSendSms(){
     })
     .catch(err=>{
       btn.innerHTML=old; btn.disabled=false; btn.style.opacity='1';
+      const motif=(err&&err.message)||'erreur inconnue';
+      // L'échec est consigné : c'est lui qui dira pourquoi un patient n'a rien reçu.
+      smsLogPush({nom:smsCtx&&smsCtx.nom, prenom:smsCtx&&smsCtx.prenom, tel:to, to:to, text, smsId:null,
+                  source:(smsCtx&&smsCtx.source)||'module', erreur:motif});
+      try{ renderSmsLog(); schedSave(); }catch(e){}
       const warn=document.getElementById('sms-warn');
-      warn.textContent='Échec de l’envoi : '+(err&&err.message||'erreur inconnue');
+      warn.textContent='Échec de l’envoi : '+motif;
       warn.style.display='block';
       warn.style.background='var(--red-pale)'; warn.style.border='1px solid #ffcdd2'; warn.style.color='var(--red)';
     });
