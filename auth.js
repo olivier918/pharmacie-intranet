@@ -27,6 +27,12 @@ const SECURE = process.env.NODE_ENV === 'production' || !!process.env.DATABASE_U
 // pour que la règle reste vraie si l'ordre des middlewares changeait un jour.
 const ALLOW = new Set(['/api/login', '/api/logout', '/api/health', '/api/version', '/login', '/api/paiement/webhook']);
 
+// Préfixes joignables sans session : la page de confirmation envoyée au PATIENT
+// par SMS. Le patient n'a évidemment pas de compte ; l'accès est protégé par le
+// jeton aléatoire contenu dans le lien, qui ne donne accès qu'à SA demande et à
+// rien d'autre (voir /api/renouv/:token dans server.js).
+const ALLOW_PREFIXES = ['/r/', '/api/renouv/'];
+
 function b64url(buf) { return Buffer.from(buf).toString('base64url'); }
 
 function sign(payloadObj) {
@@ -127,6 +133,7 @@ function install(app) {
 function gate(req, res, next) {
   if (AUTH_DISABLED) return next();
   if (ALLOW.has(req.path)) return next();
+  if (ALLOW_PREFIXES.some(p => req.path.startsWith(p))) return next();
   if (isAuthed(req)) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ ok: false, error: 'auth_required' });
   return res.status(200).type('html').send(LOGIN_HTML);

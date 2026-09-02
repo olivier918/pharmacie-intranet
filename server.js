@@ -780,6 +780,103 @@ app.post('/api/data', async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+//  CONFIRMATION DU RENOUVELLEMENT PAR LE PATIENT (page publique, sans compte)
+//  ────────────────────────────────────────────────────────────────────────
+//  Le patient reçoit par SMS un lien /r/<jeton>. Le jeton est aléatoire (128
+//  bits), à usage unique, et ne donne accès qu'à SA demande : ni la liste des
+//  patients, ni les autres ordonnances ne sont joignables par cette route.
+//  La page ne renvoie au patient que son prénom, l'échéance et le téléphone de
+//  l'officine — jamais le nom du traitement, qui n'a pas à circuler sur le web.
+//  La décision est DÉFINITIVE : une fois enregistrée, le lien ne fait plus que
+//  la rappeler, en invitant à appeler l'officine pour la modifier.
+// ══════════════════════════════════════════════════════════════════════════
+const RENOUV_OFFICINE = { nom: 'Pharmacie du Centre', tel: '02 31 52 15 71' };
+
+app.get('/r/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'renouv.html')));
+
+async function renouvLire() {
+  if (db) { const r = await db.query('SELECT data FROM app_data WHERE id = 1'); return (r.rows[0] && r.rows[0].data) || {}; }
+  if (fs.existsSync(DATA_FILE)) { try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) { return {}; } }
+  return {};
+}
+async function renouvEcrire(etat) {
+  if (db) { await db.query('UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(etat)]); return; }
+  const dir = path.dirname(DATA_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(DATA_FILE, JSON.stringify(etat, null, 2), 'utf8');
+}
+// Les réponses des patients arrivent une par une mais peuvent se croiser : on les
+// sérialise pour qu'une lecture-modification-écriture n'en efface jamais une autre.
+let _renouvFile = Promise.resolve();
+function renouvSerialise(fn) { const p = _renouvFile.then(fn, fn); _renouvFile = p.catch(() => { }); return p; }
+
+function renouvParJeton(etat, token) {
+  const arr = Array.isArray(etat.renouvellements) ? etat.renouvellements : [];
+  return arr.find(r => r && r.conf && r.conf.token === token) || null;
+}
+function renouvVue(rec) {
+  const c = rec.conf || {};
+  return {
+    ok: true,
+    officine: RENOUV_OFFICINE.nom,
+    tel: RENOUV_OFFICINE.tel,
+    prenom: rec.prenom || '',
+    echeance: rec.date || '',
+    repondu: !!c.choix,
+    choix: c.choix || null,
+    dateChoisie: c.dateChoisie || null,
+    repondule: c.at || null
+  };
+}
+
+app.get('/api/renouv/:token', async (req, res) => {
+  try {
+    const etat = await renouvLire();
+    const rec = renouvParJeton(etat, String(req.params.token || ''));
+    if (!rec) return res.status(404).json({ ok: false, error: 'lien_inconnu' });
+    res.json(renouvVue(rec));
+  } catch (e) {
+    console.error('Renouv (lecture):', e.message);
+    res.status(500).json({ ok: false, error: 'serveur' });
+  }
+});
+
+app.post('/api/renouv/:token', async (req, res) => {
+  const token = String(req.params.token || '');
+  const choix = String((req.body && req.body.choix) || '');
+  const dateChoisie = String((req.body && req.body.date) || '');
+  if (['confirme', 'reporte', 'arret'].indexOf(choix) < 0) return res.status(400).json({ ok: false, error: 'choix_invalide' });
+  if (choix === 'reporte') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateChoisie)) return res.status(400).json({ ok: false, error: 'date_requise' });
+    const d = new Date(dateChoisie + 'T12:00'), now = new Date();
+    const max = new Date(now.getTime() + 365 * 86400000);
+    if (isNaN(d.getTime()) || d <= now || d > max) return res.status(400).json({ ok: false, error: 'date_hors_limites' });
+  }
+  try {
+    const out = await renouvSerialise(async () => {
+      const etat = await renouvLire();
+      const rec = renouvParJeton(etat, token);
+      if (!rec) return { code: 404, corps: { ok: false, error: 'lien_inconnu' } };
+      // Décision définitive : on ne l'écrase jamais, on la rappelle.
+      if (rec.conf && rec.conf.choix) return { code: 200, corps: Object.assign(renouvVue(rec), { deja: true }) };
+      rec.conf = rec.conf || {};
+      rec.conf.choix = choix;
+      rec.conf.at = new Date().toISOString();
+      if (choix === 'reporte') { rec.conf.dateChoisie = dateChoisie; rec.date = dateChoisie; }
+      if (choix === 'confirme') { rec.confirme = true; }
+      if (choix === 'arret') { rec.pause = true; }   // sort de « à préparer », passe en « à vérifier »
+      rec.updatedAt = Date.now();
+      await renouvEcrire(etat);
+      return { code: 200, corps: renouvVue(rec) };
+    });
+    res.status(out.code).json(out.corps);
+  } catch (e) {
+    console.error('Renouv (réponse):', e.message);
+    res.status(500).json({ ok: false, error: 'serveur' });
+  }
+});
+
 // ─── Liste des snapshots d'historique ───
 app.get('/api/backups', async (req, res) => {
   try {

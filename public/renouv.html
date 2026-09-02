@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Confirmation de votre renouvellement</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --vert:#348466; --vert-fonce:#1D5C3A; --rose:#D26E96;
+    --encre:#1c231f; --gris:#6b7a72; --trait:#e2ebe5; --fond:#f4f7f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fond);color:var(--encre);
+    font-family:'Schibsted Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .page{max-width:520px;margin:0 auto;padding:28px 18px 48px}
+  header{text-align:center;margin-bottom:22px}
+  .officine{font-size:1.05rem;font-weight:700;color:var(--vert-fonce)}
+  .tel{font-size:.92rem;color:var(--gris);margin-top:2px;font-variant-numeric:tabular-nums}
+  .carte{background:#fff;border:1px solid var(--trait);border-radius:16px;padding:22px 20px;
+    box-shadow:0 2px 10px rgba(20,50,35,.05)}
+  h1{font-size:1.22rem;margin:0 0 6px;line-height:1.3}
+  .sous{color:var(--gris);font-size:.95rem;margin:0 0 20px}
+  .ech{display:inline-block;background:#E9F5EE;color:var(--vert-fonce);border-radius:8px;
+    padding:3px 10px;font-weight:600;font-size:.92rem;font-variant-numeric:tabular-nums}
+  .choix{display:flex;flex-direction:column;gap:11px;margin-top:20px}
+  button{font:inherit;cursor:pointer;border-radius:12px;border:1px solid var(--trait);
+    background:#fff;color:var(--encre);padding:15px 16px;text-align:left;width:100%;
+    display:flex;align-items:center;gap:12px;transition:border-color .15s,background .15s}
+  button:hover:not(:disabled){border-color:var(--vert);background:#fbfdfc}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  button .ico{font-size:1.3rem;line-height:1;flex:none;width:26px;text-align:center}
+  button .lbl{font-weight:600}
+  button .exp{display:block;font-weight:400;font-size:.85rem;color:var(--gris);margin-top:1px}
+  button.sel{border-color:var(--vert);background:#E9F5EE;box-shadow:inset 0 0 0 1px var(--vert)}
+  .report{margin-top:12px;padding:14px;border:1px dashed var(--trait);border-radius:12px;background:#fafcfb}
+  .report label{display:block;font-size:.85rem;font-weight:600;color:var(--gris);margin-bottom:6px}
+  input[type=date]{font:inherit;width:100%;height:48px;padding:0 12px;border:1px solid var(--trait);
+    border-radius:10px;background:#fff;color:var(--encre)}
+  input[type=date]:focus{outline:none;border-color:var(--vert);box-shadow:0 0 0 3px rgba(52,132,102,.14)}
+  .valider{margin-top:16px;background:var(--vert);border-color:var(--vert);color:#fff;
+    justify-content:center;font-weight:700;font-size:1.02rem;padding:16px}
+  .valider:hover:not(:disabled){background:var(--vert-fonce);border-color:var(--vert-fonce)}
+  .msg{margin-top:14px;padding:12px 14px;border-radius:10px;font-size:.9rem;display:none}
+  .msg.err{display:block;background:#FBE9E7;border:1px solid #F3C9C2;color:#8A2B22}
+  .fin{text-align:center;padding:8px 0 4px}
+  .fin .rond{width:64px;height:64px;border-radius:50%;background:#E9F5EE;color:var(--vert-fonce);
+    display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 14px}
+  .fin h2{font-size:1.14rem;margin:0 0 8px}
+  .fin p{color:var(--gris);margin:0 0 6px;font-size:.95rem}
+  .fin .num{font-weight:700;color:var(--vert-fonce);font-size:1.06rem;font-variant-numeric:tabular-nums;
+    display:inline-block;margin-top:6px;text-decoration:none}
+  .pied{text-align:center;color:var(--gris);font-size:.8rem;margin-top:20px;line-height:1.5}
+  .chargement{text-align:center;color:var(--gris);padding:26px 0}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="officine" id="h-officine">Pharmacie du Centre</div>
+    <div class="tel" id="h-tel">02 31 52 15 71</div>
+  </header>
+  <div class="carte" id="carte">
+    <div class="chargement">Chargement…</div>
+  </div>
+  <div class="pied">Ce lien vous est personnel. Il ne donne accès à aucune autre information.</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var jeton = (location.pathname.split('/r/')[1] || '').split(/[?#]/)[0];
+  var carte = document.getElementById('carte');
+  var etat = null, choisi = null;
+
+  function E(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+  function fr(iso) { if (!iso) return ''; var p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
+  function jourPlus(n) { var d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+
+  function ecranErreur(txt) {
+    carte.innerHTML = '<div class="fin"><div class="rond">!</div><h2>Lien non valable</h2>'
+      + '<p>' + E(txt) + '</p>'
+      + '<p>Appelez-nous et nous ferons le nécessaire.</p>'
+      + '<a class="num" href="tel:' + E((etat && etat.tel || '02 31 52 15 71').replace(/\s+/g, '')) + '">'
+      + E(etat && etat.tel || '02 31 52 15 71') + '</a></div>';
+  }
+
+  function ecranDeja() {
+    var quoi = etat.choix === 'confirme' ? 'Vous avez confirmé la préparation de votre traitement.'
+      : etat.choix === 'reporte' ? 'Vous avez demandé à reporter la préparation au ' + fr(etat.dateChoisie) + '.'
+        : 'Vous nous avez indiqué ne plus avoir besoin de ce traitement.';
+    carte.innerHTML = '<div class="fin"><div class="rond">✓</div>'
+      + '<h2>Votre choix a été enregistré</h2>'
+      + '<p>' + E(quoi) + '</p>'
+      + '<p>Pour le modifier, veuillez nous contacter au</p>'
+      + '<a class="num" href="tel:' + E(etat.tel.replace(/\s+/g, '')) + '">' + E(etat.tel) + '</a></div>';
+  }
+
+  function ecranChoix() {
+    carte.innerHTML =
+      '<h1>Bonjour' + (etat.prenom ? ' ' + E(etat.prenom) : '') + ',</h1>'
+      + '<p class="sous">Nous nous apprêtons à préparer votre renouvellement d’ordonnance'
+      + (etat.echeance ? ', prévu le <span class="ech">' + E(fr(etat.echeance)) + '</span>' : '')
+      + '. Merci de nous indiquer ce que vous souhaitez.</p>'
+      + '<div class="choix">'
+      + bouton('confirme', '✓', 'Je confirme la préparation', 'Nous préparons votre traitement comme prévu.')
+      + bouton('reporte', '📅', 'Je souhaite la reporter', 'Vous choisissez la nouvelle date ci-dessous.')
+      + bouton('arret', '✕', 'Je n’ai plus besoin de ce traitement', 'Nous ne préparerons rien et nous vous rappellerons si besoin.')
+      + '</div>'
+      + '<div class="report" id="bloc-date" style="display:none">'
+      + '<label for="date">Nouvelle date souhaitée</label>'
+      + '<input type="date" id="date" min="' + jourPlus(1) + '" max="' + jourPlus(365) + '">'
+      + '</div>'
+      + '<button class="valider" id="valider" disabled>Valider mon choix</button>'
+      + '<div class="msg" id="msg"></div>'
+      + '<div class="pied" style="margin-top:14px">Votre réponse est définitive : pour la modifier ensuite, appelez-nous au '
+      + E(etat.tel) + '.</div>';
+
+    Array.prototype.forEach.call(carte.querySelectorAll('button[data-c]'), function (b) {
+      b.onclick = function () { selectionner(b.getAttribute('data-c')); };
+    });
+    document.getElementById('valider').onclick = envoyer;
+    var d = document.getElementById('date');
+    if (d) d.onchange = majValider;
+  }
+
+  function bouton(c, ico, lbl, exp) {
+    return '<button type="button" data-c="' + c + '"><span class="ico">' + ico + '</span>'
+      + '<span><span class="lbl">' + lbl + '</span><span class="exp">' + exp + '</span></span></button>';
+  }
+
+  function selectionner(c) {
+    choisi = c;
+    Array.prototype.forEach.call(carte.querySelectorAll('button[data-c]'), function (b) {
+      b.className = (b.getAttribute('data-c') === c) ? 'sel' : '';
+    });
+    document.getElementById('bloc-date').style.display = (c === 'reporte') ? 'block' : 'none';
+    if (c === 'reporte') { var d = document.getElementById('date'); if (d && !d.value) d.focus(); }
+    majValider();
+  }
+
+  // Le report n'est validable qu'avec une date : c'est la règle demandée.
+  function majValider() {
+    var d = document.getElementById('date');
+    var ok = !!choisi && (choisi !== 'reporte' || (d && d.value));
+    var b = document.getElementById('valider');
+    b.disabled = !ok;
+    b.textContent = (choisi === 'reporte' && !(d && d.value)) ? 'Choisissez d’abord une date' : 'Valider mon choix';
+  }
+
+  function erreurMsg(t) { var m = document.getElementById('msg'); m.className = 'msg err'; m.textContent = t; }
+
+  function envoyer() {
+    var b = document.getElementById('valider');
+    var d = document.getElementById('date');
+    b.disabled = true; b.textContent = 'Envoi…';
+    fetch('/api/renouv/' + encodeURIComponent(jeton), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ choix: choisi, date: (d && d.value) || '' })
+    }).then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (j) {
+        if (!j || j.ok === false) {
+          b.disabled = false; b.textContent = 'Valider mon choix';
+          erreurMsg(j && j.error === 'date_hors_limites' ? 'Cette date n’est pas possible : choisissez une date à venir, dans l’année.'
+            : j && j.error === 'date_requise' ? 'Merci de choisir une date pour reporter la préparation.'
+              : 'Votre réponse n’a pas pu être enregistrée. Réessayez, ou appelez-nous au ' + etat.tel + '.');
+          return;
+        }
+        etat = j; ecranDeja();
+      })
+      .catch(function () {
+        b.disabled = false; b.textContent = 'Valider mon choix';
+        erreurMsg('Connexion interrompue. Réessayez, ou appelez-nous au ' + etat.tel + '.');
+      });
+  }
+
+  if (!jeton) { ecranErreur('Ce lien est incomplet.'); return; }
+  fetch('/api/renouv/' + encodeURIComponent(jeton), { cache: 'no-store' })
+    .then(function (r) { return r.json().catch(function () { return {}; }); })
+    .then(function (j) {
+      if (!j || j.ok === false) { ecranErreur('Ce lien n’est plus valable.'); return; }
+      etat = j;
+      document.getElementById('h-officine').textContent = j.officine || 'Pharmacie du Centre';
+      document.getElementById('h-tel').textContent = j.tel || '';
+      if (j.repondu) ecranDeja(); else ecranChoix();
+    })
+    .catch(function () { ecranErreur('La page n’a pas pu être chargée. Réessayez dans un instant.'); });
+})();
+</script>
+</body>
+</html>

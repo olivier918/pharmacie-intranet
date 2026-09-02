@@ -35,6 +35,12 @@
   .rn-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
   .rn-count{font-size:13px;color:#6b7a72}
   .rn-grow{flex:1}
+  .rn-tabnb{display:inline-block;min-width:17px;padding:0 5px;margin-left:4px;border-radius:9px;
+    background:#B23A2F;color:#fff;font-size:11px;font-weight:800;line-height:17px;text-align:center}
+  .rn-b-okpat{background:#E8F5E9;color:#2E7D32}
+  .rn-b-reppat{background:#E3F2FD;color:#1565C0}
+  .rn-b-stoppat{background:#FBE9E7;color:#B23A2F}
+  .rn-b-attpat{background:#F3F1EC;color:#7a6f5d}
   .rn-tabs{display:inline-flex;background:#e7efe9;border-radius:9px;padding:3px}
   .rn-tab{border:none;background:none;padding:6px 12px;border-radius:7px;font-size:13px;font-weight:600;color:#4a5a52;cursor:pointer}
   .rn-tab.rn-act{background:#fff;color:#1D5C3A;box-shadow:0 1px 2px rgba(0,0,0,.08)}
@@ -102,6 +108,7 @@
       <div class="rn-tabs">
         <button class="rn-tab rn-act" id="rn-tab-todo" onclick="rnSetView('todo')">À préparer</button>
         <button class="rn-tab" id="rn-tab-all" onclick="rnSetView('all')">Programmés</button>
+        <button class="rn-tab" id="rn-tab-check" onclick="rnSetView('check')">À vérifier</button>
         <button class="rn-tab" id="rn-tab-arch" onclick="rnSetView('arch')">Archives</button>
       </div>
       <span class="rn-count" id="rn-count"></span>
@@ -258,19 +265,20 @@
     rnView = v;
     document.getElementById('rn-tab-todo').classList.toggle('rn-act', v === 'todo');
     document.getElementById('rn-tab-all').classList.toggle('rn-act', v === 'all');
+    document.getElementById('rn-tab-check').classList.toggle('rn-act', v === 'check');
     document.getElementById('rn-tab-arch').classList.toggle('rn-act', v === 'arch');
     rnRender();
   };
   // Une ordonnance passe « à préparer » 7 jours avant la date prévue.
   // Compteur = tout ce qui est à préparer (retards inclus).
   window.rnDueCount = function () {
-    try { return rnList().filter(it => rnDayDiff(it.date) <= RN_SOON_DAYS).length; } catch (e) { return 0; }
+    try { return rnList().filter(it => !it.pause && rnDayDiff(it.date) <= RN_SOON_DAYS).length; } catch (e) { return 0; }
   };
   // Niveau d'urgence de la pastille : 'red' dès qu'une ordonnance est due ou en retard,
   // 'orange' si tout tombe dans les 7 jours à venir, '' s'il n'y a rien à préparer.
   window.rnDueLevel = function () {
     try {
-      const l = rnList();
+      const l = rnList().filter(it => !it.pause);
       if (l.some(it => rnDayDiff(it.date) <= 0)) return 'red';
       if (l.some(it => rnDayDiff(it.date) <= RN_SOON_DAYS)) return 'orange';
       return '';
@@ -279,10 +287,13 @@
   window.rnRender = function () {
     rnInject();
     if (typeof window.updateNavBadges === 'function') window.updateNavBadges();
+    rnMajOngletCheck();
     if (rnView === 'arch') return rnRenderArch();
+    if (rnView === 'check') return rnRenderCheck();
     if (rnView === 'all') return rnRenderAll();
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
     const visible = rnList()
+      .filter(it => !it.pause)                 // arrêt demandé par le patient : passé en « à vérifier »
       .filter(it => rnDayDiff(it.date) <= 7)
       .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q))
       .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
@@ -311,7 +322,20 @@
       (it.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
       (it.needsNewOrdo ? ' <span class="rn-badge rn-b-newordo">Nouvelle ordo à fournir</span>' : '') +
       (it.dernier && !it.needsNewOrdo ? ' <span class="rn-badge rn-b-last">Dernier renouv.</span>' : '') +
-      (/frigo/i.test(it.notes || '') ? ' <span class="rn-badge rn-b-frigo">Frigo</span>' : '');
+      (/frigo/i.test(it.notes || '') ? ' <span class="rn-badge rn-b-frigo">Frigo</span>' : '') +
+      rnConfBadge(it);
+  }
+  // ---------- confirmation du patient par SMS ----------
+  // Le patient reçoit un lien personnel ; sa réponse est appliquée par le serveur
+  // (confirmation, report à la date choisie, ou mise en pause s'il n'a plus besoin
+  // du traitement). Ici on ne fait qu'AFFICHER où en est la demande.
+  function rnConfBadge(it) {
+    const c = it.conf; if (!c) return '';
+    if (c.choix === 'confirme') return ' <span class="rn-badge rn-b-okpat">✓ Confirmé par le patient</span>';
+    if (c.choix === 'reporte') return ' <span class="rn-badge rn-b-reppat">📅 Reporté par le patient au ' + rnFmtFr(c.dateChoisie) + '</span>';
+    if (c.choix === 'arret') return ' <span class="rn-badge rn-b-stoppat">✕ Arrêt demandé par le patient</span>';
+    if (c.sentAt) return ' <span class="rn-badge rn-b-attpat">⧗ Demande envoyée le ' + rnFmtFr(c.sentAt.slice(0, 10)) + ' — sans réponse</span>';
+    return '';
   }
   function rnMainHtml(it) {
     return '<div class="rn-who">' + rnEsc(it.nom) + ' ' + rnEsc(it.prenom) + '<span class="rn-dob">' + rnFmtFr(it.dob) + '</span></div>' +
@@ -324,6 +348,7 @@
       '</div><div class="rn-acts">' +
       '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnDemandeConf(' + it.id + ')"' + rnConfBtnStyle(it) + '>\u2709 Confirmation</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter / Annuler</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
       '</div></div>';
@@ -357,6 +382,7 @@
       '</div><div class="rn-acts">' +
       '<button class="rn-btn rn-pri rn-mini" onclick="rnPrep(' + it.id + ')">✓ Préparer…</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnSms(' + it.id + ')"' + (it.smsAt ? ' style="border-color:#a5d6a7;background:#e8f5e9"' : '') + '>💬 SMS</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnDemandeConf(' + it.id + ')"' + rnConfBtnStyle(it) + '>\u2709 Confirmation</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
       '<button class="rn-btn rn-ghost rn-mini" onclick="rnReport(' + it.id + ')">📅 Reporter</button>' +
       '<button class="rn-btn rn-ghost rn-mini" style="color:#c62828;border-color:#f0cccc" onclick="rnDelete(' + it.id + ')">🗑 Supprimer</button>' +
@@ -619,6 +645,111 @@
         rnPersist(); rnRender();
       }
     });
+  };
+
+
+  // Le nombre de dossiers en attente de vérification s'affiche sur l'onglet :
+  // une demande d'arrêt ne doit pas rester invisible dans un onglet qu'on n'ouvre pas.
+  function rnMajOngletCheck() {
+    const t = document.getElementById('rn-tab-check'); if (!t) return;
+    const n = rnList().filter(it => it.pause).length;
+    t.innerHTML = 'À vérifier' + (n ? ' <span class="rn-tabnb">' + n + '</span>' : '');
+  }
+
+  // ---------- demande de confirmation au patient (SMS + page personnelle) ----------
+  // Un jeton aléatoire est tiré sur le poste, écrit sur l'ordonnance, puis glissé
+  // dans le SMS sous forme de lien. La réponse du patient est enregistrée par le
+  // serveur sur cette même ordonnance : elle revient ici à la synchronisation.
+  function rnJeton() {
+    try {
+      const a = new Uint8Array(16); crypto.getRandomValues(a);
+      return Array.from(a).map(b => b.toString(36)).join('').replace(/[^a-z0-9]/g, '').slice(0, 14);
+    } catch (e) {
+      return (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 14);
+    }
+  }
+  function rnConfBtnStyle(it) {
+    const c = it.conf;
+    if (c && c.choix) return ' style="border-color:#a5d6a7;background:#e8f5e9"';
+    if (c && c.sentAt) return ' style="border-color:#e0d7c3;background:#faf7f0"';
+    return '';
+  }
+  window.rnDemandeConf = function (id) {
+    const it = rnList().find(x => x.id === id); if (!it) return;
+    if (it.conf && it.conf.choix) { rnToast('Le patient a déjà répondu — sa décision est définitive.'); return; }
+    if (typeof window.openSmsModal !== 'function') { rnToast('Module SMS indisponible.'); return; }
+    if (it.conf && it.conf.sentAt && !confirm('Une demande a déjà été envoyée le ' + rnFmtFr(it.conf.sentAt.slice(0, 10))
+      + ' et le patient n’a pas répondu.\n\nRenvoyer la demande ?')) return;
+
+    // Le lien reste valable tant que le patient n'a pas répondu : on garde le
+    // jeton déjà émis pour qu'un premier SMS conservé sur le téléphone marche encore.
+    if (!it.conf || !it.conf.token) it.conf = Object.assign({}, it.conf, { token: rnJeton() });
+    const lien = location.origin + '/r/' + it.conf.token;
+    const texte = 'Pharmacie du Centre : merci de confirmer votre renouvellement ici : ' + lien;
+
+    window.openSmsModal({
+      titre: 'Demande de confirmation au patient',
+      tel: it.tel || '', nom: it.nom, prenom: it.prenom, source: 'renouvellement', tag: 'confirmation',
+      info: '<strong>' + rnEsc(it.nom || '') + ' ' + rnEsc(it.prenom || '') + '</strong>'
+        + (it.lib ? ' · ' + rnEsc(it.lib) : '')
+        + '<div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">Échéance : ' + rnFmtFr(it.date)
+        + ' · le lien ouvre une page où le patient confirme, reporte ou arrête. Sa réponse est définitive.</div>',
+      text: texte,
+      onSent: function (r) {
+        it.conf.sentAt = new Date().toISOString();
+        it.conf.sentBy = rnUser().id;
+        it.conf.smsId = (r && r.id) || null;
+        it.updatedAt = Date.now();
+        rnToast('Demande envoyée à ' + it.prenom + ' ' + it.nom + '.');
+        rnPersist(); rnRender();
+      }
+    });
+  };
+  // Copie du lien : utile si le patient n'a pas de mobile mais consulte ses mails,
+  // ou pour le lui dicter au téléphone.
+  window.rnCopierLien = function (id) {
+    const it = rnList().find(x => x.id === id); if (!it) return;
+    if (!it.conf || !it.conf.token) { it.conf = Object.assign({}, it.conf, { token: rnJeton() }); it.updatedAt = Date.now(); rnPersist(); }
+    const lien = location.origin + '/r/' + it.conf.token;
+    try { navigator.clipboard.writeText(lien); rnToast('Lien copié.'); }
+    catch (e) { prompt('Lien personnel du patient :', lien); }
+  };
+
+  // ---------- vue « À vérifier » : ce que le patient a demandé d'arrêter ----------
+  function rnRenderCheck() {
+    const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
+    const l = rnList()
+      .filter(it => it.pause)
+      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    document.getElementById('rn-count').textContent = l.length
+      ? l.length + ' ordonnance' + (l.length > 1 ? 's' : '') + ' à vérifier' : '';
+    const wrap = document.getElementById('rn-listwrap');
+    if (!l.length) { wrap.innerHTML = '<div class="rn-empty">Rien à vérifier : aucun patient n’a demandé d’arrêter son traitement.</div>'; return; }
+    wrap.innerHTML = '<div class="rn-daygroup">' + l.map(it =>
+      '<div class="rn-card" style="border-left:4px solid #B23A2F"><div class="rn-main">' + rnMainHtml(it) +
+      '<div class="rn-meta" style="margin-top:6px;color:#8A2B22">Le patient a répondu « je n’ai plus besoin de ce traitement »'
+      + (it.conf && it.conf.at ? ' le ' + rnFmtFr(it.conf.at.slice(0, 10)) : '')
+      + '. Appelez-le ou son médecin, puis clôturez ou remettez l’ordonnance en service.</div>' +
+      '</div><div class="rn-acts">' +
+      '<button class="rn-btn rn-pri rn-mini" onclick="rnCloturerArret(' + it.id + ')">✓ Clôturer</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnReprendre(' + it.id + ')">↩ Remettre en service</button>' +
+      '<button class="rn-btn rn-ghost rn-mini" onclick="rnOpenForm(' + it.id + ')">✎ Modifier</button>' +
+      '</div></div>').join('') + '</div>';
+  }
+  window.rnCloturerArret = function (id) {
+    const it = rnList().find(x => x.id === id); if (!it) return;
+    if (!confirm('Clôturer l’ordonnance de ' + it.nom + ' ' + it.prenom + ' ? Elle part dans les archives.')) return;
+    rnArchive(it, 'Arrêt demandé par le patient' + (it.conf && it.conf.at ? ' le ' + rnFmtFr(it.conf.at.slice(0, 10)) : ''), 'comptoir', null);
+    { const _l = rnList(), _i = _l.findIndex(x => x.id === id); if (_i >= 0) _l.splice(_i, 1); }
+    rnToast('Ordonnance clôturée.'); rnPersist(); rnRender();
+  };
+  window.rnReprendre = function (id) {
+    const it = rnList().find(x => x.id === id); if (!it) return;
+    it.pause = false;
+    if (it.conf) { it.conf.leve = new Date().toISOString(); it.conf.leveBy = rnUser().id; }
+    it.updatedAt = Date.now();
+    rnToast('Ordonnance remise en service.'); rnPersist(); rnRender();
   };
 
   // ---------- report / annulation ----------
