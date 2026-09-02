@@ -175,26 +175,23 @@
       <div class="rn-fg rn-chk"><input type="checkbox" id="rn-prep-nomore" onchange="rnPrepExcl('nomore')"><label style="margin:0" for="rn-prep-nomore">Plus de renouvellement après cette préparation <span style="color:#6b7a72;font-weight:400">— clôturer (fin du traitement)</span></label></div>
       <div id="rn-prep-note" class="rn-note" style="display:none"></div>
     </div>
-    <div class="rn-foot" style="flex-wrap:wrap;gap:9px">
-      <button class="rn-btn rn-ghost" onclick="rnClose('rn-ov-prep')">Annuler</button>
-      <button class="rn-btn rn-blue" onclick="rnPrepDeliver()">🚚 Envoyer en livraison</button>
-      <button class="rn-btn rn-pri" onclick="rnPrepNotify()">📣 Prévenir le patient</button>
-    </div>
+    <div class="rn-foot" id="rn-prep-foot" style="flex-wrap:wrap;gap:9px"></div>
   </div></div>
 
   <div class="rn-ov" id="rn-ov-notify"><div class="rn-modal">
-    <h3>Prévenir le patient</h3>
+    <h3>Prévenir le patient <span style="font-weight:400;font-size:13px;color:#6b7a72">— facultatif</span></h3>
     <div class="rn-body">
-      <div id="rn-notify-who" style="font-weight:700"></div>
+      <div id="rn-notify-done" class="rn-note" style="display:block;background:#E9F5EE;border-color:#C7E4D4;color:#1D5C3A"></div>
+      <div id="rn-notify-who" style="font-weight:700;margin-top:12px"></div>
       <div id="rn-notify-contact" style="font-size:13px;color:#6b7a72;margin:7px 0 15px;line-height:1.5"></div>
       <div style="display:flex;flex-direction:column;gap:9px">
         <button class="rn-btn rn-pri" id="rn-notify-mail" onclick="rnNotifyMail()">✉️ Par email</button>
         <button class="rn-btn rn-blue" id="rn-notify-sms" onclick="rnNotifySms()">💬 Par SMS</button>
       </div>
-      <div class="rn-hint" style="margin-top:13px">La préparation est archivée une fois le message envoyé.</div>
+      <div class="rn-hint" style="margin-top:13px">L'ordonnance est déjà validée et reprogrammée : prévenir le patient ne change plus rien au dossier.</div>
     </div>
     <div class="rn-foot">
-      <button class="rn-btn rn-ghost" onclick="rnNotifyNone()">📵 Sans prévenir</button>
+      <button class="rn-btn rn-ghost" onclick="rnNotifyNone()">Fermer sans prévenir</button>
     </div>
   </div></div>
 
@@ -211,7 +208,7 @@
       <div id="rn-mail-preview"><div class="rn-mailbox" id="rn-mail-body"></div></div>
     </div>
     <div class="rn-foot" id="rn-mail-foot">
-      <button class="rn-btn rn-ghost" onclick="rnClose('rn-ov-mail');rnFinish('comptoir')">Ne pas envoyer</button>
+      <button class="rn-btn rn-ghost" onclick="rnClose('rn-ov-mail')">Ne pas envoyer</button>
       <button class="rn-btn rn-pri" id="rn-mail-send" onclick="rnConfirmSend()">Confirmer l'envoi</button>
     </div>
   </div></div>
@@ -440,6 +437,7 @@
       '<div class="rn-meta"><span>📅 Préparée le <b>' + rnFmtFr(x.prepDate) + '</b></span>' +
       '<span>👤 <span class="rn-chip" style="background:' + (x.byCol || '#777') + '">' + rnEsc(x.byName) + '</span></span>' +
       (x.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
+      (x.notif ? '<span class="rn-badge rn-b-okpat">' + (x.notif.canal === 'sms' ? '💬 patient prévenu par SMS' : '✉️ patient prévenu par email') + '</span>' : '') +
       '<span style="color:#6b7a72">' + rnEsc(x.outcome) + '</span></div>' +
       '</div>' +
       (x.undo ? '<div class="rn-acts"><button class="rn-btn rn-ghost rn-mini" onclick="rnUnprepare(' + x.id + ')">↩ Repasser en « à préparer »</button></div>' : '') +
@@ -509,6 +507,15 @@
     document.getElementById('rn-prep-date').value = rnIso(rnAddDays(rnToday(), it.cycle || 28));
     document.getElementById('rn-prep-last').checked = !!it.dernier;
     document.getElementById('rn-prep-nomore').checked = false;
+    // Le geste principal dépend du mode de remise : au comptoir on valide, et
+    // prévenir le patient vient après ; en livraison on valide et la livraison
+    // se crée dans la foulée — le patient sera prévenu par le livreur.
+    const liv = (it.remise === 'livraison');
+    document.getElementById('rn-prep-foot').innerHTML =
+      '<button class="rn-btn rn-ghost" onclick="rnClose(\'rn-ov-prep\')">Annuler</button>' +
+      (liv
+        ? '<button class="rn-btn rn-blue" onclick="rnValiderLivraison()">\uD83D\uDE9A Valider et envoyer en livraison</button>'
+        : '<button class="rn-btn rn-pri" onclick="rnValider()">\u2713 Valider</button>');
     rnPrepToggle(); rnOpen('rn-ov-prep');
   };
   window.rnPrepExcl = function (which) {
@@ -530,46 +537,83 @@
     it._close = nomore; it._newOrdo = last;
     rnPendingNext = it._close ? null : (document.getElementById('rn-prep-date').value || rnIso(rnAddDays(rnToday(), it.cycle || 28)));
   }
-  window.rnPrepMail = function () { const it = rnList().find(x => x.id === rnCurId); rnCompute(); rnClose('rn-ov-prep'); rnOpenMail(it); };
-  window.rnPrepDeliver = function () { const it = rnList().find(x => x.id === rnCurId); rnCompute(); rnClose('rn-ov-prep'); rnOpenLiv(it); };
+  // ---------- validation ----------
+  // La validation est le geste qui compte : l'ordonnance est reprogrammée et
+  // archivée immédiatement. Ce qui suit (prévenir le patient, créer la livraison)
+  // ne peut plus la faire échouer — et si le poste se ferme entre les deux, rien
+  // n'est perdu.
+  let rnNotifSnap = null;   // qui prévenir, une fois le dossier déjà clos
 
-  // ---------- prévenir le patient : choix du canal ----------
-  window.rnPrepNotify = function () {
+  window.rnValider = function () {
     const it = rnList().find(x => x.id === rnCurId); if (!it) return;
-    rnCompute(); rnClose('rn-ov-prep');
-    document.getElementById('rn-notify-who').textContent = it.nom + ' ' + it.prenom + (it.lib ? ' \u2014 ' + it.lib : '');
-    document.getElementById('rn-notify-contact').innerHTML =
-      (it.mail ? '\u2709\uFE0F ' + rnEsc(it.mail) : '\u2709\uFE0F <i>pas d\u2019email enregistr\u00e9</i>') + '<br>' +
-      (it.tel ? '\uD83D\uDCDE ' + rnEsc(it.tel) : '\uD83D\uDCDE <i>pas de t\u00e9l\u00e9phone enregistr\u00e9</i>');
-    rnOpen('rn-ov-notify');
+    rnCompute();
+    const snap = {
+      id: it.id, nom: it.nom, prenom: it.prenom, dob: it.dob,
+      mail: it.mail || '', tel: it.tel || '', lib: it.lib || '',
+      remise: 'comptoir', newOrdo: !!it._newOrdo, close: !!it._close,
+      prochaine: rnPendingNext
+    };
+    rnClose('rn-ov-prep');
+    rnFinish('comptoir');                       // reprogrammée + archivée
+    snap.archId = (rnArch()[0] || {}).id || null;
+    rnNotifSnap = snap;
+    rnProposerNotif(snap);
   };
-  window.rnNotifyMail = function () {
+
+  window.rnValiderLivraison = function () {
     const it = rnList().find(x => x.id === rnCurId); if (!it) return;
-    rnClose('rn-ov-notify'); rnOpenMail(it);
+    rnCompute(); rnClose('rn-ov-prep'); rnOpenLiv(it);
+  };
+
+  // ---------- prévenir le patient : proposé APRÈS validation, jamais bloquant ----------
+  function rnProposerNotif(snap) {
+    document.getElementById('rn-notify-done').textContent =
+      '\u2713 Ordonnance validée' + (snap.close
+        ? ' et clôturée (fin du traitement).'
+        : ' \u2014 prochain renouvellement le ' + rnFmtFr(snap.prochaine) + '.');
+    document.getElementById('rn-notify-who').textContent = snap.nom + ' ' + snap.prenom + (snap.lib ? ' \u2014 ' + snap.lib : '');
+    document.getElementById('rn-notify-contact').innerHTML =
+      (snap.mail ? '\u2709\uFE0F ' + rnEsc(snap.mail) : '\u2709\uFE0F <i>pas d\u2019email enregistr\u00e9</i>') + '<br>' +
+      (snap.tel ? '\uD83D\uDCDE ' + rnEsc(snap.tel) : '\uD83D\uDCDE <i>pas de t\u00e9l\u00e9phone enregistr\u00e9</i>');
+    rnOpen('rn-ov-notify');
+  }
+  // Trace du message sur la préparation archivée, pour savoir plus tard si le
+  // patient a été prévenu et comment.
+  function rnNoterNotif(canal, info) {
+    if (!rnNotifSnap || !rnNotifSnap.archId) return;
+    const a = rnArch().find(x => x.id === rnNotifSnap.archId); if (!a) return;
+    a.notif = Object.assign({ canal: canal, at: new Date().toISOString(), by: rnUser().id }, info || {});
+    a.updatedAt = Date.now();
+    rnPersist(); rnRender();
+  }
+  window.rnNotifyMail = function () {
+    if (!rnNotifSnap) return;
+    rnClose('rn-ov-notify'); rnOpenMail(rnNotifSnap);
   };
   window.rnNotifySms = function () {
-    const it = rnList().find(x => x.id === rnCurId); if (!it) return;
+    const snap = rnNotifSnap; if (!snap) return;
     if (typeof window.openRenouvSms !== 'function') { rnToast('Module SMS indisponible.'); return; }
     rnClose('rn-ov-notify');
     window.openRenouvSms({
-      nom: it.nom, prenom: it.prenom, tel: it.tel || '', lib: it.lib || '', dateFr: rnFmtFr(it.date),
+      nom: snap.nom, prenom: snap.prenom, tel: snap.tel || '', lib: snap.lib || '', dateFr: rnFmtFr(snap.prochaine),
       onSent: function (r) {
-        // Numéro saisi à la volée : on le garde sur l'ordonnance et dans la fiche patient.
+        // Numéro saisi à la volée : on le garde dans la fiche patient et, si
+        // l'ordonnance vit encore (reprogrammée), sur l'ordonnance.
         const saisi = ((r && r.raw) || '').trim();
-        if (saisi && saisi !== (it.tel || '')) {
-          it.tel = saisi;
-          try { if (typeof upsertPatient === 'function') upsertPatient({ nom: it.nom, prenom: it.prenom, dob: it.dob, tel: saisi }); } catch (e) {}
+        if (saisi && saisi !== (snap.tel || '')) {
+          snap.tel = saisi;
+          const vivant = rnList().find(x => x.id === snap.id);
+          if (vivant) { vivant.tel = saisi; vivant.updatedAt = Date.now(); }
+          try { if (typeof upsertPatient === 'function') upsertPatient({ nom: snap.nom, prenom: snap.prenom, dob: snap.dob, tel: saisi }); } catch (e) {}
         }
-        it.smsAt = new Date().toISOString(); it.smsBy = rnUser().id; it.smsId = (r && r.id) || null;
-        it.updatedAt = Date.now();
-        rnFinish('comptoir');
-        rnToast((r && r.manual) ? 'SMS not\u00e9 \u2014 pr\u00e9paration archiv\u00e9e.' : 'SMS envoy\u00e9 \u2014 pr\u00e9paration archiv\u00e9e.');
+        rnNoterNotif('sms', { smsId: (r && r.id) || null, manuel: !!(r && r.manual) });
+        rnToast((r && r.manual) ? 'SMS not\u00e9 sur la pr\u00e9paration.' : 'SMS envoy\u00e9 au patient.');
       }
     });
   };
   window.rnNotifyNone = function () {
-    const u = rnUser(); rnClose('rn-ov-notify'); rnFinish('comptoir');
-    rnToast('Pr\u00e9par\u00e9e par ' + u.prenom + ' \u2014 sans notification, archiv\u00e9e.');
+    rnClose('rn-ov-notify');
+    rnToast('Ordonnance valid\u00e9e \u2014 patient non pr\u00e9venu.');
   };
 
   // ---------- email ----------
@@ -586,32 +630,38 @@
     document.getElementById('rn-mail-foot').style.display = noMail ? 'none' : 'flex';
     document.getElementById('rn-mail-new').value = '';
     if (!noMail) document.getElementById('rn-mail-body').textContent =
-      'À : ' + it.mail + '\nObjet : Votre traitement est prêt\n\n' + rnMailBody(it, it._newOrdo);
+      'À : ' + it.mail + '\nObjet : Votre traitement est prêt\n\n' + rnMailBody(it, it.newOrdo);
     rnOpen('rn-ov-mail');
   };
   window.rnUseNewMail = function () {
-    const it = rnList().find(x => x.id === rnCurId); const m = document.getElementById('rn-mail-new').value.trim();
+    const snap = rnNotifSnap; if (!snap) return;
+    const m = document.getElementById('rn-mail-new').value.trim();
     if (!m) { rnToast('Saisir un email ou choisir « Pas de mail ».'); return; }
-    it.mail = m; it.updatedAt = Date.now();
-    try { if (typeof upsertPatient === 'function') upsertPatient({ nom: it.nom, prenom: it.prenom, dob: it.dob, mail: m }); } catch (e) {}
-    rnOpenMail(it);
+    snap.mail = m;
+    const vivant = rnList().find(x => x.id === snap.id);
+    if (vivant) { vivant.mail = m; vivant.updatedAt = Date.now(); }
+    try { if (typeof upsertPatient === 'function') upsertPatient({ nom: snap.nom, prenom: snap.prenom, dob: snap.dob, mail: m }); } catch (e) {}
+    rnPersist();
+    rnOpenMail(snap);
   };
-  window.rnSkipMail = function () { const u = rnUser(); rnClose('rn-ov-mail'); rnFinish('comptoir'); rnToast('Préparée par ' + u.prenom + ' — pas de mail (prévenir par téléphone), archivée.'); };
+  window.rnSkipMail = function () { rnClose('rn-ov-mail'); rnToast('Ordonnance validée — pas de mail (prévenir par téléphone).'); };
   window.rnConfirmSend = async function () {
-    const it = rnList().find(x => x.id === rnCurId); const btn = document.getElementById('rn-mail-send');
+    const it = rnNotifSnap; if (!it) return;
+    const btn = document.getElementById('rn-mail-send');
     btn.disabled = true; btn.textContent = 'Envoi…';
     let ok = false, err = '';
     try {
       const st = await (await fetch('/api/mail-status')).json();
       if (!st.configured) { err = 'service email non configuré'; }
       else {
-        const r = await fetch('/api/send-mail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: it.mail, subject: 'Votre traitement est prêt', text: rnMailBody(it, it._newOrdo) }) });
+        const r = await fetch('/api/send-mail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: it.mail, subject: 'Votre traitement est prêt', text: rnMailBody(it, it.newOrdo) }) });
         const j = await r.json(); ok = !!j.ok; err = j.error || '';
       }
     } catch (e) { err = e.message; }
     btn.disabled = false; btn.textContent = "Confirmer l'envoi";
-    rnClose('rn-ov-mail'); rnFinish('comptoir');
-    rnToast(ok ? 'Email envoyé — archivée.' : 'Préparée et archivée (email non envoyé : ' + err + ').');
+    rnClose('rn-ov-mail');
+    rnNoterNotif('email', { ok: ok, erreur: ok ? null : err });
+    rnToast(ok ? 'Email envoyé au patient.' : 'Email NON envoyé (' + err + ') — l’ordonnance reste validée.');
   };
 
   // ---------- livraison ----------
@@ -640,7 +690,7 @@
       }
     } catch (e) { console.warn('rn->deliveries', e); }
     rnClose('rn-ov-liv'); rnFinish('livraison');
-    rnToast('Envoyée en livraison par ' + u.prenom + ' ' + u.nom + ' — archivée.');
+    rnToast('Validée et envoyée en livraison — la ligne de livraison est créée.');
   };
 
   // ---------- finalisation + archivage ----------
