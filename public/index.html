@@ -2260,6 +2260,8 @@ let smsTemplates = [];   // valeurs par défaut posées plus bas, à la définit
 let bons = [];
 // Module « Retours matériel — Bluestone Medical » (historique conservé)
 let retours = [];
+// Module « Dépannage » — bons de commande de dépannage envoyés aux dépositaires (Secours Pharma / Movianto)
+let depannages = [];
 const BLUESTONE = { nom:'Bluestone Medical', mail:'serviceclient@bluestone-medical.fr' };
 const ALLIANCE = { nom:'Alliance Healthcare' };
 // Coordonnées officine pour les formulaires
@@ -2275,7 +2277,7 @@ let _savePending=false;  // true tant qu'une modif locale n'est pas persistée :
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2291,7 +2293,8 @@ function _collRef(n){ switch(n){
   case 'smsLog':return smsLog; case 'smsTemplates':return smsTemplates;
   case 'plPostes':return plPostes; case 'plRotations':return plRotations; case 'plContrats':return plContrats;
   case 'plTrames':return plTrames; case 'plExceptions':return plExceptions; case 'plDemandes':return plDemandes;
-  case 'plReels':return plReels; case 'plNotifs':return plNotifs; case 'plClotures':return plClotures; } return null; }
+  case 'plReels':return plReels; case 'plNotifs':return plNotifs; case 'plClotures':return plClotures;
+  case 'depannages':return depannages; } return null; }
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
 // patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle
@@ -2316,7 +2319,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2390,6 +2393,7 @@ async function loadAll(){
     if(data.plRotations)plRotations=data.plRotations;
     if(data.plContrats)plContrats=data.plContrats;
     if(data.plTrames)plTrames=data.plTrames;
+    if(data.depannages)depannages=data.depannages;
     if(data.plExceptions)plExceptions=data.plExceptions;
     if(data.plDemandes)plDemandes=data.plDemandes;
     if(data.plReels)plReels=data.plReels;
@@ -2434,6 +2438,7 @@ setInterval(async()=>{
         if(d.plRotations)plRotations=d.plRotations;
         if(d.plContrats)plContrats=d.plContrats;
         if(d.plTrames)plTrames=d.plTrames;
+        if(d.depannages)depannages=d.depannages;
         if(d.plExceptions)plExceptions=d.plExceptions;
         if(d.plDemandes)plDemandes=d.plDemandes;
         if(d.plReels)plReels=d.plReels;
@@ -8938,6 +8943,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="fc-module.js"></script>
 <script src="cm-module.js"></script>
 <script src="pl-module.js"></script>
+<script src="dp-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>
