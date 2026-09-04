@@ -104,6 +104,9 @@
   .rn-fg label{display:block;font-size:12.5px;font-weight:600;color:#44524b;margin-bottom:5px;min-height:16px;line-height:1.3}
   .rn-req{color:#c62828}
   .rn-row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:end}
+  /* Identite : civilite etroite, puis nom et prenom. En mobile, tout s'empile. */
+  .rn-row-id{display:grid;grid-template-columns:130px 1fr 1fr;gap:14px;align-items:end}
+  @media(max-width:700px){.rn-row-id{grid-template-columns:1fr}}
   .rn-hint{font-size:12px;color:#6b7a72;margin-top:4px}
   .rn-mailbox{white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#f6f8f7;border:1px solid #e2ebe5;border-radius:9px;padding:12px;max-height:240px;overflow:auto}
   .rn-note{background:#FFF3E0;border:1px solid #ffcc80;color:#8a4b00;border-radius:9px;padding:10px 12px;font-size:13px;margin-top:8px}
@@ -137,7 +140,13 @@
   <div class="rn-ov" id="rn-ov-form"><div class="rn-modal">
     <h3 id="rn-form-title">Nouvelle ordonnance à préparer</h3>
     <div class="rn-body">
-      <div class="rn-row2">
+      <div class="rn-row-id">
+        <div class="rn-fg"><label>Civilité</label>
+          <select class="rn-inp" id="rn-civ">
+            <option value="">Non précisée</option>
+            <option value="F">Madame</option>
+            <option value="M">Monsieur</option>
+          </select></div>
         <div class="rn-fg"><label>Nom <span class="rn-req">*</span></label>
           <input class="rn-inp" id="rn-nom" autocomplete="off" placeholder="NOM"
             oninput="acPatient('rn-nom','rn-prenom','rn-dob','rn-drop','rn-tel','rn-mail','rn-adresse','')">
@@ -479,7 +488,7 @@
     const it = id ? rnList().find(x => x.id === id) : null;
     document.getElementById('rn-form-title').textContent = it ? "Modifier l'ordonnance" : 'Nouvelle ordonnance à préparer';
     const g = i => document.getElementById(i); const v = (k, d = '') => it ? (it[k] == null ? d : it[k]) : d;
-    g('rn-nom').value = v('nom'); g('rn-prenom').value = v('prenom'); g('rn-dob').value = v('dob'); g('rn-tel').value = v('tel');
+    g('rn-civ').value = v('civilite'); g('rn-nom').value = v('nom'); g('rn-prenom').value = v('prenom'); g('rn-dob').value = v('dob'); g('rn-tel').value = v('tel');
     g('rn-mail').value = v('mail'); g('rn-adresse').value = v('adresse'); g('rn-lib').value = v('lib');
     g('rn-date').value = it ? it.date : rnIso(rnAddDays(rnToday(), 28)); g('rn-cycle').value = it ? it.cycle : 28;
     g('rn-presc').value = v('presc'); g('rn-remise').value = v('remise', 'comptoir'); g('rn-notes').value = v('notes');
@@ -490,7 +499,7 @@
     const g = i => document.getElementById(i);
     if (!g('rn-nom').value.trim() || !g('rn-prenom').value.trim() || !g('rn-dob').value || !g('rn-lib').value.trim() || !g('rn-date').value) { rnToast('Nom, prénom, date de naissance, libellé et date sont obligatoires.'); return; }
     const obj = {
-      nom: g('rn-nom').value.trim().toUpperCase(), prenom: g('rn-prenom').value.trim(), dob: g('rn-dob').value,
+      civilite: g('rn-civ').value, nom: g('rn-nom').value.trim().toUpperCase(), prenom: g('rn-prenom').value.trim(), dob: g('rn-dob').value,
       tel: g('rn-tel').value.trim(), mail: g('rn-mail').value.trim(), adresse: g('rn-adresse').value.trim(),
       lib: g('rn-lib').value.trim(), date: g('rn-date').value, cycle: parseInt(g('rn-cycle').value || '28', 10),
       presc: g('rn-presc').value.trim(), remise: g('rn-remise').value, notes: g('rn-notes').value.trim(), dernier: g('rn-flast').checked
@@ -821,15 +830,16 @@
   function rnTexteSms(it, lien) {
     const rappel = (it.conf && it.conf.envois > 0);
     const corps = qui => 'Bonjour' + (qui ? ' ' + qui : '') + ', '
-      + (rappel
-        ? 'rappel : merci de confirmer votre renouvellement d\'ordonnance ici '
-        : 'votre renouvellement d\'ordonnance : merci de le confirmer ici ')
-      + lien;
-    const paliers = [
-      corps((rnAscii(it.prenom) + ' ' + rnAscii(it.nom)).trim()),
-      corps(rnAscii(it.prenom)),
-      corps('')
-    ];
+      + (rappel ? 'rappel, ' : '') + 'merci de confirmer votre renouvellement : ' + lien;
+    // Avec la civilite renseignee, on s'adresse au patient comme au comptoir :
+    // « Mme THOMAS ». C'est plus juste pour une personne agee que son prenom, et
+    // plus court. Sans civilite — toutes les ordonnances anterieures a ce champ —
+    // on retombe sur prenom + nom, chaleureux et jamais faux.
+    const titre = it.civilite === 'F' ? 'Mme' : it.civilite === 'M' ? 'M.' : '';
+    const nom = rnAscii(it.nom), prenom = rnAscii(it.prenom);
+    const paliers = titre
+      ? [corps((titre + ' ' + nom).trim()), corps(titre), corps('')]
+      : [corps((prenom + ' ' + nom).trim()), corps(prenom), corps('')];
     return paliers.find(t => t.length <= 160) || paliers[paliers.length - 1];
   }
 
