@@ -689,7 +689,8 @@
           montant: parseFloat(document.getElementById('rn-l-montant').value) || 0, date: rnIso(rnToday()),
           frigo: document.getElementById('rn-l-frigo').checked, promis: true, ordo: true,
           notes: 'Renouvellement — ' + it.lib + (document.getElementById('rn-l-notes').value.trim() ? ' · ' + document.getElementById('rn-l-notes').value.trim() : ''),
-          status: 'prep', prepBy: u.id, livrBy: null, cold: document.getElementById('rn-l-frigo').checked, updatedAt: Date.now()
+          status: 'prep', prepBy: u.id, livrBy: null, cold: document.getElementById('rn-l-frigo').checked,
+          createdBy: u.id, createdAt: (typeof nowStamp === 'function' ? nowStamp() : null), updatedAt: Date.now()
         });
         it._delivId = dId; // pour pouvoir retirer cette livraison si on annule la préparation
       }

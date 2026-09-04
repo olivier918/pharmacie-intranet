@@ -2870,6 +2870,10 @@ function dCard(d){
   const stCSS={wait:'s-wait',prep:'s-prep',done:'s-done'}[d.status];
   const prep=d.prepBy?staffName(d.prepBy):'—';
   const livr=d.livrBy?staffName(d.livrBy):'—';
+  // Operateur qui a saisi la livraison. Les livraisons anterieures a cet ajout
+  // n'ont pas de createdBy : on n'affiche alors rien plutot qu'un tiret trompeur.
+  const saisiePar=d.createdBy?staffName(d.createdBy):null;
+  const saisieQuand=d.createdAt&&d.createdAt.date?` le ${d.createdAt.date} à ${d.createdAt.heure}`:'';
 
   const currentIdx={wait:0,prep:1,done:2}[d.status];
 
@@ -2949,7 +2953,7 @@ function dCard(d){
       ${dAFacturer(d)?`<div class="dc-row2"><span class="badge" style="background:#FFF3E0;color:#BF360C;border:1px solid #FFCC80;font-weight:700;padding:3px 9px">${ico('alerte')} Facturation à finaliser — ordonnance récupérée à la livraison</span></div>`:''}
       ${d.factureAt?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('valider')} Facturé le ${new Date(d.factureAt).toLocaleDateString('fr-FR')} par ${staffName(d.factureBy)} <span onclick="annulerFacture(${d.id})" style="cursor:pointer;color:var(--gray-500);text-decoration:underline;margin-left:6px" title="Remettre en attente">annuler</span></span></div>`:''}
       <div class="dc-row2 no-print" style="margin-top:1px">
-        <span class="dc-track">Préparé : ${prep} · Livré : ${livr}${d.smsAt?` · SMS envoyé le ${new Date(d.smsAt).toLocaleDateString('fr-FR')} par ${staffName(d.smsBy)}`:''}</span>
+        <span class="dc-track">${saisiePar?`Saisie : ${saisiePar}${saisieQuand} · `:''}Préparé : ${prep} · Livré : ${livr}${d.smsAt?` · SMS envoyé le ${new Date(d.smsAt).toLocaleDateString('fr-FR')} par ${staffName(d.smsBy)}`:''}</span>
       </div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
@@ -3167,7 +3171,7 @@ function saveD(){
     const d=deliveries.find(x=>x.id===parseInt(editId));
     if(d){Object.assign(d,obj);d.updatedAt=Date.now();}
   } else {
-    deliveries.unshift({id:Date.now(),...obj,status:'wait',prepBy:null,livrBy:null,updatedAt:Date.now()});
+    deliveries.unshift({id:Date.now(),...obj,status:'wait',prepBy:null,livrBy:null,createdBy:currentUser?.id||null,createdAt:nowStamp(),updatedAt:Date.now()});
   }
   // Always update patient record with latest address/commune/tel
   upsertPatient({nom,prenom,adresse:obj.adresse,commune:obj.commune,tel:obj.tel});
