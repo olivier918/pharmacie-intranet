@@ -232,6 +232,21 @@ async function initDB() {
   }
 }
 
+// ─── Configuration publique lue par le front ───
+// RENOUV_BASE_URL : adresse sous laquelle les liens envoyes aux PATIENTS sont
+// construits (ex. https://renouvellement.pharmacie-mondeville.fr). Elle doit
+// pointer sur ce meme serveur — c'est un simple alias, pas un autre service.
+// Non definie, le front retombe sur l'adresse courante : le lien reste valide,
+// il porte seulement le nom du back-office.
+function renouvBase() {
+  const v = (process.env.RENOUV_BASE_URL || '').trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(v) ? v : null;
+}
+app.get('/api/config', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ renouvBase: renouvBase() });
+});
+
 // ─── Version déployée (pour l'auto-rafraîchissement des postes) ───
 app.get('/api/version', (req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -967,6 +982,9 @@ async function start() {
   }
   initMail();
   logSmsStatus();
+  console.log(renouvBase()
+    ? '  🔗 Liens patients construits sur ' + renouvBase()
+    : '  🔗 Liens patients sur l\'adresse courante (definir RENOUV_BASE_URL pour un sous-domaine dedie)');
   paiement.logStatus();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {

@@ -9187,6 +9187,16 @@ function openRenouvSms(o){
   if(orig) window[fn]=function(){orig.apply(this,arguments);schedSave();};
 });
 
+// ═══════════ CONFIGURATION SERVEUR ═══════════
+// Chargee une fois au demarrage. Tant qu'elle n'est pas arrivee, les liens
+// patients retombent sur l'adresse courante : jamais de lien casse, au pire un
+// lien qui porte le nom du back-office.
+window.APP_CONFIG = window.APP_CONFIG || {};
+fetch('/api/config', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : null)
+  .then(c => { if (c) Object.assign(window.APP_CONFIG, c); })
+  .catch(() => {});
+
 // ═══════════ INIT ═══════════
 document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 </script>

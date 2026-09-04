@@ -734,6 +734,14 @@
   // Un jeton aléatoire est tiré sur le poste, écrit sur l'ordonnance, puis glissé
   // dans le SMS sous forme de lien. La réponse du patient est enregistrée par le
   // serveur sur cette même ordonnance : elle revient ici à la synchronisation.
+  // Adresse sous laquelle on construit les liens envoyes aux patients. Un
+  // sous-domaine dedie (renouvellement.pharmacie-mondeville.fr) inspire plus
+  // confiance dans un SMS que le nom du back-office, et ne revele pas l'outil
+  // interne. Repli sur l'adresse courante : le lien fonctionne dans tous les cas.
+  function rnBaseLien() {
+    const b = window.APP_CONFIG && window.APP_CONFIG.renouvBase;
+    return (typeof b === 'string' && /^https?:\/\//i.test(b)) ? b.replace(/\/+$/, '') : location.origin;
+  }
   function rnJeton() {
     try {
       const a = new Uint8Array(16); crypto.getRandomValues(a);
@@ -765,7 +773,7 @@
       it.updatedAt = Date.now();
       rnPersist();
     }
-    const lien = location.origin + '/r/' + it.conf.token;
+    const lien = rnBaseLien() + '/r/' + it.conf.token;
     const texte = rnTexteSms(it, lien);
 
     window.openSmsModal({
@@ -810,7 +818,7 @@
   window.rnVoirLien = function (id) {
     const it = rnList().find(x => x.id === id); if (!it) return;
     if (!it.conf || !it.conf.token) { rnToast('Aucune demande envoyée pour l’instant.'); return; }
-    window.open(location.origin + '/r/' + it.conf.token, '_blank');
+    window.open(rnBaseLien() + '/r/' + it.conf.token, '_blank');
   };
 
   // Copie du lien : utile si le patient n'a pas de mobile mais consulte ses mails,
@@ -818,7 +826,7 @@
   window.rnCopierLien = function (id) {
     const it = rnList().find(x => x.id === id); if (!it) return;
     if (!it.conf || !it.conf.token) { it.conf = Object.assign({}, it.conf, { token: rnJeton() }); it.updatedAt = Date.now(); rnPersist(); }
-    const lien = location.origin + '/r/' + it.conf.token;
+    const lien = rnBaseLien() + '/r/' + it.conf.token;
     try { navigator.clipboard.writeText(lien); rnToast('Lien copié.'); }
     catch (e) { prompt('Lien personnel du patient :', lien); }
   };
