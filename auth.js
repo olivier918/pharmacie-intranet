@@ -89,7 +89,7 @@ function clearCookie(res) {
 
 const LOGIN_HTML = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pharmacie du Centre — Accès</title>
+<title>PILOT — Accès officine</title>
 <style>
   *{box-sizing:border-box} body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;
     background:linear-gradient(135deg,#1D5C3A,#0f3d25);min-height:100vh;display:flex;align-items:center;justify-content:center}
@@ -99,11 +99,20 @@ const LOGIN_HTML = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
   input:focus{border-color:#1D5C3A}
   button{width:100%;margin-top:14px;padding:12px;font-size:15px;font-weight:600;color:#fff;background:#1D5C3A;border:none;border-radius:10px;cursor:pointer}
   button:disabled{opacity:.6;cursor:default}
+  .who{width:100%;padding:10px 14px;font-size:14px;border:1px solid #e2ebe6;border-radius:10px;
+    background:#f4f7f5;color:#6b7a72;margin-bottom:10px;cursor:default;text-align:center}
+  .who:focus{outline:none}
   .err{color:#c62828;font-size:13px;margin-top:12px;min-height:18px}
 </style></head><body>
-<form class="card" id="f" method="post" action="/api/login">
-  <h1>Pharmacie du Centre</h1>
-  <p>Accès sécurisé — intranet</p>
+<form class="card" id="f" name="portail-officine" method="post" action="/api/login">
+  <h1>PILOT</h1>
+  <p>Accès officine — poste partagé</p>
+  <!-- Champ « compte » en lecture seule. Sans identifiant, Chrome enregistrait ce
+       mot de passe sous un utilisateur vide, sur le meme domaine que l'ecran de
+       connexion de l'appli : les deux entrees se melangeaient. Un identifiant fixe
+       et distinct donne deux entrees separees dans le gestionnaire de mots de passe. -->
+  <input class="who" type="text" id="u" name="username" value="acces-officine"
+         autocomplete="username" readonly tabindex="-1" aria-label="Compte">
   <input type="password" id="pw" name="password" placeholder="Mot de passe d'accès" autocomplete="current-password" autofocus>
   <button type="submit" id="b">Entrer</button>
   <div class="err" id="e"></div>
