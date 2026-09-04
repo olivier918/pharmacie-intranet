@@ -139,8 +139,12 @@ function sendViaBrevo({ to, cc, subject, text, from, attachments }) {
     const https = require('https');
     const payload = JSON.stringify({
       sender: { email: from },
-      to: [{ email: to }],
-      cc: cc ? [{ email: cc }] : undefined,
+      // `to` et `cc` arrivent deja normalises en tableaux d'adresses valides
+      // (voir destinataires() cote route). Brevo attend un objet par adresse.
+      to: (Array.isArray(to) ? to : [to]).map(e => ({ email: e })),
+      cc: (Array.isArray(cc) ? cc : (cc ? [cc] : [])).length
+        ? (Array.isArray(cc) ? cc : [cc]).map(e => ({ email: e }))
+        : undefined,
       subject,
       textContent: text,
       // Brevo attend { name, content(base64) } — omis si aucune pièce jointe (rétro-compatible)
@@ -374,10 +378,26 @@ app.get('/api/mail-status', (req, res) => {
 });
 
 // ─── Envoi d'un e-mail (déclenché par l'utilisateur depuis l'appli) ───
+// Normalise un destinataire : accepte une chaine ou un tableau, retire les
+// entrees vides, refuse ce qui ne ressemble pas a une adresse.
+// Les retours chariot sont exclus par la regex : injectes dans un en-tete
+// SMTP, ils permettraient d'ajouter des destinataires caches au message.
+const ADRESSE_OK = /^[^\s@,;:<>"\r\n]+@[^\s@,;:<>"\r\n]+\.[A-Za-z]{2,}$/;
+function destinataires(v) {
+  const brut = Array.isArray(v) ? v : String(v == null ? '' : v).split(/[,;]/);
+  const vus = new Set();
+  return brut
+    .map(a => String(a || '').trim())
+    .filter(a => a && ADRESSE_OK.test(a) && !vus.has(a.toLowerCase()) && vus.add(a.toLowerCase()))
+    .slice(0, 10);
+}
 app.post('/api/send-mail', async (req, res) => {
   if (!mailMethod) return res.status(400).json({ ok: false, error: 'Aucun service d\'envoi configuré sur le serveur.' });
-  const { to, cc, subject, text, attachments } = req.body || {};
-  if (!to || !subject || !text) return res.status(400).json({ ok: false, error: 'Destinataire, objet et message sont requis.' });
+  const { subject, text, attachments } = req.body || {};
+  const to = destinataires((req.body || {}).to);
+  const cc = destinataires((req.body || {}).cc);
+  if (!to.length) return res.status(400).json({ ok: false, error: 'Aucune adresse destinataire valide.' });
+  if (!subject || !text) return res.status(400).json({ ok: false, error: 'Objet et message sont requis.' });
   const from = mailFrom();
   if (!from) return res.status(400).json({ ok: false, error: 'Adresse expéditeur (MAIL_FROM) non configurée.' });
   // Normalisation des pièces jointes : on n'accepte que { name, content(base64) }, sans en-tête data:
@@ -391,10 +411,10 @@ app.post('/api/send-mail', async (req, res) => {
   try {
     if (mailMethod === 'brevo') {
       const r = await sendViaBrevo({ to, cc, subject, text, from, attachments: atts });
-      return res.json({ ok: true, id: r.id });
+      return res.json({ ok: true, id: r.id, to });
     }
     const info = await mailTransport.sendMail({
-      from, to, cc: cc || undefined, subject, text,
+      from, to, cc: cc.length ? cc : undefined, subject, text,
       attachments: atts ? atts.map(a => ({ filename: a.name, content: a.content, encoding: 'base64' })) : undefined
     });
     return res.json({ ok: true, id: info.messageId });

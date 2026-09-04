@@ -67,10 +67,12 @@
       bc.id = 'cm-banque-card';
       bc.innerHTML = ''
         + '<div class="ch"><span class="ct"><svg class="ico"><use href="#ic-euro"></use></svg> Banque — commande de monnaie</span></div>'
-        + '<div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">Destinataire du mail de commande de monnaie. Vous pouvez le remplacer temporairement (par ex. votre propre adresse) pour tester l\'envoi.</div>'
+        + '<div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">Destinataires du mail de commande de monnaie : jusqu\'à trois adresses, qui recevront le message ensemble et se verront mutuellement. Vous pouvez en remplacer une temporairement (par ex. votre propre adresse) pour tester l\'envoi.</div>'
         + '<div class="fgrid">'
         + '  <div class="fg"><label>Nom de la banque</label><input type="text" id="cm-banque-nom" placeholder="Ma banque"></div>'
-        + '  <div class="fg"><label>E-mail destinataire des commandes</label><input type="email" id="cm-banque-mail" placeholder="agence@mabanque.fr"></div>'
+        + '  <div class="fg"><label>E-mail destinataire 1</label><input type="email" id="cm-banque-mail" placeholder="agence@mabanque.fr"></div>'
+        + '  <div class="fg"><label>E-mail destinataire 2 <span style="color:var(--gray-500);font-weight:400">(facultatif)</span></label><input type="email" id="cm-banque-mail2" placeholder="conseiller@mabanque.fr"></div>'
+        + '  <div class="fg"><label>E-mail destinataire 3 <span style="color:var(--gray-500);font-weight:400">(facultatif)</span></label><input type="email" id="cm-banque-mail3" placeholder="comptabilite@…"></div>'
         + '</div>'
         + '<button class="btn bp" style="margin-top:.9rem" onclick="cmSaveBanque()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>'
         + '<span id="cm-banque-saved" style="display:none;margin-left:.6rem;color:#2E7D32;font-size:.85rem">Enregistré</span>';
@@ -194,15 +196,32 @@
   };
 
   // ─── Banque (sous-traitant) ───
+  // Adresses destinataires, dans l'ordre des champs, vides ecartees.
+  // banque.mail (une seule adresse) est l'ancien format : il sert de valeur de
+  // depart tant que banque.mails n'existe pas, pour ne rien perdre a la bascule.
+  function cmMails() {
+    if (typeof banque === 'undefined' || !banque) return [];
+    const src = Array.isArray(banque.mails) ? banque.mails : [banque.mail];
+    const vus = {};
+    return src.map(a => String(a || '').trim())
+      .filter(a => a && a.indexOf('@') > 0 && !vus[a.toLowerCase()] && (vus[a.toLowerCase()] = 1));
+  }
   function cmFillBanque() {
     if (typeof banque === 'undefined') return;
     const n = document.getElementById('cm-banque-nom'); if (n) n.value = banque.nom || '';
-    const m = document.getElementById('cm-banque-mail'); if (m) m.value = banque.mail || '';
+    const src = Array.isArray(banque.mails) ? banque.mails : [banque.mail];
+    ['cm-banque-mail', 'cm-banque-mail2', 'cm-banque-mail3'].forEach((id, i) => {
+      const el = document.getElementById(id); if (el) el.value = src[i] || '';
+    });
   }
   window.cmSaveBanque = function () {
-    if (typeof banque === 'undefined') window.banque = { nom: '', mail: '' };
+    if (typeof banque === 'undefined') window.banque = { nom: '', mail: '', mails: [] };
     banque.nom = (document.getElementById('cm-banque-nom') || {}).value || '';
-    banque.mail = (document.getElementById('cm-banque-mail') || {}).value || '';
+    banque.mails = ['cm-banque-mail', 'cm-banque-mail2', 'cm-banque-mail3']
+      .map(id => ((document.getElementById(id) || {}).value || '').trim())
+      .filter(Boolean);
+    // Conserve pour les versions plus anciennes de l'appli restees ouvertes ailleurs.
+    banque.mail = banque.mails[0] || '';
     if (typeof schedSave === 'function') schedSave();
     const s = document.getElementById('cm-banque-saved'); if (s) { s.style.display = ''; setTimeout(() => { s.style.display = 'none'; }, 2500); }
   };
@@ -221,10 +240,12 @@
     const items = lines.filter(l => l.cmd > 0);
     const total = items.reduce((s, l) => s + l.val, 0);
     if (!items.length) { cmModalInfo('Aucune commande', 'Le fond de caisse est complet : aucune monnaie à commander.'); return; }
-    const dest = (typeof banque !== 'undefined' && banque.mail) ? banque.mail : '';
+    const dest = cmMails();
     const subject = 'Commande de monnaie — Pharmacie du Centre';
     const body = cmBody(lines, total);
-    const destTxt = dest ? (dest + (banque.nom ? ' (' + banque.nom + ')' : '')) : '⚠ Aucune banque configurée (onglet Sous-traitants)';
+    const destTxt = dest.length
+      ? (dest.join(', ') + (banque.nom ? ' (' + banque.nom + ')' : ''))
+      : '⚠ Aucune adresse configurée (onglet Sous-traitants)';
     cmShowMailModal(subject, body, destTxt, total, items, lines);
   };
 
@@ -240,13 +261,13 @@
         + '<div id="cm-mail-foot" style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap"></div></div>';
       document.body.appendChild(m);
     }
-    const canSend = (typeof banque !== 'undefined' && banque.mail);
+    const canSend = cmMails().length > 0;
     document.getElementById('cm-mail-body').innerHTML = ''
       + '<div style="font-size:.85rem;color:var(--gray-700);margin-bottom:.7rem">Destinataire : <strong>' + destTxt + '</strong></div>'
       + '<div style="font-size:.85rem;color:var(--gray-700);margin-bottom:.4rem">Objet : <strong>' + subject + '</strong></div>'
       + '<textarea id="cm-mail-text" style="width:100%;min-height:210px;border:1px solid var(--gray-200);border-radius:9px;padding:10px;font-size:.83rem;font-family:inherit">' + body + '</textarea>'
       + '<div style="margin-top:.6rem;font-weight:700">Total : ' + cmEuro(total) + '</div>'
-      + (canSend ? '' : '<div style="margin-top:.7rem;color:var(--red);font-size:.83rem">Renseignez le nom et l\'e-mail de la banque dans l\'onglet « Sous-traitants » avant d\'envoyer.</div>');
+      + (canSend ? '' : '<div style="margin-top:.7rem;color:var(--red);font-size:.83rem">Renseignez au moins une adresse destinataire dans l\'onglet « Sous-traitants » avant d\'envoyer.</div>');
     document.getElementById('cm-mail-foot').innerHTML = ''
       + '<button class="btn bs" onclick="cmCloseMail()">Annuler</button>'
       + (canSend ? '<button class="btn bp" id="cm-send-btn" onclick="cmConfirmSend()"><svg class="ico"><use href="#ic-envoyer"></use></svg> Confirmer l\'envoi</button>' : '');
@@ -258,13 +279,14 @@
 
   window.cmConfirmSend = async function () {
     const m = document.getElementById('cm-mail-modal'); if (!m || !m._ctx) return;
-    if (typeof banque === 'undefined' || !banque.mail) return;
+    const dest = cmMails();
+    if (!dest.length) return;
     const btn = document.getElementById('cm-send-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Envoi…'; }
     const subject = m._ctx.subject;
     const body = (document.getElementById('cm-mail-text') || {}).value || cmBody(m._ctx.lines, m._ctx.total);
     let ok = false, errMsg = '';
     try {
-      const r = await fetch('/api/send-mail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: banque.mail, subject, text: body }) });
+      const r = await fetch('/api/send-mail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: dest, subject, text: body }) });
       let j = null; try { j = await r.json(); } catch (e) {}
       ok = r.ok && (!j || j.ok !== false);
       if (!ok) errMsg = (j && (j.error || j.message)) || ('Erreur ' + r.status);
@@ -276,12 +298,12 @@
         id: Date.now(), date: (typeof todayStr === 'function' ? todayStr() : new Date().toISOString().slice(0, 10)),
         operateur: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : '?',
         lignes: items.map(l => ({ k: l.k, lbl: l.lbl, cible: l.cible, etat: l.etat, cmd: l.cmd, val: l.val })),
-        total: m._ctx.total, banqueNom: banque.nom || '', banqueMail: banque.mail, mailSent: new Date().toISOString(),
+        total: m._ctx.total, banqueNom: banque.nom || '', banqueMail: dest[0], banqueMails: dest.slice(), mailSent: new Date().toISOString(),
         updatedAt: Date.now()
       });
       if (typeof schedSave === 'function') schedSave();
       cmCloseMail(); cmResetEtat(); cmRenderHist();
-      cmModalInfo('Commande envoyée', 'Le mail de commande a été envoyé à ' + banque.mail + '.');
+      cmModalInfo('Commande envoyée', 'Le mail de commande a été envoyé à ' + dest.join(', ') + '.');
     } else {
       const foot = document.getElementById('cm-mail-foot');
       if (foot) foot.insertAdjacentHTML('afterbegin', '<div style="color:var(--red);font-size:.82rem;margin-bottom:.5rem">Échec de l\'envoi : ' + errMsg + '</div>');
