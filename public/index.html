@@ -344,6 +344,9 @@ tr:hover td{background:#fafffe}
 .ti-name{font-weight:600;font-size:.86rem;display:flex;align-items:center;gap:5px}
 .ti-prev{font-size:.75rem;color:var(--gray-500);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .unread{background:var(--g-mid);color:#fff;border-radius:10px;font-size:.62rem;padding:1px 6px}
+.unread.neuf{background:var(--red);font-weight:800;animation:pastille-pop .25s ease-out}
+@keyframes pastille-pop{from{transform:scale(.5)}to{transform:scale(1)}}
+.ti.neuf{background:#FFF5F5;border-left:3px solid var(--red)}
 .chat-panel{border:1px solid var(--gray-200);border-radius:var(--radius);display:flex;flex-direction:column}
 .chat-hd{padding:.8rem 1rem;border-bottom:1px solid var(--gray-200);background:var(--g-pale);border-radius:var(--radius) var(--radius) 0 0}
 .msgs{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:8px;min-height:280px;max-height:320px}
@@ -493,7 +496,7 @@ tr:hover td{background:#fafffe}
 
   <aside class="sidebar" id="sidebar">
     <button class="sb-item active" data-sec="livraisons" onclick="showSec('livraisons',this)"><svg class="ico sb-ico"><use href="#ic-livraison"></use></svg><span class="sb-label">Livraisons</span><span class="sb-badge" id="navb-liv" title="Livraisons à préparer"></span></button>
-    <button class="sb-item" data-sec="messagerie" onclick="showSec('messagerie',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">Messagerie</span></button>
+    <button class="sb-item" data-sec="messagerie" onclick="showSec('messagerie',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">Messagerie</span><span class="sb-badge" id="navb-msg"></span></button>
     <button class="sb-item" data-sec="sms" onclick="showSec('sms',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">SMS patients</span></button>
     <button class="sb-item" data-sec="preparations" onclick="showSec('preparations',this)"><svg class="ico sb-ico"><use href="#ic-realisation"></use></svg><span class="sb-label">Préparations</span></button>
     <button class="sb-item" data-sec="bpm" onclick="showSec('bpm',this)"><svg class="ico sb-ico"><use href="#ic-ordonnance"></use></svg><span class="sb-label">BPM</span></button>
@@ -2750,6 +2753,18 @@ function updateNavBadges(){
         : 'Ordonnances à préparer dans les 7 prochains jours';
     } else { rn.textContent=''; }
   }
+  // Messagerie : ROUGE dès qu'un dossier qui vous concerne a reçu une réponse
+  // que vous n'avez pas encore lue.
+  const ms=document.getElementById('navb-msg');
+  if(ms){
+    const n=(typeof msgTotalNonLus==='function')?msgTotalNonLus():0;
+    ms.classList.remove('on','red','orange');
+    if(n>0){
+      ms.textContent=n>99?'99+':String(n);
+      ms.classList.add('on','red');
+      ms.title='Nouvelles réponses dans vos dossiers de messagerie';
+    } else { ms.textContent=''; }
+  }
   // Crédits : ROUGE pour VOS relances restées sans nouvelle depuis 14 jours —
   // c'est à vous que le dossier revient. ORANGE pour celles des autres, pour
   // qu'un dossier ne dorme pas pendant les congés de qui l'a ouvert.
@@ -3266,7 +3281,39 @@ function toggleArchives(){
   document.getElementById('arch-btn').className='btn '+(showArchives?'bp':'bs')+' sm';
   renderThreads();
 }
+// ═══════════ MESSAGERIE : CE QUI N'A PAS ÉTÉ LU ═══════════
+// Un opérateur n'est alerté que sur les dossiers qui le concernent : ceux qu'il a
+// ouverts et ceux dans lesquels il a écrit. Un dossier suivi par d'autres ne lui
+// met pas de pastille rouge, sinon l'alerte devient du bruit et on cesse de la lire.
+function msgConcerne(t){
+  const moi=currentUser?.id;
+  return !!moi && Array.isArray(t.msgs) && t.msgs.some(m=>m.from===moi);
+}
+function msgDernier(t){ return (Array.isArray(t.msgs)&&t.msgs.length)?t.msgs[t.msgs.length-1]:null; }
+// Les messages antérieurs à cette fonctionnalité n'ont pas d'horodatage `ts` :
+// ils valent 0 et ne déclenchent donc jamais d'alerte rétroactive.
+function msgNonLus(t){
+  const moi=currentUser?.id; if(!moi) return 0;
+  const vu=(t.vu&&t.vu[moi])||0;
+  return (t.msgs||[]).filter(m=>m.from!==moi&&(m.ts||0)>vu).length;
+}
+function msgAlerte(t){ return t.status!=='closed' && msgConcerne(t) && msgNonLus(t)>0; }
+function msgTotalNonLus(){ return threads.filter(msgAlerte).reduce((n,t)=>n+msgNonLus(t),0); }
+// Marque le dossier comme lu pour l'opérateur courant.
+// ATTENTION : volontairement SANS `updatedAt`. Ce champ fait gagner l'enregistrement
+// lors de la fusion serveur ; le rehausser ici ferait qu'un poste qui se contente
+// d'OUVRIR un dossier écraserait, avec sa copie, un message qu'un autre poste vient
+// d'écrire et qu'il n'a pas encore reçu. Au pire une pastille réapparaît, ce qui est
+// sans conséquence — perdre un message ne l'est pas.
+function msgMarquerLu(t){
+  const moi=currentUser?.id; if(!moi||!t) return;
+  const der=msgDernier(t);
+  const ts=(der&&der.ts)||Date.now();
+  t.vu=t.vu||{};
+  if(t.vu[moi]!==ts) t.vu[moi]=ts;
+}
 function renderThreads(){
+  updateNavBadges();
   const q=(document.getElementById('ts-q').value||'').toLowerCase();
   const el=document.getElementById('thread-sb');
   let f=threads.filter(t=>{
@@ -3277,14 +3324,15 @@ function renderThreads(){
   el.innerHTML=f.map(t=>{
     const last=t.msgs[t.msgs.length-1];
     const isClosed=t.status==='closed';
+    const neufs=msgAlerte(t)?msgNonLus(t):0;
     // Patient name is the primary display; subj is secondary
     const patName=t.patient?`${t.patient.nom} ${t.patient.prenom}`:null;
     const mainLabel=patName||t.subj;
     const subLabel=patName&&t.subj&&t.subj!==mainLabel?t.subj:null;
-    return `<div class="ti${t.id===currentThread?' active':''}" onclick="openThread(${t.id})" style="${isClosed?'opacity:.6;background:#f9f9f9':''}">
+    return `<div class="ti${t.id===currentThread?' active':''}${neufs?' neuf':''}" onclick="openThread(${t.id})" style="${isClosed?'opacity:.6;background:#f9f9f9':''}">
       <div class="ti-name" style="font-size:.9rem;font-weight:700;color:${isClosed?'var(--gray-500)':'var(--gray-900)'}">${mainLabel}
         ${isClosed?'<span style="font-size:.6rem;color:var(--gray-500);background:var(--gray-200);padding:1px 5px;border-radius:8px;margin-left:4px">Archivé</span>':''}
-        ${!isClosed?`<span class="unread">${t.msgs.length}</span>`:''}
+        ${!isClosed?`<span class="unread${neufs?' neuf':''}" title="${neufs?neufs+' nouveau(x) message(s) depuis votre dernière lecture':'Messages dans ce dossier'}">${neufs||t.msgs.length}</span>`:''}
       </div>
       ${subLabel?`<div style="font-size:.73rem;color:var(--gray-500);margin-top:1px">${subLabel}</div>`:''}
       <div class="ti-prev">${last?last.from+' : '+last.text:'Aucun message'}</div>
@@ -3294,6 +3342,7 @@ function renderThreads(){
 function openThread(id){
   currentThread=id;
   const t=threads.find(x=>x.id===id);if(!t)return;
+  msgMarquerLu(t);
   document.getElementById('chat-title').textContent=t.subj;
   let sub=`Type : ${t.type} · Statut : ${t.status==='open'?'En cours':'Clos'}`;
   if(t.patient){
@@ -3317,7 +3366,12 @@ function sendMsg(){
   if(!t||t.status==='closed')return;
   const txt=document.getElementById('msg-in').value.trim();if(!txt)return;
   const now=new Date();
-  t.msgs.push({from:currentUser.id,text:txt,time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),date:now.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})});
+  // `ts` : horodatage machine, seul repère fiable pour savoir ce qui est nouveau
+  // (les champs date/time ne servent qu'à l'affichage). `updatedAt` : sans lui, la
+  // fusion serveur ne sait pas quelle version du dossier est la plus récente et un
+  // poste en retard peut réécrire par-dessus le message qui vient d'être envoyé.
+  t.msgs.push({from:currentUser.id,text:txt,ts:now.getTime(),time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),date:now.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})});
+  t.updatedAt=Date.now();
   document.getElementById('msg-in').value='';
   openThread(currentThread);
 }
