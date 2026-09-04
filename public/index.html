@@ -333,7 +333,17 @@ tr:hover td{background:#fafffe}
 .confirm-box{background:#fff;border-radius:14px;padding:1.5rem;max-width:360px;width:100%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.2)}
 .confirm-box h4{font-size:1rem;margin-bottom:.5rem}
 .confirm-box p{font-size:.88rem;color:var(--gray-500);margin-bottom:1.25rem}
-.confirm-btns{display:flex;gap:10px;justify-content:center}
+.confirm-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+/* Boutons de confirmation : cibles tactiles. 48 px est le minimum confortable
+   pour un doigt ; en dessous on vise a cote, ce qui sur « Livrée » ou
+   « Reporter » n'est pas anodin. En mobile ils passent en pile pleine largeur. */
+.confirm-btns .btn{flex:1 1 132px;min-height:48px;justify-content:center;padding:12px 16px;font-size:.92rem;font-weight:600}
+.bw-fort{background:var(--amber);color:#fff}.bw-fort:hover{background:#D84315}
+@media(max-width:767px){
+  .confirm-box{padding:1.25rem}
+  .confirm-btns{flex-direction:column;gap:9px}
+  .confirm-btns .btn{width:100%;flex:none;min-height:54px;font-size:1rem}
+}
 
 /* ── MESSAGING ── */
 .msg-layout{display:grid;grid-template-columns:260px 1fr;gap:1rem;min-height:440px}
@@ -1775,6 +1785,11 @@ tr:hover td{background:#fafffe}
     <p id="conf-msg">Êtes-vous sûr ?</p>
     <div class="confirm-btns">
       <button class="btn bp" id="conf-ok">Confirmer</button>
+      <!-- Bouton optionnel, propose seulement par certaines confirmations
+           (aujourd'hui : « Reporter à demain » sur le passage en Livrée).
+           openModal le remasque a chaque ouverture, pour qu'il ne fuite jamais
+           d'une modale a l'autre — la modale de confirmation est partagee. -->
+      <button class="btn bw-fort" id="conf-alt" style="display:none"></button>
       <button class="btn bs" onclick="closeModal('confirm-modal')">Annuler</button>
     </div>
   </div>
@@ -2962,6 +2977,7 @@ function dCard(d){
     d.promis?'<span class="badge" style="background:#f3e5f5;color:#6a1b9a">Promis</span>':'',
     d.ordo?'<span class="badge" style="background:#fff3e0;color:#e65100">Ordo</span>':'',
     d.montant>0?`<span class="badge" style="background:#e8f5e9;color:#2e7d32">${ico('euro')} ${d.montant.toFixed(2)}€</span>`:'',
+    d.reports?`<span class="badge" style="background:#FFF3E0;color:#E65100;border:1px solid #FFCC80;font-weight:700" title="Reportée ${d.reports} fois${d.reportBy?' — dernier report par '+staffName(d.reportBy):''}${d.reportAt?' le '+d.reportAt.date:''}">Reportée ${d.reports}×</span>`:'',
   ].filter(Boolean).join(' ');
 
   return `<div class="dc ${stCSS}">
@@ -3027,6 +3043,32 @@ function askStatus(id,ns){
   pendingAction=()=>{doStatus(id,ns);closeModal('confirm-modal')};
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
+  // Sur le passage en « Livrée », la tournee a deux issues reelles : c'est livre,
+  // ou ca ne l'est pas et il faut y retourner. Le report evite d'avoir a fermer,
+  // rouvrir la fiche et changer la date a la main, en pleine tournee.
+  if(ns==='done'){
+    const alt=document.getElementById('conf-alt');
+    alt.textContent='Reporter à demain';
+    alt.style.display='';
+    alt.onclick=()=>reporterDemain(id);
+  }
+}
+// Date calendaire locale — jamais toISOString(), qui bascule sur la veille en
+// heure de Paris (voir le correctif de rnIso).
+function isoLocal(dt){ const p=n=>String(n).padStart(2,'0'); return dt.getFullYear()+'-'+p(dt.getMonth()+1)+'-'+p(dt.getDate()); }
+// Reporte la livraison a demain sans la sortir de son statut : elle reste
+// preparee, elle change simplement de jour. Le compteur de reports est
+// conserve : une livraison qui glisse de jour en jour doit se voir.
+function reporterDemain(id){
+  const d=deliveries.find(x=>x.id===id); if(!d) return;
+  const demain=new Date(); demain.setDate(demain.getDate()+1);
+  d.date=isoLocal(demain);
+  d.reports=(d.reports||0)+1;
+  d.reportBy=currentUser?.id||null;
+  d.reportAt=nowStamp();
+  d.updatedAt=Date.now();
+  closeModal('confirm-modal');
+  renderD();
 }
 function doStatus(id,ns){
   const d=deliveries.find(x=>x.id===id);
@@ -6958,7 +7000,13 @@ th{background:#f2f2f2}
   w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
 
-function openModal(id){document.getElementById(id).classList.add('open')}
+function openModal(id){
+  // La modale de confirmation est partagee par une quinzaine d'actions : on
+  // remasque son bouton optionnel a chaque ouverture, sinon un « Reporter à
+  // demain » resterait affiche sur la confirmation suivante, quelle qu'elle soit.
+  if(id==='confirm-modal'){ const a=document.getElementById('conf-alt'); if(a){ a.style.display='none'; a.onclick=null; } }
+  document.getElementById(id).classList.add('open');
+}
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
 
