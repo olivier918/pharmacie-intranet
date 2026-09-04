@@ -803,14 +803,34 @@
   function rnAscii(t) {
     return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9 '\-]/g, '').trim();
   }
+  // Le message doit tenir en UN seul SMS. Au-dela de 160 caracteres, l'operateur
+  // facture un segment de plus a chaque patient — sur une centaine de
+  // renouvellements mensuels, la difference se voit sur la facture.
+  //
+  // Le lien pese a lui seul 63 caracteres : il ne reste qu'une centaine de
+  // caracteres pour le texte. Plutot que de laisser deborder, on degrade la
+  // personnalisation par paliers : prenom + nom, puis prenom seul, puis rien.
+  // Le patient reconnait de toute facon l'expediteur, affiche en tete du SMS
+  // sous le nom declare chez Brevo — inutile de resigner dans le corps.
+  //
+  // rnAscii retire les accents des noms : plusieurs caracteres accentues sont
+  // hors du jeu GSM-7 et feraient basculer le SMS en UCS-2, ou la limite tombe
+  // de 160 a 70 caracteres. Le texte fixe ci-dessous est volontairement sans
+  // accent, et n'utilise que l'apostrophe droite — l'apostrophe typographique
+  // provoquerait la meme bascule.
   function rnTexteSms(it, lien) {
     const rappel = (it.conf && it.conf.envois > 0);
-    const faire = p => 'Pharmacie du Centre : ' + (p ? p + ', ' : '')
-      + (rappel ? 'rappel, ' : '') + 'merci de confirmer votre renouvellement : ' + lien;
-    const avec = faire(rnAscii(it.prenom));
-    // Un prénom long ferait basculer le message sur deux SMS : dans ce cas on
-    // s'en passe plutôt que de facturer un SMS de plus à chaque envoi.
-    return avec.length <= 160 ? avec : faire('');
+    const corps = qui => 'Bonjour' + (qui ? ' ' + qui : '') + ', '
+      + (rappel
+        ? 'rappel : merci de confirmer votre renouvellement d\'ordonnance ici '
+        : 'votre renouvellement d\'ordonnance : merci de le confirmer ici ')
+      + lien;
+    const paliers = [
+      corps((rnAscii(it.prenom) + ' ' + rnAscii(it.nom)).trim()),
+      corps(rnAscii(it.prenom)),
+      corps('')
+    ];
+    return paliers.find(t => t.length <= 160) || paliers[paliers.length - 1];
   }
 
   // Vérifier le lien soi-même, sans envoyer de SMS : indispensable pour lever un
