@@ -9,7 +9,12 @@
    ════════════════════════════════════════════════════════════════ */
 (function () {
   // ---------- utilitaires ----------
-  function rnIso(d) { return d.toISOString().split('T')[0]; }
+  // Date CALENDAIRE locale. Surtout pas toISOString() : celui-ci convertit en UTC,
+  // or rnToday() renvoie minuit HEURE DE PARIS — soit 22 h (ou 23 h l'hiver) la VEILLE
+  // en UTC. La date produite reculait donc d'un jour, et la livraison créée depuis un
+  // renouvellement était datée d'hier : invisible dans le module Livraisons, qui filtre
+  // sur le jour affiché.
+  function rnIso(d) { const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); }
   function rnToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
   function rnAddDays(base, n) { const d = new Date(base); d.setDate(d.getDate() + n); return d; }
   function rnFmtFr(iso) { if (!iso) return ''; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
