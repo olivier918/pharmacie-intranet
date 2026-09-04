@@ -3397,6 +3397,17 @@ function msgMarquerLu(t){
   t.vu=t.vu||{};
   if(t.vu[moi]!==ts) t.vu[moi]=ts;
 }
+// Remet le volet de droite dans son etat d'accueil. Sans cela, un dossier
+// referme — ou masque par la recherche — reste affiche a droite alors qu'il a
+// disparu de la liste de gauche : on lit une conversation qu'on ne peut plus
+// selectionner, et le bouton « Clore » reste actif dessus.
+function viderChat(){
+  currentThread=null;
+  document.getElementById('chat-title').textContent='Sélectionnez un dossier';
+  document.getElementById('chat-sub').textContent='';
+  document.getElementById('chat-msgs').innerHTML='<div style="text-align:center;color:var(--gray-500);margin-top:2rem;font-size:.85rem">Sélectionnez un dossier pour afficher la discussion</div>';
+  document.getElementById('chat-inp').style.display='none';
+}
 function renderThreads(){
   updateNavBadges();
   const q=(document.getElementById('ts-q').value||'').toLowerCase();
@@ -3406,6 +3417,10 @@ function renderThreads(){
     const searchStr=(t.subj+' '+(t.patient?t.patient.nom+' '+t.patient.prenom:'')).toLowerCase();
     return searchStr.includes(q);
   });
+  // Le dossier ouvert n'est plus dans la liste (il vient d'etre clos, ou la
+  // recherche l'exclut) : le volet de droite doit suivre, sinon il continue
+  // d'afficher une conversation devenue inaccessible.
+  if(currentThread!=null && !f.some(t=>t.id===currentThread)) viderChat();
   el.innerHTML=f.map(t=>{
     const last=t.msgs[t.msgs.length-1];
     const isClosed=t.status==='closed';
