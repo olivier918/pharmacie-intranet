@@ -3228,14 +3228,26 @@ function openTicket(id){
   document.getElementById('ticket-content').innerHTML=ticketHTML(d,today);
   openModal('ticket-modal');
 }
+// Date de livraison en toutes lettres, pour le bon imprime. On lit la date a
+// MIDI et non a minuit : une date interpretee en UTC bascule sinon sur la veille
+// en heure de Paris — c'est exactement le piege qui datait les livraisons d'un
+// jour trop tot. Renvoie null si la date est absente ou illisible.
+function dateLivraisonLongue(iso){
+  if(!iso) return null;
+  const d=new Date(String(iso).slice(0,10)+'T12:00');
+  if(isNaN(d.getTime())) return null;
+  const t=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
 function ticketHTML(d,today){
   return `
     <div class="ticket-h">PHARMACIE DU CENTRE</div>
     <div style="text-align:center;font-size:.78rem;color:#666;margin-bottom:4px">48 Rue Chapron · 14120 Mondeville<br>02 31 52 15 71</div>
     <div class="ticket-sep"></div>
-    <div style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.4px">Date</div>
-    <div style="font-weight:600">${today}</div>
-    <div class="ticket-sep"></div>
+    <div style="border:2px solid #111;border-radius:7px;padding:7px 8px;margin:7px 0;text-align:center">
+      <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.3px">À livrer le</div>
+      <div style="font-size:1.3rem;font-weight:800;line-height:1.25;margin-top:2px">${dateLivraisonLongue(d.date)||'Date non renseignée'}</div>
+    </div>
     <div style="font-size:1.05rem;font-weight:700">${d.nom} ${d.prenom}</div>
     ${d.adresse?`<div>${d.adresse}</div>`:''}
     ${d.tel?`<div>📞 ${d.tel}</div>`:''}
@@ -3249,7 +3261,8 @@ function ticketHTML(d,today){
     <div style="font-size:.7rem;color:#888;text-transform:uppercase;letter-spacing:.4px">Informations de livraison</div>
     <div style="white-space:pre-wrap;font-weight:600">${d.notes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`:''}
     <div class="ticket-sep"></div>
-    <div style="text-align:center;font-size:.73rem;color:#777">Merci de votre confiance<br>contact@pharmacie-mondeville.fr</div>`;
+    <div style="text-align:center;font-size:.73rem;color:#777">Merci de votre confiance<br>contact@pharmacie-mondeville.fr</div>
+    <div style="text-align:center;font-size:.66rem;color:#999;margin-top:3px">Bon édité le ${today}</div>`;
 }
 function printTicket(){
   const d=deliveries.find(x=>x.id===currentTicketId);
