@@ -25,7 +25,11 @@ const SECURE = process.env.NODE_ENV === 'production' || !!process.env.DATABASE_U
 // la signature cryptographique de chaque requête (voir paiement.js). Elle est de
 // toute façon déclarée avant ce portail dans server.js ; on l'inscrit ici aussi
 // pour que la règle reste vraie si l'ordre des middlewares changeait un jour.
-const ALLOW = new Set(['/api/login', '/api/logout', '/api/health', '/api/version', '/login', '/api/paiement/webhook']);
+// Les fichiers d'identite visuelle sont joignables sans session : sans eux la page
+// d'acces s'affiche sans logo ni favicon. Ils ne revelent rien d'autre que la marque.
+const MARQUE = ['/favicon.ico', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png',
+  '/apple-touch-icon.png', '/manifest.webmanifest', '/pilot-mark.png', '/pilot-lockup.png'];
+const ALLOW = new Set(['/api/login', '/api/logout', '/api/health', '/api/version', '/login', '/api/paiement/webhook'].concat(MARQUE));
 
 // Préfixes joignables sans session : la page de confirmation envoyée au PATIENT
 // par SMS. Le patient n'a évidemment pas de compte ; l'accès est protégé par le
@@ -90,6 +94,14 @@ function clearCookie(res) {
 const LOGIN_HTML = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PILOT — Accès officine</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1D5C3A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PILOT">
 <style>
   *{box-sizing:border-box} body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;
     background:linear-gradient(135deg,#1D5C3A,#0f3d25);min-height:100vh;display:flex;align-items:center;justify-content:center}
