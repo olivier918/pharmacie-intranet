@@ -1184,6 +1184,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
         <button class="btn bs" id="bot9" onclick="boTab('materiel')"><svg class="ico"><use href="#ic-location"></use></svg> Matériel</button>
         <button class="btn bs" id="bot8" onclick="boTab('sonnette')"><svg class="ico"><use href="#ic-sonnette"></use></svg> Sonnette</button>
+        <button class="btn bs" id="bot10" onclick="boTab('journal')"><svg class="ico"><use href="#ic-archives"></use></svg> Journal d'activité</button>
       </div>
 
       <!-- MATÉRIEL EN LOCATION -->
@@ -1215,6 +1216,32 @@ tr:hover td{background:#fafffe}
       </div>
 
       <!-- SONNETTE -->
+      <!-- JOURNAL D'ACTIVITÉ (administrateurs) -->
+      <div id="bo-journal" style="display:none">
+        <div class="card">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Journal d'activité</span></div>
+          <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:.9rem;line-height:1.5">
+            Qui se sert de l'intranet et quelles actions y sont faites. Le journal note l'action, jamais le contenu d'un message ou d'une saisie.
+            L'équipe doit être informée de son existence : consulter l'activité de collaborateurs sans les en avoir avertis n'est pas permis.
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:1rem">
+            <div class="fg" style="margin:0"><label>Période</label>
+              <select id="jr-per" onchange="renderJournal()">
+                <option value="1">Aujourd'hui</option>
+                <option value="7" selected>7 derniers jours</option>
+                <option value="30">30 derniers jours</option>
+                <option value="0">Tout</option>
+              </select></div>
+            <div class="fg" style="margin:0"><label>Opérateur</label>
+              <select id="jr-who" onchange="renderJournal()"><option value="">Tous</option></select></div>
+            <div class="fg" style="margin:0;flex:1;min-width:180px"><label>Rechercher une action</label>
+              <input type="text" id="jr-q" placeholder="livraison, SMS, caisse…" oninput="renderJournal()"></div>
+          </div>
+          <div id="jr-stats" style="margin-bottom:1rem"></div>
+          <div id="jr-list"></div>
+        </div>
+      </div>
+
       <div id="bo-sonnette" style="display:none">
         <div class="card" style="margin-bottom:1rem">
           <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-sonnette"></use></svg> Sonnette comptoir — réglages de CE poste</span></div>
@@ -2244,6 +2271,10 @@ let medecins = [
   {nom:'MARTIN',prenom:'Claire',spec:'Médecine générale',cabinet:'Cabinet Martin',tel:'02 31 XX XX XX',adresse:'Mondeville'},
 ];
 
+// Journal d'activite : qui a fait quoi, et quand. Collection synchronisee comme
+// les autres, purgee par anciennete cote serveur (RETENTION_JOURNAL_DAYS).
+let journal = [];
+
 let deliveries = [
   {id:1,nom:'THOMAS',prenom:'Liliane',adresse:'19 Rue Gambetta',tel:'02 31 XX',lieu:'Domicile',frigo:false,promis:true,ordo:true,montant:0,notes:'Alèses grandes tailles + morphine orale',status:'prep',prepBy:'HL',livrBy:null,date:'2026-05-16',cold:false},
   {id:2,nom:'MILLET',prenom:'Monique',adresse:'10 Rue Albert Suel',tel:'06 72 XX',lieu:'Domicile',frigo:false,promis:false,ordo:false,montant:0,notes:'Protections confiance + gants',status:'wait',prepBy:null,livrBy:null,date:'2026-05-16',cold:false},
@@ -2615,6 +2646,7 @@ function checkPin(){
   const s=staffDB.find(x=>x.pin===pinStr);
   if(s){
     currentUser=s;
+    logAction('Ouverture de session','');
     document.getElementById('pin-screen').style.display='none';
     document.getElementById('app').style.display='grid';
     restoreSidebarState();
@@ -3196,7 +3228,7 @@ function nowStamp(){
 function askDelete(id){
   document.getElementById('conf-title').textContent='Supprimer la livraison';
   document.getElementById('conf-msg').textContent='Cette action est irréversible.';
-  pendingAction=()=>{markDeleted('deliveries',id);deliveries=deliveries.filter(x=>x.id!==id);renderD();closeModal('confirm-modal')};
+  pendingAction=()=>{logAction('Livraison supprimée',journalNomDe(deliveries,id));markDeleted('deliveries',id);deliveries=deliveries.filter(x=>x.id!==id);renderD();closeModal('confirm-modal')};
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
 }
@@ -3480,7 +3512,7 @@ function closeThread(){
   if(!t)return;
   document.getElementById('conf-title').textContent='Clore le dossier';
   document.getElementById('conf-msg').textContent=`Clore définitivement le dossier "${t.subj}" ?`;
-  pendingAction=()=>{t.status='closed';openThread(currentThread);closeModal('confirm-modal')};
+  pendingAction=()=>{t.status='closed';t.updatedAt=Date.now();logAction('Dossier de messagerie clos',t.subj||'');openThread(currentThread);closeModal('confirm-modal')};
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
 }
@@ -3725,7 +3757,7 @@ function openPrepSms(id){
 function abandonPrep(id){
   const p=preps.find(x=>x.id===id);if(!p)return;
   if(confirm('Abandonner la demande pour '+p.nom+' '+p.prenom+' ?')){
-    p.status='abandonnée';p.updatedAt=Date.now();renderPreps();
+    p.status='abandonnée';p.updatedAt=Date.now();logAction('Préparation abandonnée',(p.nom||'')+' '+(p.prenom||''));renderPreps();
   }
 }
 
@@ -3784,11 +3816,11 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette'];
+const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal'];
 function boTab(t){
-  if((t==='compte'||t==='backups') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8};
+  if((t==='compte'||t==='backups'||t==='journal') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
+  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
@@ -3797,6 +3829,7 @@ function boTab(t){
   if(t==='labo'){loadLabo();loadBluestone();}
   if(t==='smstpl')renderSmsTpl();
   if(t==='backups')renderBackups();
+  if(t==='journal')renderJournal();
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
   if(t==='materiel')renderMatTypes();
   applyAdminUI();
@@ -4157,6 +4190,8 @@ function applyAdminUI(){
   const b6=document.getElementById('bot6'); // onglet « Sauvegardes »
   if(b4) b4.style.display = admin ? '' : 'none';
   if(b6) b6.style.display = admin ? '' : 'none';
+  const b10=document.getElementById('bot10'); // onglet « Journal d'activité »
+  if(b10) b10.style.display = admin ? '' : 'none';
   // Historique SMS : le bouton Supprimer n'apparaît que pour les administrateurs
   if(document.getElementById('smsl-list') && typeof renderSmsLog==='function') renderSmsLog();
 }
@@ -9223,6 +9258,134 @@ function openRenouvSms(o){
     ],
     onSent:(r)=>{ if(typeof o.onSent==='function') o.onSent(r); }
   });
+}
+
+// ═══════════ JOURNAL D'ACTIVITÉ ═══════════
+// Consigne les actions metier des operateurs. Objectif : savoir qui se sert de
+// l'outil et ce qui y est fait — pas surveiller la cadence de chacun. On note
+// donc l'action, pas le detail de la saisie, et jamais le contenu d'un message.
+function logAction(act, det){
+  try{
+    if(!currentUser || !act) return;
+    const n=new Date();
+    journal.push({
+      id:'j'+n.getTime().toString(36)+Math.random().toString(36).slice(2,6),
+      ts:n.getTime(),
+      d:isoLocal(n),
+      uid:currentUser.id,
+      // Le nom est fige a l'instant de l'action : un collaborateur qui quitte
+      // l'officine et disparait de staffDB laisse un journal encore lisible.
+      unom:((currentUser.prenom||'')+' '+(currentUser.nom||'')).trim()||currentUser.id,
+      act:String(act).slice(0,80),
+      det:String(det||'').slice(0,80),
+      updatedAt:n.getTime()
+    });
+  }catch(e){}
+}
+function journalNomDe(coll, id){
+  try{ const r=(coll||[]).find(x=>String(x.id)===String(id)); return r?((r.nom||'')+' '+(r.prenom||'')).trim():''; }
+  catch(e){ return ''; }
+}
+// Actions journalisees. Ne sont enveloppees ici que les fonctions qui REALISENT
+// le changement : celles qui se contentent d'ouvrir une modale de confirmation
+// journaliseraient une intention, y compris quand l'operateur annule.
+const JOURNAL_HOOKS={
+  saveD:               ()=>['Livraison enregistrée',''],
+  doStatus:            (id,ns)=>['Livraison → '+({wait:'À préparer',prep:'Préparé',done:'Livrée'}[ns]||ns), journalNomDe(deliveries,id)],
+  reporterDemain:      (id)=>['Livraison reportée à demain', journalNomDe(deliveries,id)],
+  marquerFacture:      (id)=>['Facturation finalisée', journalNomDe(deliveries,id)],
+  savePrep:            ()=>['Préparation enregistrée',''],
+  sendMsg:             ()=>['Message envoyé (messagerie)',''],
+  createThread:        ()=>['Dossier de messagerie créé',''],
+  saveReleve:          ()=>['Relevé de caisse enregistré',''],
+  confirmRemise:       ()=>['Remise en banque enregistrée',''],
+  confirmAdjust:       ()=>['Ajustement de caisse',''],
+  cmConfirmSend:       ()=>['Commande de monnaie envoyée',''],
+  doSendSms:           ()=>['Envoi de SMS',''],
+  rnSaveForm:          ()=>['Ordonnance de renouvellement enregistrée',''],
+  rnFinish:            ()=>['Renouvellement préparé',''],
+  rnConfirmLiv:        ()=>['Renouvellement envoyé en livraison',''],
+  toggleAdmin:         (id)=>['Droits administrateur modifiés', id||''],
+  sonnerComptoir:      ()=>['Sonnette comptoir',''],
+  appelComptoirAvance: (t)=>['Appel comptoir : '+(t==='aide'?'aide':'remplacement'),''],
+  lockUser:            ()=>['Verrouillage de session',''],
+  fullLogout:          ()=>['Déconnexion',''],
+};
+Object.keys(JOURNAL_HOOKS).forEach(fn=>{
+  const orig=window[fn];
+  if(typeof orig!=='function') return;
+  window[fn]=function(){
+    const r=orig.apply(this,arguments);
+    try{ const [act,det]=JOURNAL_HOOKS[fn].apply(null,arguments); logAction(act,det); }catch(e){}
+    return r;
+  };
+});
+
+// ─── Écran du journal (administrateurs) ───
+function journalFiltre(){
+  const per=parseInt((document.getElementById('jr-per')||{}).value||'7',10);
+  const who=((document.getElementById('jr-who')||{}).value||'');
+  const q=((document.getElementById('jr-q')||{}).value||'').toLowerCase();
+  const depuis=per>0?(Date.now()-per*86400000):0;
+  return (journal||[])
+    .filter(e=>e && e.ts>=depuis)
+    .filter(e=>!who || e.uid===who)
+    .filter(e=>!q || ((e.act||'')+' '+(e.det||'')+' '+(e.unom||'')).toLowerCase().includes(q))
+    .sort((a,b)=>b.ts-a.ts);
+}
+function renderJournal(){
+  if(!isAdmin()) return;
+  // Liste des operateurs : celle du journal, pas de staffDB — un collaborateur
+  // parti reste selectionnable tant que ses actions sont conservees.
+  const sel=document.getElementById('jr-who');
+  if(sel){
+    const vus={}; const ops=[];
+    (journal||[]).forEach(e=>{ if(e&&e.uid&&!vus[e.uid]){ vus[e.uid]=1; ops.push([e.uid,e.unom||e.uid]); } });
+    ops.sort((a,b)=>a[1].localeCompare(b[1],'fr'));
+    const cur=sel.value;
+    sel.innerHTML='<option value="">Tous</option>'+ops.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('');
+    sel.value=cur;
+  }
+  const f=journalFiltre();
+  // Repartition par operateur : c'est la reponse a « qui se sert du site ».
+  const parOp={};
+  f.forEach(e=>{ parOp[e.unom||e.uid]=(parOp[e.unom||e.uid]||0)+1; });
+  const tri=Object.entries(parOp).sort((a,b)=>b[1]-a[1]);
+  const maxi=tri.length?tri[0][1]:0;
+  const st=document.getElementById('jr-stats');
+  if(st) st.innerHTML = !tri.length
+    ? ''
+    : `<div style="font-size:.72rem;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:.5rem">Actions par opérateur — ${f.length} au total</div>`
+      + tri.map(([nom,n])=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="width:150px;font-size:.83rem;font-weight:600;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${nom}</span>
+          <span style="flex:1;background:var(--gray-100);border-radius:6px;height:15px;overflow:hidden"><span style="display:block;height:100%;width:${maxi?Math.round(n*100/maxi):0}%;background:var(--g-mid)"></span></span>
+          <span style="width:44px;text-align:right;font-size:.8rem;font-weight:700;color:var(--g-dark)">${n}</span>
+        </div>`).join('');
+
+  const el=document.getElementById('jr-list');
+  if(!el) return;
+  if(!f.length){ el.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.5rem;font-size:.86rem">Aucune action sur cette période.</div>'; return; }
+  // Plafond d'affichage : le journal peut compter des milliers de lignes, la
+  // page n'a pas a toutes les peindre pour repondre a la question posee.
+  const PLAFOND=400;
+  const vue=f.slice(0,PLAFOND);
+  const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  el.innerHTML='<div class="dlist-wrap"><table style="width:100%;border-collapse:collapse;font-size:.83rem">'
+    + '<thead><tr style="background:var(--gray-100);text-align:left">'
+    + '<th style="padding:7px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500)">Quand</th>'
+    + '<th style="padding:7px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500)">Opérateur</th>'
+    + '<th style="padding:7px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500)">Action</th>'
+    + '<th style="padding:7px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500)">Concerne</th></tr></thead><tbody>'
+    + vue.map(e=>{
+        const d=new Date(e.ts);
+        return `<tr style="border-top:1px solid var(--gray-200)">
+          <td style="padding:6px 12px;white-space:nowrap;color:var(--gray-700)">${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td style="padding:6px 12px;font-weight:600;white-space:nowrap">${esc(e.unom||e.uid)}</td>
+          <td style="padding:6px 12px">${esc(e.act)}</td>
+          <td style="padding:6px 12px;color:var(--gray-500)">${esc(e.det)}</td></tr>`;
+      }).join('')
+    + '</tbody></table></div>'
+    + (f.length>PLAFOND?`<div style="text-align:center;color:var(--gray-500);padding:.7rem;font-size:.8rem">${f.length-PLAFOND} action(s) plus anciennes non affichées — affinez la période ou la recherche.</div>`:'');
 }
 
 // ═══════════ AUTO-SAVE HOOKS ═══════════

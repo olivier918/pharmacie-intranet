@@ -15,8 +15,27 @@ const fs = require('fs');
 // doit jamais servir de stockage de repli (voir refuserDisque()).
 const MODE_HEBERGE = !!process.env.DATABASE_URL || process.env.REQUIRE_DB === '1';
 
-const DELIV_DAYS = parseInt(process.env.RETENTION_DELIVERIES_DAYS || '15', 10);
-const PREPS_DAYS = parseInt(process.env.RETENTION_PREPS_DAYS || '90', 10);
+// Duree de retention, en jours. Bornee volontairement : une valeur a 0 — ecrite
+// avec l'intention de DESACTIVER la purge — signifierait « tout ce qui date
+// d'avant aujourd'hui », et effacerait l'historique en entier, de facon
+// irreversible. Une valeur non numerique ferait lever toISOString() et mettrait
+// /api/data hors service en lecture comme en ecriture. On refuse les deux.
+function jours(valeur, defaut, nom) {
+  const n = parseInt(valeur, 10);
+  if (!Number.isFinite(n) || n < 1) {
+    if (valeur !== undefined && valeur !== '') {
+      console.warn('  ⚠️  ' + nom + ' = "' + valeur + '" invalide : valeur par defaut de ' + defaut + ' jours appliquee.');
+    }
+    return defaut;
+  }
+  return n;
+}
+const DELIV_DAYS = jours(process.env.RETENTION_DELIVERIES_DAYS, 15, 'RETENTION_DELIVERIES_DAYS');
+const PREPS_DAYS = jours(process.env.RETENTION_PREPS_DAYS, 90, 'RETENTION_PREPS_DAYS');
+// Journal d'activite : conserve six mois par defaut. Assez pour repondre a
+// « qui utilise l'outil » sur une saison, pas au-dela — un journal nominatif
+// ne se garde pas indefiniment.
+const JOURNAL_DAYS = jours(process.env.RETENTION_JOURNAL_DAYS, 180, 'RETENTION_JOURNAL_DAYS');
 const HISTORY_MIN_INTERVAL_MIN = parseInt(process.env.HISTORY_MIN_INTERVAL_MIN || '5', 10);
 // Champs volumineux et reconstructibles depuis les données : inutiles dans l'historique.
 const HISTORY_STRIP_FIELDS = ['bonPdfHtml', 'pdfVersions'];
@@ -48,6 +67,10 @@ function pruneRetention(blob) {
   if (Array.isArray(out.preps)) {
     const c = cutoff(PREPS_DAYS);
     out.preps = out.preps.filter((x) => !isOlder(x && x.date, c));
+  }
+  if (Array.isArray(out.journal)) {
+    const c = cutoff(JOURNAL_DAYS);
+    out.journal = out.journal.filter((x) => !isOlder(x && x.d, c));
   }
   return out;
 }
@@ -108,6 +131,7 @@ function changed(before, after) {
 }
 
 module.exports = {
+  JOURNAL_DAYS,
   pruneRetention, slimForHistory, pruneStored,
   DELIV_DAYS, PREPS_DAYS, HISTORY_MIN_INTERVAL_MIN, HISTORY_STRIP_FIELDS,
 };
