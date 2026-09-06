@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""
+Sonnette PILOT — poste dédié Raspberry Pi.
+
+Écoute le flux temps réel de l'intranet (/api/sonnette/stream) et joue une
+sonnerie sur le Speaker Bonnet. Aucun navigateur, aucune session, aucun écran :
+l'appareil est branché, il sonne. Il redémarre seul après une coupure.
+
+Le jeton d'appareil part dans l'en-tête Authorization, jamais dans l'URL :
+une adresse se retrouve dans les journaux des serveurs et des proxys, un
+en-tête non.
+"""
+import json, os, subprocess, sys, time
+import urllib.request, urllib.error, urllib.parse
+
+CONF = "/etc/pilot-sonnette.conf"
+
+def config():
+    c = {"url": "", "token": "", "son": "/opt/pilot-sonnette/sonnerie.wav",
+         "nom": "Comptoir", "id": "rpi-comptoir"}
+    try:
+        with open(CONF) as f:
+            for ligne in f:
+                ligne = ligne.strip()
+                if not ligne or ligne.startswith("#") or "=" not in ligne:
+                    continue
+                k, v = ligne.split("=", 1)
+                c[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return c
+
+def journal(msg):
+    # systemd horodate lui-meme : on ecrit brut, sans doubler la date.
+    print(msg, flush=True)
+
+def sonner(fichier):
+    try:
+        subprocess.run(["aplay", "-q", fichier], timeout=15, check=False)
+    except Exception as e:
+        journal("Lecture du son impossible : %s" % e)
+
+def ecouter(c):
+    """Ouvre le flux et joue a chaque evenement 'ring'. Retourne a la fin du flux."""
+    url = c["url"].rstrip("/") + "/api/sonnette/stream?id=%s&nom=%s&rx=1" % (
+        urllib.parse.quote(c["id"]), urllib.parse.quote(c["nom"]))
+    req = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + c["token"],
+        "Accept": "text/event-stream",
+        "Cache-Control": "no-cache",
+    })
+    with urllib.request.urlopen(req, timeout=40) as flux:
+        journal("Connecté à %s — en attente" % c["url"])
+        evenement = None
+        while True:
+            brut = flux.readline()
+            if not brut:
+                return                      # flux ferme proprement : on rouvrira
+            ligne = brut.decode("utf-8", "replace").rstrip("\n")
+            if ligne.startswith(":"):
+                continue                    # battement de coeur du serveur
+            if ligne.startswith("event:"):
+                evenement = ligne[6:].strip()
+            elif ligne.startswith("data:"):
+                if evenement == "ring":
+                    try:
+                        d = json.loads(ligne[5:].strip())
+                    except Exception:
+                        d = {}
+                    journal("Appel : %s (%s)" % (d.get("type", "comptoir"), d.get("par", "?")))
+                    sonner(c["son"])
+                evenement = None
+
+def main():
+    c = config()
+    if not c["url"] or not c["token"]:
+        journal("Configuration incomplète : renseignez url= et token= dans " + CONF)
+        sys.exit(1)
+    if not os.path.exists(c["son"]):
+        journal("Fichier son introuvable : " + c["son"])
+        sys.exit(1)
+    # Attente progressive : un Pi qui demarre avant que le reseau ne soit pret
+    # ne doit pas marteler le serveur, ni abandonner.
+    attente = 2
+    while True:
+        try:
+            ecouter(c)
+            attente = 2                     # le flux a vecu : on repart court
+        except urllib.error.HTTPError as e:
+            journal("Refus du serveur (%s) — jeton invalide ?" % e.code)
+            attente = 60
+        except Exception as e:
+            journal("Connexion perdue (%s)" % e)
+        time.sleep(attente)
+        attente = min(attente * 2, 60)
+
+if __name__ == "__main__":
+    main()

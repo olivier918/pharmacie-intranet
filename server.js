@@ -34,6 +34,9 @@ app.use(auth.gate);           // portail : à placer avant le static et les rout
 console.log(auth.AUTH_DISABLED
   ? '  🔓 Portail d\'accès DÉSACTIVÉ (définir GATE_PASSWORD pour l\'activer)'
   : '  🔒 Portail d\'accès ACTIF');
+console.log(auth.SONNETTE_TOKEN
+  ? '  🔔 Jeton de sonnette actif (poste dédié autorisé sur le flux)'
+  : '  🔔 Aucun jeton de sonnette (définir SONNETTE_TOKEN pour un poste dédié)');
 
 // Serve the frontend
 // Fichiers statiques. Le HTML et le JS sont servis en "no-cache" : le

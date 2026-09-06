@@ -1,0 +1,25 @@
+[Unit]
+Description=Sonnette PILOT — poste comptoir
+# Le service attend que le reseau soit REELLEMENT joignable, pas seulement que
+# l'interface existe : au demarrage d'un Pi, les deux ne sont pas simultanes.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/pilot-sonnette/sonnette.py
+# Redemarrage systematique : coupure de courant, perte de reseau, erreur non
+# prevue — le poste doit revenir seul, sans que personne n'aille au comptoir.
+Restart=always
+RestartSec=5
+User=pilot
+Group=audio
+# Durcissement : le service n'a besoin de rien d'autre que du son et du reseau.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/pilot-sonnette
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+# Configuration de la sonnette PILOT — /etc/pilot-sonnette.conf
+# Ce fichier contient un secret : il doit appartenir a root et n'etre lisible
+# que par le service (chmod 640, chown root:pilot).
+
+url=https://pilot.pharmacie-mondeville.fr
+token=REMPLACER_PAR_LE_JETON_DEFINI_DANS_RAILWAY
+
+# Identifiant et nom du poste, tels qu'ils apparaissent cote serveur.
+id=rpi-comptoir
+nom=Comptoir
+
+son=/opt/pilot-sonnette/sonnerie.wav

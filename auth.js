@@ -151,13 +151,28 @@ function install(app) {
 }
 
 // Middleware portail : à placer AVANT express.static et les routes /api de données
+// Jeton d'appareil : un poste dedie (Raspberry du comptoir) n'a ni clavier ni
+// session. Il presente un jeton dans l'en-tete Authorization — pas dans l'URL,
+// qui finirait dans les journaux des serveurs et des proxys. Ce jeton n'ouvre
+// QUE le flux de la sonnette : il ne donne acces ni aux donnees, ni aux envois.
+const SONNETTE_TOKEN = (process.env.SONNETTE_TOKEN || '').trim();
+function appareilSonnette(req) {
+  if (!SONNETTE_TOKEN) return false;
+  if (req.path !== '/api/sonnette/stream') return false;
+  const h = String(req.headers.authorization || '');
+  if (h.slice(0, 7) !== 'Bearer ') return false;
+  const a = Buffer.from(h.slice(7)), b = Buffer.from(SONNETTE_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 function gate(req, res, next) {
   if (AUTH_DISABLED) return next();
   if (ALLOW.has(req.path)) return next();
+  if (appareilSonnette(req)) return next();
   if (ALLOW_PREFIXES.some(p => req.path.startsWith(p))) return next();
   if (isAuthed(req)) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ ok: false, error: 'auth_required' });
   return res.status(200).type('html').send(LOGIN_HTML);
 }
 
-module.exports = { install, gate, AUTH_DISABLED };
+module.exports = { install, gate, AUTH_DISABLED, SONNETTE_TOKEN: !!SONNETTE_TOKEN };
