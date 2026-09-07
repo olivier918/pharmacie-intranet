@@ -9373,7 +9373,7 @@ function modulesAutorises(u){
   if(isAdmin(u)) return null;
   const rec = staffDB.find(s=>s.id===u.id) || u;
   if(Array.isArray(rec.modules)) return rec.modules.slice();
-  const parPoste = modulesParPoste && modulesParPoste[rec.poste];
+  const parPoste = (modulesParPoste && rec.poste!=='updatedAt') ? modulesParPoste[rec.poste] : null;
   if(Array.isArray(parPoste)) return parPoste.slice();
   return null;
 }
@@ -9435,7 +9435,7 @@ function renderModulesUI(){
 }
 function renderModulesPoste(){
   const poste=(document.getElementById('mod-poste')||{}).value||'Pharmacien';
-  const l=modulesParPoste?modulesParPoste[poste]:null;
+  const l=(modulesParPoste && poste!=='updatedAt')?modulesParPoste[poste]:null;
   modCases('mod-poste-liste', l, !Array.isArray(l));
 }
 window.modSavePerso=function(){
@@ -9452,7 +9452,12 @@ window.modResetPerso=function(){
   const rec=staffDB.find(s=>s.id===currentUser.id); if(!rec) return;
   // On efface le choix personnel : l'operateur repasse sous le reglage de son
   // poste. Sans ce bouton, une personnalisation serait irreversible.
-  delete rec.modules; rec.updatedAt=Date.now();
+  //
+  // `null` et non `delete` : staffDB se fusionne CHAMP PAR CHAMP cote serveur,
+  // et Object.assign ne sait qu'ajouter ou remplacer une cle, jamais en retirer
+  // une. Un champ supprime serait donc reintroduit par la copie d'un autre poste
+  // a la fusion suivante, et le retour au reglage du poste ne tiendrait pas.
+  rec.modules=null; rec.updatedAt=Date.now();
   if(typeof schedSave==='function') schedSave();
   appliquerModules(); renderModulesUI(); modOk('mod-perso-ok');
 };
@@ -9461,6 +9466,7 @@ window.modSavePoste=function(){
   const poste=(document.getElementById('mod-poste')||{}).value; if(!poste) return;
   if(typeof modulesParPoste==='undefined'||!modulesParPoste) window.modulesParPoste={};
   modulesParPoste[poste]=modLire('mod-poste-liste');
+  modulesParPoste.updatedAt=Date.now();
   if(typeof schedSave==='function') schedSave();
   if(typeof logAction==='function') logAction('Modules du poste modifiés', poste);
   appliquerModules(); modOk('mod-poste-ok');
@@ -9468,7 +9474,7 @@ window.modSavePoste=function(){
 window.modResetPoste=function(){
   if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
   const poste=(document.getElementById('mod-poste')||{}).value; if(!poste) return;
-  if(modulesParPoste) delete modulesParPoste[poste];
+  if(modulesParPoste){ delete modulesParPoste[poste]; modulesParPoste.updatedAt=Date.now(); }
   if(typeof schedSave==='function') schedSave();
   appliquerModules(); renderModulesPoste(); modOk('mod-poste-ok');
 };
@@ -9999,6 +10005,9 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     sonnetteRpi.tonAide=(document.getElementById('rpi-ton-aide')||{}).value||'marimba';
     sonnetteRpi.rep=Math.max(1,Math.min(5,parseInt((document.getElementById('rpi-rep')||{}).value,10)||1));
     sonnetteRpi.vol=Math.max(10,Math.min(100,parseInt((document.getElementById('rpi-vol')||{}).value,10)||80));
+    // Sans cet horodatage, un poste reste ouvert depuis ce matin annulerait ce
+    // reglage a sa prochaine sauvegarde en renvoyant sa copie perimee.
+    sonnetteRpi.updatedAt=Date.now();
     if(typeof schedSave==='function') schedSave();
     if(typeof logAction==='function') logAction('Sonnerie du poste dédié modifiée', sonnetteRpi.ton);
   };

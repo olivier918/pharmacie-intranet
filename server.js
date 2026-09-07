@@ -774,6 +774,18 @@ function ensureNatIds(coll, arr) {
   return arr;
 }
 
+// Reglages de configuration : un objet unique, pas une collection a id. Sans
+// precaution, Object.assign fait gagner l'ENVOI LE PLUS RECENT, pas la VERSION
+// la plus recente : un poste dont l'onglet est ouvert depuis ce matin renvoie sa
+// copie perimee a sa prochaine sauvegarde et annule le reglage d'un autre. On
+// compare donc leurs `updatedAt` respectifs, comme pour les enregistrements.
+const CONFIGS_DATEES = ['modulesParPoste', 'sonnetteRpi'];
+function mergeParDate(a, b) {
+  if (!a || typeof a !== 'object') return b;
+  if (!b || typeof b !== 'object') return a;
+  return ((b.updatedAt || 0) >= (a.updatedAt || 0)) ? b : a;
+}
+
 function mergeState(existing, incoming) {
   const merged = Object.assign({}, existing, incoming);
   // Suppressions horodatées, communes à toutes les collections
@@ -802,6 +814,10 @@ function mergeState(existing, incoming) {
     }
     merged.caisse = c;
   }
+  // Reglages de configuration : on garde la version au `updatedAt` le plus recent.
+  CONFIGS_DATEES.forEach(n => {
+    if (existing[n] || incoming[n]) merged[n] = mergeParDate(existing[n], incoming[n]);
+  });
   // plParams (module Planning) : fusion fine des sous-listes + tombstones 'plParams.<sub>'
   if (existing.plParams || incoming.plParams) {
     const p = mergePlParams(existing.plParams, incoming.plParams);
