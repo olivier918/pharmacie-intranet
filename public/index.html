@@ -2458,7 +2458,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2538,6 +2538,10 @@ async function loadAll(){
     if(data.plReels)plReels=data.plReels;
     if(data.plNotifs)plNotifs=data.plNotifs;
     if(data.plClotures)plClotures=data.plClotures;
+    if(Array.isArray(data.journal))journal=data.journal;
+    if(Array.isArray(data.demandes))demandes=data.demandes;
+    if(data.modulesParPoste)modulesParPoste=data.modulesParPoste;
+    if(data.sonnetteRpi)sonnetteRpi=data.sonnetteRpi;
     snapIds();   // référence initiale des ids après lecture serveur
   }catch(e){console.warn('Chargement:',e.message);}
 }
@@ -2583,6 +2587,10 @@ setInterval(async()=>{
         if(d.plReels)plReels=d.plReels;
         if(d.plNotifs)plNotifs=d.plNotifs;
         if(d.plClotures)plClotures=d.plClotures;
+        if(Array.isArray(d.journal))journal=d.journal;
+        if(Array.isArray(d.demandes))demandes=d.demandes;
+        if(d.modulesParPoste)modulesParPoste=d.modulesParPoste;
+        if(d.sonnetteRpi)sonnetteRpi=d.sonnetteRpi;
         snapIds();   // resynchro : nouvelle référence des ids (une suppression venue d'un autre poste n'est pas re-signalée comme locale)
         _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} if(typeof plRender==='function'){try{plRender();}catch(_e){}} } finally { _suppressSave=false; }
       }
@@ -9464,7 +9472,7 @@ window.modResetPerso=function(){
 window.modSavePoste=function(){
   if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
   const poste=(document.getElementById('mod-poste')||{}).value; if(!poste) return;
-  if(typeof modulesParPoste==='undefined'||!modulesParPoste) window.modulesParPoste={};
+  if(!modulesParPoste) modulesParPoste={};
   modulesParPoste[poste]=modLire('mod-poste-liste');
   modulesParPoste.updatedAt=Date.now();
   if(typeof schedSave==='function') schedSave();
@@ -10000,7 +10008,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     const v=document.getElementById('rpi-vol');      if(v) v.value=c.vol||80;
   };
   window.rpiSave=function(){
-    if(typeof sonnetteRpi==='undefined'||!sonnetteRpi) window.sonnetteRpi={};
+    if(!sonnetteRpi) sonnetteRpi={};
     sonnetteRpi.ton=(document.getElementById('rpi-ton')||{}).value||'dingdong';
     sonnetteRpi.tonAide=(document.getElementById('rpi-ton-aide')||{}).value||'marimba';
     sonnetteRpi.rep=Math.max(1,Math.min(5,parseInt((document.getElementById('rpi-rep')||{}).value,10)||1));
