@@ -60,6 +60,28 @@
   function dmDate(ts) { const d = new Date(ts); return d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
   function dmJour(ts) { return new Date(ts).toLocaleDateString('fr-FR'); }
 
+  // Titre : la premiere phrase, coupee a 60 signes. Derive, jamais saisi — un
+  // champ de plus au depot, c'est un depot de moins ; la cible reste 30 s.
+  function dmTitre(d) {
+    const t = String((d && d.texte) || '').trim().replace(/\s+/g, ' ');
+    if (!t) return '(sans texte)';
+    const fin = t.search(/[.!?\n]/);
+    let x = (fin > 0 ? t.slice(0, fin) : t).trim();
+    if (x.length > 60) x = x.slice(0, 59).replace(/\s+\S*$/, '') + '…';
+    return x;
+  }
+  // Age relatif : dans un tableau, « 3 j » se compare d'un coup d'oeil la ou
+  // une date absolue demande un calcul mental a chaque ligne.
+  function dmAge(ts) {
+    const j = Math.floor((Date.now() - (ts || 0)) / 86400000);
+    if (j <= 0) return "Aujourd'hui";
+    if (j === 1) return 'Hier';
+    if (j < 7) return j + ' j';
+    if (j < 31) return Math.round(j / 7) + ' sem';
+    if (j < 365) return Math.round(j / 30) + ' mois';
+    return Math.floor(j / 365) + ' an' + (j >= 730 ? 's' : '');
+  }
+
   // ── Non lu ────────────────────────────────────────────────────────────────
   // Une demande « bouge » quand son état change ou qu'un message s'y ajoute.
   // Ne sont alertés que ceux qu'elle concerne : son auteur, ceux qui l'ont
@@ -129,6 +151,11 @@
   .dm-vue{display:flex;gap:2px;background:var(--gray-100);border-radius:9px;padding:2px}
   .dm-vue button{border:none;background:none;border-radius:7px;padding:5px 11px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--gray-700)}
   .dm-vue button.sel{background:#fff;color:var(--g-dark);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  .dm-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .dm-chip{border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:5px 13px;font-size:.81rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--gray-700)}
+  .dm-chip:hover{border-color:var(--g-border)}
+  .dm-chip.sel{background:var(--g-pale);border-color:var(--g-border);color:var(--g-dark)}
+  .dm-chip .n{opacity:.65;font-weight:600;margin-left:5px}
   .dm-moi{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--gray-200);background:#fff;border-radius:14px;padding:2px 10px;font-size:.72rem;font-weight:700;color:var(--gray-700);cursor:pointer}
   .dm-moi.on{background:var(--g-pale);border-color:var(--g-border);color:var(--g-dark)}
   .dm-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:600;padding:1rem}
@@ -154,7 +181,7 @@
 
   // ── Section ───────────────────────────────────────────────────────────────
   const DM_SECTION = `
-  <div class="stitle"><svg class="ico"><use href="#ic-messagerie"></use></svg> Boîte à idées</div>
+  <div class="stitle"><svg class="ico"><use href="#ic-idee"></use></svg> Boîte à idées</div>
   <div class="dm-bar">
     <button class="btn bp" onclick="dmOuvrirForm()"><svg class="ico"><use href="#ic-ajouter"></use></svg> Nouvelle demande</button>
     <input type="text" id="dm-q" class="dm-inp" placeholder="Rechercher…" style="max-width:220px" oninput="dmRender()">
@@ -180,10 +207,8 @@
       <button id="dm-v-tbl" class="sel" onclick="dmVue('tableau')">Tableau</button>
       <button id="dm-v-col" onclick="dmVue('colonnes')">Colonnes</button>
     </div>
-    <label style="display:flex;align-items:center;gap:7px;font-size:.83rem;color:var(--gray-700);cursor:pointer">
-      <input type="checkbox" id="dm-refus" onchange="dmRender()" style="width:16px;height:16px"> Afficher les non retenues
-    </label>
   </div>
+  <div class="dm-chips" id="dm-chips"></div>
   <div class="dm-cols" id="dm-cols"></div>`;
 
   // ── Rendu ─────────────────────────────────────────────────────────────────
@@ -191,6 +216,18 @@
   // « Fait recemment » est ce qui montre que les idees sortent, et c'est elle
   // qui donne envie de continuer a en deposer.
   let dmVueCourante = 'tableau';
+  // Filtre d'etat. Par defaut « Toutes » = tout sauf les non retenues : celles-ci
+  // sont archivees, mais les demandes faites restent visibles — voir ses idees
+  // sortir est ce qui donne envie d'en deposer d'autres.
+  let dmFiltre = 'vives';
+  const DM_FILTRES = [
+    { cle: 'vives',    lbl: 'Toutes',        test: d => d.statut !== 'refuse' },
+    { cle: 'preciser', lbl: 'À préciser',    test: d => d.statut === 'preciser' },
+    { cle: 'retenu',   lbl: 'Retenues',      test: d => d.statut === 'retenu' || d.statut === 'encours' },
+    { cle: 'fait',     lbl: 'Faites',        test: d => d.statut === 'fait' },
+    { cle: 'refuse',   lbl: 'Non retenues',  test: d => d.statut === 'refuse' }
+  ];
+  window.dmFiltrer = function (c) { dmFiltre = c; dmRender(); };
   window.dmVue = function (v) {
     dmVueCourante = v;
     const a = document.getElementById('dm-v-tbl'), b = document.getElementById('dm-v-col');
@@ -202,7 +239,8 @@
   window.dmRender = function () {
     const el = document.getElementById('dm-cols'); if (!el) return;
     const q = ((document.getElementById('dm-q') || {}).value || '').toLowerCase();
-    const avecRefus = !!(document.getElementById('dm-refus') || {}).checked;
+    const avecRefus = (dmFiltre === 'refuse');
+    const fEtat = DM_FILTRES.find(function (f) { return f.cle === dmFiltre; }) || DM_FILTRES[0];
     const fNature = ((document.getElementById('dm-f-nature') || {}).value || '');
     const fGene   = ((document.getElementById('dm-f-gene')   || {}).value || '');
     const fMoi    = ((document.getElementById('dm-f-moi')    || {}).value || '');
@@ -211,7 +249,7 @@
 
     let l = dmListe().filter(function (d) {
       if (!d) return false;
-      if (d.statut === 'refuse' && !avecRefus) return false;
+      if (!fEtat.test(d)) return false;
       if (d.statut === 'fait' && (d.majAt || d.ts || 0) < limite && !q) return false;
       if (fNature && d.nature !== fNature) return false;
       if (fGene && d.gene !== fGene) return false;
@@ -226,6 +264,19 @@
     l.sort(function (a, b) {
       return dmScore(b) - dmScore(a) || (a.ts || 0) - (b.ts || 0);
     });
+
+    // Compteurs des pastilles : calcules avant le filtre d'etat, sinon chaque
+    // pastille afficherait le compte de la selection courante, pas le sien.
+    const ch = document.getElementById('dm-chips');
+    if (ch) {
+      const base = dmListe().filter(function (d) { return !!d; });
+      ch.innerHTML = DM_FILTRES.map(function (f) {
+        const n = base.filter(f.test).length;
+        if (f.cle === 'refuse' && !n) return '';
+        return '<button class="dm-chip' + (dmFiltre === f.cle ? ' sel' : '') + '" onclick="dmFiltrer(\'' + f.cle + '\')">'
+          + E(f.lbl) + '<span class="n">' + n + '</span></button>';
+      }).join('');
+    }
 
     if (dmVueCourante === 'colonnes') {
       const cols = [
@@ -266,7 +317,7 @@
     const vote = !!(u && Array.isArray(d.soutiens) && d.soutiens.indexOf(u.id) >= 0);
     return '<tr class="' + (dmNonLue(d) ? 'neuve' : '') + '" onclick="dmOuvrir(' + d.id + ')">'
       + '<td class="dm-c-num">#' + (d.num || '?') + '</td>'
-      + '<td><div class="dm-c-txt">' + na.ico + ' ' + E((d.texte || '').slice(0, 160)) + ((d.texte || '').length > 160 ? '…' : '') + '</div>'
+      + '<td><div class="dm-c-txt">' + na.ico + ' ' + E(dmTitre(d)) + '</div>'
         + '<div class="dm-c-sub">'
         + (dmNeuve(d) && d.statut !== 'fait' && d.statut !== 'refuse' ? '<span class="dm-neuf">Nouveau</span>' : '')
         + (ge ? '<span style="color:' + ge.col + ';font-weight:700">' + ge.lbl + '</span>' : '')
@@ -279,7 +330,7 @@
             + (d.refusePar ? ' — ' + E(d.refusePar) : '') + '</div>' : '')
         + '</td>'
       + '<td><span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + '">' + st.lbl + '</span></td>'
-      + '<td class="dm-c-date">' + dmJour(d.ts) + '</td>'
+      + '<td class="dm-c-date" title="' + E(dmJour(d.ts)) + '">' + dmAge(d.ts) + '</td>'
       + '<td><button class="dm-vote' + (vote ? ' on' : '') + '" onclick="event.stopPropagation();dmSoutenir(' + d.id + ')">'
         + (vote ? '★' : '☆') + ' ' + n + '</button></td>'
       + '</tr>';
@@ -295,7 +346,7 @@
       + '<span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + '">' + st.lbl + '</span>'
       + (dmNeuve(d) && d.statut !== 'fait' && d.statut !== 'refuse' ? '<span class="dm-neuf">Nouveau</span>' : '')
       + '</div>'
-      + '<div class="dm-txt">' + E((d.texte || '').slice(0, 150)) + ((d.texte || '').length > 150 ? '…' : '') + '</div>'
+      + '<div class="dm-txt">' + E(dmTitre(d)) + '</div>'
       + (d.statut === 'refuse' && d.motif ? '<div class="dm-motif">Non retenue : ' + E(d.motif) + '</div>' : '')
       + '<div class="dm-meta">'
       + (ge ? '<span style="color:' + ge.col + ';font-weight:700">' + ge.lbl + '</span>' : '')
@@ -598,7 +649,7 @@
       const b = document.createElement('button');
       b.className = 'sb-item'; b.setAttribute('data-sec', 'demandes');
       b.setAttribute('onclick', "showSec('demandes',this); if(window.dmRender) dmRender();");
-      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg>'
+      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-idee"></use></svg>'
         + '<span class="sb-label">Boîte à idées</span><span class="sb-badge" id="navb-dm"></span>';
       navRef.insertAdjacentElement('beforebegin', b);
     }
