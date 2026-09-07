@@ -308,6 +308,12 @@ const SONNETTE_TYPES = {
   remplacement: 'Remplacement au comptoir avancé'
 };
 
+// Sonneries disponibles sur le poste dedie. Liste FERMEE : le nom recu sert a
+// choisir un fichier sur le Raspberry, il ne doit jamais pouvoir designer autre
+// chose que ces neuf-la.
+const SONNERIES = ['dingdong', 'westminster', 'carillon3', 'grelot', 'electrique',
+  'moderne', 'doux', 'marimba', 'harpe'];
+
 app.post('/api/sonnette', (req, res) => {
   const b = req.body || {};
   const type = SONNETTE_TYPES[b.type] ? b.type : 'comptoir';
@@ -317,6 +323,10 @@ app.post('/api/sonnette', (req, res) => {
     par:   String(b.par || '').slice(0, 60) || 'Un poste',
     poste: String(b.poste || '').slice(0, 40),
     src:   String(b.src || '').slice(0, 40),
+    // Sonnerie et nombre de repetitions destines au poste dedie. Les postes
+    // navigateur les ignorent : ils ont leur propre reglage, local a la machine.
+    son:   SONNERIES.indexOf(String(b.son || '')) >= 0 ? String(b.son) : 'dingdong',
+    rep:   Math.max(1, Math.min(5, parseInt(b.rep, 10) || 1)),
     ts:    Date.now()
   };
   sonnetteLast = evt;

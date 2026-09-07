@@ -1243,6 +1243,24 @@ tr:hover td{background:#fafffe}
       </div>
 
       <div id="bo-sonnette" style="display:none">
+        <div class="card" style="margin-bottom:1rem;border:1px solid var(--g-border);background:var(--g-pale)">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-sonnette"></use></svg> Poste dédié — boîtier du comptoir</span></div>
+          <p style="color:var(--gray-700);font-size:.85rem;margin:.2rem 0 1.1rem;line-height:1.5">
+            Le boîtier branché au comptoir, qui sonne même quand aucun ordinateur n'est allumé.
+            Contrairement aux réglages ci-dessous, <b>ceux-ci sont communs à toute l'officine</b> : c'est un appareil partagé.
+            La sonnerie choisie part avec l'appel, l'appareil n'a rien à recharger.
+          </p>
+          <div class="fgrid">
+            <div class="fg"><label>Sonnerie — sonnette comptoir</label><select id="rpi-ton" onchange="rpiSave()"></select></div>
+            <div class="fg"><label>Sonnerie — appel du comptoir avancé</label><select id="rpi-ton-aide" onchange="rpiSave()"></select></div>
+            <div class="fg"><label>Répétitions</label><input type="number" id="rpi-rep" min="1" max="5" step="1" onchange="rpiSave()"></div>
+          </div>
+          <div style="font-size:.8rem;color:var(--gray-500);margin-top:.9rem;line-height:1.5">
+            Le volume se règle sur l'appareil lui-même, il ne dépend pas de l'intranet.
+            Pour l'ajuster, voir la fiche d'installation du boîtier.
+          </div>
+        </div>
+
         <div class="card" style="margin-bottom:1rem">
           <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-sonnette"></use></svg> Sonnette comptoir — réglages de CE poste</span></div>
           <p style="color:var(--gray-600);font-size:.85rem;margin:.2rem 0 1.1rem;line-height:1.5">
@@ -2274,6 +2292,9 @@ let medecins = [
 // Journal d'activite : qui a fait quoi, et quand. Collection synchronisee comme
 // les autres, purgee par anciennete cote serveur (RETENTION_JOURNAL_DAYS).
 let journal = [];
+
+// Reglage du poste dedie (Raspberry) : partage par toute l'officine.
+let sonnetteRpi = { ton:'dingdong', tonAide:'marimba', rep:1 };
 
 let deliveries = [
   {id:1,nom:'THOMAS',prenom:'Liliane',adresse:'19 Rue Gambetta',tel:'02 31 XX',lieu:'Domicile',frigo:false,promis:true,ordo:true,montant:0,notes:'Alèses grandes tailles + morphine orale',status:'prep',prepBy:'HL',livrBy:null,date:'2026-05-16',cold:false},
@@ -3830,6 +3851,7 @@ function boTab(t){
   if(t==='smstpl')renderSmsTpl();
   if(t==='backups')renderBackups();
   if(t==='journal')renderJournal();
+  if(t==='sonnette' && typeof rpiFill==='function') rpiFill();
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
   if(t==='materiel')renderMatTypes();
   applyAdminUI();
@@ -9700,7 +9722,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     if(btn){ btn.classList.add('ringing'); setTimeout(function(){ btn.classList.remove('ringing'); },1200); }
     const par=(typeof currentUser!=='undefined'&&currentUser)?(currentUser.prenom+' '+currentUser.nom):'Comptoir avanc\u00e9';
     fetch('/api/sonnette',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({type:type, par:par, poste:cfg.nom, src:clientId})})
+      body:JSON.stringify(Object.assign({type:type, par:par, poste:cfg.nom, src:clientId},rpiSon(type)))})
       .then(function(r){ return r.json(); })
       .then(function(d){
         monAppel=d.id||null;
@@ -9762,6 +9784,42 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     }).catch(function(){});
   });
 
+  // Remplit les listes deroulantes du poste dedie avec les memes sonneries que
+  // les postes navigateur, pour que « Ding-dong » designe partout la meme chose.
+  window.rpiFill=function(){
+    ['rpi-ton','rpi-ton-aide'].forEach(function(id){
+      const sel=document.getElementById(id); if(!sel||sel.options.length) return;
+      Object.keys(SON_TONS).forEach(function(k){
+        const o=document.createElement('option'); o.value=k;
+        o.textContent=SON_TONS[k].nom+(SON_TONS[k].doux?' (douce)':'');
+        sel.appendChild(o);
+      });
+    });
+    const c=(typeof sonnetteRpi!=='undefined'&&sonnetteRpi)?sonnetteRpi:{};
+    const a=document.getElementById('rpi-ton');      if(a) a.value=c.ton||'dingdong';
+    const b=document.getElementById('rpi-ton-aide'); if(b) b.value=c.tonAide||'marimba';
+    const r=document.getElementById('rpi-rep');      if(r) r.value=c.rep||1;
+  };
+  window.rpiSave=function(){
+    if(typeof sonnetteRpi==='undefined'||!sonnetteRpi) window.sonnetteRpi={};
+    sonnetteRpi.ton=(document.getElementById('rpi-ton')||{}).value||'dingdong';
+    sonnetteRpi.tonAide=(document.getElementById('rpi-ton-aide')||{}).value||'marimba';
+    sonnetteRpi.rep=Math.max(1,Math.min(5,parseInt((document.getElementById('rpi-rep')||{}).value,10)||1));
+    if(typeof schedSave==='function') schedSave();
+    if(typeof logAction==='function') logAction('Sonnerie du poste dédié modifiée', sonnetteRpi.ton);
+  };
+
+  // ── Réglage du poste dédié (Raspberry) ──
+  // Partagé par toute l'officine, contrairement aux réglages de sonnerie des
+  // postes navigateur qui sont propres à chaque machine : le Raspberry est un
+  // appareil commun, son réglage doit l'être aussi. Il voyage dans l'appel
+  // lui-même — l'appareil n'a ainsi aucune configuration à recharger.
+  window.rpiSon=function(type){
+    const c=(typeof sonnetteRpi!=='undefined'&&sonnetteRpi)?sonnetteRpi:{};
+    return { son:(type==='comptoir'?c.ton:c.tonAide)||(type==='comptoir'?'dingdong':'marimba'),
+             rep:c.rep||1 };
+  };
+
   // ── Émission ──
   let cool=0;
   window.sonnerComptoir=function(){
@@ -9770,7 +9828,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
     const par=(typeof currentUser!=='undefined'&&currentUser)?(currentUser.prenom+' '+currentUser.nom):'Comptoir';
     if(btn){ btn.classList.add('ringing'); setTimeout(function(){ btn.classList.remove('ringing'); },1200); }
     fetch('/api/sonnette',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({par:par,poste:cfg.nom,src:clientId})})
+      body:JSON.stringify(Object.assign({par:par,poste:cfg.nom,src:clientId},rpiSon('comptoir')))})
       .then(function(r){ return r.json(); })
       .then(function(d){
         if(btn) btn.title=d.prevenus?(d.prevenus+' poste(s) prévenu(s)'):'Aucun poste récepteur connecté';

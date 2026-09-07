@@ -34,11 +34,27 @@ def journal(msg):
     # systemd horodate lui-meme : on ecrit brut, sans doubler la date.
     print(msg, flush=True)
 
-def sonner(fichier):
-    try:
-        subprocess.run(["aplay", "-q", fichier], timeout=15, check=False)
-    except Exception as e:
-        journal("Lecture du son impossible : %s" % e)
+# Sonneries disponibles. Le nom arrive dans l'evenement, choisi depuis le
+# back-office : l'appareil n'a donc aucune configuration a recharger quand on
+# change de sonnerie. On verifie tout de meme le nom ici — un nom recu du reseau
+# ne doit jamais pouvoir designer un fichier hors de ce dossier.
+SONS_OK = {"dingdong", "westminster", "carillon3", "grelot", "electrique",
+           "moderne", "doux", "marimba", "harpe"}
+
+def fichier_son(c, nom):
+    if nom in SONS_OK:
+        chemin = os.path.join(os.path.dirname(c["son"]), "sons", nom + ".wav")
+        if os.path.exists(chemin):
+            return chemin
+    return c["son"]          # repli : la sonnerie par defaut, toujours presente
+
+def sonner(fichier, repetitions=1):
+    for i in range(max(1, min(5, repetitions))):
+        try:
+            subprocess.run(["aplay", "-q", fichier], timeout=15, check=False)
+        except Exception as e:
+            journal("Lecture du son impossible : %s" % e)
+            return
 
 def ecouter(c):
     """Ouvre le flux et joue a chaque evenement 'ring'. Retourne a la fin du flux."""
@@ -67,8 +83,10 @@ def ecouter(c):
                         d = json.loads(ligne[5:].strip())
                     except Exception:
                         d = {}
-                    journal("Appel : %s (%s)" % (d.get("type", "comptoir"), d.get("par", "?")))
-                    sonner(c["son"])
+                    son = fichier_son(c, str(d.get("son", "")))
+                    journal("Appel : %s (%s) — %s" % (
+                        d.get("type", "comptoir"), d.get("par", "?"), os.path.basename(son)))
+                    sonner(son, int(d.get("rep", 1) or 1))
                 evenement = None
 
 def main():
