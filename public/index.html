@@ -1184,6 +1184,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
         <button class="btn bs" id="bot9" onclick="boTab('materiel')"><svg class="ico"><use href="#ic-location"></use></svg> Matériel</button>
         <button class="btn bs" id="bot8" onclick="boTab('sonnette')"><svg class="ico"><use href="#ic-sonnette"></use></svg> Sonnette</button>
+        <button class="btn bs" id="bot11" onclick="boTab('modules')"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Modules affichés</button>
         <button class="btn bs" id="bot10" onclick="boTab('journal')"><svg class="ico"><use href="#ic-archives"></use></svg> Journal d'activité</button>
       </div>
 
@@ -1216,6 +1217,42 @@ tr:hover td{background:#fafffe}
       </div>
 
       <!-- SONNETTE -->
+      <!-- MODULES AFFICHÉS -->
+      <div id="bo-modules" style="display:none">
+        <div class="card" style="margin-bottom:1rem">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Mes modules</span></div>
+          <p style="color:var(--gray-500);font-size:.85rem;margin:.2rem 0 1rem;line-height:1.5">
+            Choisissez ce que vous voulez voir dans le menu de gauche. Ce réglage ne concerne que vous et vous suit sur tous les postes.
+            Décocher un module ne le supprime pas et n'empêche personne d'autre d'y accéder : il disparaît simplement de <i>votre</i> menu.
+          </p>
+          <div id="mod-perso"></div>
+          <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap;align-items:center">
+            <button class="btn bp" onclick="modSavePerso()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer mon menu</button>
+            <button class="btn bs" onclick="modResetPerso()">Revenir au réglage de mon poste</button>
+            <span id="mod-perso-ok" style="display:none;color:#2E7D32;font-size:.85rem">Enregistré</span>
+          </div>
+        </div>
+
+        <div class="card" id="mod-carte-poste">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-securite"></use></svg> Réglage par poste — administrateurs</span></div>
+          <p style="color:var(--gray-500);font-size:.85rem;margin:.2rem 0 1rem;line-height:1.5">
+            Ce que voit par défaut un collaborateur selon son poste, tant qu'il n'a pas fait son propre choix.
+            Les administrateurs voient toujours l'intégralité des modules, quel que soit ce réglage.
+          </p>
+          <div class="fg" style="max-width:280px"><label>Poste</label>
+            <select id="mod-poste" onchange="renderModulesPoste()">
+              <option>Pharmacien</option><option>Préparateur</option><option>Logisticien</option>
+              <option>Secrétaire</option><option>Esthéticienne</option><option>Étudiant</option>
+            </select></div>
+          <div id="mod-poste-liste" style="margin-top:.9rem"></div>
+          <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap;align-items:center">
+            <button class="btn bp" onclick="modSavePoste()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer ce poste</button>
+            <button class="btn bs" onclick="modResetPoste()">Tout afficher pour ce poste</button>
+            <span id="mod-poste-ok" style="display:none;color:#2E7D32;font-size:.85rem">Enregistré</span>
+          </div>
+        </div>
+      </div>
+
       <!-- JOURNAL D'ACTIVITÉ (administrateurs) -->
       <div id="bo-journal" style="display:none">
         <div class="card">
@@ -2296,6 +2333,11 @@ let journal = [];
 // Reglage du poste dedie (Raspberry) : partage par toute l'officine.
 let sonnetteRpi = { ton:'dingdong', tonAide:'marimba', rep:1 };
 
+// Modules visibles par poste (Pharmacien, Preparateur...). Reglage partage,
+// tenu par les administrateurs. La personnalisation individuelle, elle, vit sur
+// la fiche du collaborateur (staffDB[].modules) : elle le suit de poste en poste.
+let modulesParPoste = {};
+
 let deliveries = [
   {id:1,nom:'THOMAS',prenom:'Liliane',adresse:'19 Rue Gambetta',tel:'02 31 XX',lieu:'Domicile',frigo:false,promis:true,ordo:true,montant:0,notes:'Alèses grandes tailles + morphine orale',status:'prep',prepBy:'HL',livrBy:null,date:'2026-05-16',cold:false},
   {id:2,nom:'MILLET',prenom:'Monique',adresse:'10 Rue Albert Suel',tel:'06 72 XX',lieu:'Domicile',frigo:false,promis:false,ordo:false,montant:0,notes:'Protections confiance + gants',status:'wait',prepBy:null,livrBy:null,date:'2026-05-16',cold:false},
@@ -2676,6 +2718,9 @@ function checkPin(){
     startTimer();
     renderAll();
     applyAdminUI();
+    // Les modules externes s'inserent dans la barre apres coup : on repasse
+    // une fois pour prendre en compte ceux qui viennent d'arriver.
+    setTimeout(appliquerModules, 1200);
   } else {
     document.getElementById('pin-err').textContent='Code PIN incorrect.';
     document.getElementById('pin-who').textContent='';
@@ -2803,7 +2848,7 @@ function restoreSidebarState(){
     }
   } catch(e){}
 }
-function renderAll(){renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderSms==='function')renderSms();if(typeof renderControles==='function')renderControles();if(typeof renderForms==='function')renderForms();if(typeof renderRetours==='function')renderRetours();schedSave();}
+function renderAll(){appliquerModules();renderD();renderThreads();renderPreps();renderBpm();renderStaff();renderPatients();renderMedecins();renderCaisse();renderCreds();if(typeof renderSms==='function')renderSms();if(typeof renderControles==='function')renderControles();if(typeof renderForms==='function')renderForms();if(typeof renderRetours==='function')renderRetours();schedSave();}
 
 // Pastille bandeau : nombre de livraisons « à préparer » du jour
 function updateNavBadges(){
@@ -3837,11 +3882,11 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal'];
+const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10','bot11'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal','bo-modules'];
 function boTab(t){
   if((t==='compte'||t==='backups'||t==='journal') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9};
+  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9,modules:10};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
@@ -3852,6 +3897,7 @@ function boTab(t){
   if(t==='backups')renderBackups();
   if(t==='journal')renderJournal();
   if(t==='sonnette' && typeof rpiFill==='function') rpiFill();
+  if(t==='modules')renderModulesUI();
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
   if(t==='materiel')renderMatTypes();
   applyAdminUI();
@@ -9281,6 +9327,137 @@ function openRenouvSms(o){
     onSent:(r)=>{ if(typeof o.onSent==='function') o.onSent(r); }
   });
 }
+
+// ═══════════ MODULES VISIBLES ═══════════
+// La liste des modules n'est écrite nulle part : elle est LUE dans la barre
+// latérale au moment où l'on en a besoin. Les modules qui s'ajoutent d'eux-mêmes
+// (renouvellement, fiches, dépannage, planning) apparaissent donc tout seuls,
+// et un module futur n'obligera à modifier aucune liste ici.
+function modCle(b){
+  return b.getAttribute('data-sec') || (b.getAttribute('data-pl') ? 'planning' : null);
+}
+function modulesDispo(){
+  const out=[], vus={};
+  document.querySelectorAll('.sidebar .sb-item').forEach(function(b){
+    const c=modCle(b); if(!c || vus[c]) return; vus[c]=1;
+    const lbl=b.querySelector('.sb-label');
+    out.push({cle:c, nom:(lbl?lbl.textContent:c).trim()});
+  });
+  return out;
+}
+// Le Back Office n'est jamais masquable : c'est par lui qu'on revient sur ces
+// reglages. Le masquer enfermerait l'operateur dehors.
+const MOD_TOUJOURS=['backoffice'];
+
+// Liste autorisee pour un operateur, ou null si « tout ».
+// Ordre de priorite : administrateur → tout ; choix personnel ; reglage du
+// poste ; a defaut, tout. Un operateur sans reglage voit donc l'application
+// entiere, comme avant — rien ne disparait par surprise.
+function modulesAutorises(u){
+  u = u || currentUser;
+  if(!u) return null;
+  if(isAdmin(u)) return null;
+  const rec = staffDB.find(s=>s.id===u.id) || u;
+  if(Array.isArray(rec.modules)) return rec.modules.slice();
+  const parPoste = modulesParPoste && modulesParPoste[rec.poste];
+  if(Array.isArray(parPoste)) return parPoste.slice();
+  return null;
+}
+function appliquerModules(){
+  const liste = modulesAutorises();
+  let actifMasque = false;
+  document.querySelectorAll('.sidebar .sb-item').forEach(function(b){
+    const c=modCle(b); if(!c) return;
+    const visible = !liste || liste.indexOf(c)>=0 || MOD_TOUJOURS.indexOf(c)>=0;
+    b.style.display = visible ? '' : 'none';
+    if(!visible && b.classList.contains('active')) actifMasque = true;
+  });
+  // Si l'on masque le module actuellement ouvert, on bascule sur le premier
+  // visible plutot que de laisser un ecran vide sans moyen d'en sortir.
+  if(actifMasque){
+    const premier=document.querySelector('.sidebar .sb-item:not([style*="display: none"])');
+    if(premier && modCle(premier)) showSec(modCle(premier), premier);
+  }
+}
+
+// ─── Écran « Modules affichés » ───
+function modCases(conteneurId, coches, tout){
+  const el=document.getElementById(conteneurId); if(!el) return;
+  const dispo=modulesDispo();
+  if(!dispo.length){ el.innerHTML='<div style="color:var(--gray-500);font-size:.85rem">Menu en cours de chargement…</div>'; return; }
+  el.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px">'
+    + dispo.map(function(m){
+        const fige = MOD_TOUJOURS.indexOf(m.cle)>=0;
+        const on = fige || tout || (coches && coches.indexOf(m.cle)>=0);
+        return '<label style="display:flex;align-items:center;gap:9px;padding:8px 11px;border:1px solid var(--gray-200);border-radius:9px;cursor:'
+          + (fige?'default':'pointer') + ';background:' + (fige?'var(--gray-100)':'#fff') + '">'
+          + '<input type="checkbox" data-mod="' + m.cle + '" style="width:17px;height:17px"'
+          + (on?' checked':'') + (fige?' disabled':'') + '>'
+          + '<span style="font-size:.87rem;font-weight:600">' + m.nom + '</span>'
+          + (fige?'<span style="margin-left:auto;font-size:.68rem;color:var(--gray-500)">toujours</span>':'')
+          + '</label>';
+      }).join('')
+    + '</div>';
+}
+function modLire(conteneurId){
+  const out=[];
+  document.querySelectorAll('#'+conteneurId+' input[data-mod]').forEach(function(i){
+    if(i.checked) out.push(i.getAttribute('data-mod'));
+  });
+  MOD_TOUJOURS.forEach(function(c){ if(out.indexOf(c)<0) out.push(c); });
+  return out;
+}
+function modOk(id){ const e=document.getElementById(id); if(e){ e.style.display=''; setTimeout(function(){ e.style.display='none'; },2500); } }
+
+function renderModulesUI(){
+  // Carte « par poste » réservée aux administrateurs.
+  const carte=document.getElementById('mod-carte-poste');
+  if(carte) carte.style.display = isAdmin() ? '' : 'none';
+  const rec = currentUser ? (staffDB.find(s=>s.id===currentUser.id)||currentUser) : null;
+  const perso = rec && Array.isArray(rec.modules) ? rec.modules : null;
+  const parPoste = rec && modulesParPoste ? modulesParPoste[rec.poste] : null;
+  modCases('mod-perso', perso || parPoste, !(perso||parPoste));
+  if(isAdmin()) renderModulesPoste();
+}
+function renderModulesPoste(){
+  const poste=(document.getElementById('mod-poste')||{}).value||'Pharmacien';
+  const l=modulesParPoste?modulesParPoste[poste]:null;
+  modCases('mod-poste-liste', l, !Array.isArray(l));
+}
+window.modSavePerso=function(){
+  if(!currentUser) return;
+  const rec=staffDB.find(s=>s.id===currentUser.id); if(!rec) return;
+  rec.modules=modLire('mod-perso');
+  rec.updatedAt=Date.now();
+  if(typeof schedSave==='function') schedSave();
+  if(typeof logAction==='function') logAction('Menu personnel modifié', rec.modules.length+' modules');
+  appliquerModules(); modOk('mod-perso-ok');
+};
+window.modResetPerso=function(){
+  if(!currentUser) return;
+  const rec=staffDB.find(s=>s.id===currentUser.id); if(!rec) return;
+  // On efface le choix personnel : l'operateur repasse sous le reglage de son
+  // poste. Sans ce bouton, une personnalisation serait irreversible.
+  delete rec.modules; rec.updatedAt=Date.now();
+  if(typeof schedSave==='function') schedSave();
+  appliquerModules(); renderModulesUI(); modOk('mod-perso-ok');
+};
+window.modSavePoste=function(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const poste=(document.getElementById('mod-poste')||{}).value; if(!poste) return;
+  if(typeof modulesParPoste==='undefined'||!modulesParPoste) window.modulesParPoste={};
+  modulesParPoste[poste]=modLire('mod-poste-liste');
+  if(typeof schedSave==='function') schedSave();
+  if(typeof logAction==='function') logAction('Modules du poste modifiés', poste);
+  appliquerModules(); modOk('mod-poste-ok');
+};
+window.modResetPoste=function(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const poste=(document.getElementById('mod-poste')||{}).value; if(!poste) return;
+  if(modulesParPoste) delete modulesParPoste[poste];
+  if(typeof schedSave==='function') schedSave();
+  appliquerModules(); renderModulesPoste(); modOk('mod-poste-ok');
+};
 
 // ═══════════ JOURNAL D'ACTIVITÉ ═══════════
 // Consigne les actions metier des operateurs. Objectif : savoir qui se sert de
