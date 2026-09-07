@@ -106,6 +106,29 @@
   .dm-meta{font-size:.72rem;color:var(--gray-500);margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .dm-tag{border-radius:9px;padding:1px 8px;font-size:.68rem;font-weight:700}
   .dm-vide{padding:1.4rem;text-align:center;color:var(--gray-500);font-size:.83rem}
+  /* Tableau : une seule liste ordonnee. Le classement par votes n'a de sens
+     que dans une colonne unique — reparti en trois colonnes d'etat, il ne se
+     lit plus. L'etat devient donc une pastille de ligne. */
+  .dm-tbl{background:#fff;border:1px solid var(--gray-200);border-radius:12px;overflow:hidden}
+  .dm-tbl table{width:100%;border-collapse:collapse}
+  .dm-tbl th{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--gray-500);text-align:left;padding:10px 12px;border-bottom:1px solid var(--gray-200);background:var(--gray-100);white-space:nowrap}
+  .dm-tbl td{padding:11px 12px;border-bottom:1px solid var(--gray-200);vertical-align:top;font-size:.86rem}
+  .dm-tbl tr:last-child td{border-bottom:none}
+  .dm-tbl tbody tr{cursor:pointer;transition:background .12s}
+  .dm-tbl tbody tr:hover{background:var(--gray-100)}
+  .dm-tbl tr.neuve td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+  .dm-c-num{font-size:.74rem;color:var(--gray-500);font-weight:700;white-space:nowrap}
+  .dm-c-txt{font-weight:600;color:var(--gray-900);line-height:1.35}
+  .dm-c-sub{font-size:.72rem;color:var(--gray-500);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-weight:400}
+  .dm-c-date{white-space:nowrap;color:var(--gray-500);font-size:.78rem}
+  /* Le vote se donne depuis la liste : demander d'ouvrir la fiche pour
+     soutenir, c'est perdre la moitie des votes en route. */
+  .dm-vote{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:4px 11px;font-size:.82rem;font-weight:800;cursor:pointer;font-family:inherit;color:var(--gray-700);white-space:nowrap}
+  .dm-vote:hover{border-color:var(--g-border);background:var(--g-pale)}
+  .dm-vote.on{background:var(--g-pale);border-color:var(--g-border);color:var(--g-dark)}
+  .dm-vue{display:flex;gap:2px;background:var(--gray-100);border-radius:9px;padding:2px}
+  .dm-vue button{border:none;background:none;border-radius:7px;padding:5px 11px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--gray-700)}
+  .dm-vue button.sel{background:#fff;color:var(--g-dark);box-shadow:0 1px 3px rgba(0,0,0,.1)}
   .dm-moi{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--gray-200);background:#fff;border-radius:14px;padding:2px 10px;font-size:.72rem;font-weight:700;color:var(--gray-700);cursor:pointer}
   .dm-moi.on{background:var(--g-pale);border-color:var(--g-border);color:var(--g-dark)}
   .dm-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:600;padding:1rem}
@@ -131,7 +154,7 @@
 
   // ── Section ───────────────────────────────────────────────────────────────
   const DM_SECTION = `
-  <div class="stitle"><svg class="ico"><use href="#ic-messagerie"></use></svg> Demandes</div>
+  <div class="stitle"><svg class="ico"><use href="#ic-messagerie"></use></svg> Boîte à idées</div>
   <div class="dm-bar">
     <button class="btn bp" onclick="dmOuvrirForm()"><svg class="ico"><use href="#ic-ajouter"></use></svg> Nouvelle demande</button>
     <input type="text" id="dm-q" class="dm-inp" placeholder="Rechercher…" style="max-width:220px" oninput="dmRender()">
@@ -153,13 +176,29 @@
       <option value="soutenu">Celles que je soutiens</option>
     </select>
     <span class="dm-grow"></span>
+    <div class="dm-vue">
+      <button id="dm-v-tbl" class="sel" onclick="dmVue('tableau')">Tableau</button>
+      <button id="dm-v-col" onclick="dmVue('colonnes')">Colonnes</button>
+    </div>
     <label style="display:flex;align-items:center;gap:7px;font-size:.83rem;color:var(--gray-700);cursor:pointer">
-      <input type="checkbox" id="dm-refus" onchange="dmRender()" style="width:16px;height:16px"> Afficher les demandes non retenues
+      <input type="checkbox" id="dm-refus" onchange="dmRender()" style="width:16px;height:16px"> Afficher les non retenues
     </label>
   </div>
   <div class="dm-cols" id="dm-cols"></div>`;
 
-  // ── Rendu du tableau ──────────────────────────────────────────────────────
+  // ── Rendu ─────────────────────────────────────────────────────────────────
+  // Vue par defaut : le tableau. Les colonnes restent accessibles — la colonne
+  // « Fait recemment » est ce qui montre que les idees sortent, et c'est elle
+  // qui donne envie de continuer a en deposer.
+  let dmVueCourante = 'tableau';
+  window.dmVue = function (v) {
+    dmVueCourante = v;
+    const a = document.getElementById('dm-v-tbl'), b = document.getElementById('dm-v-col');
+    if (a) a.className = (v === 'tableau' ? 'sel' : '');
+    if (b) b.className = (v === 'colonnes' ? 'sel' : '');
+    dmRender();
+  };
+
   window.dmRender = function () {
     const el = document.getElementById('dm-cols'); if (!el) return;
     const q = ((document.getElementById('dm-q') || {}).value || '').toLowerCase();
@@ -188,23 +227,63 @@
       return dmScore(b) - dmScore(a) || (a.ts || 0) - (b.ts || 0);
     });
 
-    const cols = [
-      { cle: 'demande', lbl: 'Demandé',        col: '#6b7a72' },
-      { cle: 'cours',   lbl: 'En cours',       col: '#6A1B9A' },
-      { cle: 'fait',    lbl: 'Fait récemment', col: '#2E7D32' }
-    ];
-    if (avecRefus) cols.push({ cle: 'refuse', lbl: 'Non retenues', col: '#C62828' });
-
-    el.style.gridTemplateColumns = 'repeat(' + Math.min(cols.length, 4) + ',1fr)';
-    el.innerHTML = cols.map(function (c) {
-      const items = l.filter(function (d) { return (DM_STATUTS[d.statut] || DM_STATUTS.recu).colonne === c.cle; });
-      return '<div class="dm-col"><div class="dm-col-h" style="color:' + c.col + '">' + E(c.lbl)
-        + '<span class="dm-col-n">' + items.length + '</span></div>'
-        + (items.length ? items.map(dmCarte).join('') : '<div class="dm-vide">Rien ici</div>')
-        + '</div>';
-    }).join('');
+    if (dmVueCourante === 'colonnes') {
+      const cols = [
+        { cle: 'demande', lbl: 'Demandé',        col: '#6b7a72' },
+        { cle: 'cours',   lbl: 'En cours',       col: '#6A1B9A' },
+        { cle: 'fait',    lbl: 'Fait récemment', col: '#2E7D32' }
+      ];
+      if (avecRefus) cols.push({ cle: 'refuse', lbl: 'Non retenues', col: '#C62828' });
+      el.style.display = 'grid';
+      el.style.gridTemplateColumns = 'repeat(' + Math.min(cols.length, 4) + ',1fr)';
+      el.innerHTML = cols.map(function (c) {
+        const items = l.filter(function (d) { return (DM_STATUTS[d.statut] || DM_STATUTS.recu).colonne === c.cle; });
+        return '<div class="dm-col"><div class="dm-col-h" style="color:' + c.col + '">' + E(c.lbl)
+          + '<span class="dm-col-n">' + items.length + '</span></div>'
+          + (items.length ? items.map(dmCarte).join('') : '<div class="dm-vide">Rien ici</div>')
+          + '</div>';
+      }).join('');
+    } else {
+      el.style.display = 'block';
+      el.innerHTML = l.length
+        ? '<div class="dm-tbl"><table><thead><tr>'
+          + '<th style="width:52px">N°</th><th>Demande</th><th style="width:130px">État</th>'
+          + '<th style="width:110px">Déposée</th><th style="width:96px">Votes</th></tr></thead><tbody>'
+          + l.map(dmLigne).join('') + '</tbody></table></div>'
+        : '<div class="dm-tbl"><div class="dm-vide">Aucune demande ne correspond.</div></div>';
+    }
     if (typeof updateNavBadges === 'function') updateNavBadges();
   };
+
+  // Une ligne du tableau. Le vote est un bouton a part : son clic ne doit pas
+  // ouvrir la fiche, d'ou le stopPropagation.
+  function dmLigne(d) {
+    const st = DM_STATUTS[d.statut] || DM_STATUTS.recu;
+    const na = DM_NATURES[d.nature] || DM_NATURES.idee;
+    const ge = DM_GENES[d.gene];
+    const u = dmUser();
+    const n = Array.isArray(d.soutiens) ? d.soutiens.length : 0;
+    const vote = !!(u && Array.isArray(d.soutiens) && d.soutiens.indexOf(u.id) >= 0);
+    return '<tr class="' + (dmNonLue(d) ? 'neuve' : '') + '" onclick="dmOuvrir(' + d.id + ')">'
+      + '<td class="dm-c-num">#' + (d.num || '?') + '</td>'
+      + '<td><div class="dm-c-txt">' + na.ico + ' ' + E((d.texte || '').slice(0, 160)) + ((d.texte || '').length > 160 ? '…' : '') + '</div>'
+        + '<div class="dm-c-sub">'
+        + (dmNeuve(d) && d.statut !== 'fait' && d.statut !== 'refuse' ? '<span class="dm-neuf">Nouveau</span>' : '')
+        + (ge ? '<span style="color:' + ge.col + ';font-weight:700">' + ge.lbl + '</span>' : '')
+        + (d.module ? '<span>· ' + E(d.module) + '</span>' : '')
+        + '<span>· ' + E(d.auteurNom || '') + '</span>'
+        + (Array.isArray(d.fil) && d.fil.length ? '<span>· 💬 ' + d.fil.length + '</span>' : '')
+        + (d.image ? '<span>· 📷</span>' : '')
+        + '</div>'
+        + (d.statut === 'refuse' && d.motif ? '<div class="dm-motif">Non retenue : ' + E(d.motif)
+            + (d.refusePar ? ' — ' + E(d.refusePar) : '') + '</div>' : '')
+        + '</td>'
+      + '<td><span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + '">' + st.lbl + '</span></td>'
+      + '<td class="dm-c-date">' + dmJour(d.ts) + '</td>'
+      + '<td><button class="dm-vote' + (vote ? ' on' : '') + '" onclick="event.stopPropagation();dmSoutenir(' + d.id + ')">'
+        + (vote ? '★' : '☆') + ' ' + n + '</button></td>'
+      + '</tr>';
+  }
 
   function dmCarte(d) {
     const st = DM_STATUTS[d.statut] || DM_STATUTS.recu;
@@ -223,7 +302,7 @@
       + (d.module ? '<span>· ' + E(d.module) + '</span>' : '')
       + '<span>· ' + E(d.auteurNom || '') + '</span>'
       + '<span>· ' + dmJour(d.ts) + '</span>'
-      + (n ? '<span>· 👤 ' + n + '</span>' : '')
+      + (n ? '<span>· ★ ' + n + '</span>' : '')
       + (Array.isArray(d.fil) && d.fil.length ? '<span>· 💬 ' + d.fil.length + '</span>' : '')
       + (d.image ? '<span>· 📷</span>' : '')
       + '</div></div>';
@@ -347,7 +426,7 @@
       + '<span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + ';font-size:.78rem;padding:3px 11px">' + st.lbl + '</span>'
       + (ge ? '<span class="dm-tag" style="background:#fff;border:1px solid var(--gray-200);color:' + ge.col + ';font-size:.78rem;padding:3px 11px">' + ge.lbl + '</span>' : '')
       + '<span class="dm-moi' + (soutenu ? ' on' : '') + '" onclick="dmSoutenir(' + d.id + ')">'
-      + (soutenu ? '✓ Moi aussi' : '+ Moi aussi') + (n ? ' · ' + n : '') + '</span>'
+      + (soutenu ? '★ Je soutiens' : '☆ Moi aussi') + (n ? ' · ' + n + ' vote' + (n > 1 ? 's' : '') : '') + '</span>'
       + '</div>'
       + '<div style="font-size:.93rem;line-height:1.5;white-space:pre-wrap">' + E(d.texte) + '</div>'
       + (d.image ? '<img src="' + d.image + '" class="dm-img">' : '');
@@ -520,7 +599,7 @@
       b.className = 'sb-item'; b.setAttribute('data-sec', 'demandes');
       b.setAttribute('onclick', "showSec('demandes',this); if(window.dmRender) dmRender();");
       b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg>'
-        + '<span class="sb-label">Demandes</span><span class="sb-badge" id="navb-dm"></span>';
+        + '<span class="sb-label">Boîte à idées</span><span class="sb-badge" id="navb-dm"></span>';
       navRef.insertAdjacentElement('beforebegin', b);
     }
     const secRef = document.getElementById('sec-livraisons');
