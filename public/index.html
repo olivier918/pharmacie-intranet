@@ -2446,7 +2446,22 @@ function ensureNatIds(){
 function snapIds(){ ensureNatIds(); SYNCED_COLLS.forEach(n=>{ _idSnap[n]=_idsOf(_collRef(n)); }); CAISSE_SUBS.forEach(s=>{ _idSnap['caisse.'+s]=_idsOf(caisse&&caisse[s]); }); PLPARAMS_SUBS.forEach(s=>{ _idSnap['plParams.'+s]=_idsOf(plParams&&plParams[s]); }); }
 // Détection centrale des suppressions : tout id présent à la dernière lecture et absent maintenant = tombstone.
 function diffTombstones(){ ensureNatIds(); const now=Date.now(); SYNCED_COLLS.forEach(n=>{ const prev=_idSnap[n]; if(!prev)return; const cur=_idsOf(_collRef(n)); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:n,id:id,t:now}); }); }); CAISSE_SUBS.forEach(s=>{ const prev=_idSnap['caisse.'+s]; if(!prev)return; const cur=_idsOf(caisse&&caisse[s]); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:'caisse.'+s,id:id,t:now}); }); }); PLPARAMS_SUBS.forEach(s=>{ const prev=_idSnap['plParams.'+s]; if(!prev)return; const cur=_idsOf(plParams&&plParams[s]); prev.forEach(id=>{ if(!cur.has(id)) tombstones.push({c:'plParams.'+s,id:id,t:now}); }); }); }
-function schedSave(){ if(!_loadedOK||_suppressSave) return; _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);}
+function schedSave(){
+  if(_suppressSave) return;
+  // Sans cet avertissement, un poste dont la lecture serveur a echoue avalait
+  // silencieusement chaque saisie : rien n'etait envoye, rien n'etait dit, et
+  // le travail disparaissait a la synchro suivante.
+  if(!_loadedOK){ alerteSauvegarde('non enregistre — rechargez la page'); return; }
+  _savePending=true; clearTimeout(_saveTimer);_saveTimer=setTimeout(saveAll,600);
+}
+// Creation ou changement d'etat : on n'attend pas les 600 ms du debounce. Ces
+// actions sont deliberees et rares ; les differer, c'est offrir une fenetre ou
+// un rechargement les emporte.
+function saveNow(){
+  if(_suppressSave) return;
+  if(!_loadedOK){ alerteSauvegarde('non enregistre — rechargez la page'); return; }
+  _savePending=true; clearTimeout(_saveTimer); saveAll();
+}
 // fetch() ne lève PAS d'exception sur une réponse 401 ou 500 : sans vérifier
 // r.ok, un enregistrement refusé (session expirée, redéploiement en cours) était
 // compté comme réussi. La saisie restait à l'écran, n'était jamais persistée, et
@@ -2605,6 +2620,11 @@ setInterval(async()=>{
 // pour ne jamais couper une saisie en cours.
 let _appVersion=null;
 function _posteBusy(){
+  // Une modification pas encore partie au serveur rend le poste occupe, meme si
+  // personne ne tape : se recharger a cet instant detruit la saisie sans trace.
+  // C'est ce qui faisait disparaitre une demande a peine deposee, le jour d'un
+  // deploiement — le poste se rechargeait pendant les 600 ms d'attente.
+  if(_savePending) return true;
   const ae=document.activeElement;
   if(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)) return true;
   return [...document.querySelectorAll('.overlay,.rn-ov')].some(el=>el.offsetParent!==null&&getComputedStyle(el).display!=='none');
@@ -2629,6 +2649,11 @@ async function checkVersion(){
     }
   }catch(e){}
 }
+// Dernier filet : fermer l'onglet ou recharger a la main pendant qu'un envoi
+// est en attente perdrait la saisie. Le navigateur demande confirmation.
+window.addEventListener('beforeunload', function(e){
+  if(_savePending){ e.preventDefault(); e.returnValue = ''; return ''; }
+});
 setInterval(checkVersion, 20000);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkVersion(); });
 checkVersion();

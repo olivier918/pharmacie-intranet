@@ -78,7 +78,14 @@
   const dmListe = () => (typeof demandes !== 'undefined' && Array.isArray(demandes)) ? demandes : [];
   const dmUser = () => (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
   const dmAdmin = () => (typeof isAdmin === 'function') ? isAdmin() : false;
-  const dmSave = () => { try { if (typeof schedSave === 'function') schedSave(); } catch (e) {} };
+  // `now` : creation ou changement d'etat — on envoie tout de suite plutot que
+  // d'attendre le regroupement de 600 ms.
+  const dmSave = (now) => {
+    try {
+      if (now && typeof saveNow === 'function') saveNow();
+      else if (typeof schedSave === 'function') schedSave();
+    } catch (e) {}
+  };
   const dmNom = u => { const x = dmUser(); return x ? ((x.prenom || '') + ' ' + (x.nom || '')).trim() || x.id : '?'; };
   function dmDate(ts) { const d = new Date(ts); return d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
   function dmJour(ts) { return new Date(ts).toLocaleDateString('fr-FR'); }
@@ -481,7 +488,7 @@
       // été vue évite de chercher un défaut déjà corrigé.
       version: (window.APP_CONFIG && window.APP_CONFIG.version) || ''
     });
-    dmSave();
+    dmSave(true);
     if (typeof logAction === 'function') logAction('Demande déposée', '#' + num);
     dmFermerForm(); dmRender();
     dmToast('Demande #' + num + ' enregistrée. Vous serez prévenu dès qu’elle avance.');
@@ -621,7 +628,7 @@
     d.fil = Array.isArray(d.fil) ? d.fil : [];
     d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— état : ' + DM_ETATS[st].lbl + (st === 'rejetee' ? ' (' + d.motif + ')' : '') });
     dmTouche(d); dmMarquerLue(d);
-    dmSave();
+    dmSave(true);
     if (typeof logAction === 'function') logAction('Demande → ' + DM_ETATS[st].lbl, '#' + (d.num || ''));
     dmOuvrir(id);
   };
@@ -635,7 +642,7 @@
     d.fil = Array.isArray(d.fil) ? d.fil : [];
     d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— étape : ' + DM_ETAPES[et].lbl });
     dmTouche(d); dmMarquerLue(d);
-    dmSave();
+    dmSave(true);
     if (typeof logAction === 'function') logAction('Demande — étape ' + DM_ETAPES[et].lbl, '#' + (d.num || ''));
     dmOuvrir(id);
   };
