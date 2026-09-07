@@ -10,14 +10,37 @@
 (function () {
   'use strict';
 
-  const DM_STATUTS = {
-    recu:     { lbl: 'Reçu',        col: '#6b7a72', bg: '#eef2f0', colonne: 'demande' },
-    preciser: { lbl: 'À préciser',  col: '#E65100', bg: '#FFF3E0', colonne: 'demande' },
-    retenu:   { lbl: 'Retenu',      col: '#1565C0', bg: '#E3F2FD', colonne: 'demande' },
-    encours:  { lbl: 'En cours',    col: '#6A1B9A', bg: '#F3E5F5', colonne: 'cours'   },
-    fait:     { lbl: 'Fait',        col: '#2E7D32', bg: '#E8F5E9', colonne: 'fait'    },
-    refuse:   { lbl: 'Pas retenu',  col: '#C62828', bg: '#FFEBEE', colonne: 'refuse'  }
+  // Deux axes : l'etat (ce qu'on a decide) et l'etape (ou en est la realisation).
+  // L'etape n'a de sens que sur une demande acceptee.
+  const DM_ETATS = {
+    acceptee:  { lbl: 'Acceptée',   col: '#047857', bg: '#d1fae5' },
+    apreciser: { lbl: 'À préciser', col: '#b45309', bg: '#fef3c7' },
+    rejetee:   { lbl: 'Rejetée',    col: '#b91c1c', bg: '#fee2e2' }
   };
+  const DM_ETAPES = {
+    afaire:  { lbl: 'À faire',  col: '#6b7a72' },
+    encours: { lbl: 'En cours', col: '#6A1B9A' },
+    fait:    { lbl: 'Fait',     col: '#2E7D32' }
+  };
+  // Les demandes deposees avant ce modele portent l'ancien statut a un seul axe.
+  // On le TRADUIT a la lecture plutot que de reecrire la base : une migration
+  // ecrite serait rejouee par chaque poste encore sur l'ancien code et se
+  // battrait avec elle-meme a la fusion.
+  const DM_LEGACY = {
+    recu:     { st: 'acceptee',  et: 'afaire'  },
+    retenu:   { st: 'acceptee',  et: 'afaire'  },
+    encours:  { st: 'acceptee',  et: 'encours' },
+    fait:     { st: 'acceptee',  et: 'fait'    },
+    preciser: { st: 'apreciser', et: null      },
+    refuse:   { st: 'rejetee',   et: null      }
+  };
+  function dmEtat(d) {
+    if (!d) return { st: 'acceptee', et: 'afaire' };
+    if (DM_ETATS[d.statut]) {
+      return { st: d.statut, et: d.statut === 'acceptee' ? (DM_ETAPES[d.etape] ? d.etape : 'afaire') : null };
+    }
+    return DM_LEGACY[d.statut] || { st: 'acceptee', et: 'afaire' };
+  }
   const DM_NATURES = {
     bug:      { lbl: 'Ça ne marche pas', ico: '⚠' },
     idee:     { lbl: 'J’aimerais que…',  ico: '💡' },
@@ -108,6 +131,18 @@
   }
   function dmTouche(d) { d.majAt = Date.now(); d.updatedAt = Date.now(); }
 
+  // Une demande « vierge » : personne d'autre ne s'en est saisi. Son auteur peut
+  // alors la retirer (faute de frappe, doublon). Des qu'un collegue l'a soutenue
+  // ou commentee, elle ne lui appartient plus tout a fait.
+  function dmVierge(d) {
+    if (!d) return false;
+    const e = dmEtat(d);
+    if (e.st !== 'acceptee' || e.et !== 'afaire') return false;
+    if (Array.isArray(d.fil) && d.fil.length) return false;
+    const s = Array.isArray(d.soutiens) ? d.soutiens : [];
+    return s.length === 0 || (s.length === 1 && s[0] === d.auteur);
+  }
+
   // ── CSS ───────────────────────────────────────────────────────────────────
   const DM_CSS = `
   #sec-demandes{padding:0}
@@ -143,6 +178,7 @@
   .dm-c-txt{font-weight:600;color:var(--gray-900);line-height:1.35}
   .dm-c-sub{font-size:.72rem;color:var(--gray-500);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-weight:400}
   .dm-c-date{white-space:nowrap;color:var(--gray-500);font-size:.78rem}
+  .dm-c-etape{white-space:nowrap;font-size:.8rem}
   /* Le vote se donne depuis la liste : demander d'ouvrir la fiche pour
      soutenir, c'est perdre la moitie des votes en route. */
   .dm-vote{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:4px 11px;font-size:.82rem;font-weight:800;cursor:pointer;font-family:inherit;color:var(--gray-700);white-space:nowrap}
@@ -219,13 +255,12 @@
   // Filtre d'etat. Par defaut « Toutes » = tout sauf les non retenues : celles-ci
   // sont archivees, mais les demandes faites restent visibles — voir ses idees
   // sortir est ce qui donne envie d'en deposer d'autres.
-  let dmFiltre = 'vives';
+  let dmFiltre = 'acceptee';
   const DM_FILTRES = [
-    { cle: 'vives',    lbl: 'Toutes',        test: d => d.statut !== 'refuse' },
-    { cle: 'preciser', lbl: 'À préciser',    test: d => d.statut === 'preciser' },
-    { cle: 'retenu',   lbl: 'Retenues',      test: d => d.statut === 'retenu' || d.statut === 'encours' },
-    { cle: 'fait',     lbl: 'Faites',        test: d => d.statut === 'fait' },
-    { cle: 'refuse',   lbl: 'Non retenues',  test: d => d.statut === 'refuse' }
+    { cle: 'acceptee',  lbl: 'Acceptées',   test: d => dmEtat(d).st === 'acceptee' },
+    { cle: 'apreciser', lbl: 'À préciser',  test: d => dmEtat(d).st === 'apreciser' },
+    { cle: 'toutes',    lbl: 'Toutes',      test: d => true },
+    { cle: 'rejetee',   lbl: 'Rejetées',    test: d => dmEtat(d).st === 'rejetee' }
   ];
   window.dmFiltrer = function (c) { dmFiltre = c; dmRender(); };
   window.dmVue = function (v) {
@@ -239,7 +274,7 @@
   window.dmRender = function () {
     const el = document.getElementById('dm-cols'); if (!el) return;
     const q = ((document.getElementById('dm-q') || {}).value || '').toLowerCase();
-    const avecRefus = (dmFiltre === 'refuse');
+    const avecRefus = (dmFiltre === 'rejetee' || dmFiltre === 'toutes');
     const fEtat = DM_FILTRES.find(function (f) { return f.cle === dmFiltre; }) || DM_FILTRES[0];
     const fNature = ((document.getElementById('dm-f-nature') || {}).value || '');
     const fGene   = ((document.getElementById('dm-f-gene')   || {}).value || '');
@@ -250,7 +285,8 @@
     let l = dmListe().filter(function (d) {
       if (!d) return false;
       if (!fEtat.test(d)) return false;
-      if (d.statut === 'fait' && (d.majAt || d.ts || 0) < limite && !q) return false;
+      const e0 = dmEtat(d);
+      if (e0.st === 'acceptee' && e0.et === 'fait' && (d.majAt || d.ts || 0) < limite && !q) return false;
       if (fNature && d.nature !== fNature) return false;
       if (fGene && d.gene !== fGene) return false;
       if (fMoi === 'mien' && d.auteur !== moi) return false;
@@ -272,7 +308,7 @@
       const base = dmListe().filter(function (d) { return !!d; });
       ch.innerHTML = DM_FILTRES.map(function (f) {
         const n = base.filter(f.test).length;
-        if (f.cle === 'refuse' && !n) return '';
+        if (f.cle === 'rejetee' && !n) return '';
         return '<button class="dm-chip' + (dmFiltre === f.cle ? ' sel' : '') + '" onclick="dmFiltrer(\'' + f.cle + '\')">'
           + E(f.lbl) + '<span class="n">' + n + '</span></button>';
       }).join('');
@@ -280,15 +316,21 @@
 
     if (dmVueCourante === 'colonnes') {
       const cols = [
-        { cle: 'demande', lbl: 'Demandé',        col: '#6b7a72' },
-        { cle: 'cours',   lbl: 'En cours',       col: '#6A1B9A' },
-        { cle: 'fait',    lbl: 'Fait récemment', col: '#2E7D32' }
+        { cle: 'apreciser', lbl: 'À préciser',     col: '#b45309' },
+        { cle: 'afaire',    lbl: 'À faire',        col: '#6b7a72' },
+        { cle: 'encours',   lbl: 'En cours',       col: '#6A1B9A' },
+        { cle: 'fait',      lbl: 'Fait récemment', col: '#2E7D32' }
       ];
-      if (avecRefus) cols.push({ cle: 'refuse', lbl: 'Non retenues', col: '#C62828' });
+      if (avecRefus) cols.push({ cle: 'rejetee', lbl: 'Rejetées', col: '#b91c1c' });
       el.style.display = 'grid';
-      el.style.gridTemplateColumns = 'repeat(' + Math.min(cols.length, 4) + ',1fr)';
+      el.style.gridTemplateColumns = 'repeat(' + Math.min(cols.length, 5) + ',1fr)';
       el.innerHTML = cols.map(function (c) {
-        const items = l.filter(function (d) { return (DM_STATUTS[d.statut] || DM_STATUTS.recu).colonne === c.cle; });
+        const items = l.filter(function (d) {
+          const e = dmEtat(d);
+          return c.cle === 'apreciser' ? e.st === 'apreciser'
+               : c.cle === 'rejetee'   ? e.st === 'rejetee'
+               : (e.st === 'acceptee' && e.et === c.cle);
+        });
         return '<div class="dm-col"><div class="dm-col-h" style="color:' + c.col + '">' + E(c.lbl)
           + '<span class="dm-col-n">' + items.length + '</span></div>'
           + (items.length ? items.map(dmCarte).join('') : '<div class="dm-vide">Rien ici</div>')
@@ -298,8 +340,8 @@
       el.style.display = 'block';
       el.innerHTML = l.length
         ? '<div class="dm-tbl"><table><thead><tr>'
-          + '<th style="width:52px">N°</th><th>Demande</th><th style="width:130px">État</th>'
-          + '<th style="width:110px">Déposée</th><th style="width:96px">Votes</th></tr></thead><tbody>'
+          + '<th style="width:52px">N°</th><th>Titre</th><th style="width:118px">État</th>'
+          + '<th style="width:96px">Étape</th><th style="width:96px">Date</th><th style="width:92px">👍</th></tr></thead><tbody>'
           + l.map(dmLigne).join('') + '</tbody></table></div>'
         : '<div class="dm-tbl"><div class="dm-vide">Aucune demande ne correspond.</div></div>';
     }
@@ -309,7 +351,7 @@
   // Une ligne du tableau. Le vote est un bouton a part : son clic ne doit pas
   // ouvrir la fiche, d'ou le stopPropagation.
   function dmLigne(d) {
-    const st = DM_STATUTS[d.statut] || DM_STATUTS.recu;
+    const e = dmEtat(d), st = DM_ETATS[e.st], ep = e.et ? DM_ETAPES[e.et] : null;
     const na = DM_NATURES[d.nature] || DM_NATURES.idee;
     const ge = DM_GENES[d.gene];
     const u = dmUser();
@@ -319,17 +361,18 @@
       + '<td class="dm-c-num">#' + (d.num || '?') + '</td>'
       + '<td><div class="dm-c-txt">' + na.ico + ' ' + E(dmTitre(d)) + '</div>'
         + '<div class="dm-c-sub">'
-        + (dmNeuve(d) && d.statut !== 'fait' && d.statut !== 'refuse' ? '<span class="dm-neuf">Nouveau</span>' : '')
+        + (dmNeuve(d) && e.st !== 'rejetee' && e.et !== 'fait' ? '<span class="dm-neuf">Nouveau</span>' : '')
         + (ge ? '<span style="color:' + ge.col + ';font-weight:700">' + ge.lbl + '</span>' : '')
         + (d.module ? '<span>· ' + E(d.module) + '</span>' : '')
         + '<span>· ' + E(d.auteurNom || '') + '</span>'
         + (Array.isArray(d.fil) && d.fil.length ? '<span>· 💬 ' + d.fil.length + '</span>' : '')
         + (d.image ? '<span>· 📷</span>' : '')
         + '</div>'
-        + (d.statut === 'refuse' && d.motif ? '<div class="dm-motif">Non retenue : ' + E(d.motif)
+        + (e.st === 'rejetee' && d.motif ? '<div class="dm-motif">Rejetée : ' + E(d.motif)
             + (d.refusePar ? ' — ' + E(d.refusePar) : '') + '</div>' : '')
         + '</td>'
       + '<td><span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + '">' + st.lbl + '</span></td>'
+      + '<td class="dm-c-etape">' + (ep ? '<span style="color:' + ep.col + ';font-weight:700">' + ep.lbl + '</span>' : '<span style="color:var(--gray-300)">—</span>') + '</td>'
       + '<td class="dm-c-date" title="' + E(dmJour(d.ts)) + '">' + dmAge(d.ts) + '</td>'
       + '<td><button class="dm-vote' + (vote ? ' on' : '') + '" onclick="event.stopPropagation();dmSoutenir(' + d.id + ')">'
         + (vote ? '★' : '☆') + ' ' + n + '</button></td>'
@@ -337,17 +380,17 @@
   }
 
   function dmCarte(d) {
-    const st = DM_STATUTS[d.statut] || DM_STATUTS.recu;
+    const e = dmEtat(d), st = DM_ETATS[e.st];
     const na = DM_NATURES[d.nature] || DM_NATURES.idee;
     const ge = DM_GENES[d.gene];
     const n = Array.isArray(d.soutiens) ? d.soutiens.length : 0;
     return '<div class="dm-card' + (dmNonLue(d) ? ' neuve' : '') + '" onclick="dmOuvrir(' + d.id + ')">'
       + '<div class="dm-t1"><span>' + na.ico + '</span><span class="dm-num">#' + (d.num || '?') + '</span>'
       + '<span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + '">' + st.lbl + '</span>'
-      + (dmNeuve(d) && d.statut !== 'fait' && d.statut !== 'refuse' ? '<span class="dm-neuf">Nouveau</span>' : '')
+      + (dmNeuve(d) && e.st !== 'rejetee' && e.et !== 'fait' ? '<span class="dm-neuf">Nouveau</span>' : '')
       + '</div>'
       + '<div class="dm-txt">' + E(dmTitre(d)) + '</div>'
-      + (d.statut === 'refuse' && d.motif ? '<div class="dm-motif">Non retenue : ' + E(d.motif) + '</div>' : '')
+      + (e.st === 'rejetee' && d.motif ? '<div class="dm-motif">Rejetée : ' + E(d.motif) + '</div>' : '')
       + '<div class="dm-meta">'
       + (ge ? '<span style="color:' + ge.col + ';font-weight:700">' + ge.lbl + '</span>' : '')
       + (d.module ? '<span>· ' + E(d.module) + '</span>' : '')
@@ -426,8 +469,10 @@
       auteur: u.id, auteurNom: dmNom(),
       nature: dmForm.nature, gene: dmForm.gene,
       module: (document.getElementById('dm-f-module').value || '').trim(),
-      texte: texte, statut: 'recu', motif: '',
-      soutiens: [], fil: [],
+      texte: texte, statut: 'acceptee', etape: 'afaire', motif: '',
+      // L'auteur compte pour un vote : c'est le CDC, et cela evite une demande
+      // affichee « 0 vote » alors que quelqu'un a pris la peine de l'ecrire.
+      soutiens: [u.id], fil: [],
       // L'auteur a evidemment deja vu ce qu'il vient d'ecrire : sans cette ligne,
       // deposer une demande allumerait une pastille rouge chez soi-meme.
       vu: (function () { const v = {}; v[u.id] = now; return v; })(),
@@ -460,7 +505,7 @@
     const d = dmListe().find(function (x) { return x.id === id; }); if (!d) return;
     dmCur = id;
     dmMarquerLue(d); dmSave();
-    const st = DM_STATUTS[d.statut] || DM_STATUTS.recu;
+    const e = dmEtat(d), st = DM_ETATS[e.st];
     const na = DM_NATURES[d.nature] || DM_NATURES.idee;
     const ge = DM_GENES[d.gene];
     const u = dmUser();
@@ -482,7 +527,7 @@
       + '<div style="font-size:.93rem;line-height:1.5;white-space:pre-wrap">' + E(d.texte) + '</div>'
       + (d.image ? '<img src="' + d.image + '" class="dm-img">' : '');
 
-    if (d.statut === 'refuse' && d.motif) {
+    if (e.st === 'rejetee' && d.motif) {
       H += '<div style="margin-top:1rem;background:#FFEBEE;border:1px solid #ffcdd2;border-radius:10px;padding:11px 14px">'
         + '<div style="font-size:.72rem;font-weight:700;color:#C62828;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Pourquoi cette demande n’a pas été retenue</div>'
         + '<div style="font-size:.87rem;line-height:1.45;white-space:pre-wrap">' + E(d.motif) + '</div>'
@@ -506,16 +551,24 @@
       H += '<div style="margin-top:1.3rem;border-top:1px solid var(--gray-200);padding-top:1rem">'
         + '<div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px;margin-bottom:.6rem">Suite donnée</div>'
         + '<div class="dm-choix">'
-        + Object.keys(DM_STATUTS).map(function (k) {
-            return '<button' + (d.statut === k ? ' class="sel"' : '') + ' onclick="dmStatut(' + d.id + ',\'' + k + '\')">' + DM_STATUTS[k].lbl + '</button>';
+        + Object.keys(DM_ETATS).map(function (k) {
+            return '<button' + (e.st === k ? ' class="sel"' : '') + ' onclick="dmStatut(' + d.id + ',\'' + k + '\')">' + DM_ETATS[k].lbl + '</button>';
           }).join('')
         + '</div>'
+        + (e.st === 'acceptee'
+            ? '<div style="font-size:.72rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.5px;margin:.9rem 0 .4rem">Étape</div>'
+              + '<div class="dm-choix">'
+              + Object.keys(DM_ETAPES).map(function (k) {
+                  return '<button' + (e.et === k ? ' class="sel"' : '') + ' onclick="dmEtape(' + d.id + ',\'' + k + '\')">' + DM_ETAPES[k].lbl + '</button>';
+                }).join('')
+              + '</div>'
+            : '')
         + '<button class="btn bs sm" style="margin-top:.9rem" onclick="dmExport(' + d.id + ')">Préparer pour le développement</button>'
         + '</div>';
     }
 
     H += '<div class="dm-foot"><button class="btn bs" onclick="dmFermer()">Fermer</button>'
-      + (admin || (u && d.auteur === u.id && d.statut === 'recu')
+      + (admin || (u && d.auteur === u.id && dmVierge(d))
           ? '<button class="btn bd" onclick="dmSupprimer(' + d.id + ')">Supprimer</button>' : '')
       + '</div>';
 
@@ -549,23 +602,41 @@
 
   window.dmStatut = function (id, st) {
     if (!dmAdmin()) { alert('Réservé aux administrateurs.'); return; }
-    const d = dmListe().find(function (x) { return x.id === id; }); if (!d || !DM_STATUTS[st]) return;
-    // Refuser en silence est ce qui tue une boîte à idées pour de bon : le motif
+    const d = dmListe().find(function (x) { return x.id === id; }); if (!d || !DM_ETATS[st]) return;
+    const avant = dmEtat(d);
+    // Rejeter en silence est ce qui tue une boîte à idées pour de bon : le motif
     // est donc exigé par le formulaire, pas seulement recommandé.
-    if (st === 'refuse') {
-      const m = prompt('Pourquoi cette demande n’est-elle pas retenue ?\n\nCe motif sera lu par son auteur et par l’équipe.', d.motif || '');
+    if (st === 'rejetee') {
+      const m = prompt('Pourquoi cette demande est-elle rejetée ?\n\nCe motif sera lu par son auteur et par l’équipe.', d.motif || '');
       if (m === null) return;
-      if (!m.trim()) { alert('Un motif est nécessaire pour ne pas retenir une demande.'); return; }
+      if (!m.trim()) { alert('Un motif est nécessaire pour rejeter une demande.'); return; }
       d.motif = m.trim();
       d.refusePar = dmNom(); d.refuseAt = Date.now();
     }
-    if (d.statut === st) return;
+    if (avant.st === st) return;
     d.statut = st;
+    // Une demande acceptée doit porter une étape : sans elle, la colonne reste
+    // vide et la demande n'apparaît dans aucune colonne de la vue par étapes.
+    if (st === 'acceptee' && !DM_ETAPES[d.etape]) d.etape = avant.et || 'afaire';
     d.fil = Array.isArray(d.fil) ? d.fil : [];
-    d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— état : ' + DM_STATUTS[st].lbl + (st === 'refuse' ? ' (' + d.motif + ')' : '') });
+    d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— état : ' + DM_ETATS[st].lbl + (st === 'rejetee' ? ' (' + d.motif + ')' : '') });
     dmTouche(d); dmMarquerLue(d);
     dmSave();
-    if (typeof logAction === 'function') logAction('Demande → ' + DM_STATUTS[st].lbl, '#' + (d.num || ''));
+    if (typeof logAction === 'function') logAction('Demande → ' + DM_ETATS[st].lbl, '#' + (d.num || ''));
+    dmOuvrir(id);
+  };
+
+  window.dmEtape = function (id, et) {
+    if (!dmAdmin()) { alert('Réservé aux administrateurs.'); return; }
+    const d = dmListe().find(function (x) { return x.id === id; }); if (!d || !DM_ETAPES[et]) return;
+    const avant = dmEtat(d);
+    if (avant.st !== 'acceptee' || avant.et === et) return;
+    d.statut = 'acceptee'; d.etape = et;
+    d.fil = Array.isArray(d.fil) ? d.fil : [];
+    d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— étape : ' + DM_ETAPES[et].lbl });
+    dmTouche(d); dmMarquerLue(d);
+    dmSave();
+    if (typeof logAction === 'function') logAction('Demande — étape ' + DM_ETAPES[et].lbl, '#' + (d.num || ''));
     dmOuvrir(id);
   };
 
@@ -585,11 +656,14 @@
     const L = [];
     L.push('DEMANDE #' + (d.num || '') + ' — ' + (DM_NATURES[d.nature] || {}).lbl);
     L.push('Déposée par ' + (d.auteurNom || '') + ' le ' + dmDate(d.ts));
+    const eX = dmEtat(d);
+    L.push('État : ' + DM_ETATS[eX.st].lbl + (eX.et ? ' — ' + DM_ETAPES[eX.et].lbl : ''));
+    if (eX.st === 'rejetee' && d.motif) L.push('Motif du rejet : ' + d.motif + (d.refusePar ? ' (' + d.refusePar + ')' : ''));
     if (d.module) L.push('Module : ' + d.module);
     if (d.gene) L.push('Gêne : ' + (DM_GENES[d.gene] || {}).lbl);
     if (d.version) L.push('Version vue : ' + d.version);
     const n = Array.isArray(d.soutiens) ? d.soutiens.length : 0;
-    if (n) L.push('Soutenue par ' + n + ' personne(s)');
+    if (n) L.push('Votes : ' + n);
     L.push(''); L.push(d.texte); L.push('');
     if (Array.isArray(d.fil) && d.fil.length) {
       L.push('ÉCHANGES');
