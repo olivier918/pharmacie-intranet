@@ -327,6 +327,7 @@ app.post('/api/sonnette', (req, res) => {
     // navigateur les ignorent : ils ont leur propre reglage, local a la machine.
     son:   SONNERIES.indexOf(String(b.son || '')) >= 0 ? String(b.son) : 'dingdong',
     rep:   Math.max(1, Math.min(5, parseInt(b.rep, 10) || 1)),
+    vol:   Math.max(10, Math.min(100, parseInt(b.vol, 10) || 80)),
     ts:    Date.now()
   };
   sonnetteLast = evt;

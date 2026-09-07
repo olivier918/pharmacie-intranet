@@ -10,3 +10,6 @@ id=rpi-comptoir
 nom=Comptoir
 
 son=/opt/pilot-sonnette/sonnerie.wav
+
+# Carte son ALSA. Donnee par le script Adafruit a l'installation.
+carte=sndrpigooglevoi

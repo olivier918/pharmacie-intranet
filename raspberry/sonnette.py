@@ -17,7 +17,7 @@ CONF = "/etc/pilot-sonnette.conf"
 
 def config():
     c = {"url": "", "token": "", "son": "/opt/pilot-sonnette/sonnerie.wav",
-         "nom": "Comptoir", "id": "rpi-comptoir"}
+         "nom": "Comptoir", "id": "rpi-comptoir", "carte": "sndrpigooglevoi"}
     try:
         with open(CONF) as f:
             for ligne in f:
@@ -47,6 +47,29 @@ def fichier_son(c, nom):
         if os.path.exists(chemin):
             return chemin
     return c["son"]          # repli : la sonnerie par defaut, toujours presente
+
+# Volume pilote depuis le back-office. On ne rejoue la commande que lorsque la
+# valeur change : inutile de solliciter le mixeur a chaque appel. Un echec n'est
+# jamais bloquant — mieux vaut une sonnerie au mauvais volume que pas de
+# sonnerie du tout.
+_volume_courant = [None]
+
+def regler_volume(c, pct):
+    try:
+        pct = max(10, min(100, int(pct)))
+    except Exception:
+        return
+    if _volume_courant[0] == pct:
+        return
+    try:
+        subprocess.run(["amixer", "-c", c.get("carte", "sndrpigooglevoi"),
+                        "sset", "PCM", "%d%%" % pct],
+                       timeout=8, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _volume_courant[0] = pct
+        journal("Volume regle a %d%%" % pct)
+    except Exception as e:
+        journal("Reglage du volume impossible : %s" % e)
 
 def sonner(fichier, repetitions=1):
     for i in range(max(1, min(5, repetitions))):
@@ -83,6 +106,7 @@ def ecouter(c):
                         d = json.loads(ligne[5:].strip())
                     except Exception:
                         d = {}
+                    regler_volume(c, d.get("vol", 80))
                     son = fichier_son(c, str(d.get("son", "")))
                     journal("Appel : %s (%s) — %s" % (
                         d.get("type", "comptoir"), d.get("par", "?"), os.path.basename(son)))
