@@ -40,10 +40,14 @@ const JOURNAL_DAYS = jours(process.env.RETENTION_JOURNAL_DAYS, 180, 'RETENTION_J
 // presque toujours des noms de patients ; elle se retrouve dans le blob ET dans
 // les 300 instantanes d'historique. Passe six mois, l'image ne sert plus a rien
 // alors que le texte de la demande, lui, reste utile : on ne retire que l'image.
-const DEMANDES_IMG_DAYS = jours(process.env.RETENTION_DEMANDES_IMG_DAYS, 180, 'RETENTION_DEMANDES_IMG_DAYS');
+const DEMANDES_IMG_DAYS = jours(process.env.RETENTION_DEMANDES_IMG_DAYS, 90, 'RETENTION_DEMANDES_IMG_DAYS');
 const HISTORY_MIN_INTERVAL_MIN = parseInt(process.env.HISTORY_MIN_INTERVAL_MIN || '5', 10);
 // Champs volumineux et reconstructibles depuis les données : inutiles dans l'historique.
-const HISTORY_STRIP_FIELDS = ['bonPdfHtml', 'pdfVersions'];
+// `image` : la capture d'une demande ne part PAS dans les instantanes. Sans
+// cela, une image de 200 Ko serait recopiee dans les 300 archives, soit 60 Mo
+// pour une seule demande — et autant de donnees patients qui survivent des
+// annees a la purge du blob vivant.
+const HISTORY_STRIP_FIELDS = ['bonPdfHtml', 'pdfVersions', 'image'];
 
 // Date-butoir yyyy-mm-dd : aujourd'hui - days
 function cutoff(days) {

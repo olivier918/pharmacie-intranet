@@ -32,6 +32,25 @@
   };
   const DM_FAIT_JOURS = 45;   // durée d'affichage dans la colonne « Fait récemment »
 
+  // ── Ordre d'affichage ───────────────────────────────────────────────────
+  // Trois signaux, un seul score. Les soutiens priment (un « moi aussi » est un
+  // vote collectif, la gêne n'est qu'un ressenti individuel), mais une demande
+  // toute neuve part avec une avance qui fond en deux semaines : sans cela elle
+  // naîtrait sous la pile et personne ne la verrait jamais pour la soutenir.
+  // Une décote continue plutôt qu'un seuil : à J+8 une demande ne doit pas
+  // dégringoler d'un coup alors que rien ne s'est passé.
+  const DM_NEUF_JOURS  = 7;    // durée du badge « Nouveau »
+  const DM_GRACE_JOURS = 14;   // durée sur laquelle l'avance de fraîcheur fond
+  const DM_GRACE_PTS   = 3;    // avance de départ, en équivalent soutiens
+  function dmNeuve(d) { return d && (Date.now() - (d.ts || 0)) < DM_NEUF_JOURS * 86400000; }
+  function dmScore(d) {
+    const soutiens = Array.isArray(d.soutiens) ? d.soutiens.length : 0;
+    const gene = { bloque: 2, agace: 1, mieux: 0 }[d.gene] || 0;
+    const age = (Date.now() - (d.ts || 0)) / 86400000;
+    const frais = Math.max(0, DM_GRACE_PTS * (1 - age / DM_GRACE_JOURS));
+    return soutiens + gene + frais;
+  }
+
   const E = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const dmListe = () => (typeof demandes !== 'undefined' && Array.isArray(demandes)) ? demandes : [];
   const dmUser = () => (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
@@ -106,6 +125,8 @@
   .dm-msg .txt{font-size:.87rem;white-space:pre-wrap;line-height:1.45}
   .dm-img{max-width:100%;border-radius:10px;border:1px solid var(--gray-200);margin-top:.6rem;display:block}
   .dm-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:1.2rem;align-items:center}
+  .dm-neuf{background:#E3F2FD;color:#1565C0;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:800;letter-spacing:.02em}
+  .dm-motif{background:#FFEBEE;color:#C62828;border-left:3px solid #C62828;border-radius:0 8px 8px 0;padding:6px 9px;margin-top:7px;font-size:.79rem;line-height:1.4}
   `;
 
   // ── Section ───────────────────────────────────────────────────────────────
@@ -113,7 +134,24 @@
   <div class="stitle"><svg class="ico"><use href="#ic-messagerie"></use></svg> Demandes</div>
   <div class="dm-bar">
     <button class="btn bp" onclick="dmOuvrirForm()"><svg class="ico"><use href="#ic-ajouter"></use></svg> Nouvelle demande</button>
-    <input type="text" id="dm-q" class="dm-inp" placeholder="Rechercher…" style="max-width:240px" oninput="dmRender()">
+    <input type="text" id="dm-q" class="dm-inp" placeholder="Rechercher…" style="max-width:220px" oninput="dmRender()">
+    <select id="dm-f-nature" class="dm-inp" style="max-width:170px" onchange="dmRender()">
+      <option value="">Toutes natures</option>
+      <option value="bug">Ça ne marche pas</option>
+      <option value="idee">J’aimerais que…</option>
+      <option value="question">Une question</option>
+    </select>
+    <select id="dm-f-gene" class="dm-inp" style="max-width:160px" onchange="dmRender()">
+      <option value="">Toutes gênes</option>
+      <option value="bloque">Ça me bloque</option>
+      <option value="agace">Ça m’agace</option>
+      <option value="mieux">Ce serait mieux</option>
+    </select>
+    <select id="dm-f-moi" class="dm-inp" style="max-width:170px" onchange="dmRender()">
+      <option value="">Tout le monde</option>
+      <option value="mien">Les miennes</option>
+      <option value="soutenu">Celles que je soutiens</option>
+    </select>
     <span class="dm-grow"></span>
     <label style="display:flex;align-items:center;gap:7px;font-size:.83rem;color:var(--gray-700);cursor:pointer">
       <input type="checkbox" id="dm-refus" onchange="dmRender()" style="width:16px;height:16px"> Afficher les demandes non retenues
@@ -126,20 +164,28 @@
     const el = document.getElementById('dm-cols'); if (!el) return;
     const q = ((document.getElementById('dm-q') || {}).value || '').toLowerCase();
     const avecRefus = !!(document.getElementById('dm-refus') || {}).checked;
+    const fNature = ((document.getElementById('dm-f-nature') || {}).value || '');
+    const fGene   = ((document.getElementById('dm-f-gene')   || {}).value || '');
+    const fMoi    = ((document.getElementById('dm-f-moi')    || {}).value || '');
+    const moi = (dmUser() || {}).id;
     const limite = Date.now() - DM_FAIT_JOURS * 86400000;
 
     let l = dmListe().filter(function (d) {
       if (!d) return false;
       if (d.statut === 'refuse' && !avecRefus) return false;
       if (d.statut === 'fait' && (d.majAt || d.ts || 0) < limite && !q) return false;
+      if (fNature && d.nature !== fNature) return false;
+      if (fGene && d.gene !== fGene) return false;
+      if (fMoi === 'mien' && d.auteur !== moi) return false;
+      if (fMoi === 'soutenu' && !(Array.isArray(d.soutiens) && d.soutiens.indexOf(moi) >= 0)) return false;
       if (!q) return true;
       return ((d.texte || '') + ' ' + (d.auteurNom || '') + ' ' + (d.module || '') + ' ' + (d.motif || '')).toLowerCase().includes(q);
     });
-    // Tri : ce qui gêne le plus, puis le plus ancien — une demande déposée il y
-    // a trois semaines ne doit pas se faire doubler indéfiniment.
+    // Tri par score décroissant (soutiens + gêne + avance de fraîcheur), puis
+    // le plus ancien : à score égal, une demande déposée il y a trois semaines
+    // ne doit pas se faire doubler indéfiniment par une arrivante.
     l.sort(function (a, b) {
-      const ga = (DM_GENES[a.gene] || {}).rang || 0, gb = (DM_GENES[b.gene] || {}).rang || 0;
-      return gb - ga || (a.ts || 0) - (b.ts || 0);
+      return dmScore(b) - dmScore(a) || (a.ts || 0) - (b.ts || 0);
     });
 
     const cols = [
@@ -167,8 +213,11 @@
     const n = Array.isArray(d.soutiens) ? d.soutiens.length : 0;
     return '<div class="dm-card' + (dmNonLue(d) ? ' neuve' : '') + '" onclick="dmOuvrir(' + d.id + ')">'
       + '<div class="dm-t1"><span>' + na.ico + '</span><span class="dm-num">#' + (d.num || '?') + '</span>'
-      + '<span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + '">' + st.lbl + '</span></div>'
+      + '<span class="dm-tag" style="background:' + st.bg + ';color:' + st.col + '">' + st.lbl + '</span>'
+      + (dmNeuve(d) && d.statut !== 'fait' && d.statut !== 'refuse' ? '<span class="dm-neuf">Nouveau</span>' : '')
+      + '</div>'
       + '<div class="dm-txt">' + E((d.texte || '').slice(0, 150)) + ((d.texte || '').length > 150 ? '…' : '') + '</div>'
+      + (d.statut === 'refuse' && d.motif ? '<div class="dm-motif">Non retenue : ' + E(d.motif) + '</div>' : '')
       + '<div class="dm-meta">'
       + (ge ? '<span style="color:' + ge.col + ';font-weight:700">' + ge.lbl + '</span>' : '')
       + (d.module ? '<span>· ' + E(d.module) + '</span>' : '')
@@ -306,7 +355,9 @@
     if (d.statut === 'refuse' && d.motif) {
       H += '<div style="margin-top:1rem;background:#FFEBEE;border:1px solid #ffcdd2;border-radius:10px;padding:11px 14px">'
         + '<div style="font-size:.72rem;font-weight:700;color:#C62828;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Pourquoi cette demande n’a pas été retenue</div>'
-        + '<div style="font-size:.87rem;line-height:1.45;white-space:pre-wrap">' + E(d.motif) + '</div></div>';
+        + '<div style="font-size:.87rem;line-height:1.45;white-space:pre-wrap">' + E(d.motif) + '</div>'
+        + (d.refusePar ? '<div style="font-size:.72rem;color:var(--gray-500);margin-top:6px">' + E(d.refusePar) + (d.refuseAt ? ' — ' + dmJour(d.refuseAt) : '') + '</div>' : '')
+        + '</div>';
     }
 
     // ── Fil ──
@@ -376,6 +427,7 @@
       if (m === null) return;
       if (!m.trim()) { alert('Un motif est nécessaire pour ne pas retenir une demande.'); return; }
       d.motif = m.trim();
+      d.refusePar = dmNom(); d.refuseAt = Date.now();
     }
     if (d.statut === st) return;
     d.statut = st;
