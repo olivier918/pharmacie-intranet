@@ -2340,6 +2340,9 @@ let sonnetteRpi = { ton:'dingdong', tonAide:'marimba', rep:1, vol:80 };
 // la fiche du collaborateur (staffDB[].modules) : elle le suit de poste en poste.
 let modulesParPoste = {};
 
+// Demandes des operateurs : anomalies, idees, questions (module dm-module.js).
+let demandes = [];
+
 let deliveries = [
   {id:1,nom:'THOMAS',prenom:'Liliane',adresse:'19 Rue Gambetta',tel:'02 31 XX',lieu:'Domicile',frigo:false,promis:true,ordo:true,montant:0,notes:'Alèses grandes tailles + morphine orale',status:'prep',prepBy:'HL',livrBy:null,date:'2026-05-16',cold:false},
   {id:2,nom:'MILLET',prenom:'Monique',adresse:'10 Rue Albert Suel',tel:'06 72 XX',lieu:'Domicile',frigo:false,promis:false,ordo:false,montant:0,notes:'Protections confiance + gants',status:'wait',prepBy:null,livrBy:null,date:'2026-05-16',cold:false},
@@ -2887,6 +2890,15 @@ function updateNavBadges(){
       ms.classList.add('on','red');
       ms.title='Nouvelles réponses dans vos dossiers de messagerie';
     } else { ms.textContent=''; }
+  }
+  // Demandes : ROUGE dès qu'une demande qui vous concerne a bougé — la vôtre,
+  // une que vous soutenez, ou n'importe laquelle si vous êtes administrateur.
+  const dm=document.getElementById('navb-dm');
+  if(dm){
+    const n=(typeof window.dmNonLues==='function')?window.dmNonLues():0;
+    dm.classList.remove('on','red','orange');
+    if(n>0){ dm.textContent=n>99?'99+':String(n); dm.classList.add('on','red'); dm.title='Demandes qui ont bougé depuis votre dernière visite'; }
+    else dm.textContent='';
   }
   // Crédits : ROUGE pour VOS relances restées sans nouvelle depuis 14 jours —
   // c'est à vous que le dossier revient. ORANGE pour celles des autres, pour
@@ -9614,6 +9626,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="cm-module.js"></script>
 <script src="pl-module.js"></script>
 <script src="dp-module.js"></script>
+<script src="dm-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>

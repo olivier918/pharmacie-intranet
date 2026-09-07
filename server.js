@@ -251,7 +251,9 @@ function renouvBase() {
 }
 app.get('/api/config', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({ renouvBase: renouvBase() });
+  // `version` sert aux demandes des operateurs : savoir sur quelle version une
+  // anomalie a ete vue evite de chercher un defaut deja corrige.
+  res.json({ renouvBase: renouvBase(), version: BUILD_ID });
 });
 
 // ─── Version déployée (pour l'auto-rafraîchissement des postes) ───
@@ -716,7 +718,9 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'l
   'depannages',
   // Journal d'activite : append-only, jamais modifie apres coup — la fusion par
   // id garantit que les actions de deux postes se cumulent au lieu de s'ecraser.
-  'journal'];
+  'journal',
+  // Demandes des operateurs (anomalies, idees) : fusion par id + tombstones.
+  'demandes'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des

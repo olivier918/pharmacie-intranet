@@ -36,6 +36,11 @@ const PREPS_DAYS = jours(process.env.RETENTION_PREPS_DAYS, 90, 'RETENTION_PREPS_
 // « qui utilise l'outil » sur une saison, pas au-dela — un journal nominatif
 // ne se garde pas indefiniment.
 const JOURNAL_DAYS = jours(process.env.RETENTION_JOURNAL_DAYS, 180, 'RETENTION_JOURNAL_DAYS');
+// Captures d'ecran des demandes closes. Une capture de l'application contient
+// presque toujours des noms de patients ; elle se retrouve dans le blob ET dans
+// les 300 instantanes d'historique. Passe six mois, l'image ne sert plus a rien
+// alors que le texte de la demande, lui, reste utile : on ne retire que l'image.
+const DEMANDES_IMG_DAYS = jours(process.env.RETENTION_DEMANDES_IMG_DAYS, 180, 'RETENTION_DEMANDES_IMG_DAYS');
 const HISTORY_MIN_INTERVAL_MIN = parseInt(process.env.HISTORY_MIN_INTERVAL_MIN || '5', 10);
 // Champs volumineux et reconstructibles depuis les données : inutiles dans l'historique.
 const HISTORY_STRIP_FIELDS = ['bonPdfHtml', 'pdfVersions'];
@@ -71,6 +76,18 @@ function pruneRetention(blob) {
   if (Array.isArray(out.journal)) {
     const c = cutoff(JOURNAL_DAYS);
     out.journal = out.journal.filter((x) => !isOlder(x && x.d, c));
+  }
+  if (Array.isArray(out.demandes)) {
+    const limite = Date.now() - DEMANDES_IMG_DAYS * 86400000;
+    out.demandes = out.demandes.map((d) => {
+      if (!d || !d.image) return d;
+      const close = d.statut === 'fait' || d.statut === 'refuse';
+      if (!close || (d.majAt || d.ts || 0) >= limite) return d;
+      const copie = Object.assign({}, d);
+      delete copie.image;
+      copie.imageRetiree = true;   // trace : l'image a ete purgee, pas perdue par erreur
+      return copie;
+    });
   }
   return out;
 }
