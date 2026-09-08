@@ -1251,7 +1251,26 @@ tr:hover td{background:#fafffe}
             <span id="mod-poste-ok" style="display:none;color:#2E7D32;font-size:.85rem">Enregistré</span>
           </div>
         </div>
+
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Stockage des scans d'ordonnance</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">
+            Les scans joints aux dossiers de location étaient conservés dans le fichier de données que
+            chaque poste relit intégralement toutes les huit secondes. Cette reprise les déplace vers un
+            stockage servi à la demande, que le navigateur met en cache.
+            <br><b>Aucun scan n'est supprimé :</b> chaque fichier est copié, la copie est relue et comparée
+            à l'original, et l'original reste en place jusqu'à votre vérification.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn bp" onclick="repriseScansLocations()"><svg class="ico"><use href="#ic-archives"></use></svg> Reprendre les scans</button>
+            <button class="btn bs" onclick="etatScansLocations()">Où en est-on ?</button>
+          </div>
+          <div id="reprise-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.5"></div>
+        </div>
       </div>
+
+      <!-- MAINTENANCE : reprise des scans de location -->
+      <div id="bo-modules-maint" style="display:none"></div>
 
       <!-- JOURNAL D'ACTIVITÉ (administrateurs) -->
       <div id="bo-journal" style="display:none">
@@ -5201,7 +5220,7 @@ function openRenouvellement(id){
     histEl.innerHTML=`<div style="font-size:.78rem;font-weight:600;color:var(--g-dark);margin-bottom:.4rem">Renouvellements précédents (${hist.length})</div>`
       +hist.map((r,i)=>{
         const scanPart=r.scan
-          ? (r.scanData
+          ? (aUnScan(r)
               ? ` · <button type="button" onclick="viewRenewalScan(${l.id},${i})" style="background:none;border:none;color:var(--g-mid);cursor:pointer;text-decoration:underline;font:inherit;padding:0">${ico('joindre')} ${r.scan}</button>`
               : ` · ${ico('joindre')} ${r.scan}`)
           : '';
@@ -5246,12 +5265,12 @@ function saveRenouvellement(){
 function viewRenewalScan(locId, idx){
   const l=locations.find(x=>x.id===locId);
   const r=l&&l.renewals&&l.renewals[idx];
-  if(!r||!r.scanData){alert('Scan non disponible.');return;}
+  if(!r||!aUnScan(r)){alert('Scan non disponible.');return;}
   const w=window.open();
   if(!w){alert('Autorisez les fenêtres pop-up pour visualiser le scan.');return;}
   const isImg=(r.scanType||'').startsWith('image/');
   const safeName=(r.scan||'Ordonnance').replace(/[<>"]/g,'');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${safeName}</title><style>body{margin:0;font-family:system-ui,sans-serif;background:#222;color:#fff}.hdr{padding:8px 14px;font-size:.85rem;background:#111;border-bottom:1px solid #333}iframe,img{display:block;width:100%;height:calc(100vh - 38px);border:none;background:#fff}img{object-fit:contain}</style></head><body><div class="hdr">${safeName} — ${r.datePresc||''}</div>${isImg?`<img src="${r.scanData}">`:`<iframe src="${r.scanData}"></iframe>`}</body></html>`);
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${safeName}</title><style>body{margin:0;font-family:system-ui,sans-serif;background:#222;color:#fff}.hdr{padding:8px 14px;font-size:.85rem;background:#111;border-bottom:1px solid #333}iframe,img{display:block;width:100%;height:calc(100vh - 38px);border:none;background:#fff}img{object-fit:contain}</style></head><body><div class="hdr">${safeName} — ${r.datePresc||''}</div>${isImg?`<img src="${scanSrc(r)}">`:`<iframe src="${scanSrc(r)}"></iframe>`}</body></html>`);
   w.document.close();
 }
 
@@ -5616,7 +5635,7 @@ function renderLocs(){
       const nRen=(l.renewals||[]).length;
       const renTooltip=nRen?(l.renewals.map((r,i)=>`#${i+1} : ${r.datePresc?new Date(r.datePresc).toLocaleDateString('fr-FR'):'—'} (+${r.duree} sem.)`).join(' · ')):'';
       const renBadge=nRen?` <span class="badge" style="background:#fff3e0;color:#e65100;padding:1px 6px;font-size:.65rem;cursor:help" title="${renTooltip}">${ico('renouveler')} ×${nRen}</span>`:'';
-      const nOrdo=(l.scanData?1:0)+(l.renewals||[]).filter(r=>r.scanData).length;
+      const nOrdo=(aUnScan(l)?1:0)+(l.renewals||[]).filter(aUnScan).length;
       const nCom=(l.comments||[]).length;
       return `<tr>
       <td><strong>${l.nom}</strong> ${l.prenom}${locTel(l)?`<div style="font-size:.7rem;color:var(--gray-500);white-space:nowrap">${ico('telephone')} ${locTel(l)}</div>`:''}</td>
@@ -5653,13 +5672,107 @@ function updLocStatus(id,s){
   renderLocs();
 }
 
+// Adresse d'affichage d'un scan. `scanId` designe un fichier stocke hors du
+// blob (table app_images, servi par /api/images) ; `scanData` est l'ancienne
+// forme, ou le fichier vivait dans le blob lui-meme. On lit les deux : tant que
+// la reprise n'est pas terminee, les deux coexistent, et un dossier repris
+// comme un dossier non repris doivent s'ouvrir.
+function scanSrc(o){
+  if(!o) return null;
+  if(o.scanId) return '/api/images/'+o.scanId;
+  return o.scanData||null;
+}
+function aUnScan(o){ return !!(o && (o.scanId || o.scanData)); }
+
+// Etat des lieux, avant comme apres. Sert a decider, et a verifier.
+function etatScansLocations(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  let dansBlob=0, koBlob=0, repris=0, aucun=0;
+  const compter=function(o){
+    if(o.scanId){ repris++; if(o.scanData) koBlob+=o.scanData.length*0.75; }
+    else if(o.scanData){ dansBlob++; koBlob+=o.scanData.length*0.75; }
+    else if(o.scan) aucun++;
+  };
+  locations.forEach(function(l){ compter(l); (l.renewals||[]).forEach(compter); });
+  const ko=Math.round(koBlob/1024);
+  document.getElementById('reprise-etat').innerHTML =
+    '<b>'+repris+'</b> scan(s) repris · <b>'+dansBlob+'</b> encore uniquement dans le fichier de données'
+    +(aucun?' · '+aucun+' dossier(s) mentionnent un fichier absent':'')
+    +'<div style="font-size:.8rem;color:var(--gray-500);margin-top:5px">'
+    +'Poids encore porté par le fichier de données : <b>'+ko+' Ko</b>.'
+    +(repris&&!dansBlob ? ' Tout est repris : le retrait des originaux peut être lancé.' : '')
+    +'</div>';
+}
+
+// ═══════════ REPRISE DES SCANS DE LOCATION ═══════════
+// Les scans d'ordonnance vivaient dans le blob metier, que chaque poste relit
+// EN ENTIER toutes les huit secondes : 12 Mo repartis sur le reseau en boucle,
+// sur tous les postes. Ils passent dans la table des fichiers, servie a la
+// demande et mise en cache par le navigateur.
+//
+// REGLE DE L'OPERATION : on ne supprime RIEN. Chaque scan est copie, la copie
+// est relue et comparee a l'original, et l'original reste en place. Le retrait
+// se fera dans un second temps, apres verification humaine, et seulement sur
+// les dossiers dont la copie a ete confirmee.
+async function repriseScansLocations(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const cibles=[];
+  locations.forEach(function(l){
+    if(l.scanData && !l.scanId) cibles.push({loc:l, obj:l, quoi:'ordonnance initiale'});
+    (l.renewals||[]).forEach(function(r,i){
+      if(r.scanData && !r.scanId) cibles.push({loc:l, obj:r, quoi:'renouvellement n°'+(i+1)});
+    });
+  });
+  if(!cibles.length){ alert('Aucun scan à reprendre : tout est déjà en place.'); return; }
+  const ko=Math.round(cibles.reduce(function(t,c){ return t+c.obj.scanData.length*0.75; },0)/1024);
+  if(!confirm('Reprendre '+cibles.length+' scan(s), environ '+ko+' Ko ?\n\n'
+    +'Chaque scan est copié puis relu et comparé à l’original.\n'
+    +'AUCUN scan n’est supprimé : les deux versions coexisteront jusqu’à votre vérification.')) return;
+
+  const zone=document.getElementById('reprise-etat');
+  const dire=function(m){ if(zone) zone.innerHTML=m; };
+  let ok=0, rates=[];
+  for(let i=0;i<cibles.length;i++){
+    const c=cibles[i];
+    dire('Reprise en cours : '+(i+1)+' / '+cibles.length+' — '+c.loc.nom+' '+c.loc.prenom);
+    const m=String(c.obj.scanData).match(/^data:([^;]+);base64,(.+)$/);
+    if(!m){ rates.push(c.loc.nom+' '+c.loc.prenom+' ('+c.quoi+') : contenu illisible'); continue; }
+    try{
+      const r=await fetch('/api/images',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mime:m[1],data:m[2]})});
+      const j=await r.json().catch(function(){return null;});
+      if(!r.ok||!j||!j.ok){ rates.push(c.loc.nom+' '+c.loc.prenom+' ('+c.quoi+') : '+((j&&j.error)||('erreur '+r.status))); continue; }
+      // Verification : on relit la copie et on compare sa taille a l'original.
+      // Une copie qu'on n'a pas relue n'est pas une copie, c'est un espoir.
+      const v=await fetch('/api/images/'+j.id);
+      if(!v.ok){ rates.push(c.loc.nom+' '+c.loc.prenom+' ('+c.quoi+') : copie illisible'); continue; }
+      const buf=await v.arrayBuffer();
+      const attendu=Math.floor(m[2].replace(/=+$/,'').length*3/4);
+      if(Math.abs(buf.byteLength-attendu)>2){
+        rates.push(c.loc.nom+' '+c.loc.prenom+' ('+c.quoi+') : taille incohérente ('+buf.byteLength+' vs '+attendu+')');
+        continue;
+      }
+      c.obj.scanId=j.id;
+      c.loc.updatedAt=Date.now();   // sans quoi la fusion multiposte ecraserait la reprise
+      ok++;
+    }catch(e){ rates.push(c.loc.nom+' '+c.loc.prenom+' ('+c.quoi+') : '+e.message); }
+  }
+  if(ok) { schedSave(); logAction('Reprise des scans de location', ok+' repris'); }
+  dire('<b>'+ok+' scan(s) repris et vérifiés</b>'+(rates.length?', '+rates.length+' en échec':'')
+    +'.<div style="font-size:.8rem;color:var(--gray-500);margin-top:6px">Les originaux sont intacts. '
+    +'Ouvrez quelques dossiers pour vérifier l’affichage, puis dites-le pour lancer le retrait.</div>'
+    +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
+      +rates.map(function(x){return '• '+x.replace(/[<>]/g,'');}).join('<br>')+'</div>':''));
+  renderLocs();
+}
+
 // ═══════════ ORDONNANCES ARCHIVÉES ═══════════
 // L'ordonnance initiale et tous les renouvellements, au même endroit.
 function locOrdos(l){
   const out=[];
-  if(l.scan||l.scanData) out.push({titre:'Ordonnance initiale', date:l.datePresc||l.dateDebut, nom:l.scan, type:l.scanType, data:l.scanData, dur:l.duree, initiale:true});
+  if(l.scan||aUnScan(l)) out.push({titre:'Ordonnance initiale', date:l.datePresc||l.dateDebut, nom:l.scan, type:l.scanType, src:scanSrc(l), dur:l.duree, initiale:true});
   (l.renewals||[]).forEach(function(r,i){
-    out.push({titre:'Renouvellement n°'+(i+1), date:r.datePresc, nom:r.scan, type:r.scanType, data:r.scanData, dur:r.duree, by:r.addedBy});
+    out.push({titre:'Renouvellement n°'+(i+1), date:r.datePresc, nom:r.scan, type:r.scanType, src:scanSrc(r), dur:r.duree, by:r.addedBy});
   });
   return out;
 }
@@ -5674,7 +5787,7 @@ function openLocOrdos(id){
   } else {
     host.innerHTML=list.map(function(o,i){
       const d=o.date?new Date(o.date).toLocaleDateString('fr-FR'):'—';
-      const dispo=!!o.data;
+      const dispo=!!o.src;
       return '<div style="border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .8rem;margin-bottom:7px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
         +'<div style="flex:1;min-width:180px"><strong>'+o.titre+'</strong>'
         +'<div style="font-size:.78rem;color:var(--gray-500)">Ordonnance du '+d+(o.dur?' · '+o.dur+' sem.':'')+(o.nom?' · '+o.nom:'')+'</div></div>'
@@ -5696,12 +5809,12 @@ function delLocOrdo(id,idx){
   if(!confirm('Supprimer le document « '+(o.nom||o.titre)+' » ('+o.titre+') du dossier de '+l.nom+' '+l.prenom+' ?\n\nLe fichier sera effacé définitivement. La date et la durée de l\u2019ordonnance sont conservées.')) return;
   // L'index 0 est l'ordonnance initiale si le dossier en a une ; ensuite viennent
   // les renouvellements dans l'ordre. On retrouve la cible par ce même calcul.
-  const initiale=!!(l.scan||l.scanData);
+  const initiale=!!(l.scan||aUnScan(l));
   if(initiale&&idx===0){
-    l.scan=null; l.scanType=null; l.scanData=null;
+    l.scan=null; l.scanType=null; l.scanData=null; l.scanId=null;
   } else {
     const r=(l.renewals||[])[initiale?idx-1:idx];
-    if(r){ r.scan=null; r.scanType=null; r.scanData=null; }
+    if(r){ r.scan=null; r.scanType=null; r.scanData=null; r.scanId=null; }
   }
   l.updatedAt=Date.now();
   locAddComment(l,'Document supprimé : '+o.titre+(o.nom?' ('+o.nom+')':''), true);
@@ -5711,7 +5824,7 @@ function delLocOrdo(id,idx){
 function viewLocOrdo(id,idx){
   const l=locations.find(x=>x.id===id); if(!l) return;
   const o=locOrdos(l)[idx];
-  if(!o||!o.data){alert('Fichier non disponible.');return;}
+  if(!o||!o.src){alert('Fichier non disponible.');return;}
   const w=window.open();
   if(!w){alert('Autorisez les fenêtres pop-up pour visualiser l\'ordonnance.');return;}
   const isImg=(o.type||'').startsWith('image/');
@@ -5721,7 +5834,7 @@ function viewLocOrdo(id,idx){
     +'.hdr{padding:8px 14px;font-size:.85rem;background:#111;border-bottom:1px solid #333}'
     +'iframe,img{display:block;width:100%;height:calc(100vh - 38px);border:none;background:#fff}img{object-fit:contain}</style>'
     +'</head><body><div class="hdr">'+safe+' — '+(o.date||'')+'</div>'
-    +(isImg?'<img src="'+o.data+'">':'<iframe src="'+o.data+'"></iframe>')+'</body></html>');
+    +(isImg?'<img src="'+o.src+'">':'<iframe src="'+o.src+'"></iframe>')+'</body></html>');
   w.document.close();
 }
 
