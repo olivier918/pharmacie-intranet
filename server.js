@@ -269,8 +269,13 @@ function renouvBase() {
 // Deux consequences : deux envois de la meme image ne prennent la place qu'une
 // fois, et l'adresse d'une image ne peut jamais designer un autre contenu — ce
 // qui autorise une mise en cache definitive par le navigateur.
-const IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
-const IMG_MAX_OCTETS = 2 * 1024 * 1024;
+// Le PDF est de la partie : les ordonnances scannees des locations en sont
+// souvent, et l'application les affiche dans un cadre plutot qu'en image.
+const IMG_TYPES = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+  'application/pdf': 'pdf'
+};
+const IMG_MAX_OCTETS = 8 * 1024 * 1024;   // une ordonnance scannee peut etre lourde
 
 app.post('/api/images', async (req, res) => {
   try {
@@ -285,7 +290,7 @@ app.post('/api/images', async (req, res) => {
     const octets = Buffer.from(brut, 'base64');
     if (!octets.length) return res.status(400).json({ ok: false, error: 'Image vide' });
     if (octets.length > IMG_MAX_OCTETS) {
-      return res.status(413).json({ ok: false, error: 'Image trop lourde (max 2 Mo)' });
+      return res.status(413).json({ ok: false, error: 'Fichier trop lourd (max 8 Mo)' });
     }
     const id = crypto.createHash('sha256').update(octets).digest('hex').slice(0, 32);
     await db.query(
