@@ -1264,6 +1264,7 @@ tr:hover td{background:#fafffe}
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <button class="btn bp" onclick="repriseScansLocations()"><svg class="ico"><use href="#ic-archives"></use></svg> Reprendre les scans</button>
             <button class="btn bs" onclick="etatScansLocations()">Où en est-on ?</button>
+            <button class="btn bd" onclick="retirerScansRepris()"><svg class="ico"><use href="#ic-corbeille"></use></svg> Retirer les originaux repris</button>
           </div>
           <div id="reprise-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.5"></div>
         </div>
@@ -5833,6 +5834,99 @@ async function repriseScansLocations(){
     +'Les originaux sont intacts.</div>'
     +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
       +rates.map(function(x){return '• '+String(x).replace(/[<>]/g,'');}).join('<br>')+'</div>':''));
+  renderLocs();
+}
+
+// Retrait des originaux, une fois la reprise verifiee. C'est la seule etape
+// destructrice de l'operation, et elle est batie pour ne rien pouvoir emporter
+// par erreur : un scan n'est retire que si SA copie vient d'etre relue et
+// comparee, a l'instant, dossier par dossier. Un doute, et l'original reste.
+async function retirerScansRepris(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const PAQUET = 5;
+  const listeCibles=function(){
+    const out=[];
+    locations.forEach(function(l){
+      if(l.scanId && l.scanData) out.push({locId:l.id, rang:null, qui:l.nom+' '+l.prenom, quoi:'ordonnance initiale'});
+      (l.renewals||[]).forEach(function(r,i){
+        if(r.scanId && r.scanData) out.push({locId:l.id, rang:i, qui:l.nom+' '+l.prenom, quoi:'renouvellement n°'+(i+1)});
+      });
+    });
+    return out;
+  };
+  const cible=function(c){
+    const l=locations.find(function(x){ return x.id===c.locId; });
+    if(!l) return null;
+    const o = c.rang===null ? l : (l.renewals||[])[c.rang];
+    return o ? {loc:l, obj:o} : null;
+  };
+  const cibles=listeCibles();
+  if(!cibles.length){ alert('Rien à retirer : aucun scan ne subsiste en double.'); return; }
+  const ko=Math.round(cibles.reduce(function(t,c){ const z=cible(c); return t+((z&&z.obj.scanData)?z.obj.scanData.length*0.75:0); },0)/1024);
+  if(!confirm('Retirer '+cibles.length+' original(aux) du fichier de données, soit environ '+ko+' Ko ?\n\n'
+    +'Chaque copie est relue et comparée AVANT que l’original ne soit retiré.\n'
+    +'Un scan dont la copie ne répond pas est laissé intact.\n\n'
+    +'Les scans restent consultables : ils sont servis depuis le nouveau stockage.\n\n'
+    +'Cette étape est irréversible côté fichier de données (l’historique en garde trace).')) return;
+  if(!confirm('Dernière confirmation.\n\nAvez-vous bien ouvert plusieurs dossiers, dont un PDF, et vérifié que les ordonnances s’affichent ?')) return;
+
+  const zone=document.getElementById('reprise-etat');
+  const dire=function(m){ if(zone) zone.innerHTML=m; };
+  let ote=0; const gardes=[];
+  const enregistrer=async function(){ _savePending=true; await saveAll(); const bon=!_savePending; _savePending=true; return bon; };
+
+  _savePending=true;
+  try{
+    for(let i=0;i<cibles.length;i++){
+      const c=cibles[i];
+      dire('Retrait : '+(i+1)+' / '+cibles.length+' — '+c.qui+' ('+ote+' retiré'+(ote>1?'s':'')+')');
+      if(typeof resetTimer==='function') resetTimer();
+      try{
+        let z=cible(c);
+        if(!z||!z.obj.scanId||!z.obj.scanData) continue;
+        const attenduB64=String(z.obj.scanData).split(',')[1]||'';
+        const attendu=Math.floor(attenduB64.replace(/=+$/,'').length*3/4);
+        const id=z.obj.scanId;
+        const v=await fetch('/api/images/'+id);
+        if(!v.ok){ gardes.push(c.qui+' ('+c.quoi+') : copie inaccessible — original conservé'); continue; }
+        const buf=await v.arrayBuffer();
+        if(Math.abs(buf.byteLength-attendu)>2){
+          gardes.push(c.qui+' ('+c.quoi+') : copie de taille différente — original conservé'); continue;
+        }
+        z=cible(c);   // MAINTENANT, apres l'attente
+        if(!z||z.obj.scanId!==id){ gardes.push(c.qui+' ('+c.quoi+') : dossier modifié entre-temps — original conservé'); continue; }
+        z.obj.scanData=null;
+        z.loc.updatedAt=Date.now();
+        ote++;
+        if(ote % PAQUET === 0){
+          dire('Retrait : '+(i+1)+' / '+cibles.length+' — enregistrement du paquet…');
+          if(!await enregistrer()){ gardes.push('Enregistrement refusé après '+ote+' retrait(s) — relancez l’opération.'); break; }
+        }
+      }catch(e){ gardes.push(c.qui+' ('+c.quoi+') : '+e.message+' — original conservé'); }
+    }
+  }catch(e){ gardes.push('Interruption : '+e.message);
+  } finally {
+    if(ote){ await enregistrer(); if(typeof logAction==='function') logAction('Retrait des scans repris', ote+' retirés'); }
+    _savePending=false;
+  }
+
+  dire('Vérification auprès du serveur…');
+  let restants=null, poids=null;
+  try{
+    const etat=await (await fetch('/api/data',{cache:'no-store'})).json();
+    let b=0;
+    (etat.locations||[]).forEach(function(l){
+      const cpt=function(o){ if(o.scanData) b++; };
+      cpt(l); (l.renewals||[]).forEach(cpt);
+    });
+    restants=b; poids=Math.round(JSON.stringify(etat).length/1024);
+  }catch(e){}
+  dire('<b>'+ote+' original(aux) retiré(s)</b>'
+    +(restants!==null?' · '+restants+' encore dans le fichier de données':'')
+    +(gardes.length?' · '+gardes.length+' conservé(s) par précaution':'')
+    +(poids!==null?'<div style="font-size:.8rem;color:var(--gray-500);margin-top:6px">Fichier de données : <b>'+poids+' Ko</b>.</div>':'')
+    +(gardes.length?'<div style="margin-top:8px;background:#FFF3E0;border-radius:8px;padding:8px 11px;font-size:.8rem">'
+      +gardes.map(function(x){return '• '+String(x).replace(/[<>]/g,'');}).join('<br>')+'</div>':''));
   renderLocs();
 }
 
