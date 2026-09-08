@@ -23,6 +23,7 @@
   const acMoments = () => (typeof moments !== 'undefined' && Array.isArray(moments)) ? moments : [];
   const acAgenda = () => (typeof agenda !== 'undefined' && Array.isArray(agenda)) ? agenda : [];
   const acFils = () => (typeof threads !== 'undefined' && Array.isArray(threads)) ? threads : [];
+  const acLiens = () => (typeof liens !== 'undefined' && Array.isArray(liens)) ? liens : [];
   const acSave = (now) => {
     try {
       if (now && typeof saveNow === 'function') saveNow();
@@ -107,6 +108,9 @@
   .ac-rac{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
   .ac-rac button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border:1px solid var(--gray-200);background:#fff;border-radius:12px;cursor:pointer;font-family:inherit;font-size:.79rem;font-weight:700;color:var(--gray-700);line-height:1.25;text-align:center}
   .ac-rac button:hover{border-color:var(--g-border);background:var(--g-pale);color:var(--g-dark)}
+  .ac-rac a{text-decoration:none}
+  .ac-rac button{position:relative}
+  .ac-rac .ac-coeur{position:absolute;top:5px;right:8px;font-size:.8rem}
   .ac-rac .ico{width:21px;height:21px}
   .ac-td{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-200)}
   .ac-td:last-child{border-bottom:none}
@@ -132,7 +136,7 @@
   </div>
   <div class="ac-grid ac-2">
     <div class="ac-card" id="ac-anniv-c">
-      <div class="ac-h"><svg class="ico"><use href="#ic-anniversaire"></use></svg> Anniversaire du jour</div>
+      <div class="ac-h"><svg class="ico"><use href="#ic-anniversaire"></use></svg> Anniversaires du mois</div>
       <div class="ac-b" id="ac-anniv"></div>
     </div>
     <div class="ac-card">
@@ -164,7 +168,7 @@
         <div class="ac-ajout">
           <input type="text" class="ac-inp" id="ac-td-txt" placeholder="Une tâche à ne pas oublier…"
                  onkeydown="if(event.key==='Enter')acAjouterTodo()">
-          <input type="time" class="ac-inp" id="ac-td-h" style="max-width:104px" title="Échéance (facultative)">
+          <select class="ac-inp" id="ac-td-qui" style="max-width:170px;display:none"></select>
           <button class="btn bp sm" onclick="acAjouterTodo()">Ajouter</button>
         </div>
       </div>
@@ -172,32 +176,15 @@
     <div class="ac-card">
       <div class="ac-h"><svg class="ico"><use href="#ic-realisation"></use></svg> Raccourcis</div>
       <div class="ac-b"><div class="ac-rac" id="ac-rac"></div></div>
+      <div class="ac-lien" id="ac-rac-add"></div>
     </div>
   </div>
 
-  <div class="ac-grid ac-2e">
-    <div class="ac-card">
-      <div class="ac-h"><svg class="ico"><use href="#ic-calendrier"></use></svg> Rendez-vous du mois</div>
-      <div class="ac-b" id="ac-agenda"></div>
-      <div class="ac-lien" id="ac-agenda-add"></div>
-    </div>
-    <div class="ac-card">
-      <div class="ac-h"><svg class="ico"><use href="#ic-anniversaire"></use></svg> Anniversaires du mois</div>
-      <div class="ac-b" id="ac-annivs"></div>
-    </div>
+  <div class="ac-card">
+    <div class="ac-h"><svg class="ico"><use href="#ic-calendrier"></use></svg> Rendez-vous du mois</div>
+    <div class="ac-b" id="ac-agenda"></div>
+    <div class="ac-lien" id="ac-agenda-add"></div>
   </div>`;
-
-  // ── Raccourcis ────────────────────────────────────────────────────────────
-  // Les cibles sont les vraies sections de l'application. Un raccourci qui
-  // pointe dans le vide est pire que pas de raccourci.
-  const AC_RACCOURCIS = [
-    { sec: 'livraisons',     ico: 'ic-livraison',      lbl: 'Livraisons' },
-    { sec: 'messagerie',     ico: 'ic-livre',          lbl: 'Cahier de transmission' },
-    { sec: 'preparations',   ico: 'ic-realisation',    lbl: 'Préparations' },
-    { sec: 'credits',        ico: 'ic-euro',           lbl: 'Crédits' },
-    { sec: 'renouvellement', ico: 'ic-renouvellement', lbl: 'Renouvellements' },
-    { sec: 'demandes',       ico: 'ic-idee',           lbl: 'Boîte à idées' }
-  ];
 
   // ── Rendu ─────────────────────────────────────────────────────────────────
   window.acRender = function () {
@@ -215,24 +202,38 @@
     acRendTodos();
     acRendRaccourcis();
     acRendAgenda(n);
-    acRendAnnivsMois(n);
   };
 
+  // Anniversaires du MOIS. Le jour meme passe en tete et met la carte en couleur :
+  // c'est le seul moment ou l'encart doit attraper le regard.
   function acRendAnniv(n) {
     const el = document.getElementById('ac-anniv'); if (!el) return;
     const carte = document.getElementById('ac-anniv-c');
-    const md = acMoisJour(n);
-    const qui = acStaff().filter(s => s.anniv === md);
-    if (!qui.length) {
-      if (carte) carte.classList.remove('ac-anniv');
-      el.innerHTML = '<div style="font-size:.85rem;color:var(--gray-500)">Personne ne fête son anniversaire aujourd’hui.</div>';
+    const mois = pad(n.getMonth() + 1), auj = acMoisJour(n);
+    const l = acStaff().filter(s => s.anniv && String(s.anniv).slice(0, 2) === mois)
+      .sort((a, b) => String(a.anniv).localeCompare(String(b.anniv)));
+    const cejour = l.filter(s => s.anniv === auj);
+    if (carte) carte.classList.toggle('ac-anniv', cejour.length > 0);
+
+    if (!l.length) {
+      el.innerHTML = '<div class="ac-vide" style="padding:.6rem 0">Aucun anniversaire en ' + MOIS[n.getMonth()] + '.'
+        + (acAdmin() ? '<br><span style="font-size:.78rem">Les dates se renseignent dans le Back Office, fiche collaborateur.</span>' : '')
+        + '</div>';
       return;
     }
-    if (carte) carte.classList.add('ac-anniv');
-    el.innerHTML = '<div style="display:flex;align-items:flex-start;gap:12px"><div style="flex:1">'
-      + qui.map(s => '<div class="ac-anniv-n">' + E((s.prenom || '') + ' ' + (s.nom || '')) + '</div>').join('')
-      + '<div class="ac-anniv-d">' + n.getDate() + ' ' + MOIS[n.getMonth()] + '</div></div>'
-      + '<span class="ac-fete">🎉</span></div>';
+    let H = '';
+    if (cejour.length) {
+      H += '<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:11px"><div style="flex:1">'
+        + cejour.map(s => '<div class="ac-anniv-n">' + E((s.prenom || '') + ' ' + (s.nom || '')) + '</div>').join('')
+        + '<div class="ac-anniv-d">C’est aujourd’hui !</div></div><span class="ac-fete">🎉</span></div>';
+    }
+    H += l.filter(s => s.anniv !== auj).map(function (s) {
+      const j = +String(s.anniv).slice(3);
+      return '<div class="ac-li' + (String(s.anniv) < auj ? ' passe' : '') + '">'
+        + '<span class="q">' + j + ' ' + MOIS_CT[n.getMonth()] + '</span>'
+        + '<span class="t">' + E((s.prenom || '') + ' ' + (s.nom || '')) + '</span></div>';
+    }).join('');
+    el.innerHTML = H;
   }
 
   // ── Moments ───────────────────────────────────────────────────────────────
@@ -348,23 +349,43 @@
   };
 
   // ── Todo ──────────────────────────────────────────────────────────────────
+  // `pour` = a qui la tache incombe, `par` = qui l'a inscrite. Les deux sont
+  // identiques quand on s'inscrit une tache a soi-meme ; ils divergent quand un
+  // admin en confie une. `auteur` est lu en repli pour les taches d'avant.
+  function acQui(t) { return t ? (t.pour || t.auteur) : null; }
   function acMesTodos() {
     const u = acUser(); if (!u) return [];
-    return acTodos().filter(t => t && t.auteur === u.id && !t.fait)
-      .sort((a, b) => (a.dueAt || Infinity) - (b.dueAt || Infinity) || (a.ts || 0) - (b.ts || 0));
+    return acTodos().filter(t => t && acQui(t) === u.id && !t.fait)
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0));
   }
   function acRendTodos() {
     const el = document.getElementById('ac-todos'); if (!el) return;
+    const u = acUser();
     const l = acMesTodos();
     document.getElementById('ac-td-n').textContent = l.length;
-    if (!l.length) { el.innerHTML = '<div class="ac-vide">Rien à faire d’ici ce soir.</div>'; return; }
-    const n = Date.now();
+
+    // Le choix du destinataire n'apparait que pour un admin : pour tout le monde
+    // d'autre, une todo ne concerne que soi et le menu serait du bruit.
+    const sel = document.getElementById('ac-td-qui');
+    if (sel) {
+      if (acAdmin() && u) {
+        const garde = sel.value;
+        sel.style.display = '';
+        sel.innerHTML = '<option value="' + E(u.id) + '">Pour moi</option>'
+          + acStaff().filter(s => s.id !== u.id)
+              .map(s => '<option value="' + E(s.id) + '">Pour ' + E(s.prenom || s.id) + '</option>').join('');
+        if (garde) sel.value = garde;
+      } else {
+        sel.style.display = 'none';
+      }
+    }
+
+    if (!l.length) { el.innerHTML = '<div class="ac-vide">Rien à faire pour le moment.</div>'; return; }
     el.innerHTML = l.map(function (t) {
-      const tard = t.dueAt && t.dueAt < n;
-      const h = t.dueAt ? new Date(t.dueAt) : null;
+      const confiee = t.par && t.par !== acQui(t);
       return '<label class="ac-td"><input type="checkbox" onchange="acCocher(' + t.id + ')">'
         + '<span class="ac-td-t">' + E(t.texte || '')
-        + (h ? '<span class="ac-td-e' + (tard ? ' tard' : '') + '">' + pad(h.getHours()) + ':' + pad(h.getMinutes()) + '</span>' : '')
+        + (confiee ? '<span class="ac-td-e">demandé par ' + E(acPrenom(t.par)) + '</span>' : '')
         + '</span></label>';
     }).join('');
   }
@@ -373,38 +394,83 @@
     const i = document.getElementById('ac-td-txt');
     const texte = (i.value || '').trim();
     if (!texte) return;
-    const hh = (document.getElementById('ac-td-h') || {}).value || '';
-    let dueAt = 0;
-    if (/^\d{2}:\d{2}$/.test(hh)) {
-      const d = new Date(); d.setHours(+hh.slice(0, 2), +hh.slice(3, 5), 0, 0);
-      dueAt = d.getTime();
-    }
+    const sel = document.getElementById('ac-td-qui');
+    const pour = (acAdmin() && sel && sel.value) ? sel.value : u.id;
     const now = Date.now();
-    acTodos().unshift({ id: now, ts: now, auteur: u.id, texte: texte, dueAt: dueAt, fait: false, updatedAt: now });
-    i.value = ''; const e = document.getElementById('ac-td-h'); if (e) e.value = '';
+    acTodos().unshift({ id: now, ts: now, pour: pour, par: u.id, texte: texte, fait: false, updatedAt: now });
+    i.value = '';
     acSave(true); acRendTodos();
+    if (pour !== u.id) acToast('Tâche confiée à ' + acPrenom(pour) + '.');
   };
   window.acCocher = function (id) {
     const t = acTodos().find(x => x.id === id); if (!t) return;
     // La tache cochee sort de la liste mais reste en base : une suppression se
     // propagerait mal entre postes, et on veut pouvoir dire qui a fait quoi.
-    t.fait = true; t.faitAt = Date.now(); t.updatedAt = Date.now();
+    t.fait = true; t.faitAt = Date.now(); t.parQui = (acUser() || {}).id; t.updatedAt = Date.now();
     acSave(true); acRendTodos();
   };
+  function acToast(m) {
+    const d = document.createElement('div');
+    d.textContent = m;
+    d.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1D5C3A;color:#fff;padding:10px 18px;border-radius:10px;font-size:.86rem;z-index:99999;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 2600);
+  }
 
   // ── Raccourcis ────────────────────────────────────────────────────────────
+  // Des liens vers des sites externes — Ameli, le portail du grossiste, le
+  // Vidal… — tenus par les administrateurs, communs a toute l'equipe.
   function acRendRaccourcis() {
     const el = document.getElementById('ac-rac'); if (!el) return;
-    // On n'affiche que les modules reellement presents pour cet operateur : un
-    // raccourci vers un module masque par son poste serait une impasse.
-    el.innerHTML = AC_RACCOURCIS.filter(function (r) {
-      const b = document.querySelector('.sb-item[data-sec="' + r.sec + '"]');
-      return b && b.style.display !== 'none';
-    }).map(function (r) {
-      return '<button onclick="showSec(\'' + r.sec + '\')">'
-        + '<svg class="ico"><use href="#' + r.ico + '"></use></svg>' + E(r.lbl) + '</button>';
+    const add = document.getElementById('ac-rac-add');
+    if (add) add.innerHTML = acAdmin() ? '<button onclick="acFormLien()">+ Ajouter un lien</button>' : '';
+    const l = acLiens().slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    if (!l.length) {
+      el.innerHTML = '<div class="ac-vide" style="grid-column:1/-1">Aucun lien.'
+        + (acAdmin() ? ' Ajoutez les sites que l’équipe ouvre tous les jours.' : '')
+        + '</div>';
+      return;
+    }
+    el.innerHTML = l.map(function (r) {
+      // rel="noopener" : sans lui, la page ouverte peut manipuler la notre.
+      return '<a href="' + E(r.url) + '" target="_blank" rel="noopener noreferrer"'
+        + ' style="text-decoration:none" title="' + E(r.url) + '">'
+        + '<button style="width:100%">'
+        + '<span style="font-size:1.25rem;line-height:1">' + E(r.ico || '🔗') + '</span>'
+        + E(r.lbl || r.url)
+        + (acAdmin() ? '<span class="ac-coeur" onclick="event.preventDefault();event.stopPropagation();acRetirerLien(' + r.id + ')">✕</span>' : '')
+        + '</button></a>';
     }).join('');
   }
+  // Seuls http et https sont acceptes : une adresse « javascript: » collee ici
+  // s'executerait dans la page, avec la session de celui qui clique.
+  function acUrlSure(v) {
+    let t = String(v || '').trim();
+    if (!t) return null;
+    if (!/^https?:\/\//i.test(t)) t = 'https://' + t;
+    try {
+      const u = new URL(t);
+      return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : null;
+    } catch (e) { return null; }
+  }
+  window.acFormLien = function () {
+    if (!acAdmin()) return;
+    const lbl = prompt('Nom du raccourci (ex. Ameli Pro)'); if (!lbl || !lbl.trim()) return;
+    const brut = prompt('Adresse du site (ex. ameli.fr/pharmacien)'); if (!brut) return;
+    const url = acUrlSure(brut);
+    if (!url) { alert('Adresse invalide. Attendu : une adresse web commençant par http:// ou https://'); return; }
+    const ico = (prompt('Un emoji pour l’illustrer (facultatif)', '🔗') || '🔗').trim().slice(0, 4);
+    const now = Date.now();
+    acLiens().push({ id: now, ts: now, lbl: lbl.trim().slice(0, 40), url: url, ico: ico, updatedAt: now });
+    acSave(true); acRendRaccourcis();
+  };
+  window.acRetirerLien = function (id) {
+    if (!acAdmin()) return;
+    const l = acLiens(), i = l.findIndex(x => x.id === id); if (i < 0) return;
+    if (!confirm('Retirer le raccourci « ' + (l[i].lbl || '') + ' » ?')) return;
+    if (typeof markDeleted === 'function') markDeleted('liens', id);
+    l.splice(i, 1); acSave(true); acRendRaccourcis();
+  };
 
   // ── Agenda ────────────────────────────────────────────────────────────────
   function acRendAgenda(n) {
@@ -446,26 +512,6 @@
     if (typeof markDeleted === 'function') markDeleted('agenda', id);
     l.splice(i, 1); acSave(true); acRender();
   };
-
-  // ── Anniversaires du mois ─────────────────────────────────────────────────
-  function acRendAnnivsMois(n) {
-    const el = document.getElementById('ac-annivs'); if (!el) return;
-    const m = pad(n.getMonth() + 1), auj = acMoisJour(n);
-    const l = acStaff().filter(s => s.anniv && String(s.anniv).slice(0, 2) === m)
-      .sort((a, b) => String(a.anniv).localeCompare(String(b.anniv)));
-    if (!l.length) {
-      el.innerHTML = '<div class="ac-vide">Aucun anniversaire ce mois-ci.'
-        + (acAdmin() ? '<br><span style="font-size:.78rem">Les dates se renseignent dans le Back Office, fiche collaborateur.</span>' : '')
-        + '</div>';
-      return;
-    }
-    el.innerHTML = l.map(function (s) {
-      const j = +String(s.anniv).slice(3);
-      return '<div class="ac-li' + (String(s.anniv) < auj ? ' passe' : '') + '">'
-        + '<span class="q">' + j + ' ' + MOIS_CT[n.getMonth()] + '</span>'
-        + '<span class="t">' + E((s.prenom || '') + ' ' + (s.nom || '')) + '</span></div>';
-    }).join('');
-  }
 
   // ── Partager un moment ────────────────────────────────────────────────────
   let acImg = null;

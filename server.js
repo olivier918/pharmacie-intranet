@@ -722,7 +722,7 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'l
   // Demandes des operateurs (anomalies, idees) : fusion par id + tombstones.
   'demandes',
   // Page d'accueil : taches personnelles, moments d'equipe, agenda partage.
-  'todoPerso', 'moments', 'agenda'];
+  'todoPerso', 'moments', 'agenda', 'liens'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des
