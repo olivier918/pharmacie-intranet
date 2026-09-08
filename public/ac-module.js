@@ -43,10 +43,17 @@
     'août', 'sept.', 'oct.', 'nov.', 'déc.'];
   const JOURS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
-  const AC_MOMENT_JOURS = 7;     // duree de vie d'un moment
-  const AC_MOMENT_MAX   = 6;     // nombre de moments affiches
-  const AC_MOMENT_PX    = 640;   // largeur des photos : le blob est deja lourd
+  const AC_MOMENT_JOURS = 7;      // duree de vie d'une publication
+  const AC_MOMENT_MAX   = 8;      // publications affichees
+  const AC_MOMENT_PX    = 640;    // largeur des photos rendues
   const AC_MOMENT_Q     = 0.6;
+  // Un GIF anime ne peut pas etre redimensionne : le passer par un canevas le
+  // fige sur sa premiere image. On garde donc le fichier tel quel, et on borne
+  // a la place. Ces images vivent dans le blob que CHAQUE poste retelecharge en
+  // entier toutes les huit secondes : un GIF de 3 Mo, c'est 3 Mo sur le reseau
+  // toutes les huit secondes, sur tous les postes, pendant sept jours.
+  const AC_GIF_MAX_KO   = 1024;   // au-dela, on refuse et on explique
+  const AC_BUDGET_KO    = 3072;   // poids total des images vivantes
 
   function acNom(id) {
     const s = acStaff().find(x => x.id === id);
@@ -81,8 +88,15 @@
   .ac-anniv-d{font-size:.82rem;color:#AD1457}
   .ac-fete{font-size:1.7rem;line-height:1}
   .ac-mom-piste{display:flex;gap:12px;overflow-x:auto;scroll-behavior:smooth;padding:2px 2px 8px;scroll-snap-type:x mandatory}
-  .ac-mom{flex:0 0 210px;scroll-snap-align:start;border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:var(--gray-100)}
+  .ac-mom{flex:0 0 232px;scroll-snap-align:start;border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:var(--gray-100)}
   .ac-mom-img{height:120px;background-size:cover;background-position:center}
+  .ac-mom-anniv{border-color:#F48FB1}
+  .ac-mom-anniv .ac-mom-txt{background:#FCE4EC}
+  .ac-mom-anniv .ac-mom-t{color:#880E4F}
+  .ac-mom-anniv .ac-mom-s{color:#AD1457;font-style:normal;font-weight:600}
+  .ac-mom-anniv.cejour{border-color:#E91E63;box-shadow:0 0 0 2px rgba(233,30,99,.18)}
+  .ac-mom-anniv.passe{opacity:.5}
+  .ac-gateau{display:flex;align-items:center;justify-content:center;font-size:2.6rem;background:linear-gradient(135deg,#FCE4EC 0%,#F8BBD0 100%)}
   .ac-mom-txt{padding:9px 11px}
   .ac-mom-t{font-weight:700;font-size:.83rem;color:var(--gray-900);line-height:1.3}
   .ac-mom-s{font-size:.78rem;color:var(--gray-700);font-style:italic;margin-top:3px;line-height:1.35}
@@ -134,20 +148,14 @@
     <h2 id="ac-bonjour">Bonjour</h2>
     <span class="d" id="ac-date"></span>
   </div>
-  <div class="ac-grid ac-2">
-    <div class="ac-card" id="ac-anniv-c">
-      <div class="ac-h"><svg class="ico"><use href="#ic-anniversaire"></use></svg> Anniversaires du mois</div>
-      <div class="ac-b" id="ac-anniv"></div>
+  <div class="ac-card">
+    <div class="ac-h"><svg class="ico"><use href="#ic-amical"></use></svg> Quoi de neuf ?
+      <span class="ac-n" id="ac-mom-n">0</span></div>
+    <div class="ac-b">
+      <div class="ac-mom-piste" id="ac-mom-piste"></div>
+      <div class="ac-dots" id="ac-mom-dots"></div>
     </div>
-    <div class="ac-card">
-      <div class="ac-h"><svg class="ico"><use href="#ic-amical"></use></svg> Moments de l’équipe
-        <span class="ac-n" id="ac-mom-n">0</span></div>
-      <div class="ac-b">
-        <div class="ac-mom-piste" id="ac-mom-piste"></div>
-        <div class="ac-dots" id="ac-mom-dots"></div>
-      </div>
-      <div class="ac-lien"><button onclick="acFormMoment()">+ Partager un moment</button></div>
-    </div>
+    <div class="ac-lien"><button onclick="acFormMoment()">+ Partager quelque chose</button></div>
   </div>
 
   <div class="ac-alertes" id="ac-alertes"></div>
@@ -195,7 +203,6 @@
     if (b) b.textContent = (n.getHours() < 18 ? 'Bonjour ' : 'Bonsoir ') + (u ? acPrenom(u.id) : '');
     const d = document.getElementById('ac-date');
     if (d) d.textContent = n.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    acRendAnniv(n);
     acRendMoments();
     acRendAlertes();
     acRendFils();
@@ -204,76 +211,107 @@
     acRendAgenda(n);
   };
 
-  // Anniversaires du MOIS. Le jour meme passe en tete et met la carte en couleur :
-  // c'est le seul moment ou l'encart doit attraper le regard.
-  function acRendAnniv(n) {
-    const el = document.getElementById('ac-anniv'); if (!el) return;
-    const carte = document.getElementById('ac-anniv-c');
-    const mois = pad(n.getMonth() + 1), auj = acMoisJour(n);
-    const l = acStaff().filter(s => s.anniv && String(s.anniv).slice(0, 2) === mois)
-      .sort((a, b) => String(a.anniv).localeCompare(String(b.anniv)));
-    const cejour = l.filter(s => s.anniv === auj);
-    if (carte) carte.classList.toggle('ac-anniv', cejour.length > 0);
-
-    if (!l.length) {
-      el.innerHTML = '<div class="ac-vide" style="padding:.6rem 0">Aucun anniversaire en ' + MOIS[n.getMonth()] + '.'
-        + (acAdmin() ? '<br><span style="font-size:.78rem">Les dates se renseignent dans le Back Office, fiche collaborateur.</span>' : '')
-        + '</div>';
-      return;
-    }
-    let H = '';
-    if (cejour.length) {
-      H += '<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:11px"><div style="flex:1">'
-        + cejour.map(s => '<div class="ac-anniv-n">' + E((s.prenom || '') + ' ' + (s.nom || '')) + '</div>').join('')
-        + '<div class="ac-anniv-d">C’est aujourd’hui !</div></div><span class="ac-fete">🎉</span></div>';
-    }
-    H += l.filter(s => s.anniv !== auj).map(function (s) {
-      const j = +String(s.anniv).slice(3);
-      return '<div class="ac-li' + (String(s.anniv) < auj ? ' passe' : '') + '">'
-        + '<span class="q">' + j + ' ' + MOIS_CT[n.getMonth()] + '</span>'
-        + '<span class="t">' + E((s.prenom || '') + ' ' + (s.nom || '')) + '</span></div>';
-    }).join('');
-    el.innerHTML = H;
-  }
-
-  // ── Moments ───────────────────────────────────────────────────────────────
+  // ── Quoi de neuf ? ────────────────────────────────────────────────────────
+  // Un seul fil, deux natures d'evenement : ce que l'equipe publie, et les
+  // anniversaires du mois, fabriques a la volee depuis staffDB. L'anniversaire
+  // n'est pas stocke : seule l'image qu'on lui attache l'est, dans une
+  // publication de type `anniv` reperee par une cle « id du collaborateur +
+  // annee ». Ainsi la carte revient chaque annee sans qu'on ait rien a creer,
+  // et la photo de l'an dernier ne resurgit pas.
   function acVivants() {
     const n = Date.now();
     return acMoments()
-      .filter(m => m && (!m.expiresAt || m.expiresAt > n))
+      .filter(m => m && m.type !== 'anniv' && (!m.expiresAt || m.expiresAt > n))
       .sort((a, b) => (b.ts || 0) - (a.ts || 0))
       .slice(0, AC_MOMENT_MAX);
   }
+  function acCleAnniv(s, n) { return s.id + '-' + n.getFullYear() + '-' + s.anniv; }
+  function acImageAnniv(cle) {
+    const m = acMoments().find(x => x && x.type === 'anniv' && x.cle === cle);
+    return m || null;
+  }
+  // Les anniversaires du mois, aujourd'hui d'abord.
+  function acCartesAnniv(n) {
+    const mois = pad(n.getMonth() + 1), auj = acMoisJour(n);
+    return acStaff()
+      .filter(s => s.anniv && String(s.anniv).slice(0, 2) === mois)
+      .sort((a, b) => String(a.anniv).localeCompare(String(b.anniv)))
+      .map(function (s) {
+        const cle = acCleAnniv(s, n);
+        const att = acImageAnniv(cle);
+        return {
+          anniv: true, cle: cle, staff: s, jour: +String(s.anniv).slice(3),
+          cejour: s.anniv === auj, passe: String(s.anniv) < auj,
+          image: att ? att.image : null, attId: att ? att.id : null,
+          likes: att ? (att.likes || []) : []
+        };
+      });
+  }
+  function acFil(n) {
+    const a = acCartesAnniv(n);
+    // Aujourd'hui passe devant, puis ce que l'equipe a publie, puis le reste
+    // du mois : le plus opportun d'abord, sans enterrer les publications.
+    return a.filter(x => x.cejour)
+      .concat(acVivants())
+      .concat(a.filter(x => !x.cejour));
+  }
+
   function acRendMoments() {
     const el = document.getElementById('ac-mom-piste'); if (!el) return;
-    const l = acVivants(), u = acUser();
+    const l = acFil(new Date()), u = acUser();
     document.getElementById('ac-mom-n').textContent = l.length;
     if (!l.length) {
-      el.innerHTML = '<div class="ac-vide" style="flex:1">Rien de partagé cette semaine. À vous de commencer.</div>';
+      el.innerHTML = '<div class="ac-vide" style="flex:1">Rien de neuf cette semaine. À vous de commencer.</div>';
       document.getElementById('ac-mom-dots').innerHTML = '';
       return;
     }
-    el.innerHTML = l.map(function (m) {
-      const aime = !!(u && Array.isArray(m.likes) && m.likes.indexOf(u.id) >= 0);
-      const nb = Array.isArray(m.likes) ? m.likes.length : 0;
-      return '<div class="ac-mom">'
-        + (m.image
-            ? '<div class="ac-mom-img" style="background-image:url(\'' + m.image + '\')"></div>'
-            : '<div class="ac-mom-img" style="background:linear-gradient(135deg,var(--g-pale),#cfe3d6)"></div>')
-        + '<div class="ac-mom-txt">'
-        + (m.titre ? '<div class="ac-mom-t">' + E(m.titre) + '</div>' : '')
-        + (m.texte ? '<div class="ac-mom-s">' + E(m.texte) + '</div>' : '')
-        + '<div class="ac-mom-m"><span>' + E(m.auteurNom || acNom(m.auteur)) + '</span>'
-        + '<button class="ac-coeur' + (aime ? ' on' : '') + '" onclick="acAimer(' + m.id + ')">'
-        + (aime ? '♥' : '♡') + (nb ? ' ' + nb : '') + '</button>'
-        + (u && (m.auteur === u.id || acAdmin())
-            ? '<button class="ac-coeur" style="margin-left:auto" onclick="acRetirerMoment(' + m.id + ')" title="Retirer">✕</button>' : '')
-        + '</div></div></div>';
-    }).join('');
+    el.innerHTML = l.map(m => m.anniv ? acCarteAnniv(m, u) : acCarteMoment(m, u)).join('');
     document.getElementById('ac-mom-dots').innerHTML = l.length > 1
       ? l.map((m, i) => '<button class="ac-dot' + (i === 0 ? ' on' : '') + '" onclick="acGlisser(' + i + ')"></button>').join('')
       : '';
   }
+
+  function acCarteMoment(m, u) {
+    const aime = !!(u && Array.isArray(m.likes) && m.likes.indexOf(u.id) >= 0);
+    const nb = Array.isArray(m.likes) ? m.likes.length : 0;
+    return '<div class="ac-mom">'
+      + (m.image
+          ? '<div class="ac-mom-img" style="background-image:url(\'' + m.image + '\')"></div>'
+          : '<div class="ac-mom-img" style="background:linear-gradient(135deg,var(--g-pale),#cfe3d6)"></div>')
+      + '<div class="ac-mom-txt">'
+      + (m.titre ? '<div class="ac-mom-t">' + E(m.titre) + '</div>' : '')
+      + (m.texte ? '<div class="ac-mom-s">' + E(m.texte) + '</div>' : '')
+      + '<div class="ac-mom-m"><span>' + E(m.auteurNom || acNom(m.auteur)) + '</span>'
+      + '<button class="ac-coeur' + (aime ? ' on' : '') + '" onclick="acAimer(' + m.id + ')">'
+      + (aime ? '♥' : '♡') + (nb ? ' ' + nb : '') + '</button>'
+      + (u && (m.auteur === u.id || acAdmin())
+          ? '<button class="ac-coeur" style="margin-left:auto" onclick="acRetirerMoment(' + m.id + ')" title="Retirer">✕</button>' : '')
+      + '</div></div></div>';
+  }
+
+  function acCarteAnniv(a, u) {
+    const aime = !!(u && a.likes.indexOf(u.id) >= 0);
+    const nb = a.likes.length;
+    const s = a.staff;
+    return '<div class="ac-mom ac-mom-anniv' + (a.cejour ? ' cejour' : (a.passe ? ' passe' : '')) + '">'
+      + (a.image
+          ? '<div class="ac-mom-img" style="background-image:url(\'' + a.image + '\')"></div>'
+          : '<div class="ac-mom-img ac-gateau">🎂</div>')
+      + '<div class="ac-mom-txt">'
+      + '<div class="ac-mom-t">' + E((s.prenom || '') + ' ' + (s.nom || '')) + '</div>'
+      + '<div class="ac-mom-s">' + (a.cejour ? 'C’est aujourd’hui ! 🎉'
+          : a.jour + ' ' + MOIS_CT[new Date().getMonth()]) + '</div>'
+      + '<div class="ac-mom-m">'
+      + (a.attId
+          ? '<button class="ac-coeur' + (aime ? ' on' : '') + '" onclick="acAimer(' + a.attId + ')">'
+            + (aime ? '♥' : '♡') + (nb ? ' ' + nb : '') + '</button>'
+          : '<span style="opacity:.6">Anniversaire</span>')
+      + '<button class="ac-coeur" style="margin-left:auto" onclick="acFormAnniv(\'' + a.cle + '\')" title="'
+      + (a.image ? 'Changer l’image' : 'Ajouter une image ou un GIF') + '">'
+      + (a.image ? '✎' : '+ image') + '</button>'
+      + '</div></div></div>';
+  }
+
   window.acGlisser = function (i) {
     const p = document.getElementById('ac-mom-piste'); if (!p || !p.children.length) return;
     p.scrollLeft = (p.children[0].offsetWidth + 12) * i;
@@ -292,8 +330,8 @@
     const u = acUser(); if (!u) return;
     const l = acMoments(), i = l.findIndex(x => x.id === id);
     if (i < 0) return;
-    if (l[i].auteur !== u.id && !acAdmin()) { alert('Seul l’auteur peut retirer son moment.'); return; }
-    if (!confirm('Retirer ce moment ?')) return;
+    if (l[i].auteur !== u.id && !acAdmin()) { alert('Seul l’auteur peut retirer sa publication.'); return; }
+    if (!confirm('Retirer cette publication ?')) return;
     if (typeof markDeleted === 'function') markDeleted('moments', id);
     l.splice(i, 1);
     acSave(true); acRendMoments();
@@ -525,11 +563,37 @@
     document.getElementById('ac-ov-mom').classList.add('open');
   };
   window.acFermerMoment = function () { document.getElementById('ac-ov-mom').classList.remove('open'); };
+  // Poids total des images vivantes, en Ko. Une dataURL base64 fait environ
+  // 4/3 des octets reels.
+  function acPoidsKo() {
+    const n = Date.now();
+    return Math.round(acMoments().reduce(function (t, m) {
+      if (!m || !m.image) return t;
+      if (m.type !== 'anniv' && m.expiresAt && m.expiresAt <= n) return t;
+      return t + m.image.length * 0.75;
+    }, 0) / 1024);
+  }
   window.acPhoto = function (inp) {
     const f = inp.files && inp.files[0]; if (!f) return;
-    // Photo volontairement legere : elle vit dans le blob que chaque poste
-    // retelecharge en ENTIER toutes les 8 secondes. 640 px suffisent a une
-    // vignette de carrousel, et six moments tiennent sous 500 Ko.
+    const cible = inp.getAttribute('data-cible') || 'ac-mom-apercu';
+    const gif = /gif$/i.test(f.type || '') || /\.gif$/i.test(f.name || '');
+
+    if (gif) {
+      // Un GIF anime ne passe pas par un canevas : il en ressortirait fige sur
+      // sa premiere image. On garde le fichier tel quel, donc on borne sa taille.
+      const ko = Math.round(f.size / 1024);
+      if (ko > AC_GIF_MAX_KO) {
+        alert('Ce GIF pèse ' + ko + ' Ko.\n\nAu-delà de ' + AC_GIF_MAX_KO + ' Ko il ralentit tous les postes : '
+          + 'l’image est renvoyée à chacun d’eux toutes les huit secondes, pendant sept jours.\n\n'
+          + 'Choisissez-en un plus léger, ou une photo.');
+        inp.value = ''; return;
+      }
+      const lec = new FileReader();
+      lec.onload = function (e) { acImg = e.target.result; acApercu(cible, ko, true); };
+      lec.readAsDataURL(f);
+      return;
+    }
+
     const img = new Image(), lec = new FileReader();
     lec.onload = e => { img.src = e.target.result; };
     img.onload = function () {
@@ -538,24 +602,45 @@
       c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       acImg = c.toDataURL('image/jpeg', AC_MOMENT_Q);
-      const ko = Math.round(acImg.length * 0.75 / 1024);
-      document.getElementById('ac-mom-apercu').innerHTML =
-        '<img src="' + acImg + '" style="max-width:100%;max-height:150px;border-radius:10px;display:block">'
-        + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">' + ko + ' Ko · '
-        + '<span style="cursor:pointer;text-decoration:underline" onclick="acRetirerPhoto()">retirer</span></div>';
+      acApercu(cible, Math.round(acImg.length * 0.75 / 1024), false);
     };
     lec.readAsDataURL(f);
   };
+  function acApercu(cible, ko, gif) {
+    const el = document.getElementById(cible); if (!el) return;
+    el.innerHTML = '<img src="' + acImg + '" style="max-width:100%;max-height:150px;border-radius:10px;display:block">'
+      + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">' + ko + ' Ko'
+      + (gif ? ' · GIF animé' : '') + ' · '
+      + '<span style="cursor:pointer;text-decoration:underline" onclick="acRetirerPhoto()">retirer</span></div>';
+  }
   window.acRetirerPhoto = function () {
     acImg = null;
-    document.getElementById('ac-mom-apercu').innerHTML = '';
-    const f = document.getElementById('ac-mom-img'); if (f) f.value = '';
+    ['ac-mom-apercu', 'ac-anniv-apercu'].forEach(function (i) {
+      const e = document.getElementById(i); if (e) e.innerHTML = '';
+    });
+    ['ac-mom-img', 'ac-anniv-img'].forEach(function (i) {
+      const e = document.getElementById(i); if (e) e.value = '';
+    });
   };
+  // Refuse d'ajouter une image quand le total depasserait le budget. Sans ce
+  // garde-fou, huit GIF d'un mega passent tranquillement et personne ne
+  // comprend pourquoi l'application est devenue lente sur tous les postes.
+  function acBudgetOk() {
+    if (!acImg) return true;
+    const ajout = Math.round(acImg.length * 0.75 / 1024);
+    const total = acPoidsKo() + ajout;
+    if (total <= AC_BUDGET_KO) return true;
+    alert('Les images du « Quoi de neuf ? » pèsent déjà ' + acPoidsKo() + ' Ko, et celle-ci en ajoute '
+      + ajout + ' Ko.\n\nLe plafond est de ' + AC_BUDGET_KO + ' Ko : au-delà, l’application ralentit sur tous '
+      + 'les postes.\n\nRetirez une publication existante, ou publiez sans image.');
+    return false;
+  }
   window.acPublierMoment = function () {
     const u = acUser(); if (!u) return;
     const titre = (document.getElementById('ac-mom-titre').value || '').trim();
     const texte = (document.getElementById('ac-mom-texte').value || '').trim().slice(0, 200);
-    if (!titre && !texte && !acImg) { alert('Ajoutez au moins un mot ou une photo.'); return; }
+    if (!titre && !texte && !acImg) { alert('Ajoutez au moins un mot ou une image.'); return; }
+    if (!acBudgetOk()) return;
     const now = Date.now();
     acMoments().unshift({
       id: now, ts: now, auteur: u.id, auteurNom: acPrenom(u.id),
@@ -564,21 +649,75 @@
     });
     acImg = null;
     acFermerMoment(); acSave(true); acRendMoments();
-    if (typeof logAction === 'function') logAction('Moment partagé', '');
+    if (typeof logAction === 'function') logAction('Publication « Quoi de neuf »', '');
   };
+
+  // Image attachee a un anniversaire. Elle est stockee comme une publication de
+  // type `anniv` reperee par sa cle : l'anniversaire lui-meme reste calcule.
+  let acCleCourante = null;
+  window.acFormAnniv = function (cle) {
+    const u = acUser(); if (!u) { alert('Identifiez-vous avec votre code PIN.'); return; }
+    acCleCourante = cle; acImg = null;
+    const a = acImageAnniv(cle);
+    document.getElementById('ac-anniv-apercu').innerHTML = a && a.image
+      ? '<img src="' + a.image + '" style="max-width:100%;max-height:150px;border-radius:10px;display:block">'
+        + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">Image actuelle · '
+        + '<span style="cursor:pointer;text-decoration:underline" onclick="acEffacerAnniv()">l’enlever</span></div>'
+      : '';
+    const f = document.getElementById('ac-anniv-img'); if (f) f.value = '';
+    document.getElementById('ac-ov-anniv').classList.add('open');
+  };
+  window.acFermerAnniv = function () { document.getElementById('ac-ov-anniv').classList.remove('open'); };
+  window.acEffacerAnniv = function () {
+    const a = acImageAnniv(acCleCourante); if (!a) return;
+    const l = acMoments(), i = l.findIndex(x => x.id === a.id); if (i < 0) return;
+    if (typeof markDeleted === 'function') markDeleted('moments', a.id);
+    l.splice(i, 1);
+    acSave(true); acFermerAnniv(); acRendMoments();
+  };
+  window.acPoserAnniv = function () {
+    const u = acUser(); if (!u || !acCleCourante) return;
+    if (!acImg) { alert('Choisissez une image ou un GIF.'); return; }
+    if (!acBudgetOk()) return;
+    const now = Date.now();
+    const a = acImageAnniv(acCleCourante);
+    if (a) { a.image = acImg; a.updatedAt = now; }
+    else {
+      acMoments().unshift({
+        id: now, ts: now, type: 'anniv', cle: acCleCourante,
+        auteur: u.id, auteurNom: acPrenom(u.id), image: acImg,
+        likes: [], updatedAt: now
+      });
+    }
+    acImg = null;
+    acFermerAnniv(); acSave(true); acRendMoments();
+  };
+
+  const AC_MODALE_ANNIV = '<div class="overlay" id="ac-ov-anniv">'
+    + '<div class="mbox" style="max-width:460px">'
+    + '<div class="mbox-h"><b>Image d’anniversaire</b><button class="x" onclick="acFermerAnniv()">✕</button></div>'
+    + '<div class="mbox-b"><div class="fg"><label>Une photo ou un GIF</label>'
+    + '<input type="file" id="ac-anniv-img" accept="image/*" data-cible="ac-anniv-apercu" onchange="acPhoto(this)">'
+    + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">'
+    + 'Les GIF animés sont acceptés jusqu’à ' + AC_GIF_MAX_KO + ' Ko. L’image reste tant que le mois dure.</div>'
+    + '<div id="ac-anniv-apercu" style="margin-top:8px"></div></div></div>'
+    + '<div class="mbox-f"><button class="btn bs" onclick="acFermerAnniv()">Annuler</button>'
+    + '<button class="btn bp" onclick="acPoserAnniv()">Enregistrer</button></div>'
+    + '</div></div>';
 
   const AC_MODALE = '<div class="overlay" id="ac-ov-mom">'
     + '<div class="mbox" style="max-width:520px">'
-    + '<div class="mbox-h"><b>Partager un moment</b><button class="x" onclick="acFermerMoment()">✕</button></div>'
+    + '<div class="mbox-h"><b>Quoi de neuf ?</b><button class="x" onclick="acFermerMoment()">✕</button></div>'
     + '<div class="mbox-b">'
     + '<div class="fg"><label>Titre</label>'
     + '<input type="text" id="ac-mom-titre" maxlength="60" placeholder="Ex. Pot de départ de Mathilde"></div>'
     + '<div class="fg"><label>Un mot</label>'
     + '<textarea id="ac-mom-texte" rows="2" maxlength="200" placeholder="Une belle soirée !"></textarea></div>'
-    + '<div class="fg"><label>Photo (facultative)</label>'
-    + '<input type="file" id="ac-mom-img" accept="image/*" onchange="acPhoto(this)">'
+    + '<div class="fg"><label>Photo ou GIF (facultatif)</label>'
+    + '<input type="file" id="ac-mom-img" accept="image/*" data-cible="ac-mom-apercu" onchange="acPhoto(this)">'
     + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">'
-    + 'Pas de patient sur la photo. Le moment disparaît au bout de ' + AC_MOMENT_JOURS + ' jours.</div>'
+    + 'Pas de patient sur l’image. GIF animés acceptés jusqu’à ' + AC_GIF_MAX_KO + ' Ko. '
+    + 'La publication disparaît au bout de ' + AC_MOMENT_JOURS + ' jours.</div>'
     + '<div id="ac-mom-apercu" style="margin-top:8px"></div></div>'
     + '</div>'
     + '<div class="mbox-f"><button class="btn bs" onclick="acFermerMoment()">Annuler</button>'
@@ -615,8 +754,10 @@
       ref.parentNode.insertBefore(sec, ref);
     }
 
-    const m = document.createElement('div'); m.innerHTML = AC_MODALE;
-    if (m.firstElementChild) document.body.appendChild(m.firstElementChild);
+    [AC_MODALE, AC_MODALE_ANNIV].forEach(function (h) {
+      const m = document.createElement('div'); m.innerHTML = h;
+      if (m.firstElementChild) document.body.appendChild(m.firstElementChild);
+    });
 
     if (typeof SEC_LABEL === 'object' && SEC_LABEL) SEC_LABEL.accueil = 'Accueil';
   }

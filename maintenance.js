@@ -86,7 +86,10 @@ function pruneRetention(blob) {
   // poste retelecharge en entier toutes les 8 secondes.
   if (Array.isArray(out.moments)) {
     const n = Date.now();
-    out.moments = out.moments.filter((m) => !m || !m.expiresAt || m.expiresAt > n);
+    // Les images d'anniversaire (type `anniv`) n'ont pas d'echeance : elles
+    // valent pour l'annee en cours et sont remplacees a la suivante. Les
+    // filtrer sur `expiresAt` les supprimerait toutes des la premiere purge.
+    out.moments = out.moments.filter((m) => !m || m.type === 'anniv' || !m.expiresAt || m.expiresAt > n);
   }
   if (Array.isArray(out.demandes)) {
     const limite = Date.now() - DEMANDES_IMG_DAYS * 86400000;
