@@ -91,6 +91,9 @@ function pruneRetention(blob) {
     // filtrer sur `expiresAt` les supprimerait toutes des la premiere purge.
     out.moments = out.moments.filter((m) => !m || m.type === 'anniv' || !m.expiresAt || m.expiresAt > n);
   }
+  // Ne concerne plus que les demandes d'avant la bascule, celles qui portent
+  // encore l'image dans le blob. Les nouvelles n'ont qu'un `imgId` : c'est le
+  // balayage des orphelines, cote serveur, qui s'en charge.
   if (Array.isArray(out.demandes)) {
     const limite = Date.now() - DEMANDES_IMG_DAYS * 86400000;
     out.demandes = out.demandes.map((d) => {

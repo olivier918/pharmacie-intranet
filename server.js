@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const maint = require('./maintenance');
 
 const app = express();
@@ -223,6 +224,20 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Images du « Quoi de neuf ? » : hors du blob, dans leur propre table.
+    // Le blob est relu EN ENTIER par chaque poste toutes les huit secondes ;
+    // une photo qui y vit repart sur le reseau a chaque tour. Ici elle est
+    // servie une fois, puis mise en cache par le navigateur — l'identifiant
+    // etant le condensat du contenu, l'adresse ne designe jamais autre chose.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS app_images (
+        id TEXT PRIMARY KEY,
+        mime TEXT NOT NULL,
+        octets BYTEA NOT NULL,
+        taille INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     dbError = null;
     dbConnectedAt = new Date().toISOString();
     console.log('  🐘 Base PostgreSQL connectée !');
@@ -249,6 +264,58 @@ function renouvBase() {
   const v = (process.env.RENOUV_BASE_URL || '').trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(v) ? v : null;
 }
+// ─── IMAGES ────────────────────────────────────────────────────────────────
+// Stockees hors du blob metier, et adressees par le CONDENSAT de leur contenu.
+// Deux consequences : deux envois de la meme image ne prennent la place qu'une
+// fois, et l'adresse d'une image ne peut jamais designer un autre contenu — ce
+// qui autorise une mise en cache definitive par le navigateur.
+const IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
+const IMG_MAX_OCTETS = 2 * 1024 * 1024;
+
+app.post('/api/images', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ ok: false, error: 'Base de donnees requise' });
+    const b = req.body || {};
+    const mime = String(b.mime || '');
+    if (!IMG_TYPES[mime]) return res.status(400).json({ ok: false, error: 'Type d image non accepte' });
+    const brut = String(b.data || '');
+    if (!/^[A-Za-z0-9+/=]+$/.test(brut) || !brut.length) {
+      return res.status(400).json({ ok: false, error: 'Contenu illisible' });
+    }
+    const octets = Buffer.from(brut, 'base64');
+    if (!octets.length) return res.status(400).json({ ok: false, error: 'Image vide' });
+    if (octets.length > IMG_MAX_OCTETS) {
+      return res.status(413).json({ ok: false, error: 'Image trop lourde (max 2 Mo)' });
+    }
+    const id = crypto.createHash('sha256').update(octets).digest('hex').slice(0, 32);
+    await db.query(
+      'INSERT INTO app_images (id, mime, octets, taille) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING',
+      [id, mime, octets, octets.length]
+    );
+    res.json({ ok: true, id: id, url: '/api/images/' + id });
+  } catch (err) {
+    console.error('Erreur enregistrement image:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/images/:id', async (req, res) => {
+  try {
+    if (!db) return res.status(503).end();
+    const id = String(req.params.id || '');
+    if (!/^[0-9a-f]{32}$/.test(id)) return res.status(400).end();
+    const r = await db.query('SELECT mime, octets FROM app_images WHERE id = $1', [id]);
+    if (!r.rows.length) return res.status(404).end();
+    // Immuable : le nom EST le contenu. Le navigateur ne redemandera jamais.
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.set('Content-Type', r.rows[0].mime);
+    res.send(r.rows[0].octets);
+  } catch (err) {
+    console.error('Erreur lecture image:', err.message);
+    res.status(500).end();
+  }
+});
+
 app.get('/api/config', (req, res) => {
   res.set('Cache-Control', 'no-store');
   // `version` sert aux demandes des operateurs : savoir sur quelle version une
@@ -832,6 +899,42 @@ function mergeState(existing, incoming) {
   }
   return merged;
 }
+
+// Balayage des images devenues orphelines. Une image reste tant qu'un
+// enregistrement la designe ; passee une journee sans reference, elle part.
+// Le delai de grace est indispensable : une image est envoyee AVANT que la
+// publication qui la porte ne soit enregistree, et sans lui elle disparaitrait
+// dans cet intervalle.
+const IMG_GRACE_H = 24;
+function imagesReferencees(blob) {
+  const vus = new Set();
+  const voir = (v) => {
+    if (!v) return;
+    if (typeof v === 'string') { if (/^[0-9a-f]{32}$/.test(v)) vus.add(v); return; }
+    if (Array.isArray(v)) { v.forEach(voir); return; }
+    if (typeof v === 'object') { Object.keys(v).forEach(k => { if (k === 'imgId' || typeof v[k] === 'object') voir(v[k]); }); }
+  };
+  voir(blob);
+  return vus;
+}
+async function balayerImages() {
+  if (!db) return;
+  try {
+    const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
+    const blob = (cur.rows[0] && cur.rows[0].data) || {};
+    const gardees = Array.from(imagesReferencees(blob));
+    const r = await db.query(
+      "DELETE FROM app_images WHERE created_at < NOW() - INTERVAL '" + IMG_GRACE_H + " hours'"
+      + (gardees.length ? ' AND NOT (id = ANY($1))' : ''),
+      gardees.length ? [gardees] : []
+    );
+    if (r.rowCount) console.log('  🧹 Images orphelines supprimees :', r.rowCount);
+  } catch (err) {
+    console.error('Balayage des images:', err.message);
+  }
+}
+setInterval(balayerImages, 6 * 3600 * 1000);
+setTimeout(balayerImages, 5 * 60 * 1000);
 
 // ─── Load all data ───
 app.get('/api/data', async (req, res) => {

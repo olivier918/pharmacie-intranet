@@ -138,6 +138,34 @@
   }
   function dmTouche(d) { d.majAt = Date.now(); d.updatedAt = Date.now(); }
 
+  // Adresse d'affichage d'une capture : identifiant vers /api/images, sinon
+  // l'ancienne dataURL pour les demandes deposees avant la bascule.
+  function dmUrlImage(d) {
+    if (!d) return null;
+    if (d.imgId) return '/api/images/' + d.imgId;
+    return d.image || null;
+  }
+  // Depot de la capture. Renvoie l'identifiant, ou null en cas d'echec.
+  async function dmDeposerImage(dataUrl) {
+    const m = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) return null;
+    try {
+      const r = await fetch('/api/images', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mime: m[1], data: m[2] })
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.ok) {
+        alert('La capture n’a pas pu être enregistrée : ' + ((j && j.error) || ('erreur ' + r.status)));
+        return null;
+      }
+      return j.id;
+    } catch (e) {
+      alert('La capture n’a pas pu être enregistrée : serveur injoignable.');
+      return null;
+    }
+  }
+
   // Une demande « vierge » : personne d'autre ne s'en est saisi. Son auteur peut
   // alors la retirer (faute de frappe, doublon). Des qu'un collegue l'a soutenue
   // ou commentee, elle ne lui appartient plus tout a fait.
@@ -373,7 +401,7 @@
         + (d.module ? '<span>· ' + E(d.module) + '</span>' : '')
         + '<span>· ' + E(d.auteurNom || '') + '</span>'
         + (Array.isArray(d.fil) && d.fil.length ? '<span>· 💬 ' + d.fil.length + '</span>' : '')
-        + (d.image ? '<span>· 📷</span>' : '')
+        + (dmUrlImage(d) ? '<span>· 📷</span>' : '')
         + '</div>'
         + (e.st === 'rejetee' && d.motif ? '<div class="dm-motif">Rejetée : ' + E(d.motif)
             + (d.refusePar ? ' — ' + E(d.refusePar) : '') + '</div>' : '')
@@ -405,7 +433,7 @@
       + '<span>· ' + dmJour(d.ts) + '</span>'
       + (n ? '<span>· ★ ' + n + '</span>' : '')
       + (Array.isArray(d.fil) && d.fil.length ? '<span>· 💬 ' + d.fil.length + '</span>' : '')
-      + (d.image ? '<span>· 📷</span>' : '')
+      + (dmUrlImage(d) ? '<span>· 📷</span>' : '')
       + '</div></div>';
   }
 
@@ -464,10 +492,14 @@
     const i = document.getElementById('dm-f-img'); if (i) i.value = '';
   };
 
-  window.dmEnvoyer = function () {
+  window.dmEnvoyer = async function () {
     const u = dmUser(); if (!u) { alert('Identifiez-vous avec votre code PIN.'); return; }
     const texte = (document.getElementById('dm-f-texte').value || '').trim();
     if (texte.length < 5) { alert('Décrivez la demande en une phrase.'); return; }
+    // La capture part AVANT la demande : si le depot echoue, rien n'est
+    // enregistre, plutot qu'une demande renvoyant a une image absente.
+    let imgId = null;
+    if (dmForm.image) { imgId = await dmDeposerImage(dmForm.image); if (!imgId) return; }
     const l = dmListe();
     const num = l.reduce(function (m, d) { return Math.max(m, d.num || 0); }, 0) + 1;
     const now = Date.now();
@@ -483,7 +515,7 @@
       // L'auteur a evidemment deja vu ce qu'il vient d'ecrire : sans cette ligne,
       // deposer une demande allumerait une pastille rouge chez soi-meme.
       vu: (function () { const v = {}; v[u.id] = now; return v; })(),
-      image: dmForm.image || null,
+      imgId: imgId,
       // Version déployée : sur une anomalie, savoir sur quelle version elle a
       // été vue évite de chercher un défaut déjà corrigé.
       version: (window.APP_CONFIG && window.APP_CONFIG.version) || ''
@@ -532,7 +564,7 @@
       + (soutenu ? '★ Je soutiens' : '☆ Moi aussi') + (n ? ' · ' + n + ' vote' + (n > 1 ? 's' : '') : '') + '</span>'
       + '</div>'
       + '<div style="font-size:.93rem;line-height:1.5;white-space:pre-wrap">' + E(d.texte) + '</div>'
-      + (d.image ? '<img src="' + d.image + '" class="dm-img">' : '');
+      + (dmUrlImage(d) ? '<img src="' + dmUrlImage(d) + '" class="dm-img">' : '');
 
     if (e.st === 'rejetee' && d.motif) {
       H += '<div style="margin-top:1rem;background:#FFEBEE;border:1px solid #ffcdd2;border-radius:10px;padding:11px 14px">'
@@ -677,7 +709,7 @@
       d.fil.forEach(function (m) { L.push('- ' + (m.nom || m.uid) + ' : ' + m.texte); });
       L.push('');
     }
-    if (d.image) L.push('(une capture d’écran est jointe à la demande dans l’intranet)');
+    if (dmUrlImage(d)) L.push('(une capture d’écran est jointe à la demande dans l’intranet)');
     const t = L.join('\n');
     try { navigator.clipboard.writeText(t); dmToast('Copié — collez-le en début de session de développement.'); }
     catch (e) { prompt('Copiez ce texte :', t); }

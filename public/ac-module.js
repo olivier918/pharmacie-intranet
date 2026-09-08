@@ -47,13 +47,14 @@
   const AC_MOMENT_MAX   = 8;      // publications affichees
   const AC_MOMENT_PX    = 640;    // largeur des photos rendues
   const AC_MOMENT_Q     = 0.6;
+  // Les images ne vivent plus dans le blob : elles sont deposees sur /api/images
+  // et l'enregistrement ne garde que leur identifiant. Le navigateur les charge
+  // une fois et les met en cache pour de bon — l'identifiant etant le condensat
+  // du contenu, l'adresse ne designe jamais autre chose. D'ou un plafond bien
+  // plus large : le poids ne pese plus sur la synchro des huit secondes.
+  const AC_GIF_MAX_KO   = 2048;   // limite du serveur (2 Mo)
   // Un GIF anime ne peut pas etre redimensionne : le passer par un canevas le
-  // fige sur sa premiere image. On garde donc le fichier tel quel, et on borne
-  // a la place. Ces images vivent dans le blob que CHAQUE poste retelecharge en
-  // entier toutes les huit secondes : un GIF de 3 Mo, c'est 3 Mo sur le reseau
-  // toutes les huit secondes, sur tous les postes, pendant sept jours.
-  const AC_GIF_MAX_KO   = 1024;   // au-dela, on refuse et on explique
-  const AC_BUDGET_KO    = 3072;   // poids total des images vivantes
+  // figerait sur sa premiere image. Il part donc tel quel.
 
   function acNom(id) {
     const s = acStaff().find(x => x.id === id);
@@ -242,7 +243,7 @@
         return {
           anniv: true, cle: cle, staff: s, jour: +String(s.anniv).slice(3),
           cejour: s.anniv === auj, passe: String(s.anniv) < auj,
-          image: att ? att.image : null, attId: att ? att.id : null,
+          image: att ? acUrlImage(att) : null, attId: att ? att.id : null,
           likes: att ? (att.likes || []) : []
         };
       });
@@ -274,9 +275,10 @@
   function acCarteMoment(m, u) {
     const aime = !!(u && Array.isArray(m.likes) && m.likes.indexOf(u.id) >= 0);
     const nb = Array.isArray(m.likes) ? m.likes.length : 0;
+    const src = acUrlImage(m);
     return '<div class="ac-mom">'
-      + (m.image
-          ? '<div class="ac-mom-img" style="background-image:url(\'' + m.image + '\')"></div>'
+      + (src
+          ? '<div class="ac-mom-img" style="background-image:url(\'' + src + '\')"></div>'
           : '<div class="ac-mom-img" style="background:linear-gradient(135deg,var(--g-pale),#cfe3d6)"></div>')
       + '<div class="ac-mom-txt">'
       + (m.titre ? '<div class="ac-mom-t">' + E(m.titre) + '</div>' : '')
@@ -563,15 +565,34 @@
     document.getElementById('ac-ov-mom').classList.add('open');
   };
   window.acFermerMoment = function () { document.getElementById('ac-ov-mom').classList.remove('open'); };
-  // Poids total des images vivantes, en Ko. Une dataURL base64 fait environ
-  // 4/3 des octets reels.
-  function acPoidsKo() {
-    const n = Date.now();
-    return Math.round(acMoments().reduce(function (t, m) {
-      if (!m || !m.image) return t;
-      if (m.type !== 'anniv' && m.expiresAt && m.expiresAt <= n) return t;
-      return t + m.image.length * 0.75;
-    }, 0) / 1024);
+  // Adresse d'affichage : identifiant vers /api/images, sinon l'ancienne
+  // dataURL pour les publications d'avant la bascule.
+  function acUrlImage(m) {
+    if (!m) return null;
+    if (m.imgId) return '/api/images/' + m.imgId;
+    return m.image || null;
+  }
+  // Depot de l'image choisie. Renvoie l'identifiant, ou null en cas d'echec.
+  async function acDeposerImage() {
+    if (!acImg) return null;
+    const v = String(acImg);
+    const m = v.match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) return null;
+    try {
+      const r = await fetch('/api/images', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mime: m[1], data: m[2] })
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.ok) {
+        alert('L’image n’a pas pu être enregistrée : ' + ((j && j.error) || ('erreur ' + r.status)));
+        return null;
+      }
+      return j.id;
+    } catch (e) {
+      alert('L’image n’a pas pu être enregistrée : serveur injoignable.');
+      return null;
+    }
   }
   window.acPhoto = function (inp) {
     const f = inp.files && inp.files[0]; if (!f) return;
@@ -583,8 +604,7 @@
       // sa premiere image. On garde le fichier tel quel, donc on borne sa taille.
       const ko = Math.round(f.size / 1024);
       if (ko > AC_GIF_MAX_KO) {
-        alert('Ce GIF pèse ' + ko + ' Ko.\n\nAu-delà de ' + AC_GIF_MAX_KO + ' Ko il ralentit tous les postes : '
-          + 'l’image est renvoyée à chacun d’eux toutes les huit secondes, pendant sept jours.\n\n'
+        alert('Ce GIF pèse ' + ko + ' Ko, au-delà de la limite de ' + AC_GIF_MAX_KO + ' Ko.\n\n'
           + 'Choisissez-en un plus léger, ou une photo.');
         inp.value = ''; return;
       }
@@ -622,29 +642,19 @@
       const e = document.getElementById(i); if (e) e.value = '';
     });
   };
-  // Refuse d'ajouter une image quand le total depasserait le budget. Sans ce
-  // garde-fou, huit GIF d'un mega passent tranquillement et personne ne
-  // comprend pourquoi l'application est devenue lente sur tous les postes.
-  function acBudgetOk() {
-    if (!acImg) return true;
-    const ajout = Math.round(acImg.length * 0.75 / 1024);
-    const total = acPoidsKo() + ajout;
-    if (total <= AC_BUDGET_KO) return true;
-    alert('Les images du « Quoi de neuf ? » pèsent déjà ' + acPoidsKo() + ' Ko, et celle-ci en ajoute '
-      + ajout + ' Ko.\n\nLe plafond est de ' + AC_BUDGET_KO + ' Ko : au-delà, l’application ralentit sur tous '
-      + 'les postes.\n\nRetirez une publication existante, ou publiez sans image.');
-    return false;
-  }
-  window.acPublierMoment = function () {
+  window.acPublierMoment = async function () {
     const u = acUser(); if (!u) return;
     const titre = (document.getElementById('ac-mom-titre').value || '').trim();
     const texte = (document.getElementById('ac-mom-texte').value || '').trim().slice(0, 200);
     if (!titre && !texte && !acImg) { alert('Ajoutez au moins un mot ou une image.'); return; }
-    if (!acBudgetOk()) return;
+    // L'image part AVANT la publication : si le depot echoue, rien n'est
+    // enregistre, plutot qu'une publication renvoyant a une image absente.
+    let imgId = null;
+    if (acImg) { imgId = await acDeposerImage(); if (!imgId) return; }
     const now = Date.now();
     acMoments().unshift({
       id: now, ts: now, auteur: u.id, auteurNom: acPrenom(u.id),
-      titre: titre.slice(0, 60), texte: texte, image: acImg || null,
+      titre: titre.slice(0, 60), texte: texte, imgId: imgId,
       likes: [], expiresAt: now + AC_MOMENT_JOURS * 86400000, updatedAt: now
     });
     acImg = null;
@@ -659,8 +669,9 @@
     const u = acUser(); if (!u) { alert('Identifiez-vous avec votre code PIN.'); return; }
     acCleCourante = cle; acImg = null;
     const a = acImageAnniv(cle);
-    document.getElementById('ac-anniv-apercu').innerHTML = a && a.image
-      ? '<img src="' + a.image + '" style="max-width:100%;max-height:150px;border-radius:10px;display:block">'
+    const dej = a ? acUrlImage(a) : null;
+    document.getElementById('ac-anniv-apercu').innerHTML = dej
+      ? '<img src="' + dej + '" style="max-width:100%;max-height:150px;border-radius:10px;display:block">'
         + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">Image actuelle · '
         + '<span style="cursor:pointer;text-decoration:underline" onclick="acEffacerAnniv()">l’enlever</span></div>'
       : '';
@@ -675,17 +686,17 @@
     l.splice(i, 1);
     acSave(true); acFermerAnniv(); acRendMoments();
   };
-  window.acPoserAnniv = function () {
+  window.acPoserAnniv = async function () {
     const u = acUser(); if (!u || !acCleCourante) return;
     if (!acImg) { alert('Choisissez une image ou un GIF.'); return; }
-    if (!acBudgetOk()) return;
+    const imgId = await acDeposerImage(); if (!imgId) return;
     const now = Date.now();
     const a = acImageAnniv(acCleCourante);
-    if (a) { a.image = acImg; a.updatedAt = now; }
+    if (a) { a.imgId = imgId; a.image = null; a.updatedAt = now; }
     else {
       acMoments().unshift({
         id: now, ts: now, type: 'anniv', cle: acCleCourante,
-        auteur: u.id, auteurNom: acPrenom(u.id), image: acImg,
+        auteur: u.id, auteurNom: acPrenom(u.id), imgId: imgId,
         likes: [], updatedAt: now
       });
     }
@@ -699,7 +710,7 @@
     + '<div class="mbox-b"><div class="fg"><label>Une photo ou un GIF</label>'
     + '<input type="file" id="ac-anniv-img" accept="image/*" data-cible="ac-anniv-apercu" onchange="acPhoto(this)">'
     + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">'
-    + 'Les GIF animés sont acceptés jusqu’à ' + AC_GIF_MAX_KO + ' Ko. L’image reste tant que le mois dure.</div>'
+    + 'Les GIF animés sont acceptés jusqu’à ' + Math.round(AC_GIF_MAX_KO / 1024) + ' Mo. L’image reste tant que le mois dure.</div>'
     + '<div id="ac-anniv-apercu" style="margin-top:8px"></div></div></div>'
     + '<div class="mbox-f"><button class="btn bs" onclick="acFermerAnniv()">Annuler</button>'
     + '<button class="btn bp" onclick="acPoserAnniv()">Enregistrer</button></div>'
@@ -716,7 +727,7 @@
     + '<div class="fg"><label>Photo ou GIF (facultatif)</label>'
     + '<input type="file" id="ac-mom-img" accept="image/*" data-cible="ac-mom-apercu" onchange="acPhoto(this)">'
     + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">'
-    + 'Pas de patient sur l’image. GIF animés acceptés jusqu’à ' + AC_GIF_MAX_KO + ' Ko. '
+    + 'Pas de patient sur l’image. GIF animés acceptés jusqu’à ' + Math.round(AC_GIF_MAX_KO / 1024) + ' Mo. '
     + 'La publication disparaît au bout de ' + AC_MOMENT_JOURS + ' jours.</div>'
     + '<div id="ac-mom-apercu" style="margin-top:8px"></div></div>'
     + '</div>'
