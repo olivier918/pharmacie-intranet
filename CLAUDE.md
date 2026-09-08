@@ -33,7 +33,7 @@ dépannages · `fc-` formulaires · `dm-` boîte à idées · `pl-` planning.
 
 ---
 
-## Les six pièges de ce dépôt
+## Les sept pièges de ce dépôt
 
 Chacun a déjà causé une perte de données en production. Les lire avant d'écrire
 une ligne.
@@ -78,13 +78,32 @@ symptôme est « ça marche puis ça disparaît au rechargement ».
 4. `SYNCED_COLLS` dans `server.js` (collections à `id`), ou `CONFIGS_DATEES`
    pour un objet de réglages fusionné par date
 
-### 5. Les enregistrements ne sont pas envoyés tout de suite
+### 5. Ne jamais garder une référence d'objet à travers un `await`
+
+La resynchronisation, toutes les 8 secondes, **remplace les collections** par la
+copie du serveur (`locations = d.locations`). Une boucle qui garde des
+références vers des enregistrements et les modifie après une attente écrit donc
+dans des objets orphelins : le travail disparaît sans le moindre message.
+
+Retenir l'identifiant, et retrouver l'enregistrement **après** chaque `await` :
+
+```js
+let l = locations.find(x => x.id === locId);   // avant
+await fetch(...);
+l = locations.find(x => x.id === locId);       // et de nouveau APRÈS
+```
+
+Pour une opération longue, geler en plus la resynchronisation avec
+`_savePending = true` au début, et enregistrer dans un `finally`. Voir
+`repriseScansLocations()`, dont le premier essai a perdu 72 conversions ainsi.
+
+### 6. Les enregistrements ne sont pas envoyés tout de suite
 
 `schedSave()` regroupe les modifications pendant 600 ms. Pour une création ou un
 changement d'état — action délibérée, rare, coûteuse à perdre — appeler
 `saveNow()`. Ne jamais recharger la page tant que `_savePending` est vrai.
 
-### 6. Une migration de données ne s'écrit pas en base
+### 7. Une migration de données ne s'écrit pas en base
 
 Les postes ne sont pas tous sur la même version. Une migration écrite est
 rejouée par chaque ancien poste et se bat avec elle-même à la fusion. **Traduire
