@@ -168,6 +168,13 @@
     <div class="ac-lien"><button onclick="showSec('messagerie')">Ouvrir le cahier complet</button></div>
   </div>
 
+  <div class="ac-card">
+    <div class="ac-h"><svg class="ico"><use href="#ic-amical"></use></svg> Messagerie
+      <span class="ac-n" id="ac-mp-n">0</span></div>
+    <div class="ac-b" id="ac-mp"></div>
+    <div class="ac-lien"><button onclick="showSec('mp'); if(window.mpRender) mpRender();">Ouvrir la messagerie</button></div>
+  </div>
+
   <div class="ac-grid ac-2e">
     <div class="ac-card">
       <div class="ac-h"><svg class="ico"><use href="#ic-valider"></use></svg> Ma todo
@@ -207,6 +214,7 @@
     acRendMoments();
     acRendAlertes();
     acRendFils();
+    acRendMessagerie();
     acRendTodos();
     acRendRaccourcis();
     acRendAgenda(n);
@@ -386,6 +394,44 @@
   window.acOuvrirFil = function (id) {
     showSec('messagerie');
     if (typeof openThread === 'function') { try { openThread(id); } catch (e) {} }
+  };
+
+  // ── Messagerie ────────────────────────────────────────────────────────────
+  // L'accueil ne recalcule rien : il affiche le resume que le module fabrique.
+  // Si la messagerie est masquee pour ce poste, la carte disparait aussi —
+  // montrer des conversations qu'on ne peut pas ouvrir n'a pas de sens.
+  function acRendMessagerie() {
+    const el = document.getElementById('ac-mp'); if (!el) return;
+    const carte = el.closest('.ac-card');
+    const bouton = document.querySelector('.sb-item[data-sec="mp"]');
+    if (carte && (!bouton || bouton.style.display === 'none')) { carte.style.display = 'none'; return; }
+    if (carte) carte.style.display = '';
+
+    const l = (typeof mpResume === 'function') ? mpResume(4) : [];
+    const n = l.reduce(function (t, c) { return t + (c.nonLus || 0); }, 0);
+    const cpt = document.getElementById('ac-mp-n');
+    if (cpt) cpt.textContent = n || l.length;
+    if (!l.length) {
+      el.innerHTML = '<div class="ac-vide">Aucune conversation. '
+        + 'Écrivez à quelqu’un depuis la messagerie.</div>';
+      return;
+    }
+    el.innerHTML = l.map(function (c) {
+      const qui = c.moi ? 'Vous : ' : (c.groupe && c.auteur ? mpPrenom(c.auteur) + ' : ' : '');
+      return '<button class="ac-fil ' + (c.nonLus ? 'muet' : 'repondu') + '" onclick="acOuvrirConvo(' + c.id + ')">'
+        + '<div class="ac-fil-t">' + E(c.titre)
+        + (c.nonLus ? '<span class="ac-tag" style="background:#FFEBEE;color:#C62828">'
+            + c.nonLus + ' non lu' + (c.nonLus > 1 ? 's' : '') + '</span>' : '')
+        + '<span style="margin-left:auto;font-size:.72rem;color:var(--gray-500);font-weight:500">'
+        + (typeof mpQuand === 'function' ? mpQuand(c.quand) : '') + '</span></div>'
+        + '<div class="ac-fil-s">' + E(qui + (c.apercu || 'Aucun message')).slice(0, 80) + '</div>'
+        + '</button>';
+    }).join('');
+  }
+  window.acOuvrirConvo = function (id) {
+    showSec('mp');
+    if (typeof mpOuvrir === 'function') { try { mpOuvrir(id); } catch (e) {} }
+    else if (typeof mpRender === 'function') mpRender();
   };
 
   // ── Todo ──────────────────────────────────────────────────────────────────

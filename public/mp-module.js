@@ -86,6 +86,30 @@
   window.mpTotalNonLus = function () {
     return mpMiennes().reduce((t, c) => t + mpNonLus(c), 0);
   };
+  // Resume pour la page d'accueil. C'est la messagerie qui le fabrique, pas
+  // l'accueil : dupliquer le calcul des non-lus et du dernier message ailleurs,
+  // c'est se garantir deux comportements divergents a la premiere evolution.
+  window.mpResume = function (max) {
+    const u = mpUser(); if (!u) return [];
+    return mpMiennes().map(function (c) {
+      const d = mpDernier(c.id);
+      return {
+        id: c.id,
+        titre: mpTitre(c),
+        groupe: (c.membres || []).length > 2,
+        auteur: d ? d.uid : null,
+        moi: d ? (d.uid === u.id) : false,
+        apercu: d ? (d.txt ? String(d.txt).replace(/[*_]/g, '')
+                           : (d.fichier ? '📎 ' + (d.fichier.nom || 'fichier') : '')) : '',
+        quand: d ? (d.ts || 0) : (c.ts || 0),
+        nonLus: mpNonLus(c)
+      };
+    }).sort(function (a, b) { return b.quand - a.quand; }).slice(0, max || 4);
+  };
+  window.mpQuand = mpQuand;
+  window.mpPrenom = mpPrenom;
+  window.mpCouleur = mpCouleur;
+
   function mpTitre(c) {
     const u = mpUser();
     if (c.titre) return c.titre;
