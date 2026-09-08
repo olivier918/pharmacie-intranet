@@ -52,7 +52,7 @@
   // une fois et les met en cache pour de bon — l'identifiant etant le condensat
   // du contenu, l'adresse ne designe jamais autre chose. D'ou un plafond bien
   // plus large : le poids ne pese plus sur la synchro des huit secondes.
-  const AC_GIF_MAX_KO   = 2048;   // limite du serveur (2 Mo)
+  const AC_GIF_MAX_KO   = 4096;   // 4 Mo — la route en accepte 8
   // Un GIF anime ne peut pas etre redimensionne : le passer par un canevas le
   // figerait sur sa premiere image. Il part donc tel quel.
 
@@ -604,7 +604,8 @@
       // sa premiere image. On garde le fichier tel quel, donc on borne sa taille.
       const ko = Math.round(f.size / 1024);
       if (ko > AC_GIF_MAX_KO) {
-        alert('Ce GIF pèse ' + ko + ' Ko, au-delà de la limite de ' + AC_GIF_MAX_KO + ' Ko.\n\n'
+        alert('Ce GIF pèse ' + (ko > 1024 ? (ko / 1024).toFixed(1) + ' Mo' : ko + ' Ko')
+          + ', au-delà de la limite de ' + Math.round(AC_GIF_MAX_KO / 1024) + ' Mo.\n\n'
           + 'Choisissez-en un plus léger, ou une photo.');
         inp.value = ''; return;
       }
