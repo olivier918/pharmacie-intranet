@@ -36,6 +36,7 @@ const PREPS_DAYS = jours(process.env.RETENTION_PREPS_DAYS, 90, 'RETENTION_PREPS_
 // « qui utilise l'outil » sur une saison, pas au-dela — un journal nominatif
 // ne se garde pas indefiniment.
 const JOURNAL_DAYS = jours(process.env.RETENTION_JOURNAL_DAYS, 180, 'RETENTION_JOURNAL_DAYS');
+const MESSAGES_DAYS = jours(process.env.RETENTION_MESSAGES_DAYS, 365, 'RETENTION_MESSAGES_DAYS');
 // Captures d'ecran des demandes closes. Une capture de l'application contient
 // presque toujours des noms de patients ; elle se retrouve dans le blob ET dans
 // les 300 instantanes d'historique. Passe six mois, l'image ne sert plus a rien
@@ -84,6 +85,12 @@ function pruneRetention(blob) {
   // Moments d'equipe : ephemeres par construction. Passee leur date, on les
   // retire vraiment — sinon les photos s'accumuleraient dans un blob que chaque
   // poste retelecharge en entier toutes les 8 secondes.
+  // Messagerie personnelle : un an. Sans borne, le fil grossirait indefiniment
+  // dans un blob que chaque poste relit en entier.
+  if (Array.isArray(out.messages)) {
+    const lim = Date.now() - MESSAGES_DAYS * 86400000;
+    out.messages = out.messages.filter((m) => !m || (m.ts || 0) >= lim);
+  }
   if (Array.isArray(out.moments)) {
     const n = Date.now();
     // Les images d'anniversaire (type `anniv`) n'ont pas d'echeance : elles

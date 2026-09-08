@@ -794,7 +794,10 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'l
   // Demandes des operateurs (anomalies, idees) : fusion par id + tombstones.
   'demandes',
   // Page d'accueil : taches personnelles, moments d'equipe, agenda partage.
-  'todoPerso', 'moments', 'agenda', 'liens'];
+  'todoPerso', 'moments', 'agenda', 'liens',
+  // Messagerie personnelle : les messages sont une collection a part, pour que
+  // deux personnes qui ecrivent en meme temps ne s'effacent pas l'une l'autre.
+  'convos', 'messages'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des

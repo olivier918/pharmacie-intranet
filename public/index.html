@@ -1244,6 +1244,7 @@ tr:hover td{background:#fafffe}
               <option>Pharmacien</option><option>Préparateur</option><option>Logisticien</option>
               <option>Secrétaire</option><option>Esthéticienne</option><option>Étudiant</option>
             </select></div>
+          <div id="mod-avis" style="display:none;margin-top:.9rem;background:#FFF3E0;border:1px solid #ffe0b2;border-radius:9px;padding:9px 12px;font-size:.82rem;line-height:1.5;color:#8a5a00"></div>
           <div id="mod-poste-liste" style="margin-top:.9rem"></div>
           <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap;align-items:center">
             <button class="btn bp" onclick="modSavePoste()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer ce poste</button>
@@ -2368,6 +2369,12 @@ let moments = [];
 let agenda = [];
 // Raccourcis de l'accueil : liens vers des sites externes, tenus par les admins.
 let liens = [];
+// Messagerie personnelle : conversations adressees (1 a 1 ou groupe) et leurs
+// messages. Les messages forment une collection A PART : dans un fil de
+// discussion, deux personnes ecrivent en meme temps, et une fusion au niveau
+// de la conversation en perdrait un.
+let convos = [];
+let messages = [];
 
 let deliveries = [
   {id:1,nom:'THOMAS',prenom:'Liliane',adresse:'19 Rue Gambetta',tel:'02 31 XX',lieu:'Domicile',frigo:false,promis:true,ordo:true,montant:0,notes:'Alèses grandes tailles + morphine orale',status:'prep',prepBy:'HL',livrBy:null,date:'2026-05-16',cold:false},
@@ -2442,7 +2449,7 @@ let _savePending=false;  // true tant qu'une modif locale n'est pas persistée :
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2461,7 +2468,8 @@ function _collRef(n){ switch(n){
   case 'plReels':return plReels; case 'plNotifs':return plNotifs; case 'plClotures':return plClotures;
   case 'depannages':return depannages;
   case 'todoPerso':return todoPerso; case 'moments':return moments; case 'agenda':return agenda;
-  case 'liens':return liens; } return null; }
+  case 'liens':return liens;
+  case 'convos':return convos; case 'messages':return messages; } return null; }
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
 // patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle
@@ -2501,7 +2509,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,convos,messages,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2589,6 +2597,8 @@ async function loadAll(){
     if(Array.isArray(data.moments))moments=data.moments;
     if(Array.isArray(data.agenda))agenda=data.agenda;
     if(Array.isArray(data.liens))liens=data.liens;
+    if(Array.isArray(data.convos))convos=data.convos;
+    if(Array.isArray(data.messages))messages=data.messages;
     snapIds();   // référence initiale des ids après lecture serveur
   }catch(e){console.warn('Chargement:',e.message);}
 }
@@ -2642,6 +2652,8 @@ setInterval(async()=>{
         if(Array.isArray(d.moments))moments=d.moments;
         if(Array.isArray(d.agenda))agenda=d.agenda;
         if(Array.isArray(d.liens))liens=d.liens;
+        if(Array.isArray(d.convos))convos=d.convos;
+        if(Array.isArray(d.messages))messages=d.messages;
         snapIds();   // resynchro : nouvelle référence des ids (une suppression venue d'un autre poste n'est pas re-signalée comme locale)
         _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} if(typeof plRender==='function'){try{plRender();}catch(_e){}} } finally { _suppressSave=false; }
       }
@@ -2905,6 +2917,7 @@ function showSec(name,btn){
   if(name==='backoffice'){renderStaff();renderPatients();applyAdminUI();}
   if(name==='renouvellement'&&window.rnRender)rnRender();
   if(name==='accueil'&&window.acRender)acRender();
+  if(name==='mp'&&window.mpRender)mpRender();
 }
 
 // Bascule le volet : desktop = collapse/expand persistant ; mobile = drawer open/close
@@ -2952,6 +2965,14 @@ function updateNavBadges(){
         ? 'Ordonnances à préparer — au moins une est due aujourd’hui ou en retard'
         : 'Ordonnances à préparer dans les 7 prochains jours';
     } else { rn.textContent=''; }
+  }
+  // Messagerie personnelle : ROUGE des qu'un message vous est adresse et
+  // n'est pas lu. Le module s'installe apres coup, d'ou le test d'existence.
+  const mp=document.getElementById('navb-mp');
+  if(mp){
+    const n=(typeof window.mpTotalNonLus==='function')?window.mpTotalNonLus():0;
+    if(n>0){ mp.textContent=n>99?'99+':String(n); mp.classList.add('on','red'); }
+    else{ mp.textContent=''; mp.classList.remove('on','red'); }
   }
   // Messagerie : ROUGE dès qu'un dossier qui vous concerne a reçu une réponse
   // que vous n'avez pas encore lue.
@@ -9725,16 +9746,26 @@ function modulesAutorises(u){
   if(isAdmin(u)) return null;
   const rec = staffDB.find(s=>s.id===u.id) || u;
   if(Array.isArray(rec.modules)) return rec.modules.slice();
-  const parPoste = (modulesParPoste && rec.poste!=='updatedAt') ? modulesParPoste[rec.poste] : null;
+  const parPoste = (modulesParPoste && rec.poste!=='updatedAt' && rec.poste!=='connus') ? modulesParPoste[rec.poste] : null;
   if(Array.isArray(parPoste)) return parPoste.slice();
   return null;
+}
+// Un module qui n'existait pas quand la liste a ete enregistree n'a pas ete
+// « decoche » : personne n'a rien decide a son sujet. Sans cette distinction,
+// chaque nouveau module naissait invisible pour toute l'equipe — c'est arrive
+// deux fois. On retient donc, a l'enregistrement, quels modules existaient
+// alors ; tout ce qui est apparu depuis reste visible jusqu'a decision.
+function modInedit(cle){
+  const connus = modulesParPoste && Array.isArray(modulesParPoste.connus) ? modulesParPoste.connus : null;
+  if(!connus) return false;
+  return connus.indexOf(cle) < 0;
 }
 function appliquerModules(){
   const liste = modulesAutorises();
   let actifMasque = false;
   document.querySelectorAll('.sidebar .sb-item').forEach(function(b){
     const c=modCle(b); if(!c) return;
-    const visible = !liste || liste.indexOf(c)>=0 || MOD_TOUJOURS.indexOf(c)>=0;
+    const visible = !liste || liste.indexOf(c)>=0 || MOD_TOUJOURS.indexOf(c)>=0 || modInedit(c);
     b.style.display = visible ? '' : 'none';
     if(!visible && b.classList.contains('active')) actifMasque = true;
   });
@@ -9787,8 +9818,22 @@ function renderModulesUI(){
 }
 function renderModulesPoste(){
   const poste=(document.getElementById('mod-poste')||{}).value||'Pharmacien';
-  const l=(modulesParPoste && poste!=='updatedAt')?modulesParPoste[poste]:null;
+  const l=(modulesParPoste && poste!=='updatedAt' && poste!=='connus')?modulesParPoste[poste]:null;
   modCases('mod-poste-liste', l, !Array.isArray(l));
+  // Les listes enregistrees avant l'empreinte ne savent pas distinguer un
+  // module decoche d'un module apparu depuis. Un enregistrement par poste
+  // suffit a repartir sur des bases saines ; on le dit plutot que de le taire.
+  const av=document.getElementById('mod-avis');
+  if(av){
+    const sansEmpreinte = modulesParPoste && !Array.isArray(modulesParPoste.connus)
+      && Object.keys(modulesParPoste).some(function(k){ return Array.isArray(modulesParPoste[k]); });
+    av.style.display = sansEmpreinte ? '' : 'none';
+    av.innerHTML = sansEmpreinte
+      ? 'Vos réglages datent d’avant l’arrivée des derniers modules. <b>Enregistrez chaque poste une fois</b> '
+        + '(en cochant ce que vous voulez y voir) : les modules ajoutés ensuite resteront visibles au lieu '
+        + 'd’être masqués par défaut.'
+      : '';
+  }
 }
 window.modSavePerso=function(){
   if(!currentUser) return;
@@ -9818,6 +9863,9 @@ window.modSavePoste=function(){
   const poste=(document.getElementById('mod-poste')||{}).value; if(!poste) return;
   if(!modulesParPoste) modulesParPoste={};
   modulesParPoste[poste]=modLire('mod-poste-liste');
+  // Empreinte des modules existants : elle sert a reconnaitre plus tard ceux
+  // qui sont arrives apres, et a ne pas les masquer par accident.
+  modulesParPoste.connus=modulesDispo().map(function(m){ return m.cle; });
   modulesParPoste.updatedAt=Date.now();
   if(typeof schedSave==='function') schedSave();
   if(typeof logAction==='function') logAction('Modules du poste modifiés', poste);
@@ -9986,6 +10034,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="dp-module.js"></script>
 <script src="dm-module.js"></script>
 <script src="ac-module.js"></script>
+<script src="mp-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>
