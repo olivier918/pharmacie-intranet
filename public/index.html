@@ -5717,80 +5717,120 @@ function etatScansLocations(){
 async function repriseScansLocations(){
   if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
 
-  // On ne retient PAS de reference vers les objets : la reprise dure plusieurs
-  // minutes, et la resynchronisation des 8 secondes remplace `locations` par la
-  // copie du serveur pendant ce temps. Les references pointeraient alors sur des
-  // objets orphelins, et tout le travail partirait a la poubelle en silence —
-  // c'est exactement ce qui s'est produit au premier essai. On retient donc
-  // l'identifiant du dossier et le rang du renouvellement, et on retrouve
-  // l'enregistrement APRES chaque attente.
-  const cibles=[];
-  locations.forEach(function(l){
-    if(l.scanData && !l.scanId) cibles.push({locId:l.id, rang:null, qui:l.nom+' '+l.prenom, quoi:'ordonnance initiale'});
-    (l.renewals||[]).forEach(function(r,i){
-      if(r.scanData && !r.scanId) cibles.push({locId:l.id, rang:i, qui:l.nom+' '+l.prenom, quoi:'renouvellement n°'+(i+1)});
+  // ── Ce que l'experience a appris ────────────────────────────────────────
+  // 1. Ne jamais garder de reference d'objet : la resynchronisation des 8 s
+  //    remplace `locations`, et les references deviennent orphelines. On
+  //    retrouve donc l'enregistrement par son identifiant APRES chaque attente.
+  // 2. Ne pas tout enregistrer a la fin : une interruption — deconnexion pour
+  //    inactivite, onglet ferme, reseau — emporte l'operation entiere. On
+  //    enregistre par paquets, et l'operation devient reprenable : relancee,
+  //    elle saute ce qui porte deja un identifiant.
+  // 3. Ne pas croire son propre compteur : a la fin, on RELIT le serveur pour
+  //    dire ce qui est reellement enregistre, pas ce qu'on a cru faire.
+  const PAQUET = 5;
+
+  const listeCibles=function(){
+    const out=[];
+    locations.forEach(function(l){
+      if(l.scanData && !l.scanId) out.push({locId:l.id, rang:null, qui:l.nom+' '+l.prenom, quoi:'ordonnance initiale'});
+      (l.renewals||[]).forEach(function(r,i){
+        if(r.scanData && !r.scanId) out.push({locId:l.id, rang:i, qui:l.nom+' '+l.prenom, quoi:'renouvellement n°'+(i+1)});
+      });
     });
-  });
-  if(!cibles.length){ alert('Aucun scan à reprendre : tout est déjà en place.'); return; }
+    return out;
+  };
   const cible=function(c){
     const l=locations.find(function(x){ return x.id===c.locId; });
     if(!l) return null;
     const o = c.rang===null ? l : (l.renewals||[])[c.rang];
     return o ? {loc:l, obj:o} : null;
   };
+
+  const cibles=listeCibles();
+  if(!cibles.length){ alert('Aucun scan à reprendre : tout est déjà en place.'); return; }
   const ko=Math.round(cibles.reduce(function(t,c){ const z=cible(c); return t+((z&&z.obj.scanData)?z.obj.scanData.length*0.75:0); },0)/1024);
   if(!confirm('Reprendre '+cibles.length+' scan(s), environ '+ko+' Ko ?\n\n'
-    +'Chaque scan est copié puis relu et comparé à l’original.\n'
-    +'AUCUN scan n’est supprimé : les deux versions coexisteront jusqu’à votre vérification.')) return;
+    +'Les scans sont copiés puis relus et comparés à l’original, et enregistrés par paquets de '+PAQUET+'.\n'
+    +'AUCUN scan n’est supprimé.\n\nRestez sur cette page jusqu’à la fin.')) return;
 
   const zone=document.getElementById('reprise-etat');
   const dire=function(m){ if(zone) zone.innerHTML=m; };
   let ok=0; const rates=[];
 
-  // Gele la resynchronisation le temps de l'operation : tant qu'il y a des
-  // modifications non enregistrees, la boucle des 8 secondes ne remplace plus
-  // les collections. Le `finally` garantit qu'on enregistre quoi qu'il arrive.
-  _savePending=true;
+  // Enregistre le paquet en cours et attend sa confirmation par le serveur.
+  const enregistrer=async function(){
+    _savePending=true;
+    await saveAll();
+    // saveAll remet _savePending a false en cas de succes ; on regele aussitot
+    // pour que la resynchronisation ne reprenne pas pendant le paquet suivant.
+    const bon = !_savePending;
+    _savePending=true;
+    return bon;
+  };
+
+  _savePending=true;   // gele la resynchronisation des 8 secondes
   try{
     for(let i=0;i<cibles.length;i++){
       const c=cibles[i];
-      dire('Reprise en cours : '+(i+1)+' / '+cibles.length+' — '+c.qui);
-      let z=cible(c);
-      if(!z||!z.obj.scanData||z.obj.scanId) continue;
-      const m=String(z.obj.scanData).match(/^data:([^;]+);base64,(.+)$/);
-      if(!m){ rates.push(c.qui+' ('+c.quoi+') : contenu illisible'); continue; }
+      dire('Reprise : '+(i+1)+' / '+cibles.length+' — '+c.qui+' ('+ok+' enregistré'+(ok>1?'s':'')+')');
+      // L'operation dure plusieurs minutes sans que personne ne touche a rien :
+      // sans cela, la deconnexion pour inactivite tombe en plein milieu.
+      if(typeof resetTimer==='function') resetTimer();
       try{
+        let z=cible(c);
+        if(!z||!z.obj.scanData||z.obj.scanId) continue;
+        const m=String(z.obj.scanData).match(/^data:([^;]+);base64,(.+)$/);
+        if(!m){ rates.push(c.qui+' ('+c.quoi+') : contenu illisible'); continue; }
         const r=await fetch('/api/images',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({mime:m[1],data:m[2]})});
         const j=await r.json().catch(function(){return null;});
         if(!r.ok||!j||!j.ok){ rates.push(c.qui+' ('+c.quoi+') : '+((j&&j.error)||('erreur '+r.status))); continue; }
-        // Verification : on relit la copie et on compare sa taille a l'original.
-        // Une copie qu'on n'a pas relue n'est pas une copie, c'est un espoir.
         const v=await fetch('/api/images/'+j.id);
         if(!v.ok){ rates.push(c.qui+' ('+c.quoi+') : copie illisible'); continue; }
         const buf=await v.arrayBuffer();
         const attendu=Math.floor(m[2].replace(/=+$/,'').length*3/4);
         if(Math.abs(buf.byteLength-attendu)>2){
-          rates.push(c.qui+' ('+c.quoi+') : taille incohérente ('+buf.byteLength+' vs '+attendu+')');
-          continue;
+          rates.push(c.qui+' ('+c.quoi+') : taille incohérente ('+buf.byteLength+' vs '+attendu+')'); continue;
         }
-        // On retrouve l'enregistrement MAINTENANT, apres les attentes.
-        z=cible(c);
+        z=cible(c);   // MAINTENANT, apres les attentes
         if(!z){ rates.push(c.qui+' ('+c.quoi+') : dossier introuvable après la copie'); continue; }
         z.obj.scanId=j.id;
-        z.loc.updatedAt=Date.now();   // sans quoi la fusion multiposte ecraserait la reprise
+        z.loc.updatedAt=Date.now();
         ok++;
+        if(ok % PAQUET === 0){
+          dire('Reprise : '+(i+1)+' / '+cibles.length+' — enregistrement du paquet…');
+          if(!await enregistrer()) rates.push('Enregistrement refusé après '+ok+' scan(s) — opération interrompue, relancez-la.');
+          if(rates.length && rates[rates.length-1].indexOf('Enregistrement refusé')===0) break;
+        }
       }catch(e){ rates.push(c.qui+' ('+c.quoi+') : '+e.message); }
     }
+  }catch(e){
+    rates.push('Interruption : '+e.message);
   } finally {
-    if(ok){ saveNow(); if(typeof logAction==='function') logAction('Reprise des scans de location', ok+' repris'); }
-    else { _savePending=false; }
+    if(ok) { await enregistrer(); if(typeof logAction==='function') logAction('Reprise des scans de location', ok+' repris'); }
+    _savePending=false;
   }
 
-  dire('<b>'+ok+' scan(s) repris et vérifiés</b>'+(rates.length?', '+rates.length+' en échec':'')
-    +'.<div style="font-size:.8rem;color:var(--gray-500);margin-top:6px">Les originaux sont intacts. '
-    +'Rechargez la page, puis cliquez sur « Où en est-on ? » : le nombre de scans repris doit être '
-    +'celui-ci. Ouvrez ensuite quelques dossiers pour vérifier l’affichage.</div>'
+  // On ne croit pas son propre compteur : verdict lu sur le serveur.
+  dire('Vérification auprès du serveur…');
+  let reelsRepris=null, reelsRestants=null;
+  try{
+    const etat=await (await fetch('/api/data',{cache:'no-store'})).json();
+    let a=0,b=0;
+    (etat.locations||[]).forEach(function(l){
+      const cpt=function(o){ if(o.scanId)a++; else if(o.scanData)b++; };
+      cpt(l); (l.renewals||[]).forEach(cpt);
+    });
+    reelsRepris=a; reelsRestants=b;
+  }catch(e){}
+
+  dire('<b>'+(reelsRepris===null?ok+' scan(s) repris':reelsRepris+' scan(s) enregistrés côté serveur')+'</b>'
+    +(reelsRestants!==null?' · '+reelsRestants+' restant(s)':'')
+    +(rates.length?' · '+rates.length+' en échec':'')
+    +'<div style="font-size:.8rem;color:var(--gray-500);margin-top:6px">'
+    +(reelsRestants ? 'Il en reste : relancez la reprise, elle continue là où elle s’est arrêtée. '
+                    : 'Tout est repris. ')
+    +'Les originaux sont intacts.</div>'
     +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
       +rates.map(function(x){return '• '+String(x).replace(/[<>]/g,'');}).join('<br>')+'</div>':''));
   renderLocs();
