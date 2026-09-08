@@ -81,6 +81,13 @@ function pruneRetention(blob) {
     const c = cutoff(JOURNAL_DAYS);
     out.journal = out.journal.filter((x) => !isOlder(x && x.d, c));
   }
+  // Moments d'equipe : ephemeres par construction. Passee leur date, on les
+  // retire vraiment — sinon les photos s'accumuleraient dans un blob que chaque
+  // poste retelecharge en entier toutes les 8 secondes.
+  if (Array.isArray(out.moments)) {
+    const n = Date.now();
+    out.moments = out.moments.filter((m) => !m || !m.expiresAt || m.expiresAt > n);
+  }
   if (Array.isArray(out.demandes)) {
     const limite = Date.now() - DEMANDES_IMG_DAYS * 86400000;
     out.demandes = out.demandes.map((d) => {

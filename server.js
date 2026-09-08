@@ -720,7 +720,9 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'l
   // id garantit que les actions de deux postes se cumulent au lieu de s'ecraser.
   'journal',
   // Demandes des operateurs (anomalies, idees) : fusion par id + tombstones.
-  'demandes'];
+  'demandes',
+  // Page d'accueil : taches personnelles, moments d'equipe, agenda partage.
+  'todoPerso', 'moments', 'agenda'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des

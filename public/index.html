@@ -514,7 +514,7 @@ tr:hover td{background:#fafffe}
 
   <aside class="sidebar" id="sidebar">
     <button class="sb-item active" data-sec="livraisons" onclick="showSec('livraisons',this)"><svg class="ico sb-ico"><use href="#ic-livraison"></use></svg><span class="sb-label">Livraisons</span><span class="sb-badge" id="navb-liv" title="Livraisons à préparer"></span></button>
-    <button class="sb-item" data-sec="messagerie" onclick="showSec('messagerie',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">Messagerie</span><span class="sb-badge" id="navb-msg"></span></button>
+    <button class="sb-item" data-sec="messagerie" onclick="showSec('messagerie',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">Cahier de transmission</span><span class="sb-badge" id="navb-msg"></span></button>
     <button class="sb-item" data-sec="sms" onclick="showSec('sms',this)"><svg class="ico sb-ico"><use href="#ic-messagerie"></use></svg><span class="sb-label">SMS patients</span></button>
     <button class="sb-item" data-sec="preparations" onclick="showSec('preparations',this)"><svg class="ico sb-ico"><use href="#ic-realisation"></use></svg><span class="sb-label">Préparations</span></button>
     <button class="sb-item" data-sec="bpm" onclick="showSec('bpm',this)"><svg class="ico sb-ico"><use href="#ic-ordonnance"></use></svg><span class="sb-label">BPM</span></button>
@@ -2342,6 +2342,10 @@ let modulesParPoste = {};
 
 // Demandes des operateurs : anomalies, idees, questions (module dm-module.js).
 let demandes = [];
+// Page d'accueil : taches personnelles, moments d'equipe, agenda partage.
+let todoPerso = [];
+let moments = [];
+let agenda = [];
 
 let deliveries = [
   {id:1,nom:'THOMAS',prenom:'Liliane',adresse:'19 Rue Gambetta',tel:'02 31 XX',lieu:'Domicile',frigo:false,promis:true,ordo:true,montant:0,notes:'Alèses grandes tailles + morphine orale',status:'prep',prepBy:'HL',livrBy:null,date:'2026-05-16',cold:false},
@@ -2416,7 +2420,7 @@ let _savePending=false;  // true tant qu'une modif locale n'est pas persistée :
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2433,7 +2437,8 @@ function _collRef(n){ switch(n){
   case 'plPostes':return plPostes; case 'plRotations':return plRotations; case 'plContrats':return plContrats;
   case 'plTrames':return plTrames; case 'plExceptions':return plExceptions; case 'plDemandes':return plDemandes;
   case 'plReels':return plReels; case 'plNotifs':return plNotifs; case 'plClotures':return plClotures;
-  case 'depannages':return depannages; } return null; }
+  case 'depannages':return depannages;
+  case 'todoPerso':return todoPerso; case 'moments':return moments; case 'agenda':return agenda; } return null; }
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
 // patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle
@@ -2473,7 +2478,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2557,6 +2562,9 @@ async function loadAll(){
     if(Array.isArray(data.demandes))demandes=data.demandes;
     if(data.modulesParPoste)modulesParPoste=data.modulesParPoste;
     if(data.sonnetteRpi)sonnetteRpi=data.sonnetteRpi;
+    if(Array.isArray(data.todoPerso))todoPerso=data.todoPerso;
+    if(Array.isArray(data.moments))moments=data.moments;
+    if(Array.isArray(data.agenda))agenda=data.agenda;
     snapIds();   // référence initiale des ids après lecture serveur
   }catch(e){console.warn('Chargement:',e.message);}
 }
@@ -2606,6 +2614,9 @@ setInterval(async()=>{
         if(Array.isArray(d.demandes))demandes=d.demandes;
         if(d.modulesParPoste)modulesParPoste=d.modulesParPoste;
         if(d.sonnetteRpi)sonnetteRpi=d.sonnetteRpi;
+        if(Array.isArray(d.todoPerso))todoPerso=d.todoPerso;
+        if(Array.isArray(d.moments))moments=d.moments;
+        if(Array.isArray(d.agenda))agenda=d.agenda;
         snapIds();   // resynchro : nouvelle référence des ids (une suppression venue d'un autre poste n'est pas re-signalée comme locale)
         _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} if(typeof plRender==='function'){try{plRender();}catch(_e){}} } finally { _suppressSave=false; }
       }
@@ -2759,6 +2770,10 @@ function checkPin(){
     // Les modules externes s'inserent dans la barre apres coup : on repasse
     // une fois pour prendre en compte ceux qui viennent d'arriver.
     setTimeout(appliquerModules, 1200);
+    // L'accueil est le point d'entree : on y arrive en ouvrant sa session,
+    // pas sur les livraisons. Si le module n'a pas pu s'installer, la section
+    // active posee dans le HTML prend le relais — personne ne reste devant du vide.
+    if(typeof acOuvrir==='function') acOuvrir();
   } else {
     document.getElementById('pin-err').textContent='Code PIN incorrect.';
     document.getElementById('pin-who').textContent='';
@@ -2825,7 +2840,7 @@ document.addEventListener('keydown', e => {
 const SEC_LABEL = {
   livraisons:'Livraisons',
   renouvellement:'Renouvellement',
-  messagerie:'Messagerie',
+  messagerie:'Cahier de transmission',
   preparations:'Préparations officinales',
   bpm:'Bilans Partagés de Médication',
   locations:'Locations de matériel',
@@ -2864,6 +2879,7 @@ function showSec(name,btn){
   if(name==='caisse')renderCaisse();
   if(name==='backoffice'){renderStaff();renderPatients();applyAdminUI();}
   if(name==='renouvellement'&&window.rnRender)rnRender();
+  if(name==='accueil'&&window.acRender)acRender();
 }
 
 // Bascule le volet : desktop = collapse/expand persistant ; mobile = drawer open/close
@@ -4335,10 +4351,11 @@ function renderStaff(){
       <div style="font-size:.74rem;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px">${s.poste}</div>
       ${badge}
       <div style="font-size:.7rem;color:var(--gray-400)">Code : ${s.id}</div>
-      <div style="font-size:.68rem;color:var(--gray-500);margin-top:2px">RPPS : ${s.rpps?s.rpps:'—'} · Signature : ${s.sig?'✓ enregistrée':'—'} · Photo : ${s.photo?'✓':'—'}</div>
+      <div style="font-size:.68rem;color:var(--gray-500);margin-top:2px">RPPS : ${s.rpps?s.rpps:'—'} · Signature : ${s.sig?'✓ enregistrée':'—'} · Photo : ${s.photo?'✓':'—'} · Anniv. : ${s.anniv?(+s.anniv.slice(3))+'/'+(+s.anniv.slice(0,2)):'—'}</div>
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn bs sm" onclick="editStaffPin('${s.id}')" title="Modifier le code PIN"><svg class="ico"><use href="#ic-verrouiller"></use></svg> PIN</button>
         <button class="btn bs sm" onclick="editStaffRpps('${s.id}')" title="Renseigner le n° RPPS"><svg class="ico"><use href="#ic-modifier"></use></svg> RPPS</button>
+        <button class="btn ${s.anniv?'bp':'bs'} sm" onclick="editStaffAnniv('${s.id}')" title="Jour et mois d'anniversaire"><svg class="ico"><use href="#ic-anniversaire"></use></svg> Anniv.${s.anniv?' ✓':''}</button>
         <button class="btn ${s.sig?'bp':'bs'} sm" onclick="openStaffSig('${s.id}')" title="Enregistrer la signature"><svg class="ico"><use href="#ic-modifier"></use></svg> Signature${s.sig?' ✓':''}</button>
         <button class="btn ${s.photo?'bp':'bs'} sm" onclick="openStaffPhoto('${s.id}')" title="Choisir une photo de profil"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Photo${s.photo?' ✓':''}</button>
         <button class="btn bd sm" onclick="deleteStaff('${s.id}')" title="Supprimer ce collaborateur"><svg class="ico"><use href="#ic-supprimer"></use></svg></button>
@@ -4514,7 +4531,24 @@ function editStaffRpps(id){
   const s=staffDB.find(x=>x.id===id); if(!s)return;
   const v=prompt('N° RPPS de '+s.prenom+' '+s.nom+' (laisser vide pour effacer) :', s.rpps||'');
   if(v===null)return;
-  s.rpps=v.trim(); renderStaff(); schedSave();
+  s.rpps=v.trim(); s.updatedAt=Date.now(); renderStaff(); schedSave();
+}
+// Jour et mois d'anniversaire, stockes « MM-JJ ». Volontairement sans l'annee :
+// l'accueil n'affiche pas l'age, et la date de naissance complete d'un salarie
+// n'a rien a faire dans un fichier que tous les postes telechargent.
+function editStaffAnniv(id){
+  const s=staffDB.find(x=>x.id===id); if(!s)return;
+  const actuel = s.anniv ? (+s.anniv.slice(3))+'/'+(+s.anniv.slice(0,2)) : '';
+  const v=prompt('Anniversaire de '+s.prenom+' '+s.nom+' — jour et mois (ex. 10/09).\nLaisser vide pour effacer.', actuel);
+  if(v===null)return;
+  const t=v.trim();
+  if(!t){ s.anniv=''; s.updatedAt=Date.now(); renderStaff(); schedSave(); return; }
+  const m=t.match(/^(\d{1,2})\D+(\d{1,2})$/);
+  if(!m){ alert('Format attendu : jour/mois, par exemple 10/09.'); return; }
+  const j=+m[1], mo=+m[2];
+  if(j<1||j>31||mo<1||mo>12){ alert('Jour ou mois invalide.'); return; }
+  s.anniv=String(mo).padStart(2,'0')+'-'+String(j).padStart(2,'0');
+  s.updatedAt=Date.now(); renderStaff(); schedSave();
 }
 let _sigTargetId=null, _sigCtx=null, _sigCanvas=null, _sigHas=false, _sigBound=false;
 function openStaffSig(id){
@@ -9394,7 +9428,10 @@ function modulesDispo(){
 }
 // Le Back Office n'est jamais masquable : c'est par lui qu'on revient sur ces
 // reglages. Le masquer enfermerait l'operateur dehors.
-const MOD_TOUJOURS=['backoffice'];
+// Jamais masquables. L'accueil en fait partie : les listes par poste deja
+// enregistrees ne le connaissent pas, et sans cette ligne le bouton
+// disparaitrait pour tous les operateurs des son arrivee.
+const MOD_TOUJOURS=['backoffice','accueil'];
 
 // Liste autorisee pour un operateur, ou null si « tout ».
 // Ordre de priorite : administrateur → tout ; choix personnel ; reglage du
@@ -9666,6 +9703,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="pl-module.js"></script>
 <script src="dp-module.js"></script>
 <script src="dm-module.js"></script>
+<script src="ac-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>
