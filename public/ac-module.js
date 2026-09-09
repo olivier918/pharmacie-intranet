@@ -124,8 +124,13 @@
   .ac-rac button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border:1px solid var(--gray-200);background:#fff;border-radius:12px;cursor:pointer;font-family:inherit;font-size:.79rem;font-weight:700;color:var(--gray-700);line-height:1.25;text-align:center}
   .ac-rac button:hover{border-color:var(--g-border);background:var(--g-pale);color:var(--g-dark)}
   .ac-rac a{text-decoration:none}
-  .ac-rac button{position:relative}
-  .ac-rac .ac-coeur{position:absolute;top:5px;right:8px;font-size:.8rem}
+  .ac-rac button{position:relative;min-height:88px;justify-content:center}
+  .ac-fav{width:28px;height:28px;object-fit:contain;display:block}
+  .ac-emo{font-size:1.35rem;line-height:1;display:block}
+  .ac-outil{position:absolute;top:4px;font-size:.78rem;color:var(--gray-300);cursor:pointer;padding:2px 4px;line-height:1}
+  .ac-outil:hover{color:var(--gray-700)}
+  .ac-outil.g{right:22px}
+  .ac-outil.d{right:5px}
   .ac-rac .ico{width:21px;height:21px}
   .ac-td{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-200)}
   .ac-td:last-child{border-bottom:none}
@@ -520,14 +525,41 @@
     el.innerHTML = l.map(function (r) {
       // rel="noopener" : sans lui, la page ouverte peut manipuler la notre.
       return '<a href="' + E(r.url) + '" target="_blank" rel="noopener noreferrer"'
-        + ' style="text-decoration:none" title="' + E(r.url) + '">'
+        + ' title="' + E(r.url) + '">'
         + '<button style="width:100%">'
-        + '<span style="font-size:1.25rem;line-height:1">' + E(r.ico || '🔗') + '</span>'
-        + E(r.lbl || r.url)
-        + (acAdmin() ? '<span class="ac-coeur" onclick="event.preventDefault();event.stopPropagation();acRetirerLien(' + r.id + ')">✕</span>' : '')
+        + acIconeLien(r)
+        + '<span>' + E(r.lbl || r.url) + '</span>'
+        + (acAdmin()
+            ? '<span class="ac-outil g" onclick="event.preventDefault();event.stopPropagation();acFormIcone(' + r.id + ')" title="Changer l’icône">✎</span>'
+              + '<span class="ac-outil d" onclick="event.preventDefault();event.stopPropagation();acRetirerLien(' + r.id + ')" title="Retirer">✕</span>'
+            : '')
         + '</button></a>';
     }).join('');
   }
+
+  // Trois niveaux, du plus voulu au plus sûr :
+  //   1. l'icône déposée par un administrateur, si elle existe ;
+  //   2. celle du site lui-même — demandée par le navigateur de l'opérateur,
+  //      donc au site qu'il s'apprête à ouvrir : aucun tiers dans l'affaire ;
+  //   3. l'emoji, quand le site n'en sert pas.
+  // Le repli est câblé sur `onerror` : beaucoup de sites n'ont pas de
+  // /favicon.ico, et une icône cassée serait pire qu'un emoji.
+  function acIconeLien(r) {
+    if (r.imgId) return '<img class="ac-fav" src="/api/images/' + E(r.imgId) + '" alt="">';
+    let hote = '';
+    try { hote = new URL(r.url).origin; } catch (e) {}
+    const emo = '<span class="ac-emo">' + E(r.ico || '🔗') + '</span>';
+    if (!hote) return emo;
+    return '<img class="ac-fav" src="' + E(hote) + '/favicon.ico" alt="" '
+      + 'onerror="acFaviconRate(this)"><span class="ac-emo" style="display:none">' + E(r.ico || '🔗') + '</span>';
+  }
+  window.acFaviconRate = function (img) {
+    // Le site ne sert pas d'icône à cette adresse : on bascule sur l'emoji.
+    img.style.display = 'none';
+    const s = img.nextElementSibling;
+    if (s && s.classList.contains('ac-emo')) s.style.display = '';
+  };
+
   // Seuls http et https sont acceptes : une adresse « javascript: » collee ici
   // s'executerait dans la page, avec la session de celui qui clique.
   function acUrlSure(v) {
@@ -545,11 +577,43 @@
     const brut = prompt('Adresse du site (ex. ameli.fr/pharmacien)'); if (!brut) return;
     const url = acUrlSure(brut);
     if (!url) { alert('Adresse invalide. Attendu : une adresse web commençant par http:// ou https://'); return; }
-    const ico = (prompt('Un emoji pour l’illustrer (facultatif)', '🔗') || '🔗').trim().slice(0, 4);
+    const ico = (prompt('Un emoji de secours, si le site ne fournit pas d’icône', '🔗') || '🔗').trim().slice(0, 4);
     const now = Date.now();
-    acLiens().push({ id: now, ts: now, lbl: lbl.trim().slice(0, 40), url: url, ico: ico, updatedAt: now });
+    acLiens().push({ id: now, ts: now, lbl: lbl.trim().slice(0, 40), url: url, ico: ico, imgId: null, updatedAt: now });
     acSave(true); acRendRaccourcis();
   };
+
+  // ── Icône déposée à la main ───────────────────────────────────────────────
+  let acLienCourant = null;
+  window.acFormIcone = function (id) {
+    if (!acAdmin()) return;
+    const r = acLiens().find(x => x.id === id); if (!r) return;
+    acLienCourant = id; acImg = null;
+    document.getElementById('ac-ico-nom').textContent = r.lbl || r.url;
+    document.getElementById('ac-ico-apercu').innerHTML = r.imgId
+      ? '<img src="/api/images/' + E(r.imgId) + '" style="width:48px;height:48px;object-fit:contain;border-radius:8px">'
+        + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">Icône actuelle · '
+        + '<span style="cursor:pointer;text-decoration:underline" onclick="acEffacerIcone()">revenir à celle du site</span></div>'
+      : '<div style="font-size:.78rem;color:var(--gray-500)">Aucune icône déposée : celle du site est utilisée, '
+        + 'et l’emoji si le site n’en fournit pas.</div>';
+    const f = document.getElementById('ac-ico-img'); if (f) f.value = '';
+    document.getElementById('ac-ov-ico').classList.add('open');
+  };
+  window.acFermerIcone = function () { document.getElementById('ac-ov-ico').classList.remove('open'); };
+  window.acEffacerIcone = function () {
+    const r = acLiens().find(x => x.id === acLienCourant); if (!r) return;
+    r.imgId = null; r.updatedAt = Date.now();
+    acSave(true); acFermerIcone(); acRendRaccourcis();
+  };
+  window.acPoserIcone = async function () {
+    const r = acLiens().find(x => x.id === acLienCourant); if (!r) return;
+    if (!acImg) { alert('Choisissez une image.'); return; }
+    const id = await acDeposerImage(); if (!id) return;
+    r.imgId = id; r.updatedAt = Date.now();
+    acImg = null;
+    acFermerIcone(); acSave(true); acRendRaccourcis();
+  };
+
   window.acRetirerLien = function (id) {
     if (!acAdmin()) return;
     const l = acLiens(), i = l.findIndex(x => x.id === id); if (i < 0) return;
@@ -644,19 +708,23 @@
     const f = inp.files && inp.files[0]; if (!f) return;
     const cible = inp.getAttribute('data-cible') || 'ac-mom-apercu';
     const gif = /gif$/i.test(f.type || '') || /\.gif$/i.test(f.name || '');
+    // Un PNG leger part tel quel : le redimensionnement le convertirait en
+    // JPEG, qui n'a pas de transparence — un logo se retrouverait sur un fond
+    // noir. Au-dela, la compression vaut le fond perdu.
+    const pngLeger = /png$/i.test(f.type || '') && f.size <= 300 * 1024;
 
-    if (gif) {
+    if (gif || pngLeger) {
       // Un GIF anime ne passe pas par un canevas : il en ressortirait fige sur
       // sa premiere image. On garde le fichier tel quel, donc on borne sa taille.
       const ko = Math.round(f.size / 1024);
-      if (ko > AC_GIF_MAX_KO) {
+      if (gif && ko > AC_GIF_MAX_KO) {
         alert('Ce GIF pèse ' + (ko > 1024 ? (ko / 1024).toFixed(1) + ' Mo' : ko + ' Ko')
           + ', au-delà de la limite de ' + Math.round(AC_GIF_MAX_KO / 1024) + ' Mo.\n\n'
           + 'Choisissez-en un plus léger, ou une photo.');
         inp.value = ''; return;
       }
       const lec = new FileReader();
-      lec.onload = function (e) { acImg = e.target.result; acApercu(cible, ko, true); };
+      lec.onload = function (e) { acImg = e.target.result; acApercu(cible, ko, gif); };
       lec.readAsDataURL(f);
       return;
     }
@@ -682,10 +750,10 @@
   }
   window.acRetirerPhoto = function () {
     acImg = null;
-    ['ac-mom-apercu', 'ac-anniv-apercu'].forEach(function (i) {
+    ['ac-mom-apercu', 'ac-anniv-apercu', 'ac-ico-apercu'].forEach(function (i) {
       const e = document.getElementById(i); if (e) e.innerHTML = '';
     });
-    ['ac-mom-img', 'ac-anniv-img'].forEach(function (i) {
+    ['ac-mom-img', 'ac-anniv-img', 'ac-ico-img'].forEach(function (i) {
       const e = document.getElementById(i); if (e) e.value = '';
     });
   };
@@ -763,6 +831,21 @@
     + '<button class="btn bp" onclick="acPoserAnniv()">Enregistrer</button></div>'
     + '</div></div>';
 
+  const AC_MODALE_ICO = '<div class="overlay" id="ac-ov-ico">'
+    + '<div class="mbox" style="max-width:420px">'
+    + '<div class="mbox-h"><b>Icône du raccourci</b><button class="x" onclick="acFermerIcone()">✕</button></div>'
+    + '<div class="mbox-b">'
+    + '<div style="font-size:.86rem;font-weight:700;margin-bottom:.7rem" id="ac-ico-nom"></div>'
+    + '<div class="fg"><label>Déposer une image</label>'
+    + '<input type="file" id="ac-ico-img" accept="image/*" data-cible="ac-ico-apercu" onchange="acPhoto(this)">'
+    + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">'
+    + 'Utile quand le site ne fournit pas d’icône, ou qu’elle est illisible en petit.</div>'
+    + '<div id="ac-ico-apercu" style="margin-top:10px"></div></div>'
+    + '</div>'
+    + '<div class="mbox-f"><button class="btn bs" onclick="acFermerIcone()">Annuler</button>'
+    + '<button class="btn bp" onclick="acPoserIcone()">Enregistrer</button></div>'
+    + '</div></div>';
+
   const AC_MODALE = '<div class="overlay" id="ac-ov-mom">'
     + '<div class="mbox" style="max-width:520px">'
     + '<div class="mbox-h"><b>Quoi de neuf ?</b><button class="x" onclick="acFermerMoment()">✕</button></div>'
@@ -812,7 +895,7 @@
       ref.parentNode.insertBefore(sec, ref);
     }
 
-    [AC_MODALE, AC_MODALE_ANNIV].forEach(function (h) {
+    [AC_MODALE, AC_MODALE_ANNIV, AC_MODALE_ICO].forEach(function (h) {
       const m = document.createElement('div'); m.innerHTML = h;
       if (m.firstElementChild) document.body.appendChild(m.firstElementChild);
     });
