@@ -1,7 +1,11 @@
-# Ce que fait le dossier `.github/workflows`
+# Claude Code sur ce dépôt — mise en service
 
-`claude.yml` réveille Claude Code quand **@claude** apparaît dans une issue ou
-un commentaire du dépôt. Claude lit le code, propose un correctif et ouvre une
+> Ce document décrit `.github/workflows/claude.yml`. Il est volontairement
+> **hors** du dossier `.github/workflows/`, car GitHub exige une permission
+> spéciale pour tout fichier qui s'y trouve — même un simple texte.
+
+`.github/workflows/claude.yml` réveille Claude Code quand **@claude** apparaît
+dans une issue ou un commentaire du dépôt. Claude lit le code, propose un correctif et ouvre une
 *pull request*. **Rien n'est fusionné automatiquement.**
 
 ## Mise en service — deux choses à faire une seule fois
@@ -25,6 +29,19 @@ Pour passer par un abonnement plutôt que par une clé d'API, le secret s'appell
 Chaque exécution consomme des minutes d'actions GitHub et des jetons. Le
 `--max-turns 25` et le délai de 30 minutes bornent les dégâts d'une tâche qui
 partirait en boucle.
+
+## Pousser une modification du fichier d'action
+
+Un jeton personnel ordinaire ne peut pas créer ni modifier un fichier dans
+`.github/workflows/` : GitHub refuse le push avec le message *« refusing to allow
+a Personal Access Token to … without `workflow` scope »*. Il faut ajouter cette
+permission au jeton :
+
+- jeton **fine-grained** : *Settings* → *Developer settings* → *Personal access
+  tokens* → le jeton → *Repository permissions* → **Workflows : Read and write** ;
+- jeton **classique** : cocher la case **`workflow`**.
+
+La valeur du jeton ne change pas : rien à ressaisir dans le trousseau.
 
 ## Si Claude ne répond pas
 
