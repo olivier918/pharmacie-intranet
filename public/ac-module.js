@@ -299,8 +299,15 @@
       + '<div class="ac-mom-m"><span>' + E(m.auteurNom || acNom(m.auteur)) + '</span>'
       + '<button class="ac-coeur' + (aime ? ' on' : '') + '" onclick="acAimer(' + m.id + ')">'
       + (aime ? '♥' : '♡') + (nb ? ' ' + nb : '') + '</button>'
+      + (m.majAt && m.majAt > (m.ts || 0)
+          ? '<span style="font-style:italic;opacity:.7">modifié</span>' : '')
+      // Modifier : l'AUTEUR seul. Un administrateur peut retirer une publication
+      // qui n'a rien a faire la, mais pas reecrire les mots de quelqu'un d'autre.
+      + (u && m.auteur === u.id
+          ? '<button class="ac-coeur" style="margin-left:auto" onclick="acFormMoment(' + m.id + ')" title="Modifier">✎</button>' : '')
       + (u && (m.auteur === u.id || acAdmin())
-          ? '<button class="ac-coeur" style="margin-left:auto" onclick="acRetirerMoment(' + m.id + ')" title="Retirer">✕</button>' : '')
+          ? '<button class="ac-coeur"' + (u && m.auteur === u.id ? '' : ' style="margin-left:auto"')
+            + ' onclick="acRetirerMoment(' + m.id + ')" title="Retirer">✕</button>' : '')
       + '</div></div></div>';
   }
 
@@ -665,14 +672,39 @@
 
   // ── Partager un moment ────────────────────────────────────────────────────
   let acImg = null;
-  window.acFormMoment = function () {
+  // `acMomEdit` : identifiant de la publication en cours de modification, ou
+  // null pour une nouvelle. `acImgEfface` distingue « je ne change pas
+  // l'image » (acImg null) de « je veux la retirer » — sans quoi on ne pourrait
+  // jamais enlever une photo une fois posee.
+  let acMomEdit = null, acImgEfface = false;
+  window.acFormMoment = function (id) {
     const u = acUser(); if (!u) { alert('Identifiez-vous avec votre code PIN.'); return; }
-    acImg = null;
-    document.getElementById('ac-mom-titre').value = '';
-    document.getElementById('ac-mom-texte').value = '';
-    document.getElementById('ac-mom-apercu').innerHTML = '';
+    acImg = null; acImgEfface = false; acMomEdit = null;
+    let m = null;
+    if (id != null) {
+      m = acMoments().find(x => x && x.id === id);
+      if (!m) return;
+      if (m.auteur !== u.id) { alert('Seul l’auteur peut modifier sa publication.'); return; }
+      acMomEdit = id;
+    }
+    document.getElementById('ac-mom-titre').value = m ? (m.titre || '') : '';
+    document.getElementById('ac-mom-texte').value = m ? (m.texte || '') : '';
+    const src = m ? acUrlImage(m) : null;
+    document.getElementById('ac-mom-apercu').innerHTML = src
+      ? '<img src="' + src + '" style="max-width:100%;max-height:150px;border-radius:10px;display:block">'
+        + '<div style="font-size:.74rem;color:var(--gray-500);margin-top:4px">Image actuelle · '
+        + '<span style="cursor:pointer;text-decoration:underline" onclick="acEffacerImageMoment()">la retirer</span></div>'
+      : '';
     const f = document.getElementById('ac-mom-img'); if (f) f.value = '';
+    const t = document.getElementById('ac-mom-h'); if (t) t.textContent = m ? 'Modifier la publication' : 'Quoi de neuf ?';
+    const b = document.getElementById('ac-mom-ok'); if (b) b.textContent = m ? 'Enregistrer' : 'Partager';
     document.getElementById('ac-ov-mom').classList.add('open');
+  };
+  window.acEffacerImageMoment = function () {
+    acImg = null; acImgEfface = true;
+    document.getElementById('ac-mom-apercu').innerHTML =
+      '<div style="font-size:.78rem;color:var(--gray-500)">L’image sera retirée à l’enregistrement.</div>';
+    const f = document.getElementById('ac-mom-img'); if (f) f.value = '';
   };
   window.acFermerMoment = function () { document.getElementById('ac-ov-mom').classList.remove('open'); };
   // Adresse d'affichage : identifiant vers /api/images, sinon l'ancienne
@@ -761,20 +793,37 @@
     const u = acUser(); if (!u) return;
     const titre = (document.getElementById('ac-mom-titre').value || '').trim();
     const texte = (document.getElementById('ac-mom-texte').value || '').trim().slice(0, 200);
-    if (!titre && !texte && !acImg) { alert('Ajoutez au moins un mot ou une image.'); return; }
-    // L'image part AVANT la publication : si le depot echoue, rien n'est
-    // enregistre, plutot qu'une publication renvoyant a une image absente.
+    const m = acMomEdit != null ? acMoments().find(x => x && x.id === acMomEdit) : null;
+    if (acMomEdit != null && !m) { acFermerMoment(); return; }
+    // Modification : on verifie l'auteur ICI aussi. Le bouton n'apparait que
+    // pour lui, mais un bouton n'est pas un verrou.
+    if (m && m.auteur !== u.id) { alert('Seul l’auteur peut modifier sa publication.'); return; }
+    const gardeImage = m && !acImgEfface && !acImg && (m.imgId || m.image);
+    if (!titre && !texte && !acImg && !gardeImage) { alert('Ajoutez au moins un mot ou une image.'); return; }
+
+    // L'image part AVANT l'enregistrement : si le depot echoue, rien n'est
+    // ecrit, plutot qu'une publication renvoyant a une image absente.
     let imgId = null;
     if (acImg) { imgId = await acDeposerImage(); if (!imgId) return; }
     const now = Date.now();
-    acMoments().unshift({
-      id: now, ts: now, auteur: u.id, auteurNom: acPrenom(u.id),
-      titre: titre.slice(0, 60), texte: texte, imgId: imgId,
-      likes: [], expiresAt: now + AC_MOMENT_JOURS * 86400000, updatedAt: now
-    });
-    acImg = null;
+
+    if (m) {
+      m.titre = titre.slice(0, 60);
+      m.texte = texte;
+      if (imgId) { m.imgId = imgId; m.image = null; }
+      else if (acImgEfface) { m.imgId = null; m.image = null; }
+      m.majAt = now; m.updatedAt = now;
+      if (typeof logAction === 'function') logAction('Publication modifiée', '');
+    } else {
+      acMoments().unshift({
+        id: now, ts: now, auteur: u.id, auteurNom: acPrenom(u.id),
+        titre: titre.slice(0, 60), texte: texte, imgId: imgId,
+        likes: [], expiresAt: now + AC_MOMENT_JOURS * 86400000, updatedAt: now
+      });
+      if (typeof logAction === 'function') logAction('Publication « Quoi de neuf »', '');
+    }
+    acImg = null; acImgEfface = false; acMomEdit = null;
     acFermerMoment(); acSave(true); acRendMoments();
-    if (typeof logAction === 'function') logAction('Publication « Quoi de neuf »', '');
   };
 
   // Image attachee a un anniversaire. Elle est stockee comme une publication de
@@ -848,7 +897,7 @@
 
   const AC_MODALE = '<div class="overlay" id="ac-ov-mom">'
     + '<div class="mbox" style="max-width:520px">'
-    + '<div class="mbox-h"><b>Quoi de neuf ?</b><button class="x" onclick="acFermerMoment()">✕</button></div>'
+    + '<div class="mbox-h"><b id="ac-mom-h">Quoi de neuf ?</b><button class="x" onclick="acFermerMoment()">✕</button></div>'
     + '<div class="mbox-b">'
     + '<div class="fg"><label>Titre</label>'
     + '<input type="text" id="ac-mom-titre" maxlength="60" placeholder="Ex. Pot de départ de Mathilde"></div>'
@@ -862,7 +911,7 @@
     + '<div id="ac-mom-apercu" style="margin-top:8px"></div></div>'
     + '</div>'
     + '<div class="mbox-f"><button class="btn bs" onclick="acFermerMoment()">Annuler</button>'
-    + '<button class="btn bp" onclick="acPublierMoment()">Partager</button></div>'
+    + '<button class="btn bp" id="ac-mom-ok" onclick="acPublierMoment()">Partager</button></div>'
     + '</div></div>';
 
   // ── Ouverture depuis l'exterieur (fin de saisie du code PIN) ──────────────
