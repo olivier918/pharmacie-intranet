@@ -156,10 +156,31 @@
   .mp-piece{font-size:.78rem;color:var(--gray-500);margin-top:6px;display:flex;align-items:center;gap:8px}
   .mp-vide{padding:2.2rem 1rem;text-align:center;color:var(--gray-500);font-size:.85rem;line-height:1.6}
   .mp-membres{font-size:.72rem;color:var(--gray-500);font-weight:500;text-transform:none;letter-spacing:0}
-  .mp-choix{display:flex;flex-wrap:wrap;gap:7px}
-  .mp-choix label{display:flex;align-items:center;gap:7px;border:1px solid var(--gray-200);border-radius:10px;padding:7px 11px;cursor:pointer;font-size:.85rem}
-  .mp-choix label.on{background:var(--g-pale);border-color:var(--g-border);color:var(--g-dark);font-weight:600}
-  .mp-choix input{width:16px;height:16px}
+  /* Grille a cases EGALES. L'ancienne version alignait des etiquettes de
+     largeurs differentes au fil du texte : autant de lignes bancales, et un
+     oeil qui ne sait plus ou se poser. Une grille se parcourt. */
+  .mp-choix{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+  .mp-choix label{display:flex;flex-direction:column;align-items:center;gap:6px;border:1px solid var(--gray-200);
+    border-radius:11px;padding:11px 6px;cursor:pointer;font-size:.8rem;font-weight:600;color:var(--gray-700);
+    text-align:center;line-height:1.25;position:relative;transition:border-color .12s,background .12s}
+  .mp-choix label:hover{border-color:var(--g-border)}
+  .mp-choix label.on{background:var(--g-pale);border-color:var(--g-dark);color:var(--g-dark);box-shadow:inset 0 0 0 1px var(--g-dark)}
+  .mp-choix input{position:absolute;opacity:0;pointer-events:none}
+  .mp-choix .coche{position:absolute;top:5px;right:6px;font-size:.72rem;color:var(--g-dark);opacity:0}
+  .mp-choix label.on .coche{opacity:1}
+  /* Groupes et postes : des pastilles, pas des cases — on clique pour ajouter,
+     pas pour cocher un etat. */
+  .mp-lots{display:flex;flex-wrap:wrap;gap:7px}
+  .mp-lot{border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:6px 13px;font-size:.81rem;
+    font-weight:700;cursor:pointer;font-family:inherit;color:var(--gray-700);display:inline-flex;align-items:center;gap:7px}
+  .mp-lot:hover{border-color:var(--g-border);background:var(--g-pale);color:var(--g-dark)}
+  .mp-lot .n{opacity:.6;font-weight:600}
+  .mp-lot .x{opacity:.45;font-weight:700}
+  .mp-lot .x:hover{opacity:1;color:var(--red)}
+  .mp-compte{font-size:.82rem;color:var(--gray-500);margin-top:.6rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .mp-compte b{color:var(--g-dark)}
+  .mp-compte button{border:none;background:none;font-family:inherit;font-size:.8rem;font-weight:700;
+    color:var(--g-dark);cursor:pointer;padding:0;text-decoration:underline}
   .mp-retour{display:none;border:none;background:none;font-family:inherit;font-size:.8rem;color:var(--g-dark);font-weight:700;cursor:pointer;padding:0}
   @media(max-width:820px){.mp-retour{display:inline}}
   `;
@@ -395,25 +416,116 @@
   };
 
   // ── Nouvelle conversation ─────────────────────────────────────────────────
+  const mpGroupes = () => (typeof groupesMsg !== 'undefined' && Array.isArray(groupesMsg)) ? groupesMsg : [];
+
   window.mpNouvelle = function () {
     const u = mpUser(); if (!u) { alert('Identifiez-vous avec votre code PIN.'); return; }
     const autres = mpStaff().filter(s => s.id !== u.id);
     if (!autres.length) { alert('Aucun autre collaborateur enregistré.'); return; }
     document.getElementById('mp-n-titre').value = '';
     document.getElementById('mp-n-qui').innerHTML = autres.map(function (s) {
-      return '<label onclick="setTimeout(mpMajChoix,0)"><input type="checkbox" value="' + E(s.id) + '">'
-        + '<span class="mp-pastille" style="width:22px;height:22px;font-size:.62rem;background:' + (s.col || '#6b7a72') + '">'
-        + E(s.id) + '</span>' + E(s.prenom || s.id) + '</label>';
+      return '<label onclick="setTimeout(mpMajChoix,0)">'
+        + '<input type="checkbox" value="' + E(s.id) + '">'
+        + '<span class="coche">✓</span>'
+        + '<span class="mp-pastille" style="background:' + (s.col || '#6b7a72') + '">' + E(s.id) + '</span>'
+        + E(s.prenom || s.id) + '</label>';
     }).join('');
+    mpRendLots();
     mpMajChoix();
     document.getElementById('mp-ov-n').classList.add('open');
   };
+
+  // Deux façons d'ajouter plusieurs personnes d'un coup. Les POSTES sont
+  // gratuits : ils existent déjà dans les fiches collaborateurs. Les GROUPES
+  // sont ceux de l'officine — Comptoir, Logistique — qui ne recoupent aucun
+  // poste et qu'il faut donc composer à la main, une fois pour toutes.
+  function mpRendLots() {
+    const u = mpUser(); if (!u) return;
+    const autres = mpStaff().filter(s => s.id !== u.id);
+
+    const parPoste = {};
+    autres.forEach(function (s) {
+      const p = (s.poste || '').trim(); if (!p) return;
+      (parPoste[p] = parPoste[p] || []).push(s.id);
+    });
+    const zp = document.getElementById('mp-n-postes');
+    if (zp) {
+      const cles = Object.keys(parPoste).sort();
+      zp.innerHTML = cles.length
+        ? cles.map(function (p) {
+            return '<button class="mp-lot" onclick="mpAjouterLot(\'' + E(p).replace(/'/g, '&#39;') + '\')">'
+              + E(p) + '<span class="n">' + parPoste[p].length + '</span></button>';
+          }).join('')
+        : '<span style="font-size:.8rem;color:var(--gray-500)">Aucun poste renseigné.</span>';
+    }
+    mpPostesCache = parPoste;
+
+    const zg = document.getElementById('mp-n-groupes');
+    if (zg) {
+      const g = mpGroupes();
+      zg.innerHTML = (g.length
+        ? g.map(function (x) {
+            const dispo = (x.membres || []).filter(m => m !== u.id).length;
+            return '<button class="mp-lot" onclick="mpAjouterGroupe(' + x.id + ')">'
+              + E(x.nom) + '<span class="n">' + dispo + '</span>'
+              + (mpAdmin() ? '<span class="x" onclick="event.stopPropagation();mpSupprimerGroupe(' + x.id + ')" title="Supprimer ce groupe">✕</span>' : '')
+              + '</button>';
+          }).join('')
+        : '<span style="font-size:.8rem;color:var(--gray-500)">Aucun groupe. Sélectionnez des personnes puis « en faire un groupe ».</span>');
+    }
+  }
+  let mpPostesCache = {};
+  const mpAdmin = () => (typeof isAdmin === 'function') ? isAdmin() : false;
+
+  function mpCases() { return [].slice.call(document.querySelectorAll('#mp-n-qui input')); }
+  function mpCocher(ids) {
+    const set = {}; (ids || []).forEach(i => { set[i] = 1; });
+    mpCases().forEach(function (c) { if (set[c.value]) c.checked = true; });
+    mpMajChoix();
+  }
+  window.mpAjouterLot = function (poste) { mpCocher(mpPostesCache[poste] || []); };
+  window.mpAjouterGroupe = function (id) {
+    const g = mpGroupes().find(x => x.id === id); if (!g) return;
+    mpCocher(g.membres || []);
+  };
+  window.mpToutDecocher = function () {
+    mpCases().forEach(function (c) { c.checked = false; });
+    mpMajChoix();
+  };
+  window.mpEnFaireUnGroupe = function () {
+    if (!mpAdmin()) { alert('Seuls les administrateurs peuvent créer un groupe.'); return; }
+    const choisis = mpCases().filter(c => c.checked).map(c => c.value);
+    if (choisis.length < 2) { alert('Choisissez au moins deux personnes.'); return; }
+    const nom = prompt('Nom du groupe (ex. Comptoir, Logistique)');
+    if (!nom || !nom.trim()) return;
+    const now = Date.now();
+    mpGroupes().push({ id: now, nom: nom.trim().slice(0, 30), membres: choisis, par: (mpUser() || {}).id, updatedAt: now });
+    mpSave(true); mpRendLots();
+    if (typeof logAction === 'function') logAction('Groupe de destinataires créé', nom.trim());
+  };
+  window.mpSupprimerGroupe = function (id) {
+    if (!mpAdmin()) return;
+    const l = mpGroupes(), i = l.findIndex(x => x.id === id); if (i < 0) return;
+    if (!confirm('Supprimer le groupe « ' + l[i].nom + ' » ?\n\nLes conversations déjà créées ne changent pas.')) return;
+    if (typeof markDeleted === 'function') markDeleted('groupesMsg', id);
+    l.splice(i, 1);
+    mpSave(true); mpRendLots();
+  };
+
   window.mpMajChoix = function () {
-    const cases = [].slice.call(document.querySelectorAll('#mp-n-qui input'));
+    const cases = mpCases();
     cases.forEach(i => i.parentNode.classList.toggle('on', i.checked));
     const n = cases.filter(i => i.checked).length;
     // Le titre ne sert qu'a un groupe : a deux, le nom de l'autre suffit.
     document.getElementById('mp-n-titre-bloc').style.display = n > 1 ? '' : 'none';
+    const z = document.getElementById('mp-n-compte');
+    if (z) {
+      z.innerHTML = n
+        ? '<span><b>' + n + '</b> personne' + (n > 1 ? 's' : '') + ' sélectionnée' + (n > 1 ? 's' : '') + '</span>'
+          + '<button onclick="mpToutDecocher()">tout décocher</button>'
+          + (n > 1 && mpAdmin() ? '<button onclick="mpEnFaireUnGroupe()">en faire un groupe</button>' : '')
+        : '<span>Personne de sélectionné.</span>';
+    }
   };
   window.mpFermerNouvelle = function () { document.getElementById('mp-ov-n').classList.remove('open'); };
   window.mpCreer = function () {
@@ -465,10 +577,13 @@
   };
 
   const MP_MODALE = '<div class="overlay" id="mp-ov-n">'
-    + '<div class="mbox" style="max-width:520px">'
+    + '<div class="mbox" style="max-width:620px">'
     + '<div class="mbox-h"><b>Nouvelle conversation</b><button class="x" onclick="mpFermerNouvelle()">✕</button></div>'
     + '<div class="mbox-b">'
-    + '<div class="fg"><label>À qui ?</label><div class="mp-choix" id="mp-n-qui"></div></div>'
+    + '<div class="fg"><label>Groupes</label><div class="mp-lots" id="mp-n-groupes"></div></div>'
+    + '<div class="fg"><label>Par poste</label><div class="mp-lots" id="mp-n-postes"></div></div>'
+    + '<div class="fg"><label>Personnes</label><div class="mp-choix" id="mp-n-qui"></div>'
+    + '<div class="mp-compte" id="mp-n-compte"></div></div>'
     + '<div class="fg" id="mp-n-titre-bloc" style="display:none"><label>Nom du groupe (facultatif)</label>'
     + '<input type="text" id="mp-n-titre" maxlength="50" placeholder="Ex. Préparation de la vitrine"></div>'
     + '</div>'

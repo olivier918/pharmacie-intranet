@@ -860,7 +860,9 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'l
   'todoPerso', 'moments', 'agenda', 'liens',
   // Messagerie personnelle : les messages sont une collection a part, pour que
   // deux personnes qui ecrivent en meme temps ne s'effacent pas l'une l'autre.
-  'convos', 'messages'];
+  'convos', 'messages',
+  // Groupes de destinataires reutilisables de la messagerie.
+  'groupesMsg'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des
