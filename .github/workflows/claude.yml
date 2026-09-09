@@ -1,0 +1,48 @@
+# Claude Code sur les demandes de l'officine
+# ---------------------------------------------------------------------------
+# Reveille Claude quand « @claude » apparait dans une issue ou un commentaire.
+# Les issues sont creees depuis PILOT, module Boite a idees, par un bouton
+# « Envoyer en developpement » — voir le document de projet « Chainage boite a
+# idees vers developpement ».
+#
+# Claude lit CLAUDE.md a la racine a chaque execution : c'est la que sont
+# consignes les pieges de ce depot. Le garder a jour vaut mieux que de
+# rallonger les consignes ici.
+#
+# Rien n'est fusionne automatiquement : Claude ouvre une pull request, elle est
+# relue avant d'etre fusionnee. Sur une officine, un correctif non relu qui
+# touche les livraisons ou les credits n'est pas une option.
+name: Claude Code
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  claude:
+    # Ne demarre pas un runner pour un commentaire qui ne s'adresse pas a Claude.
+    if: |
+      contains(github.event.comment.body, '@claude') ||
+      contains(github.event.issue.body, '@claude') ||
+      contains(github.event.issue.title, '@claude')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --max-turns 25

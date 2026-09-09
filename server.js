@@ -321,6 +321,69 @@ app.get('/api/images/:id', async (req, res) => {
   }
 });
 
+// ─── ENVOI D'UNE DEMANDE EN DEVELOPPEMENT ──────────────────────────────────
+// Cree une issue GitHub a partir d'une demande de la boite a idees. L'action
+// `.github/workflows/claude.yml` fait le reste quand le corps mentionne
+// @claude.
+//
+// Le jeton est PERSONNEL (celui d'Olivier), pas un jeton d'application :
+// l'action Claude verifie que l'auteur du declenchement a un acces en ecriture
+// au depot et rejette les robots. Une issue creee par une application serait
+// ignoree.
+//
+// Ce que cette route ne fait PAS : envoyer la capture d'ecran de la demande.
+// Une capture de l'application contient presque toujours des noms de patients.
+// Seul le texte part, et il est relu par un humain avant l'envoi.
+const GH_REPO = (process.env.GITHUB_REPO || '').trim();
+const GH_TOKEN = (process.env.GITHUB_TOKEN || '').trim();
+
+app.get('/api/dev/dispo', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, actif: !!(GH_REPO && GH_TOKEN), repo: GH_REPO || null });
+});
+
+app.post('/api/dev/issue', async (req, res) => {
+  try {
+    if (!GH_REPO || !GH_TOKEN) {
+      return res.status(503).json({ ok: false, error: 'Envoi non configuré (GITHUB_REPO / GITHUB_TOKEN)' });
+    }
+    if (!/^[\w.-]+\/[\w.-]+$/.test(GH_REPO)) {
+      return res.status(500).json({ ok: false, error: 'GITHUB_REPO mal formé (attendu : proprietaire/depot)' });
+    }
+    const b = req.body || {};
+    const titre = String(b.titre || '').trim().slice(0, 200);
+    const corps = String(b.corps || '').trim().slice(0, 20000);
+    if (!titre || !corps) return res.status(400).json({ ok: false, error: 'Titre et contenu requis' });
+
+    if (typeof fetch !== 'function') {
+      return res.status(500).json({ ok: false, error: 'Node trop ancien : fetch indisponible (Node 18 minimum)' });
+    }
+    const r = await fetch('https://api.github.com/repos/' + GH_REPO + '/issues', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + GH_TOKEN,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'User-Agent': 'PILOT-intranet'
+      },
+      body: JSON.stringify({ title: titre, body: corps })
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      // Le message de GitHub est utile ; le jeton, lui, ne doit jamais sortir
+      // d'ici ni finir dans un journal.
+      const msg = (j && j.message) ? j.message : ('erreur ' + r.status);
+      console.error('Creation issue GitHub refusee :', r.status, msg);
+      return res.status(502).json({ ok: false, error: 'GitHub a refusé : ' + msg });
+    }
+    res.json({ ok: true, url: j.html_url, numero: j.number });
+  } catch (err) {
+    console.error('Erreur envoi en developpement :', err.message);
+    res.status(500).json({ ok: false, error: 'Envoi impossible : ' + err.message });
+  }
+});
+
 app.get('/api/config', (req, res) => {
   res.set('Cache-Control', 'no-store');
   // `version` sert aux demandes des operateurs : savoir sur quelle version une

@@ -602,7 +602,13 @@
                 }).join('')
               + '</div>'
             : '')
-        + '<button class="btn bs sm" style="margin-top:.9rem" onclick="dmExport(' + d.id + ')">Préparer pour le développement</button>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:.9rem">'
+        + '<button class="btn bs sm" onclick="dmExport(' + d.id + ')">Copier pour le développement</button>'
+        + (d.issueUrl
+            ? '<a class="btn bs sm" href="' + E(d.issueUrl) + '" target="_blank" rel="noopener" style="text-decoration:none">'
+              + 'Suivre sur GitHub (#' + E(String(d.issueNum || '')) + ')</a>'
+            : '<button class="btn bp sm" onclick="dmEnvoyerDev(' + d.id + ')">Envoyer en développement</button>')
+        + '</div>'
         + '</div>';
     }
 
@@ -690,6 +696,108 @@
 
   // Produit un texte prêt à coller en début de session de développement : le
   // backlog alimente les séances sans avoir à tout réexpliquer.
+  // Texte envoye a GitHub. Volontairement identique a celui qu'on copie a la
+  // main : ce qui part en developpement doit etre ce qu'on a relu.
+  function dmCorpsIssue(d, avecClaude) {
+    const L = [];
+    const e = dmEtat(d);
+    L.push('> Demande déposée dans PILOT (boîte à idées) par **' + (d.auteurNom || '') + '**'
+      + ' le ' + dmDate(d.ts) + '.');
+    L.push('');
+    L.push('**Nature** : ' + ((DM_NATURES[d.nature] || {}).lbl || '—'));
+    if (d.gene) L.push('**Gêne ressentie** : ' + ((DM_GENES[d.gene] || {}).lbl || ''));
+    if (d.module) L.push('**Module concerné** : ' + d.module);
+    if (d.version) L.push('**Version vue** : ' + d.version);
+    const n = Array.isArray(d.soutiens) ? d.soutiens.length : 0;
+    if (n) L.push('**Votes** : ' + n);
+    L.push('**État dans PILOT** : ' + DM_ETATS[e.st].lbl + (e.et ? ' — ' + DM_ETAPES[e.et].lbl : ''));
+    L.push('');
+    L.push('## La demande');
+    L.push('');
+    L.push(d.texte || '');
+    if (Array.isArray(d.fil) && d.fil.length) {
+      L.push('');
+      L.push('## Échanges');
+      L.push('');
+      d.fil.forEach(function (m) { L.push('- **' + (m.nom || m.uid) + '** : ' + m.texte); });
+    }
+    if (dmUrlImage(d)) {
+      L.push('');
+      L.push('_Une capture d’écran est jointe à la demande dans PILOT. Elle n’est pas '
+        + 'transmise ici : une capture de l’application contient presque toujours des '
+        + 'noms de patients._');
+    }
+    if (avecClaude) {
+      L.push('');
+      L.push('---');
+      L.push('');
+      L.push('@claude Peux-tu proposer un correctif pour cette demande ?');
+      L.push('');
+      L.push('Lis `CLAUDE.md` à la racine avant de commencer : il consigne les pièges de '
+        + 'ce dépôt, dont chacun a déjà coûté des données en production. Si la demande '
+        + 'touche à l’authentification, aux paiements, à la fusion multiposte ou aux '
+        + 'durées de rétention, décris ce qu’il faudrait faire plutôt que d’ouvrir une '
+        + 'pull request.');
+    }
+    return L.join('\n');
+  }
+
+  // ── Envoi en développement ────────────────────────────────────────────────
+  // Un ECRAN DE RELECTURE, pas un bouton qui expedie. Le texte d'une demande
+  // peut contenir un nom de patient : c'est un humain qui doit le voir partir,
+  // et il peut le corriger avant. C'est tout ce qui separe « semi-automatique »
+  // d'« automatique ».
+  let dmDevId = null;
+  window.dmEnvoyerDev = async function (id) {
+    if (!dmAdmin()) { alert('Réservé aux administrateurs.'); return; }
+    const d = dmListe().find(function (x) { return x.id === id; }); if (!d) return;
+    if (d.issueUrl) { window.open(d.issueUrl, '_blank', 'noopener'); return; }
+
+    let dispo = null;
+    try { dispo = await (await fetch('/api/dev/dispo')).json(); } catch (e) {}
+    if (!dispo || !dispo.actif) {
+      alert('L’envoi en développement n’est pas configuré.\n\n'
+        + 'Il manque les variables GITHUB_REPO et GITHUB_TOKEN côté serveur.');
+      return;
+    }
+    dmDevId = id;
+    document.getElementById('dm-dev-repo').textContent = dispo.repo || '';
+    document.getElementById('dm-dev-titre').value = 'PILOT #' + (d.num || '') + ' — ' + dmTitre(d);
+    document.getElementById('dm-dev-claude').checked = true;
+    dmDevCorps();
+    document.getElementById('dm-ov-dev').classList.add('open');
+  };
+  window.dmDevCorps = function () {
+    const d = dmListe().find(function (x) { return x.id === dmDevId; }); if (!d) return;
+    const avec = document.getElementById('dm-dev-claude').checked;
+    document.getElementById('dm-dev-corps').value = dmCorpsIssue(d, avec);
+  };
+  window.dmFermerDev = function () { document.getElementById('dm-ov-dev').classList.remove('open'); };
+  window.dmConfirmerDev = async function () {
+    const d = dmListe().find(function (x) { return x.id === dmDevId; }); if (!d) return;
+    const titre = (document.getElementById('dm-dev-titre').value || '').trim();
+    const corps = (document.getElementById('dm-dev-corps').value || '').trim();
+    if (!titre || !corps) { alert('Titre et contenu sont nécessaires.'); return; }
+    const b = document.getElementById('dm-dev-ok');
+    b.disabled = true; b.textContent = 'Envoi…';
+    try {
+      const r = await fetch('/api/dev/issue', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titre: titre, corps: corps }) });
+      const j = await r.json().catch(function () { return null; });
+      if (!r.ok || !j || !j.ok) { alert('Envoi refusé : ' + ((j && j.error) || ('erreur ' + r.status))); return; }
+      d.issueUrl = j.url; d.issueNum = j.numero;
+      d.fil = Array.isArray(d.fil) ? d.fil : [];
+      d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(),
+        texte: '— envoyée en développement (issue #' + j.numero + ')' });
+      dmTouche(d); dmSave(true);
+      if (typeof logAction === 'function') logAction('Demande envoyée en développement', '#' + (d.num || ''));
+      dmFermerDev(); dmOuvrir(d.id);
+      dmToast('Envoyée — issue #' + j.numero + '.');
+    } catch (e) {
+      alert('Envoi impossible : ' + e.message);
+    } finally { b.disabled = false; b.textContent = 'Envoyer'; }
+  };
+
   window.dmExport = function (id) {
     const d = dmListe().find(function (x) { return x.id === id; }); if (!d) return;
     const L = [];
@@ -749,7 +857,31 @@
     </div>
   </div></div>
 
-  <div class="dm-ov" id="dm-ov-fiche"><div class="dm-modal" id="dm-fiche"></div></div>`;
+  <div class="dm-ov" id="dm-ov-fiche"><div class="dm-modal" id="dm-fiche"></div></div>
+
+  <div class="dm-ov" id="dm-ov-dev"><div class="dm-modal" style="max-width:760px">
+    <h3>Envoyer en développement</h3>
+    <div style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">
+      Une issue va être créée sur <b id="dm-dev-repo"></b>. <b>Relisez le texte avant de l’envoyer</b> —
+      il quitte l’officine. La capture d’écran, elle, n’est jamais transmise.
+    </div>
+    <div class="dm-fg"><label>Titre</label>
+      <input type="text" id="dm-dev-titre" class="dm-inp" maxlength="200"></div>
+    <div class="dm-fg"><label>Contenu</label>
+      <textarea id="dm-dev-corps" class="dm-inp" rows="15" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.79rem;line-height:1.5"></textarea></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--gray-700);cursor:pointer;margin-top:.3rem">
+      <input type="checkbox" id="dm-dev-claude" style="width:16px;height:16px" onchange="dmDevCorps()">
+      Demander à Claude d’ouvrir une pull request
+    </label>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-top:.4rem;line-height:1.5">
+      Décoché, l’issue est un simple ticket. Coché, Claude lit le dépôt et propose un correctif —
+      que vous relisez avant de fusionner. Rien n’est jamais fusionné automatiquement.
+    </div>
+    <div class="dm-foot">
+      <button class="btn bp" id="dm-dev-ok" onclick="dmConfirmerDev()">Envoyer</button>
+      <button class="btn bs" onclick="dmFermerDev()">Annuler</button>
+    </div>
+  </div></div>`;
 
   // ── Injection ─────────────────────────────────────────────────────────────
   function dmInject() {
