@@ -84,6 +84,13 @@
   .ac-hello{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px}
   .ac-hello h2{font-size:1.5rem;font-weight:800;color:var(--gray-900);margin:0}
   .ac-hello .d{font-size:.86rem;color:var(--gray-500)}
+  .ac-pt-h{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+  .ac-pt-b{border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:5px 14px;
+    font-family:inherit;font-size:.83rem;color:var(--gray-700);cursor:pointer;white-space:nowrap}
+  .ac-pt-b b{color:var(--g-dark);font-weight:800}
+  .ac-pt-b:hover{border-color:var(--g-border);background:var(--g-pale)}
+  .ac-pt-b.rouge{border-color:#f3c2c2;background:#FFF5F5}
+  .ac-pt-b.rouge b{color:var(--red)}
   .ac-grid{display:grid;gap:16px;align-items:start}
   .ac-2{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
   .ac-2e{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -166,6 +173,8 @@
   .ac-conf.neuve{background:#E8F5E9;border-radius:9px;padding:8px 10px;border-bottom:none;margin-bottom:4px}
   .ac-etat{width:18px;flex:none;text-align:center;color:var(--gray-300);font-weight:800;margin-top:1px}
   .ac-etat.ok{color:#2E7D32}
+  .ac-neuf{background:#E3F2FD;color:#1565C0;border-radius:999px;padding:1px 8px;font-size:.66rem;
+    font-weight:800;letter-spacing:.02em;margin-left:7px;vertical-align:1px}
   .ac-inp{border:1px solid var(--gray-200);border-radius:9px;padding:8px 11px;font-size:.85rem;font-family:inherit;background:#fff;color:var(--gray-900)}
   #ac-td-txt{flex:1;min-width:120px}
   .ac-li{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid var(--gray-200);font-size:.86rem}
@@ -180,6 +189,7 @@
   <div class="ac-hello">
     <h2 id="ac-bonjour">Bonjour</h2>
     <span class="d" id="ac-date"></span>
+    <span class="ac-pt-h" id="ac-entete"></span>
   </div>
   <div class="ac-card">
     <div class="ac-h"><svg class="ico"><use href="#ic-amical"></use></svg> Quoi de neuf ?
@@ -244,6 +254,7 @@
     if (b) b.textContent = (n.getHours() < 18 ? 'Bonjour ' : 'Bonsoir ') + (u ? acPrenom(u.id) : '');
     const d = document.getElementById('ac-date');
     if (d) d.textContent = n.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    acRendEntete();
     acRendMoments();
     acRendAlertes();
     acRendFils();
@@ -251,6 +262,28 @@
     acRendTodos();
     acRendRaccourcis();
     acRendAgenda(n);
+  };
+
+  // ── Compteurs de l'en-tete ────────────────────────────────────────────────
+  // Ce qui attend la personne, a cote de son nom : deux nombres, pas plus. Ils
+  // ne s'affichent qu'a partir de 1 — « 0 tâche » n'est pas une information,
+  // c'est du bruit qu'on apprend a ignorer, et le jour ou il compte vraiment on
+  // ne le voit plus.
+  function acRendEntete() {
+    const el = document.getElementById('ac-entete'); if (!el) return;
+    const t = acMesTodos().length;
+    const m = (typeof mpTotalNonLus === 'function') ? mpTotalNonLus() : 0;
+    const p = [];
+    if (t) p.push('<button class="ac-pt-b" onclick="acVersTodo()">'
+      + '<b>' + t + '</b> tâche' + (t > 1 ? 's' : '') + ' à faire</button>');
+    if (m) p.push('<button class="ac-pt-b rouge" onclick="showSec(\'mp\'); if(window.mpRender) mpRender();">'
+      + '<b>' + m + '</b> message' + (m > 1 ? 's' : '') + ' non lu' + (m > 1 ? 's' : '') + '</button>');
+    el.innerHTML = p.join('');
+  }
+  window.acVersTodo = function () {
+    acTodoVue = 'mien'; acRendTodos();
+    const c = document.getElementById('ac-todos');
+    if (c && c.closest('.ac-card')) c.closest('.ac-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   // ── Quoi de neuf ? ────────────────────────────────────────────────────────
@@ -503,6 +536,21 @@
         return bf - af || (b.ts || 0) - (a.ts || 0);
       });
   }
+  // Mes taches terminees. Elles ne disparaissent pas : on doit pouvoir
+  // verifier ce qu'on a fait, et rattraper une case cochee par megarde.
+  const AC_ARCHIVE_JOURS = 30;
+  function acFaites() {
+    const u = acUser(); if (!u) return [];
+    const lim = Date.now() - AC_ARCHIVE_JOURS * 86400000;
+    return acTodos().filter(t => t && acQui(t) === u.id && t.fait && (t.faitAt || t.ts || 0) >= lim)
+      .sort((a, b) => (b.faitAt || b.ts || 0) - (a.faitAt || a.ts || 0));
+  }
+  // Une tache qu'on m'a confiee et que je n'ai pas encore vue passer.
+  function acNeuve(t) {
+    const u = acUser();
+    return !!(u && t && !t.fait && !t.vu && t.par && t.par !== acQui(t) && acQui(t) === u.id);
+  }
+
   // Taches confiees, faites, et que je n'ai pas encore vues passer.
   function acAFeliciter() {
     const u = acUser(); if (!u) return 0;
@@ -528,15 +576,23 @@
 
     // Onglets : le second n'apparait que si l'on a confie quelque chose. Un
     // onglet vide en permanence n'apprend rien et prend de la place.
+    const faites = acFaites();
     const ong = document.getElementById('ac-td-onglets');
     if (ong) {
-      if (!conf.length) { ong.innerHTML = ''; acTodoVue = 'mien'; }
-      else {
-        ong.innerHTML = '<button class="ac-ong' + (acTodoVue === 'mien' ? ' sel' : '') + '" onclick="acTodoOnglet(\'mien\')">'
-          + 'À faire<span class="n">' + mien.length + '</span></button>'
-          + '<button class="ac-ong' + (acTodoVue === 'confiees' ? ' sel' : '') + '" onclick="acTodoOnglet(\'confiees\')">'
+      // Chaque onglet n'apparait que s'il a quelque chose a montrer. Un onglet
+      // vide en permanence n'apprend rien et prend de la place.
+      let h = '<button class="ac-ong' + (acTodoVue === 'mien' ? ' sel' : '') + '" onclick="acTodoOnglet(\'mien\')">'
+        + 'À faire<span class="n">' + mien.length + '</span></button>';
+      if (conf.length) {
+        h += '<button class="ac-ong' + (acTodoVue === 'confiees' ? ' sel' : '') + '" onclick="acTodoOnglet(\'confiees\')">'
           + 'Confiées<span class="n' + (neuves ? ' rouge' : '') + '">' + (neuves || conf.length) + '</span></button>';
-      }
+      } else if (acTodoVue === 'confiees') acTodoVue = 'mien';
+      if (faites.length) {
+        h += '<button class="ac-ong' + (acTodoVue === 'faites' ? ' sel' : '') + '" onclick="acTodoOnglet(\'faites\')">'
+          + 'Faites<span class="n">' + faites.length + '</span></button>';
+      } else if (acTodoVue === 'faites') acTodoVue = 'mien';
+      ong.innerHTML = (conf.length || faites.length) ? h : '';
+      if (!conf.length && !faites.length) acTodoVue = 'mien';
     }
 
     // Le choix du destinataire n'apparait que pour un admin, et seulement dans
@@ -558,16 +614,53 @@
     }
 
     if (acTodoVue === 'confiees') { el.innerHTML = acListeConfiees(conf); return; }
+    if (acTodoVue === 'faites') { el.innerHTML = acListeFaites(faites); return; }
 
     if (!mien.length) { el.innerHTML = '<div class="ac-vide">Rien à faire pour le moment.</div>'; return; }
     el.innerHTML = mien.map(function (t) {
       const confiee = t.par && t.par !== acQui(t);
       return '<label class="ac-td"><input type="checkbox" onchange="acCocher(' + t.id + ')">'
         + '<span class="ac-td-t">' + E(t.texte || '')
+        + (acNeuve(t) ? '<span class="ac-neuf">Nouveau</span>' : '')
         + (confiee ? '<span class="ac-td-e">demandé par ' + E(acPrenom(t.par)) + '</span>' : '')
         + '</span></label>';
     }).join('');
+    // « Nouveau » s'eteint quelques secondes apres avoir ete affiche : le temps
+    // que l'oeil l'attrape, pas plus. Une marque qui reste allumee jusqu'a ce
+    // qu'on fasse la tache ne distingue plus rien.
+    if (mien.some(acNeuve)) {
+      clearTimeout(acVuTimer);
+      acVuTimer = setTimeout(function () {
+        let n = 0;
+        acMesTodos().forEach(function (t) { if (acNeuve(t)) { t.vu = Date.now(); t.updatedAt = Date.now(); n++; } });
+        if (n) { acSave(); acRendTodos(); }
+      }, 4000);
+    }
   }
+  let acVuTimer = null;
+
+  function acListeFaites(l) {
+    if (!l.length) return '<div class="ac-vide">Rien de terminé ces derniers jours.</div>';
+    return l.map(function (t) {
+      const confiee = t.par && t.par !== acQui(t);
+      return '<div class="ac-td ac-conf">'
+        + '<span class="ac-etat ok">✓</span>'
+        + '<span class="ac-td-t" style="text-decoration:line-through;opacity:.7">' + E(t.texte || '')
+        + '<span class="ac-td-e" style="text-decoration:none;display:block;opacity:1">'
+        + (t.faitAt ? acAge(t.faitAt) : '')
+        + (confiee ? ' · demandé par ' + E(acPrenom(t.par)) : '') + '</span></span>'
+        + '<button class="ac-coeur" style="margin-left:auto" onclick="acRouvrir(' + t.id + ')" title="Remettre à faire">↩</button>'
+        + '</div>';
+    }).join('');
+  }
+  // Rattrape une case cochee par megarde. Sans cela, il faudrait reecrire la
+  // tache — et son auteur aurait deja ete prevenu qu'elle etait faite.
+  window.acRouvrir = function (id) {
+    const t = acTodos().find(x => x.id === id); if (!t) return;
+    t.fait = false; t.faitAt = null; t.vuPar = null; t.classee = false;
+    t.updatedAt = Date.now();
+    acSave(true); acRendTodos();
+  };
 
   function acListeConfiees(l) {
     if (!l.length) return '<div class="ac-vide">Vous n’avez rien confié.</div>';
