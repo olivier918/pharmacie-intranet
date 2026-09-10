@@ -144,9 +144,42 @@ function variantes(uuids, deb, fin) {
   ];
 }
 
-// Normalisation defensive : on ne sait pas encore quelle forme JSON revient, on
-// parcourt donc l'arbre a la recherche de couples (horodatage, valeur), en se
-// souvenant du dernier identifiant de point rencontre au-dessus.
+// La forme reelle de la reponse, relevee le 10/09/2026 :
+//
+//   { measurements: [
+//       { locations: [{ uuid, name }],
+//         physical_property: "GENERAL_TEMPERATURE",
+//         measurements: [{ timestamp, value }, ...] },
+//       ... un groupe par point ]}
+//
+// Le point n'est PAS a cote de chaque mesure : il est porte par le groupe. Une
+// lecture naive qui cherche « un uuid quelque part au-dessus » les confond tous
+// en un seul point — c'est arrive, et le symptome est traitre : les mesures
+// arrivent, la table se remplit, mais quatre armoires n'en font plus qu'une.
+function lireGroupes(j) {
+  const groupes = j && Array.isArray(j.measurements) ? j.measurements : null;
+  if (!groupes) return null;
+  const sortie = [];
+  for (const g of groupes) {
+    // Un enregistreur peut aussi remonter de l'hygrometrie : on ne garde que la
+    // temperature, sous peine de melanger des degres et des pourcentages.
+    if (g.physical_property && !/TEMPERATURE/i.test(g.physical_property)) continue;
+    const loc = Array.isArray(g.locations) ? g.locations[0] : (g.location || null);
+    const point = loc ? (loc.uuid || loc.id) : null;
+    const nom   = loc ? (loc.name || null) : null;
+    const liste = Array.isArray(g.measurements) ? g.measurements : [];
+    for (const m of liste) {
+      const d = new Date(m.timestamp || m.time || m.measured_at);
+      const v = Number(m.value !== undefined ? m.value : m.valeur);
+      if (!isNaN(d.getTime()) && isFinite(v)) sortie.push({ point, nom, ts: d.toISOString(), valeur: v });
+    }
+  }
+  return sortie;
+}
+
+// Repli, si Testo change la forme sans prevenir : on parcourt l'arbre a la
+// recherche de couples (horodatage, valeur). Moins fiable pour l'identite du
+// point, mais mieux que de ne plus rien enregistrer du tout.
 const CLES_TEMPS  = ['timestamp', 'time', 'measurement_time', 'measured_at', 'ts', 'date_time', 'datetime'];
 const CLES_VALEUR = ['value', 'valeur', 'measurement_value', 'temperature', 'val'];
 const CLES_POINT  = ['location_uuid', 'location_id', 'locationUuid', 'uuid', 'id', 'location'];
@@ -182,15 +215,15 @@ async function mesures(jt, pts, deb, fin) {
   for (const v of ordre) {
     try {
       const sortie = [];
+      const lire = (j, uuidForce) => {
+        const exact = lireGroupes(j);
+        if (exact && exact.length) { sortie.push(...exact); return; }
+        const part = []; normaliser(j, uuidForce || null, part); sortie.push(...part);
+      };
       if (v.parPoint) {
-        for (const u of uuids) {
-          const j = await apiJson(v.chemin(u), jt);
-          const part = []; normaliser(j, u, part);
-          sortie.push(...part);
-        }
+        for (const u of uuids) lire(await apiJson(v.chemin(u), jt), u);
       } else {
-        const j = await apiJson(v.chemin, jt);
-        normaliser(j, null, sortie);
+        lire(await apiJson(v.chemin, jt));
       }
       if (sortie.length) { _variante = v.cle; return sortie; }
     } catch (e) { /* variante suivante */ }
@@ -212,6 +245,12 @@ async function creerTable(db) {
     )
   `);
   await db.query('CREATE INDEX IF NOT EXISTS app_temperatures_ts ON app_temperatures (ts DESC)');
+  // Les lignes « inconnu » sont celles qu'une lecture fautive a ecrites avant la
+  // correction du 10/09/2026 : quatre armoires confondues en une. Ce n'est pas
+  // une migration de donnees (piege n°7) mais le retrait de rebut produit par un
+  // defaut connu ; les vraies mesures reviendront d'elles-memes au prochain
+  // tirage, qui redemande toujours deux heures.
+  await db.query("DELETE FROM app_temperatures WHERE point = 'inconnu'");
   // La trace des tirages : c'est elle qui distingue « le frigo va bien » de
   // « on ne sait plus rien du frigo ».
   await db.query(`
@@ -238,7 +277,7 @@ async function tirage(db) {
 
     let ecrites = 0;
     for (const m of brut) {
-      const etiquette = nom.get(m.point) || m.point || 'inconnu';
+      const etiquette = nom.get(m.point) || m.nom || m.point || 'inconnu';
       const r = await db.query(
         'INSERT INTO app_temperatures (point, ts, valeur) VALUES ($1, $2, $3) ON CONFLICT (point, ts) DO NOTHING',
         [etiquette, m.ts, m.valeur]
@@ -342,4 +381,4 @@ function routes(app, getDb) {
   });
 }
 
-module.exports = { demarrer, routes, tirage, creerTable, configure, normaliser };
+module.exports = { demarrer, routes, tirage, creerTable, configure, normaliser, lireGroupes };
