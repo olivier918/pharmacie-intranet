@@ -20,6 +20,7 @@ const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de donné
 // la signature Stripe se vérifie sur le corps BRUT, et Stripe n'a pas de session.
 // La route est protégée par sa signature cryptographique, pas par le portail.
 const paiement = require('./paiement');
+const temperatures = require('./temperatures');
 paiement.installWebhook(app, express, { onPaid: marquerCreditPaye });
 
 // Parse JSON bodies up to 50MB (for base64 images in preps)
@@ -383,6 +384,9 @@ app.post('/api/dev/issue', async (req, res) => {
     res.status(500).json({ ok: false, error: 'Envoi impossible : ' + err.message });
   }
 });
+
+// ─── Suivi des armoires refrigerees (voir temperatures.js) ───
+temperatures.routes(app, () => db);
 
 app.get('/api/config', (req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -1221,6 +1225,7 @@ async function start() {
     ? '  🔗 Liens patients construits sur ' + renouvBase()
     : '  🔗 Liens patients sur l\'adresse courante (definir RENOUV_BASE_URL pour un sous-domaine dedie)');
   paiement.logStatus();
+  await temperatures.demarrer(db);
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {
     console.log('  🧹 Rétention : anciennes livraisons (>' + maint.DELIV_DAYS + 'j) / préparations (>' + maint.PREPS_DAYS + 'j) purgées au démarrage');
