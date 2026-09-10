@@ -2753,7 +2753,7 @@ function feterAnniversaire(prenom, force){
   const doux = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   bandeauAnniversaire(prenom);
   // Qui a demande moins d'animations en a de bonnes raisons : le bandeau
-  // suffit, on ne lui jette pas trois cents particules a l'ecran.
+  // suffit, on ne lui jette pas mille particules a l'ecran.
   if(doux && !force) return;
 
   const cv=document.createElement('canvas');
@@ -2764,41 +2764,95 @@ function feterAnniversaire(prenom, force){
   const dim=()=>{ cv.width=innerWidth*dpr; cv.height=innerHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); };
   dim(); window.addEventListener('resize',dim);
 
-  const P=[];
-  const piece=(x,y,vx,vy)=>({x,y,vx,vy,
-    t:Math.random()*Math.PI*2, dt:(Math.random()-.5)*.35,
-    l:6+Math.random()*7, e:3+Math.random()*4,
-    c:ANNIV_COULEURS[(Math.random()*ANNIV_COULEURS.length)|0],
-    rond:Math.random()<.28, vie:1});
-  // Deux gerbes depuis les coins bas, comme un canon a confettis...
-  const gerbe=(cx,cy,ang)=>{ for(let i=0;i<70;i++){ const a=ang+(Math.random()-.5)*.9, v=9+Math.random()*11;
-    P.push(piece(cx,cy,Math.cos(a)*v,Math.sin(a)*v)); } };
-  gerbe(0, innerHeight, -Math.PI/3.1);
-  gerbe(innerWidth, innerHeight, -Math.PI+Math.PI/3.1);
-  // ...et une pluie continue les deux premieres secondes.
-  let pluie=setInterval(function(){
-    for(let i=0;i<7;i++) P.push(piece(Math.random()*innerWidth,-20,(Math.random()-.5)*2,2+Math.random()*3));
-  },60);
-  setTimeout(()=>clearInterval(pluie),2000);
+  const P=[], alea=(a,b)=>a+Math.random()*(b-a);
+  const coul=()=>ANNIV_COULEURS[(Math.random()*ANNIV_COULEURS.length)|0];
+
+  // Trois profondeurs. Les pieces du premier plan sont plus grandes, plus
+  // rapides et plus opaques : c'est ce decalage qui donne du relief, bien plus
+  // que le nombre de particules.
+  function piece(x,y,vx,vy,plan){
+    const k=[0.62,0.85,1.15][plan];
+    const type=Math.random();
+    return {x,y,vx:vx*k,vy:vy*k,plan,
+      t:alea(0,6.28), dt:alea(-.42,.42),
+      l:alea(7,13)*k, e:alea(3,5.5)*k,
+      sw:alea(.5,1.8), sp:alea(0,6.28),      // balancement lateral
+      c:coul(), forme: type<.20?'rond':(type<.34?'ruban':'carre'),
+      op:[0.55,0.8,1][plan], vie:1};
+  }
+  function gerbe(cx,cy,ang,n,puiss){
+    for(let i=0;i<n;i++){
+      const a=ang+alea(-.55,.55), v=puiss*alea(.55,1.25);
+      P.push(piece(cx,cy,Math.cos(a)*v,Math.sin(a)*v,(Math.random()*3)|0));
+    }
+  }
+  // Paillettes : minuscules, brillantes, et vite eteintes. Elles remplissent
+  // les vides entre les confettis sans alourdir l'image.
+  function paillettes(cx,cy,n){
+    for(let i=0;i<n;i++){
+      const a=alea(0,6.28), v=alea(3,16);
+      const q=piece(cx,cy,Math.cos(a)*v,Math.sin(a)*v,2);
+      q.forme='eclat'; q.e=alea(1.6,3.2); q.c=Math.random()<.5?'#FFD54F':'#FFF59D'; q.dt*=2.4;
+      P.push(q);
+    }
+  }
+
+  const L=innerWidth, H=innerHeight;
+  // Une salve toutes les 300 ms environ : l'effet rebondit au lieu de retomber
+  // d'un coup, et l'oeil est rattrape juste avant de decrocher.
+  const salves=[
+    [0,    ()=>{ gerbe(0,H,-Math.PI/3.05,150,20); gerbe(L,H,-Math.PI+Math.PI/3.05,150,20); paillettes(0,H,40); paillettes(L,H,40); }],
+    [260,  ()=>{ gerbe(L/2,H*.94,-Math.PI/2,170,21); paillettes(L/2,H*.94,60); }],
+    [620,  ()=>{ gerbe(L*.16,H*.72,-Math.PI/2.4,80,17); gerbe(L*.84,H*.72,-Math.PI+Math.PI/2.4,80,17); }],
+    [1000, ()=>{ gerbe(L/2,H*.9,-Math.PI/2,110,23); paillettes(L/2,H*.9,50); }],
+    [1450, ()=>{ gerbe(L*.34,H*.8,-Math.PI/2,70,18); gerbe(L*.66,H*.8,-Math.PI/2,70,18); }],
+    [2000, ()=>{ gerbe(0,H,-Math.PI/3.05,90,19); gerbe(L,H,-Math.PI+Math.PI/3.05,90,19); }]
+  ];
+  const minuteurs=salves.map(([d,f])=>setTimeout(f,d));
+
+  // Pluie de fond, tout du long : sans elle le ciel se vide entre deux salves.
+  const pluie=setInterval(function(){
+    for(let i=0;i<14;i++)
+      P.push(piece(alea(-30,L+30),-25,alea(-1.6,1.6),alea(2,4.5),(Math.random()*3)|0));
+  },55);
+  const finPluie=setTimeout(()=>clearInterval(pluie),3400);
 
   const t0=Date.now();
   (function boucle(){
-    ctx.clearRect(0,0,innerWidth,innerHeight);
+    ctx.clearRect(0,0,L,H);
+    const age=Date.now()-t0;
     for(let i=P.length-1;i>=0;i--){
       const q=P[i];
-      q.vy+=.32; q.vx*=.992; q.vy*=.992;
-      q.x+=q.vx; q.y+=q.vy; q.t+=q.dt;
-      if(Date.now()-t0>3200) q.vie-=.02;
-      if(q.y>innerHeight+40 || q.vie<=0){ P.splice(i,1); continue; }
-      ctx.save(); ctx.globalAlpha=Math.max(0,q.vie);
+      q.vy+=.34; q.vx*=.991; q.vy*=.991;
+      q.x+=q.vx+Math.sin(age/380+q.sp)*q.sw;   // le confetti derive, il ne tombe pas droit
+      q.y+=q.vy; q.t+=q.dt;
+      if(age>4200) q.vie-=.016;
+      if(q.y>H+60 || q.x<-80 || q.x>L+80 || q.vie<=0){ P.splice(i,1); continue; }
+      ctx.save();
+      ctx.globalAlpha=Math.max(0,Math.min(1,q.vie))*q.op;
       ctx.translate(q.x,q.y); ctx.rotate(q.t); ctx.fillStyle=q.c;
-      if(q.rond){ ctx.beginPath(); ctx.arc(0,0,q.e,0,6.29); ctx.fill(); }
+      if(q.forme==='rond'){ ctx.beginPath(); ctx.arc(0,0,q.e,0,6.29); ctx.fill(); }
+      else if(q.forme==='eclat'){
+        // Une croix fine : lue comme un scintillement, pour trois traits.
+        ctx.fillRect(-q.e*2.4,-q.e*.28,q.e*4.8,q.e*.56);
+        ctx.fillRect(-q.e*.28,-q.e*2.4,q.e*.56,q.e*4.8);
+      }
+      else if(q.forme==='ruban'){
+        // Serpentin : long, mince, et qui ondule sur sa longueur.
+        ctx.beginPath(); ctx.moveTo(-q.l*1.5,0);
+        for(let k=-1.5;k<=1.5;k+=.25) ctx.lineTo(q.l*k, Math.sin(k*3+age/90+q.sp)*q.e*1.5);
+        ctx.lineWidth=q.e*.85; ctx.strokeStyle=q.c; ctx.stroke();
+      }
       // Le cosinus ecrase la largeur : le confetti semble tourner sur lui-meme.
       else ctx.fillRect(-q.l/2,-q.e/2,q.l*Math.abs(Math.cos(q.t)),q.e);
       ctx.restore();
     }
-    if(P.length) requestAnimationFrame(boucle);
-    else { window.removeEventListener('resize',dim); cv.remove(); }
+    if(P.length || age<3500) requestAnimationFrame(boucle);
+    else {
+      window.removeEventListener('resize',dim);
+      minuteurs.forEach(clearTimeout); clearTimeout(finPluie); clearInterval(pluie);
+      cv.remove();
+    }
   })();
 }
 
