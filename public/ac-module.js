@@ -36,6 +36,19 @@
   const pad = n => String(n).padStart(2, '0');
   function acIso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function acMoisJour(d) { return pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  // Depuis combien de temps. « il y a 20 min » se comprend sans calcul ; une
+  // heure precise obligerait a la comparer a la sienne.
+  function acAge(ts) {
+    const m = Math.floor((Date.now() - (ts || 0)) / 60000);
+    if (m < 2) return 'à l’instant';
+    if (m < 60) return 'il y a ' + m + ' min';
+    const h = Math.floor(m / 60);
+    if (h < 24) return 'il y a ' + h + ' h';
+    const j = Math.floor(h / 24);
+    if (j === 1) return 'hier';
+    if (j < 7) return 'il y a ' + j + ' j';
+    return new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  }
 
   const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
     'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -139,6 +152,20 @@
   .ac-td-e{font-size:.74rem;color:var(--gray-500);margin-left:6px}
   .ac-td-e.tard{color:var(--red);font-weight:700}
   .ac-ajout{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+  .ac-ongs{display:flex;gap:4px;margin-bottom:10px}
+  .ac-ongs:empty{display:none}
+  .ac-ong{border:none;background:none;font-family:inherit;font-size:.83rem;font-weight:700;color:var(--gray-500);
+    cursor:pointer;padding:5px 11px;border-radius:9px;display:inline-flex;align-items:center;gap:7px}
+  .ac-ong:hover{background:var(--gray-100)}
+  .ac-ong.sel{background:var(--g-pale);color:var(--g-dark)}
+  .ac-ong .n{background:var(--gray-200);color:var(--gray-700);border-radius:9px;padding:0 6px;font-size:.7rem}
+  .ac-ong.sel .n{background:#fff}
+  .ac-ong .n.rouge{background:var(--red);color:#fff}
+  /* Tache confiee : pas de case a cocher — ce n'est pas a moi de la faire. */
+  .ac-conf{align-items:flex-start}
+  .ac-conf.neuve{background:#E8F5E9;border-radius:9px;padding:8px 10px;border-bottom:none;margin-bottom:4px}
+  .ac-etat{width:18px;flex:none;text-align:center;color:var(--gray-300);font-weight:800;margin-top:1px}
+  .ac-etat.ok{color:#2E7D32}
   .ac-inp{border:1px solid var(--gray-200);border-radius:9px;padding:8px 11px;font-size:.85rem;font-family:inherit;background:#fff;color:var(--gray-900)}
   #ac-td-txt{flex:1;min-width:120px}
   .ac-li{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid var(--gray-200);font-size:.86rem}
@@ -185,8 +212,9 @@
       <div class="ac-h"><svg class="ico"><use href="#ic-valider"></use></svg> Ma todo
         <span class="ac-n" id="ac-td-n">0</span></div>
       <div class="ac-b">
+        <div class="ac-ongs" id="ac-td-onglets"></div>
         <div id="ac-todos"></div>
-        <div class="ac-ajout">
+        <div class="ac-ajout" id="ac-td-ajout">
           <input type="text" class="ac-inp" id="ac-td-txt" placeholder="Une tâche à ne pas oublier…"
                  onkeydown="if(event.key==='Enter')acAjouterTodo()">
           <select class="ac-inp" id="ac-td-qui" style="max-width:170px;display:none"></select>
@@ -450,21 +478,72 @@
   // `pour` = a qui la tache incombe, `par` = qui l'a inscrite. Les deux sont
   // identiques quand on s'inscrit une tache a soi-meme ; ils divergent quand un
   // admin en confie une. `auteur` est lu en repli pour les taches d'avant.
+  //
+  // Deux listes SEPAREES, dans deux onglets. Melangees, on ne sait plus ce
+  // qu'on doit faire soi-meme : « Sortir les perimes » et « Alexis doit sortir
+  // les perimes » ne se lisent pas de la meme facon, et la seconde n'a rien a
+  // faire dans une liste de choses a faire.
   function acQui(t) { return t ? (t.pour || t.auteur) : null; }
+  let acTodoVue = 'mien';
+
   function acMesTodos() {
     const u = acUser(); if (!u) return [];
     return acTodos().filter(t => t && acQui(t) === u.id && !t.fait)
       .sort((a, b) => (b.ts || 0) - (a.ts || 0));
   }
+  // Ce que j'ai confie a quelqu'un d'autre. Les taches que je me suis inscrites
+  // a moi-meme n'y figurent pas : elles sont deja dans l'autre onglet.
+  function acConfiees() {
+    const u = acUser(); if (!u) return [];
+    return acTodos().filter(t => t && t.par === u.id && acQui(t) !== u.id && !t.classee)
+      .sort(function (a, b) {
+        // Ce qui vient d'etre fait remonte : c'est la seule chose qui appelle
+        // une action de ma part.
+        const af = (a.fait && !a.vuPar) ? 1 : 0, bf = (b.fait && !b.vuPar) ? 1 : 0;
+        return bf - af || (b.ts || 0) - (a.ts || 0);
+      });
+  }
+  // Taches confiees, faites, et que je n'ai pas encore vues passer.
+  function acAFeliciter() {
+    const u = acUser(); if (!u) return 0;
+    return acTodos().filter(t => t && t.par === u.id && acQui(t) !== u.id
+      && t.fait && !t.vuPar && !t.classee).length;
+  }
+
+  window.acTodoOnglet = function (v) {
+    acTodoVue = v;
+    // Ouvrir l'onglet vaut prise de connaissance : la pastille rouge s'eteint.
+    // Sans cela elle resterait allumee jusqu'a ce qu'on classe chaque tache,
+    // et une pastille qui ne s'eteint jamais cesse d'etre un signal.
+    if (v === 'confiees' && acMarquerVues()) acSave();
+    acRendTodos();
+  };
+
   function acRendTodos() {
     const el = document.getElementById('ac-todos'); if (!el) return;
     const u = acUser();
-    const l = acMesTodos();
-    document.getElementById('ac-td-n').textContent = l.length;
+    const mien = acMesTodos(), conf = acConfiees(), neuves = acAFeliciter();
+    const cpt = document.getElementById('ac-td-n');
+    if (cpt) cpt.textContent = mien.length;
 
-    // Le choix du destinataire n'apparait que pour un admin : pour tout le monde
-    // d'autre, une todo ne concerne que soi et le menu serait du bruit.
+    // Onglets : le second n'apparait que si l'on a confie quelque chose. Un
+    // onglet vide en permanence n'apprend rien et prend de la place.
+    const ong = document.getElementById('ac-td-onglets');
+    if (ong) {
+      if (!conf.length) { ong.innerHTML = ''; acTodoVue = 'mien'; }
+      else {
+        ong.innerHTML = '<button class="ac-ong' + (acTodoVue === 'mien' ? ' sel' : '') + '" onclick="acTodoOnglet(\'mien\')">'
+          + 'À faire<span class="n">' + mien.length + '</span></button>'
+          + '<button class="ac-ong' + (acTodoVue === 'confiees' ? ' sel' : '') + '" onclick="acTodoOnglet(\'confiees\')">'
+          + 'Confiées<span class="n' + (neuves ? ' rouge' : '') + '">' + (neuves || conf.length) + '</span></button>';
+      }
+    }
+
+    // Le choix du destinataire n'apparait que pour un admin, et seulement dans
+    // l'onglet ou l'on ecrit.
     const sel = document.getElementById('ac-td-qui');
+    const zoneAjout = document.getElementById('ac-td-ajout');
+    if (zoneAjout) zoneAjout.style.display = (acTodoVue === 'mien') ? '' : 'none';
     if (sel) {
       if (acAdmin() && u) {
         const garde = sel.value;
@@ -478,8 +557,10 @@
       }
     }
 
-    if (!l.length) { el.innerHTML = '<div class="ac-vide">Rien à faire pour le moment.</div>'; return; }
-    el.innerHTML = l.map(function (t) {
+    if (acTodoVue === 'confiees') { el.innerHTML = acListeConfiees(conf); return; }
+
+    if (!mien.length) { el.innerHTML = '<div class="ac-vide">Rien à faire pour le moment.</div>'; return; }
+    el.innerHTML = mien.map(function (t) {
       const confiee = t.par && t.par !== acQui(t);
       return '<label class="ac-td"><input type="checkbox" onchange="acCocher(' + t.id + ')">'
         + '<span class="ac-td-t">' + E(t.texte || '')
@@ -487,6 +568,53 @@
         + '</span></label>';
     }).join('');
   }
+
+  function acListeConfiees(l) {
+    if (!l.length) return '<div class="ac-vide">Vous n’avez rien confié.</div>';
+    return l.map(function (t) {
+      const fini = !!t.fait;
+      const neuve = fini && !t.vuPar;
+      return '<div class="ac-td ac-conf' + (neuve ? ' neuve' : '') + '">'
+        + '<span class="ac-etat' + (fini ? ' ok' : '') + '">' + (fini ? '✓' : '·') + '</span>'
+        + '<span class="ac-td-t">' + E(t.texte || '')
+        + '<span class="ac-td-e">' + (fini
+            ? 'fait par ' + E(acPrenom(acQui(t))) + (t.faitAt ? ' · ' + acAge(t.faitAt) : '')
+            : 'en attente · ' + E(acPrenom(acQui(t)))) + '</span></span>'
+        + (fini
+            ? '<button class="ac-coeur" style="margin-left:auto" onclick="acClasser(' + t.id + ')" title="Retirer de la liste">✕</button>'
+            : '<button class="ac-coeur" style="margin-left:auto" onclick="acAnnulerConfiee(' + t.id + ')" title="Annuler cette demande">✕</button>')
+        + '</div>';
+    }).join('');
+  }
+
+  // Ouvrir l'onglet vaut prise de connaissance : la pastille rouge s'eteint.
+  // Le ✕ range definitivement la tache. Deux gestes distincts, parce que « j'ai
+  // vu » et « c'est classe » ne sont pas la meme chose.
+  function acMarquerVues() {
+    const u = acUser(); if (!u) return false;
+    let n = 0;
+    acTodos().forEach(function (t) {
+      if (t && t.par === u.id && acQui(t) !== u.id && t.fait && !t.vuPar && !t.classee) {
+        t.vuPar = Date.now(); t.updatedAt = Date.now(); n++;
+      }
+    });
+    return n > 0;
+  }
+  window.acClasser = function (id) {
+    const t = acTodos().find(x => x.id === id); if (!t) return;
+    t.classee = true; t.updatedAt = Date.now();
+    acSave(true); acRendTodos();
+  };
+  window.acAnnulerConfiee = function (id) {
+    const t = acTodos().find(x => x.id === id); if (!t) return;
+    if (!confirm('Annuler « ' + (t.texte || '') + ' » ?\n\nLa tâche disparaîtra aussi de la liste de '
+      + acPrenom(acQui(t)) + '.')) return;
+    if (typeof markDeleted === 'function') markDeleted('todoPerso', id);
+    const l = acTodos(), i = l.findIndex(x => x.id === id);
+    if (i >= 0) l.splice(i, 1);
+    acSave(true); acRendTodos();
+  };
+
   window.acAjouterTodo = function () {
     const u = acUser(); if (!u) { alert('Identifiez-vous avec votre code PIN.'); return; }
     const i = document.getElementById('ac-td-txt');
@@ -503,7 +631,8 @@
   window.acCocher = function (id) {
     const t = acTodos().find(x => x.id === id); if (!t) return;
     // La tache cochee sort de la liste mais reste en base : une suppression se
-    // propagerait mal entre postes, et on veut pouvoir dire qui a fait quoi.
+    // propagerait mal entre postes, et celui qui l'a confiee doit apprendre
+    // qu'elle est faite.
     t.fait = true; t.faitAt = Date.now(); t.parQui = (acUser() || {}).id; t.updatedAt = Date.now();
     acSave(true); acRendTodos();
   };
