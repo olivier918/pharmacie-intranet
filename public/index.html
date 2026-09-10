@@ -414,7 +414,9 @@ tr:hover td{background:#fafffe}
   main{padding:0;grid-area:auto}
   .card{box-shadow:none}
 }
-.ico{display:inline-block;width:1.05em;height:1.05em;vertical-align:-.15em;flex-shrink:0}</style>
+.ico{display:inline-block;width:1.05em;height:1.05em;vertical-align:-.15em;flex-shrink:0}
+@keyframes annivEntree{from{transform:translateY(-24px) scale(.9);opacity:0}to{transform:none;opacity:1}}
+</style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true"><symbol id="ic-imprimer" viewBox="0 0 24 24"><g fill="none" stroke="#1565C0" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="20" height="9" rx="2" fill="#1565C0" fill-opacity="0.16" stroke="none"/>
@@ -1382,6 +1384,9 @@ tr:hover td{background:#fafffe}
             <div class="fg"><label>N° RPPS (optionnel)</label><input type="text" id="st-rpps" placeholder="Ex. 10001234567" inputmode="numeric"></div>
           </div>
           <button class="btn bp" style="margin-top:.9rem" onclick="addStaff()">+ Ajouter</button>
+          <button class="btn bs" id="btn-essai-anniv" style="display:none;margin-top:.9rem;margin-left:8px"
+            onclick="essaiAnniversaire()"
+            title="Voir l'effet sans attendre son anniversaire">🎉 Tester l'effet anniversaire</button>
         </div>
         <div class="staff-grid" id="staff-grid"></div>
       </div>
@@ -2711,6 +2716,104 @@ setInterval(checkVersion, 20000);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkVersion(); });
 checkVersion();
 
+// ═══════════ ANNIVERSAIRE ═══════════
+// Confettis le jour de son anniversaire, a l'ouverture de session. Ecrit a la
+// main plutot qu'avec une bibliotheque : trois dependances suffisent a ce
+// projet, et cent lignes de canevas ne valent pas une quatrieme.
+const ANNIV_COULEURS = ['#E91E63','#FF9800','#FFC107','#8BC34A','#00BCD4','#3F51B5','#9C27B0','#F44336','#00E676','#FF4081'];
+
+window.essaiAnniversaire=function(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  // `force` : l'essai passe outre la preference « moins d'animations », sans
+  // quoi on ne verrait rien de ce qu'on cherche justement a voir.
+  feterAnniversaire((currentUser&&currentUser.prenom)||'', true);
+};
+function estMonAnniversaire(u){
+  if(!u) return false;
+  const rec = staffDB.find(s=>s.id===u.id) || u;
+  if(!rec.anniv) return false;
+  const n=new Date(), p=x=>String(x).padStart(2,'0');
+  return rec.anniv === p(n.getMonth()+1)+'-'+p(n.getDate());
+}
+
+// Une seule fete par poste et par jour : se reconnecter trois fois dans la
+// journee ne doit pas relancer les confettis trois fois. La cle vit dans le
+// navigateur, pas dans les donnees — c'est un detail d'affichage, pas un fait.
+function anniversaireDejaFete(id){
+  try{
+    const n=new Date(), p=x=>String(x).padStart(2,'0');
+    const cle='pilot_anniv_'+id+'_'+n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate());
+    if(localStorage.getItem(cle)) return true;
+    localStorage.setItem(cle,'1');
+    return false;
+  }catch(e){ return false; }   // navigation privee : on fete, tant pis
+}
+
+function feterAnniversaire(prenom, force){
+  const doux = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  bandeauAnniversaire(prenom);
+  // Qui a demande moins d'animations en a de bonnes raisons : le bandeau
+  // suffit, on ne lui jette pas trois cents particules a l'ecran.
+  if(doux && !force) return;
+
+  const cv=document.createElement('canvas');
+  cv.style.cssText='position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:100000';
+  document.body.appendChild(cv);
+  const ctx=cv.getContext('2d');
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const dim=()=>{ cv.width=innerWidth*dpr; cv.height=innerHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); };
+  dim(); window.addEventListener('resize',dim);
+
+  const P=[];
+  const piece=(x,y,vx,vy)=>({x,y,vx,vy,
+    t:Math.random()*Math.PI*2, dt:(Math.random()-.5)*.35,
+    l:6+Math.random()*7, e:3+Math.random()*4,
+    c:ANNIV_COULEURS[(Math.random()*ANNIV_COULEURS.length)|0],
+    rond:Math.random()<.28, vie:1});
+  // Deux gerbes depuis les coins bas, comme un canon a confettis...
+  const gerbe=(cx,cy,ang)=>{ for(let i=0;i<70;i++){ const a=ang+(Math.random()-.5)*.9, v=9+Math.random()*11;
+    P.push(piece(cx,cy,Math.cos(a)*v,Math.sin(a)*v)); } };
+  gerbe(0, innerHeight, -Math.PI/3.1);
+  gerbe(innerWidth, innerHeight, -Math.PI+Math.PI/3.1);
+  // ...et une pluie continue les deux premieres secondes.
+  let pluie=setInterval(function(){
+    for(let i=0;i<7;i++) P.push(piece(Math.random()*innerWidth,-20,(Math.random()-.5)*2,2+Math.random()*3));
+  },60);
+  setTimeout(()=>clearInterval(pluie),2000);
+
+  const t0=Date.now();
+  (function boucle(){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    for(let i=P.length-1;i>=0;i--){
+      const q=P[i];
+      q.vy+=.32; q.vx*=.992; q.vy*=.992;
+      q.x+=q.vx; q.y+=q.vy; q.t+=q.dt;
+      if(Date.now()-t0>3200) q.vie-=.02;
+      if(q.y>innerHeight+40 || q.vie<=0){ P.splice(i,1); continue; }
+      ctx.save(); ctx.globalAlpha=Math.max(0,q.vie);
+      ctx.translate(q.x,q.y); ctx.rotate(q.t); ctx.fillStyle=q.c;
+      if(q.rond){ ctx.beginPath(); ctx.arc(0,0,q.e,0,6.29); ctx.fill(); }
+      // Le cosinus ecrase la largeur : le confetti semble tourner sur lui-meme.
+      else ctx.fillRect(-q.l/2,-q.e/2,q.l*Math.abs(Math.cos(q.t)),q.e);
+      ctx.restore();
+    }
+    if(P.length) requestAnimationFrame(boucle);
+    else { window.removeEventListener('resize',dim); cv.remove(); }
+  })();
+}
+
+function bandeauAnniversaire(prenom){
+  const d=document.createElement('div');
+  d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:100001;display:flex;justify-content:center;'
+    +'pointer-events:none;padding:18px 12px';
+  d.innerHTML='<div style="background:linear-gradient(135deg,#E91E63,#FF9800);color:#fff;padding:13px 26px;'
+    +'border-radius:999px;font-weight:800;font-size:1.05rem;box-shadow:0 8px 28px rgba(0,0,0,.28);'
+    +'display:flex;align-items:center;gap:11px;animation:annivEntree .5s cubic-bezier(.2,1.4,.4,1)">'
+    +'<span style="font-size:1.4rem">🎂</span>Joyeux anniversaire '+String(prenom||'').replace(/[<>&"]/g,'')+' !</div>';
+  document.body.appendChild(d);
+  setTimeout(()=>{ d.style.transition='opacity .6s'; d.style.opacity='0'; setTimeout(()=>d.remove(),700); }, 5200);
+}
+
 // ═══════════ AUTH ═══════════
 // Session logic:
 // - Admin login (mail+pw) required once per calendar day, stored in sessionStorage
@@ -2816,6 +2919,11 @@ function checkPin(){
     // pas sur les livraisons. Si le module n'a pas pu s'installer, la section
     // active posee dans le HTML prend le relais — personne ne reste devant du vide.
     if(typeof acOuvrir==='function') acOuvrir();
+    // Les confettis attendent que l'ecran soit pose : lances dans la meme
+    // pile que le rendu, on les verrait sauter.
+    if(estMonAnniversaire(s) && !anniversaireDejaFete(s.id)){
+      setTimeout(function(){ feterAnniversaire(s.prenom||s.id, false); }, 700);
+    }
   } else {
     document.getElementById('pin-err').textContent='Code PIN incorrect.';
     document.getElementById('pin-who').textContent='';
@@ -4374,6 +4482,9 @@ function applyAdminUI(){
   if(b6) b6.style.display = admin ? '' : 'none';
   const b10=document.getElementById('bot10'); // onglet « Journal d'activité »
   if(b10) b10.style.display = admin ? '' : 'none';
+  // Essai de l'effet anniversaire : outil d'administrateur, invisible aux autres.
+  const ba=document.getElementById('btn-essai-anniv');
+  if(ba) ba.style.display = admin ? '' : 'none';
   // Historique SMS : le bouton Supprimer n'apparaît que pour les administrateurs
   if(document.getElementById('smsl-list') && typeof renderSmsLog==='function') renderSmsLog();
 }
