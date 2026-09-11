@@ -114,6 +114,7 @@
   .rn-drop{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #dfe8e2;border-top:none;border-radius:0 0 9px 9px;box-shadow:0 8px 20px rgba(0,0,0,.12);z-index:5;display:none;max-height:220px;overflow:auto}
   .rn-drop .ac-item{padding:8px 12px;cursor:pointer;border-bottom:1px solid #eef3f0;display:flex;flex-direction:column}
   .rn-drop .ac-item:hover{background:#f2f6f3}
+  .rn-drop .ac-neuf{color:#1D5C3A;font-weight:600;border-top:1px solid #dfe8e2}
   .rn-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;opacity:0;transition:opacity .25s;z-index:10001;pointer-events:none}
   .rn-toast.rn-on{opacity:1}
   `;
@@ -497,7 +498,16 @@
   };
   window.rnSaveForm = function () {
     const g = i => document.getElementById(i);
-    if (!g('rn-nom').value.trim() || !g('rn-prenom').value.trim() || !g('rn-dob').value || !g('rn-lib').value.trim() || !g('rn-date').value) { rnToast('Nom, prénom, date de naissance, libellé et date sont obligatoires.'); return; }
+    const manque = [
+      ['rn-nom', 'le nom'], ['rn-prenom', 'le prénom'], ['rn-dob', 'la date de naissance'],
+      ['rn-lib', 'ce qu’il faut renouveler'], ['rn-date', 'la date']
+    ].find(function (c) { return !String(g(c[0]).value || '').trim(); });
+    if (manque) {
+      rnToast('Il manque ' + manque[1] + '.');
+      const el = g(manque[0]); if (el) { el.focus(); el.style.borderColor = '#C62828';
+        setTimeout(function () { el.style.borderColor = ''; }, 2500); }
+      return;
+    }
     const obj = {
       civilite: g('rn-civ').value, nom: g('rn-nom').value.trim().toUpperCase(), prenom: g('rn-prenom').value.trim(), dob: g('rn-dob').value,
       tel: g('rn-tel').value.trim(), mail: g('rn-mail').value.trim(), adresse: g('rn-adresse').value.trim(),

@@ -398,6 +398,7 @@ tr:hover td{background:#fafffe}
 
 /* ── AUTOCOMPLETE ── */
 .ac-drop{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:7px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none;max-height:160px;overflow-y:auto}
+.ac-neuf{color:var(--g-dark,#1D5C3A);font-weight:600;border-top:1px solid var(--gray-200)}
 .ac-item{padding:8px 12px;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-100);display:flex;flex-direction:column;gap:1px}
 .ac-item:last-child{border-bottom:none}
 .ac-item:hover{background:var(--g-pale)}
@@ -4434,18 +4435,42 @@ function renderPatients(){
 function deletePatient(i){if(confirm('Supprimer ce patient ?')){patients.splice(i,1);renderPatients();}}
 
 // ═══════════ AUTOCOMPLETE ═══════════
+// Ferme tous les menus de suggestion. Sans cela, la liste des patients connus
+// reste ouverte au-dessus des champs suivants et l'on croit devoir choisir
+// quelqu'un alors qu'on saisit un NOUVEAU patient.
+function acFermerTout(){
+  document.querySelectorAll('.ac-drop,.rn-drop').forEach(function(d){ d.style.display='none'; });
+}
+document.addEventListener('click', function(e){
+  if(e.target.closest && (e.target.closest('.ac-drop') || e.target.closest('.rn-drop'))) return;
+  if(e.target.tagName==='INPUT' && (e.target.getAttribute('oninput')||'').indexOf('acPatient')>=0) return;
+  acFermerTout();
+}, true);
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') acFermerTout(); });
+
 function acPatient(nomId, prenomId, dobId, dropId, telId, mailId, adresseId, communeId){
-  const q=document.getElementById(nomId).value.toLowerCase();
+  const brut=document.getElementById(nomId).value.trim();
+  const q=brut.toLowerCase();
   const drop=document.getElementById(dropId);
   if(q.length<1){drop.style.display='none';return}
   const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
   if(!m.length){drop.style.display='none';return}
   drop.style.display='block';
+  // Une sortie explicite en bas de liste : « ce patient n'est pas dans la liste ».
+  // Un menu qu'on ne peut que subir pousse a cliquer sur le mauvais homonyme.
   drop.innerHTML=m.map(p=>`
     <div class="ac-item" onmousedown="fillPatient('${p.nom}','${p.prenom}','${p.dob||''}','${p.adresse||''}','${p.tel||''}','${p.mail||''}','${p.commune||''}','${nomId}','${prenomId}','${dobId||''}','${dropId}','${telId||''}','${mailId||''}','${adresseId||''}','${communeId||''}')">
       <strong>${p.nom} ${p.prenom}</strong>
       <span>${p.dob?new Date(p.dob+'T12:00').toLocaleDateString('fr-FR'):''} ${p.tel?'· '+p.tel:''}</span>
-    </div>`).join('');
+    </div>`).join('')
+    + `<div class="ac-item ac-neuf" onmousedown="acNouveau('${dropId}','${prenomId}')">
+         + Nouveau patient — «&nbsp;${(brut||'').replace(/[<>"']/g,'')}&nbsp;»
+       </div>`;
+}
+// Referme le menu et envoie la saisie au champ suivant.
+function acNouveau(dropId, prenomId){
+  const d=document.getElementById(dropId); if(d) d.style.display='none';
+  const p=prenomId&&document.getElementById(prenomId); if(p) setTimeout(function(){p.focus();},0);
 }
 
 function fillPatient(nom,prenom,dob,adresse,tel,mail,commune,nomId,prenomId,dobId,dropId,telId,mailId,adresseId,communeId){
