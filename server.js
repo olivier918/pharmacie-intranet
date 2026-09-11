@@ -866,7 +866,9 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'l
   // deux personnes qui ecrivent en meme temps ne s'effacent pas l'une l'autre.
   'convos', 'messages',
   // Groupes de destinataires reutilisables de la messagerie.
-  'groupesMsg'];
+  'groupesMsg',
+  // Module Litiges : litiges fournisseurs et factures manquantes.
+  'litiges', 'facturesManq'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des
