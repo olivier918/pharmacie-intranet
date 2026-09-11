@@ -837,7 +837,18 @@ tr:hover td{background:#fafffe}
           <button class="btn bs" onclick="openSmsTplSave()"><svg class="ico"><use href="#ic-document"></use></svg> Enregistrer comme modèle</button>
           <button class="btn bs" onclick="resetSmsModule()">Effacer</button>
         </div>
+        <div style="display:flex;gap:8px;margin-top:.8rem;flex-wrap:wrap;align-items:flex-end;border-top:1px solid var(--gray-200);padding-top:.9rem">
+          <div class="fg" style="margin:0"><label style="font-size:.75rem">Ou programmer le départ</label>
+            <input type="date" id="smsm-prog-date" onchange="updSmsProgDate()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem"></div>
+          <button class="btn bs" id="smsm-prog-btn" onclick="programmerSms()">Programmer</button>
+          <span id="smsm-prog-hint" style="font-size:.76rem;color:var(--gray-500);flex:1;min-width:180px;line-height:1.4">Le SMS partira ce jour-là à 8 h 30, tout seul, sans qu'un poste soit allumé.</span>
+        </div>
         <div style="font-size:.72rem;color:var(--gray-500);margin-top:.7rem;line-height:1.45">Le patient est créé dans la base s'il n'y est pas encore, ou complété de son numéro s'il existe déjà. Le patient ne peut pas répondre à ce SMS — le numéro de la pharmacie doit figurer dans le texte.</div>
+      </div>
+
+      <div class="card" style="margin-bottom:1.1rem">
+        <div class="ch"><span class="ct">SMS programmés</span><span id="smsp-count" style="font-size:.78rem;color:var(--gray-500)"></span></div>
+        <div id="smsp-list"></div>
       </div>
 
       <div class="card">
@@ -2388,6 +2399,8 @@ let messages = [];
 // Groupes de destinataires reutilisables (Comptoir, Logistique...).
 let groupesMsg = [];
 // Litiges fournisseurs et factures manquantes (module lt-module.js).
+// SMS programmes : le SERVEUR les envoie a 8 h 30, sans poste allume.
+let smsProg = [];
 let litiges = [];
 let facturesManq = [];
 
@@ -2464,7 +2477,7 @@ let _savePending=false;  // true tant qu'une modif locale n'est pas persistée :
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages','groupesMsg','litiges','facturesManq'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2486,7 +2499,8 @@ function _collRef(n){ switch(n){
   case 'liens':return liens;
   case 'convos':return convos; case 'messages':return messages;
   case 'groupesMsg':return groupesMsg;
-  case 'litiges':return litiges; case 'facturesManq':return facturesManq; } return null; }
+  case 'litiges':return litiges; case 'facturesManq':return facturesManq;
+  case 'smsProg':return smsProg; } return null; }
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
 // patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle
@@ -2526,7 +2540,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,convos,messages,groupesMsg,litiges,facturesManq,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2619,6 +2633,7 @@ async function loadAll(){
     if(Array.isArray(data.groupesMsg))groupesMsg=data.groupesMsg;
     if(Array.isArray(data.litiges))litiges=data.litiges;
     if(Array.isArray(data.facturesManq))facturesManq=data.facturesManq;
+    if(Array.isArray(data.smsProg))smsProg=data.smsProg;
     snapIds();   // référence initiale des ids après lecture serveur
   }catch(e){console.warn('Chargement:',e.message);}
 }
@@ -2677,6 +2692,7 @@ setInterval(async()=>{
         if(Array.isArray(d.groupesMsg))groupesMsg=d.groupesMsg;
         if(Array.isArray(d.litiges))litiges=d.litiges;
         if(Array.isArray(d.facturesManq))facturesManq=d.facturesManq;
+        if(Array.isArray(d.smsProg))smsProg=d.smsProg;
         snapIds();   // resynchro : nouvelle référence des ids (une suppression venue d'un autre poste n'est pas re-signalée comme locale)
         _suppressSave=true; try{ renderAll(); if(typeof rnRender==='function'){try{rnRender();}catch(_e){}} if(typeof plRender==='function'){try{plRender();}catch(_e){}} } finally { _suppressSave=false; }
       }
@@ -9167,7 +9183,11 @@ const SMS_TPL_DEFAULT=[
   {id:'tpl:ordo',    lbl:'Ordonnance à rapporter', text:"Bonjour, la Pharmacie du Centre a besoin de votre ordonnance pour finaliser votre dossier. Merci de nous la transmettre. 02 31 52 15 71."},
   {id:'tpl:dispo',   lbl:'Produit disponible', text:"Bonjour, le produit que vous attendiez est arrive a la Pharmacie du Centre. Vous pouvez venir le retirer. 02 31 52 15 71."},
   {id:'tpl:rupture', lbl:'Produit non disponible', text:"Bonjour, un produit de votre commande n'est pas disponible immediatement a la Pharmacie du Centre. Merci de nous rappeler au 02 31 52 15 71."},
-  {id:'tpl:rdv',     lbl:'Rappel de rendez-vous', text:"Bonjour, nous vous rappelons votre rendez-vous a la Pharmacie du Centre. En cas d'empechement, merci de nous prevenir au 02 31 52 15 71."}
+  {id:'tpl:rdv',     lbl:'Rappel de rendez-vous', text:"Bonjour, nous vous rappelons votre rendez-vous a la Pharmacie du Centre. En cas d'empechement, merci de nous prevenir au 02 31 52 15 71."},
+  // {prenom} est remplace a l'application du modele. Le NOM DU VACCIN n'apparait
+  // jamais : un SMS s'affiche sur un ecran verrouille, que n'importe qui peut
+  // lire. « Rappel de vaccination » est anodin ; « rappel HPV » ne l'est pas.
+  {id:'tpl:vaccin',  lbl:'Rappel de vaccination', text:"Bonjour {prenom}, il est temps de faire votre rappel de vaccination. Nous vous accueillons sans rendez-vous. Pharmacie du Centre - 02 31 52 15 71"}
 ];
 
 // Modèles fournis d'origine ; remplacés par ceux de la base dès la première lecture serveur.
@@ -9189,6 +9209,7 @@ function smsLogPush(o){
 }
 
 function renderSms(){
+  renderSmsProg();
   // Bandeau d'état du service
   const st=document.getElementById('sms-mod-status');
   if(st){
@@ -9211,8 +9232,121 @@ function renderSms(){
 function applySmsModuleTemplate(){
   const id=document.getElementById('smsm-tpl').value;
   const t=smsTemplates.find(x=>x.id===id);
-  if(t) document.getElementById('smsm-text').value=smsPlain(t.text||'');
+  if(t) document.getElementById('smsm-text').value=smsPlain(smsPersonnaliser(t.text||''));
   updSmsModule();
+}
+// Le prenom du patient saisi remplace {prenom}. Si le champ est vide, le
+// marqueur est retire avec sa virgule : mieux vaut « Bonjour, il est temps… »
+// qu'un « Bonjour {prenom}, » envoye tel quel a un patient.
+function smsPersonnaliser(txt){
+  const p=(document.getElementById('smsm-prenom')?.value||'').trim();
+  if(p) return String(txt).replace(/\{prenom\}/g, p);
+  return String(txt).replace(/\s*\{prenom\}/g, '');
+}
+
+// ═══════════ SMS PROGRAMMÉS ═══════════
+// Le SERVEUR envoie, à 8 h 30 heure de Paris, qu'un poste soit allumé ou non
+// (voir sms-programmes.js). Ici on ne fait que poser la ligne, la relire et
+// l'annuler. Rien n'est envoyé depuis le navigateur.
+
+// La date retenue peut différer de la date demandée : un « venez nous voir »
+// reçu un dimanche matin est un rappel oublié le lundi. Le serveur fait foi ;
+// on l'interroge plutôt que de recopier ici le calcul des fêtes mobiles.
+let _smsProgJour = null;
+async function updSmsProgDate(){
+  const d=(document.getElementById('smsm-prog-date')?.value)||'';
+  const h=document.getElementById('smsm-prog-hint');
+  _smsProgJour=null;
+  if(!d){ if(h) h.textContent="Le SMS partira ce jour-là à 8 h 30, tout seul, sans qu'un poste soit allumé."; return; }
+  try{
+    const j=await fetch('/api/sms-prog/jour?date='+d).then(r=>r.json());
+    if(!j||!j.ok) return;
+    _smsProgJour=j;
+    // Programmer « aujourd'hui » alors que 8 h 30 est passe : le serveur enverra
+    // a sa prochaine tournee, dans les cinq minutes. Autant le dire, plutot que
+    // de laisser croire a un depart demain matin.
+    const maintenant=new Date();
+    if(j.retenu===isoLocal(maintenant) && (maintenant.getHours()*60+maintenant.getMinutes())>=510){
+      if(h) h.textContent='8 h 30 est passé : ce SMS partira dans les cinq minutes qui suivent la programmation.';
+      return;
+    }
+    if(h) h.textContent = j.ferme
+      ? 'Le '+new Date(d+'T12:00').toLocaleDateString('fr-FR')+' est un '+j.motif+' : le SMS partira le '+new Date(j.retenu+'T12:00').toLocaleDateString('fr-FR')+' à 8 h 30.'
+      : 'Départ le '+new Date(j.retenu+'T12:00').toLocaleDateString('fr-FR')+' à 8 h 30.';
+  }catch(e){}
+}
+
+function programmerSms(){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  const nom=document.getElementById('smsm-nom').value.trim().toUpperCase();
+  const prenom=document.getElementById('smsm-prenom').value.trim();
+  const tel=document.getElementById('smsm-tel').value.trim();
+  const text=document.getElementById('smsm-text').value.trim();
+  const date=(document.getElementById('smsm-prog-date')?.value)||'';
+  const warn=document.getElementById('smsm-warn');
+  function refus(m){ warn.textContent=m; warn.style.display='block';
+    warn.style.background='var(--red-pale)'; warn.style.border='1px solid #ffcdd2'; warn.style.color='var(--red)'; }
+  if(!nom||!prenom) return refus('Le nom et le prénom du patient sont obligatoires.');
+  if(!smsMsisdn(tel)) return refus('Ce numéro n’est pas un mobile français (06 ou 07).');
+  if(!text) return refus('Le message est vide.');
+  if(!date) return refus('Choisissez la date de départ.');
+  const jour=(_smsProgJour&&_smsProgJour.demande===date)?_smsProgJour.retenu:date;
+  const aujourdhui=isoLocal(new Date());
+  if(jour<aujourdhui) return refus('Cette date est passée.');
+
+  upsertPatient({nom,prenom,tel});
+  smsProg.unshift({
+    id:'sp:'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+    nom, prenom, tel, text, date:jour, demande:date,
+    tag:'programme', par:currentUser?.id||null,
+    cree:Date.now(), sentAt:null, essais:0, erreur:null, annule:false, updatedAt:Date.now()
+  });
+  // saveNow : une création attendue 600 ms peut être emportée par un rechargement.
+  if(typeof saveNow==='function') saveNow(); else schedSave();
+  const done=document.getElementById('smsm-done');
+  done.textContent='SMS programmé pour '+nom+' '+prenom+' le '+new Date(jour+'T12:00').toLocaleDateString('fr-FR')+' à 8 h 30.';
+  done.style.display='block'; if(warn) warn.style.display='none';
+  document.getElementById('smsm-text').value='';
+  document.getElementById('smsm-prog-date').value='';
+  updSmsProgDate(); renderSmsProg(); updSmsModule();
+}
+
+window.annulerSmsProg=function(id){
+  const r=smsProg.find(x=>x.id===id); if(!r||r.sentAt) return;
+  if(!confirm('Annuler le SMS programmé pour '+r.nom+' '+r.prenom+' ?')) return;
+  r.annule=true; r.updatedAt=Date.now();
+  if(typeof saveNow==='function') saveNow(); else schedSave();
+  renderSmsProg();
+};
+
+function renderSmsProg(){
+  const host=document.getElementById('smsp-list'); if(!host) return;
+  const attente=(smsProg||[]).filter(r=>r&&!r.sentAt&&!r.annule)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const cnt=document.getElementById('smsp-count');
+  if(cnt) cnt.textContent = attente.length ? attente.length+' SMS en attente de départ' : '';
+  if(!attente.length){
+    host.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.4rem;font-size:.86rem">Aucun SMS programmé.</div>';
+    return;
+  }
+  const auj=isoLocal(new Date());
+  host.innerHTML=attente.map(r=>{
+    const retard=r.date<auj;
+    const echec=(r.essais||0)>0;
+    return '<div style="border:1px solid var(--gray-200);border-radius:9px;padding:10px 12px;margin-bottom:8px;'
+      +(echec?'background:var(--red-pale)':'')+'">'
+      +'<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">'
+      +'<strong>'+ctlEsc(r.nom)+' '+ctlEsc(r.prenom)+'</strong>'
+      +'<span style="font-size:.8rem;color:var(--gray-500)">'+ctlEsc(r.tel)+'</span>'
+      +'<span style="font-size:.8rem;color:'+(retard?'var(--red)':'var(--gray-600)')+'">'
+      +(retard?'⏳ en attente d’envoi — ':'📅 ')+new Date(r.date+'T12:00').toLocaleDateString('fr-FR')+' à 8 h 30</span>'
+      +(r.demande&&r.demande!==r.date?'<span style="font-size:.74rem;color:var(--gray-500)">(demandé le '+new Date(r.demande+'T12:00').toLocaleDateString('fr-FR')+', jour de fermeture)</span>':'')
+      +'<span style="flex:1"></span>'
+      +'<button class="btn bs sm" onclick="annulerSmsProg(\''+r.id+'\')">Annuler</button></div>'
+      +'<div style="font-size:.82rem;color:var(--gray-700);margin-top:5px;line-height:1.45">'+ctlEsc(r.text)+'</div>'
+      +(echec?'<div style="font-size:.76rem;color:var(--red);margin-top:4px">Échec d’envoi ('+r.essais+'/3) : '+ctlEsc(r.erreur||'')+'</div>':'')
+      +'</div>';
+  }).join('');
 }
 
 function updSmsModule(){

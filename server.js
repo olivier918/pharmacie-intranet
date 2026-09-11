@@ -21,6 +21,7 @@ const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de donné
 // La route est protégée par sa signature cryptographique, pas par le portail.
 const paiement = require('./paiement');
 const temperatures = require('./temperatures');
+const smsProgrammes = require('./sms-programmes');
 paiement.installWebhook(app, express, { onPaid: marquerCreditPaye });
 
 // Parse JSON bodies up to 50MB (for base64 images in preps)
@@ -387,6 +388,14 @@ app.post('/api/dev/issue', async (req, res) => {
 
 // ─── Suivi des armoires refrigerees (voir temperatures.js) ───
 temperatures.routes(app, () => db);
+
+// ─── SMS programmes (voir sms-programmes.js) ───
+const smsProg = smsProgrammes.installer(app, {
+  getDb: () => db,
+  envoyerSms: sendSmsViaBrevo,
+  smsConfigure: smsConfigured,
+  toMsisdn: toMsisdnFR
+});
 
 app.get('/api/config', (req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -868,7 +877,9 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'l
   // Groupes de destinataires reutilisables de la messagerie.
   'groupesMsg',
   // Module Litiges : litiges fournisseurs et factures manquantes.
-  'litiges', 'facturesManq'];
+  'litiges', 'facturesManq',
+  // SMS programmes : envoyes par le serveur, a 8 h 30, sans poste allume.
+  'smsProg'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des
@@ -1228,6 +1239,7 @@ async function start() {
     : '  🔗 Liens patients sur l\'adresse courante (definir RENOUV_BASE_URL pour un sous-domaine dedie)');
   paiement.logStatus();
   await temperatures.demarrer(db);
+  if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {
     console.log('  🧹 Rétention : anciennes livraisons (>' + maint.DELIV_DAYS + 'j) / préparations (>' + maint.PREPS_DAYS + 'j) purgées au démarrage');
