@@ -3289,22 +3289,23 @@ function updateNavBadges(){
     if(n>0){ dm.textContent=n>99?'99+':String(n); dm.classList.add('on','red'); dm.title='Demandes qui ont bougé depuis votre dernière visite'; }
     else dm.textContent='';
   }
-  // Crédits : ROUGE pour VOS relances restées sans nouvelle depuis 14 jours —
-  // c'est à vous que le dossier revient. ORANGE pour celles des autres, pour
-  // qu'un dossier ne dorme pas pendant les congés de qui l'a ouvert.
+  // Crédits : la pastille est PERSONNELLE. Elle ne compte que les dossiers dont
+  // je suis responsable — celui ou celle qui a fait la derniere relance, a
+  // defaut qui a ouvert le credit.
+  //
+  // Elle affichait auparavant, a defaut des miens, le compte des autres : un
+  // chiffre qui n'appelait aucun geste de ma part s'allumait sous MON menu, et
+  // le nombre ne voulait donc pas toujours dire la meme chose. Ce que les
+  // autres laissent dormir reste visible, mais a l'interieur du module, ou il
+  // est accompagne des noms — pas dans une pastille anonyme.
   const cr=document.getElementById('navb-cred');
   if(cr){
     const mine=(typeof credDueMine==='function')?credDueMine().length:0;
-    const tous=(typeof credDueList==='function')?credDueList().length:0;
     cr.classList.remove('on','red','orange');
     if(mine>0){
       cr.textContent=mine>99?'99+':String(mine);
       cr.classList.add('on','red');
       cr.title='Vos relances sans nouvelle depuis '+CRED_FOLLOWUP_DAYS+' jours ou plus';
-    } else if(tous>0){
-      cr.textContent=tous>99?'99+':String(tous);
-      cr.classList.add('on','orange');
-      cr.title='Relances d’autres collaborateurs sans nouvelle depuis '+CRED_FOLLOWUP_DAYS+' jours ou plus';
     } else { cr.textContent=''; }
   }
 }
@@ -6723,10 +6724,10 @@ function credDueMine(){
 function goCredFollow(){
   const btn=document.querySelector('.sb-item[data-sec="credits"]');
   showSec('credits', btn);
-  const mine=credDueMine().length;
   credQuickFilter='follow';
   const op=document.getElementById('cred-op-filter');
-  if(op) op.value = mine>0 ? (currentUser&&currentUser.id||'') : '';
+  // La pastille est personnelle : elle mene a MES dossiers, et le filtre le dit.
+  if(op) op.value = (currentUser&&currentUser.id) || '';
   renderCreds();
 }
 
