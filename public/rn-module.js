@@ -326,19 +326,26 @@
     document.getElementById('rn-tab-arch').classList.toggle('rn-act', v === 'arch');
     rnRender();
   };
-  // Une ordonnance passe « à préparer » 7 jours avant la date prévue.
-  // Compteur = tout ce qui est à préparer (retards inclus).
+  // ── La pastille de la barre latérale ────────────────────────────────────
+  // Elle ne répond qu'à une question : « qu'est-ce que je dois préparer
+  // maintenant ? ». Le chiffre compte donc ce qui est DÛ — aujourd'hui et les
+  // retards —, et non ce qui arrive dans la semaine : une échéance à six jours
+  // n'appelle aucun geste aujourd'hui, l'afficher en permanence use l'alerte.
   window.rnDueCount = function () {
-    try { return rnList().filter(it => !it.pause && rnDayDiff(it.date) <= RN_SOON_DAYS).length; } catch (e) { return 0; }
+    try { return rnList().filter(it => !it.pause && rnDayDiff(it.date) <= 0).length; } catch (e) { return 0; }
   };
-  // Niveau d'urgence de la pastille : 'red' dès qu'une ordonnance est due ou en retard,
-  // 'orange' si tout tombe dans les 7 jours à venir, '' s'il n'y a rien à préparer.
+  // Trois états, dans cet ordre de priorité :
+  //   rouge  — au moins une échéance est DÉPASSÉE ; c'est ce qui doit sauter aux yeux ;
+  //   orange — il y a du travail aujourd'hui, rien n'est en retard ;
+  //   vert   — rien à préparer aujourd'hui. La pastille reste visible et affiche 0 :
+  //            « il n'y a rien » est une information, l'absence de pastille n'en est pas une
+  //            (on ne sait pas si c'est vide ou si le module n'a pas répondu).
   window.rnDueLevel = function () {
     try {
       const l = rnList().filter(it => !it.pause);
-      if (l.some(it => rnDayDiff(it.date) <= 0)) return 'red';
-      if (l.some(it => rnDayDiff(it.date) <= RN_SOON_DAYS)) return 'orange';
-      return '';
+      if (l.some(it => rnDayDiff(it.date) < 0)) return 'red';
+      if (l.some(it => rnDayDiff(it.date) === 0)) return 'orange';
+      return 'green';
     } catch (e) { return ''; }
   };
   window.rnRender = function () {
