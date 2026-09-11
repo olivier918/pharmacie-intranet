@@ -240,8 +240,11 @@
   </div>
 
   <div class="ac-card">
-    <div class="ac-h"><svg class="ico"><use href="#ic-calendrier"></use></svg> Rendez-vous du mois</div>
-    <div class="ac-b" id="ac-agenda"></div>
+    <div class="ac-h"><svg class="ico"><use href="#ic-calendrier"></use></svg> Rendez-vous à venir</div>
+    <div class="ac-b">
+      <div class="ac-ongs" id="ac-agenda-ongs"></div>
+      <div id="ac-agenda"></div>
+    </div>
     <div class="ac-lien" id="ac-agenda-add"></div>
   </div>`;
 
@@ -852,46 +855,89 @@
   };
 
   // ── Agenda ────────────────────────────────────────────────────────────────
+  // « Le mois en cours » est une fenêtre trompeuse : le 29, il ne reste que deux
+  // jours à voir, et le rendez-vous du 3 du mois suivant est invisible. Ce qu'on
+  // veut savoir, c'est ce qui arrive — d'où les 30 PROCHAINS jours.
+  // Le second onglet montre tout ce qui est programmé au-delà, et permet de le
+  // corriger : une date posée six mois à l'avance finit toujours par bouger.
+  let acRdvVue = '30j';
+  window.acRdvOnglet = function (v) { acRdvVue = v; acRendAgenda(new Date()); };
+
   function acRendAgenda(n) {
     const el = document.getElementById('ac-agenda'); if (!el) return;
     const add = document.getElementById('ac-agenda-add');
     if (add) add.innerHTML = acAdmin() ? '<button onclick="acFormRdv()">+ Ajouter un rendez-vous</button>' : '';
-    const mois = acIso(n).slice(0, 7), auj = acIso(n);
-    const l = acAgenda().filter(r => r && String(r.date || '').slice(0, 7) === mois)
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.h || '').localeCompare(String(b.h || '')));
-    if (!l.length) { el.innerHTML = '<div class="ac-vide">Rien de prévu ce mois-ci.</div>'; return; }
+    const auj = acIso(n);
+    const fin = new Date(n); fin.setDate(fin.getDate() + 30);
+    const limite = acIso(fin);
+
+    const venir = acAgenda().filter(r => r && String(r.date || '') >= auj);
+    const proches = venir.filter(r => String(r.date) <= limite);
+    const tri = (a, b) => String(a.date).localeCompare(String(b.date)) || String(a.h || '').localeCompare(String(b.h || ''));
+
+    const ongs = document.getElementById('ac-agenda-ongs');
+    if (ongs) ongs.innerHTML =
+      '<button class="ac-ong' + (acRdvVue === '30j' ? ' sel' : '') + '" onclick="acRdvOnglet(\'30j\')">30 jours'
+      + (proches.length ? '<span class="n">' + proches.length + '</span>' : '') + '</button>'
+      + '<button class="ac-ong' + (acRdvVue === 'tous' ? ' sel' : '') + '" onclick="acRdvOnglet(\'tous\')">Programmés'
+      + (venir.length ? '<span class="n">' + venir.length + '</span>' : '') + '</button>';
+
+    const l = (acRdvVue === 'tous' ? venir : proches).slice().sort(tri);
+    if (!l.length) {
+      el.innerHTML = '<div class="ac-vide">' + (acRdvVue === 'tous'
+        ? 'Aucun rendez-vous programmé.' : 'Rien de prévu dans les 30 prochains jours.') + '</div>';
+      return;
+    }
     el.innerHTML = l.map(function (r) {
       const d = new Date(r.date + 'T12:00:00');
-      return '<div class="ac-li' + (r.date < auj ? ' passe' : '') + '">'
-        + '<span class="q">' + JOURS[d.getDay()] + ' ' + d.getDate() + '</span>'
+      const loin = String(r.date) > limite;
+      return '<div class="ac-li">'
+        + '<span class="q">' + JOURS[d.getDay()] + ' ' + d.getDate()
+        + (loin || acRdvVue === 'tous' ? ' ' + MOIS_CT[d.getMonth()] : '') + '</span>'
         + '<span class="t">' + E(r.titre || '') + (r.h ? ' · ' + E(r.h) : '') + '</span>'
-        + (acAdmin() ? '<button class="ac-coeur" style="margin-left:auto" onclick="acRetirerRdv(' + r.id + ')">✕</button>' : '')
+        + (acAdmin() ? '<button class="ac-coeur" style="margin-left:auto" title="Modifier"'
+            + ' onclick="acFormRdv(' + r.id + ')">\u270E</button>' : '')
         + '</div>';
     }).join('');
   }
-  window.acFormRdv = function () {
+  // Un vrai formulaire plutôt qu'une file de prompt() : la saisie « jj/mm »
+  // supposait l'année en cours — un rendez-vous de janvier saisi en décembre
+  // atterrissait onze mois en arrière, et personne ne le voyait plus.
+  let acRdvEdit = null;
+  window.acFormRdv = function (id) {
     if (!acAdmin()) return;
-    const titre = prompt('Quel rendez-vous ? (ex. Réunion d’équipe)'); if (!titre || !titre.trim()) return;
-    const date = prompt('Quel jour ? (jj/mm)', ''); if (!date) return;
-    const m = String(date).match(/^(\d{1,2})\D+(\d{1,2})$/);
-    if (!m) { alert('Date attendue au format jj/mm.'); return; }
-    const jour = +m[1], mo = +m[2];
-    if (jour < 1 || jour > 31 || mo < 1 || mo > 12) { alert('Date invalide.'); return; }
-    const n = new Date();
-    const iso = n.getFullYear() + '-' + pad(mo) + '-' + pad(jour);
-    const h = prompt('À quelle heure ? (facultatif, ex. 14h)', '') || '';
+    acRdvEdit = id || null;
+    const r = id ? acAgenda().find(x => x.id === id) : null;
+    document.getElementById('ac-rdv-h').textContent = r ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous';
+    document.getElementById('ac-rdv-titre').value = r ? (r.titre || '') : '';
+    document.getElementById('ac-rdv-date').value = r ? (r.date || '') : acIso(new Date());
+    document.getElementById('ac-rdv-h2').value = r ? (r.h || '') : '';
+    document.getElementById('ac-rdv-supr').style.display = r ? '' : 'none';
+    document.getElementById('ac-ov-rdv').classList.add('open');
+  };
+  window.acFermerRdv = function () { document.getElementById('ac-ov-rdv').classList.remove('open'); acRdvEdit = null; };
+  window.acEnregistrerRdv = function () {
+    const titre = document.getElementById('ac-rdv-titre').value.trim();
+    const date = document.getElementById('ac-rdv-date').value;
+    const h = document.getElementById('ac-rdv-h2').value.trim();
+    if (!titre) { alert('Il manque l’intitulé du rendez-vous.'); return; }
+    if (!date) { alert('Il manque la date.'); return; }
     const now = Date.now();
-    acAgenda().push({ id: now, date: iso, h: h.trim(), titre: titre.trim(), par: (acUser() || {}).id, updatedAt: now });
-    acSave(true); acRender();
+    if (acRdvEdit) {
+      const r = acAgenda().find(x => x.id === acRdvEdit);
+      if (r) { r.titre = titre; r.date = date; r.h = h; r.updatedAt = now; }
+    } else {
+      acAgenda().push({ id: now, date: date, h: h, titre: titre, par: (acUser() || {}).id, updatedAt: now });
+    }
+    acFermerRdv(); acSave(true); acRender();
   };
-  window.acRetirerRdv = function (id) {
-    if (!acAdmin()) return;
-    const l = acAgenda(), i = l.findIndex(x => x.id === id); if (i < 0) return;
+  window.acSupprimerRdv = function () {
+    if (!acRdvEdit) return;
+    const l = acAgenda(), i = l.findIndex(x => x.id === acRdvEdit); if (i < 0) return;
     if (!confirm('Retirer ce rendez-vous ?')) return;
-    if (typeof markDeleted === 'function') markDeleted('agenda', id);
-    l.splice(i, 1); acSave(true); acRender();
+    if (typeof markDeleted === 'function') markDeleted('agenda', acRdvEdit);
+    l.splice(i, 1); acFermerRdv(); acSave(true); acRender();
   };
-
   // ── Partager un moment ────────────────────────────────────────────────────
   let acImg = null;
   // `acMomEdit` : identifiant de la publication en cours de modification, ou
@@ -1117,6 +1163,22 @@
     + '<button class="btn bp" onclick="acPoserIcone()">Enregistrer</button></div>'
     + '</div></div>';
 
+  const AC_MODALE_RDV = '<div class="overlay" id="ac-ov-rdv">'
+    + '<div class="mbox" style="max-width:420px">'
+    + '<div class="mbox-h"><b id="ac-rdv-h">Nouveau rendez-vous</b><button class="x" onclick="acFermerRdv()">✕</button></div>'
+    + '<div class="mbox-b">'
+    + '<div class="fg"><label>Intitulé</label>'
+    + '<input type="text" id="ac-rdv-titre" maxlength="70" placeholder="Ex. Réunion d’équipe"></div>'
+    + '<div class="fg"><label>Date</label><input type="date" id="ac-rdv-date"></div>'
+    + '<div class="fg"><label>Heure <span style="color:var(--gray-500);font-weight:400">(facultatif)</span></label>'
+    + '<input type="text" id="ac-rdv-h2" maxlength="12" placeholder="Ex. 14h30"></div>'
+    + '</div>'
+    + '<div class="mbox-f"><button class="btn bp" onclick="acEnregistrerRdv()">Enregistrer</button>'
+    + '<button class="btn bs" onclick="acFermerRdv()">Annuler</button>'
+    + '<span style="flex:1"></span>'
+    + '<button class="btn bs" id="ac-rdv-supr" style="color:#C62828" onclick="acSupprimerRdv()">Supprimer</button></div>'
+    + '</div></div>';
+
   const AC_MODALE = '<div class="overlay" id="ac-ov-mom">'
     + '<div class="mbox" style="max-width:520px">'
     + '<div class="mbox-h"><b id="ac-mom-h">Quoi de neuf ?</b><button class="x" onclick="acFermerMoment()">✕</button></div>'
@@ -1166,7 +1228,7 @@
       ref.parentNode.insertBefore(sec, ref);
     }
 
-    [AC_MODALE, AC_MODALE_ANNIV, AC_MODALE_ICO].forEach(function (h) {
+    [AC_MODALE, AC_MODALE_ANNIV, AC_MODALE_ICO, AC_MODALE_RDV].forEach(function (h) {
       const m = document.createElement('div'); m.innerHTML = h;
       if (m.firstElementChild) document.body.appendChild(m.firstElementChild);
     });
