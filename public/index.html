@@ -3225,9 +3225,16 @@ function annulerFacture(id){
 // Ordre des lieux : celui de la tournee, pas l'alphabetique. Un lieu inconnu
 // (ancienne saisie, valeur libre) passe en fin de liste plutot que d'etre perdu.
 const LIEUX_ORDRE=['Domicile','EHPAD','IDE MDS','IDE 9','Pharmacie'];
+// Au sein d'un lieu, l'ordre alphabetique du patient. Comparaison « fr » avec
+// sensibilite « base » : Élise se range avec Elise, et non apres Zoe.
+function parNomPatient(a,b){
+  const cle=d=>((d.nom||'')+' '+(d.prenom||'')).trim();
+  return cle(a).localeCompare(cle(b),'fr',{sensitivity:'base',numeric:true});
+}
 function grouperParLieu(rows){
   const m=new Map();
   rows.forEach(d=>{ const l=(d.lieu||'').trim()||'Lieu non precise'; if(!m.has(l)) m.set(l,[]); m.get(l).push(d); });
+  m.forEach(v=>v.sort(parNomPatient));
   return [...m.entries()].sort((a,b)=>{
     const ia=LIEUX_ORDRE.indexOf(a[0]), ib=LIEUX_ORDRE.indexOf(b[0]);
     return (ia<0?99:ia)-(ib<0?99:ib) || a[0].localeCompare(b[0],'fr');
@@ -3237,7 +3244,7 @@ function grouperParLieu(rows){
 // filtre actif sur un lieu) : pas de bandeau, il n'apprendrait rien.
 function listeParLieu(rows){
   const g=grouperParLieu(rows);
-  if(g.length<=1) return rows.map(d=>dCard(d)).join('');
+  if(g.length<=1) return rows.slice().sort(parNomPatient).map(d=>dCard(d)).join('');
   return g.map(([lieu,items],i)=>
     `<div${i?' class="dgrp-sep"':''}>
       <div class="dgrp-h">${ico('lieu')} ${lieu}<span class="dgrp-n">${items.length}</span></div>
