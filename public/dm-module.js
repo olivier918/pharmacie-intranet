@@ -12,7 +12,11 @@
 
   // Deux axes : l'etat (ce qu'on a decide) et l'etape (ou en est la realisation).
   // L'etape n'a de sens que sur une demande acceptee.
+  // « Nouveau » n'est pas un ornement : sans lui, une demande naissait
+  // « acceptée » — c'est-a-dire qu'elle etait reputee decidee avant d'avoir ete
+  // lue. La file des nouveautes est ce qui rend le tri visible.
   const DM_ETATS = {
+    nouveau:   { lbl: 'Nouveau',    col: '#1565C0', bg: '#E3F2FD' },
     acceptee:  { lbl: 'Acceptée',   col: '#047857', bg: '#d1fae5' },
     apreciser: { lbl: 'À préciser', col: '#b45309', bg: '#fef3c7' },
     rejetee:   { lbl: 'Rejetée',    col: '#b91c1c', bg: '#fee2e2' }
@@ -290,12 +294,21 @@
   // Filtre d'etat. Par defaut « Toutes » = tout sauf les non retenues : celles-ci
   // sont archivees, mais les demandes faites restent visibles — voir ses idees
   // sortir est ce qui donne envie d'en deposer d'autres.
-  let dmFiltre = 'acceptee';
+  // « Toutes » a l'ouverture : avec l'etat « nouveau », une idee fraichement
+  // deposee n'apparaitrait sous aucun des filtres de decision, et passerait
+  // inapercue le temps qu'on pense a cliquer sur la bonne pastille.
+  let dmFiltre = 'toutes';
+  // Une demande « faite » quitte le tableau : elle est archivée. Son auteur en
+  // est averti par la messagerie, il n'a donc pas besoin de la voir traîner —
+  // et un tableau qui ne se vide jamais finit par ne plus être lu.
+  function dmArchivee(d) { return !!(d && d.archiveAt); }
   const DM_FILTRES = [
+    { cle: 'nouveau',   lbl: 'Nouveau',     test: d => dmEtat(d).st === 'nouveau' },
     { cle: 'acceptee',  lbl: 'Acceptées',   test: d => dmEtat(d).st === 'acceptee' },
     { cle: 'apreciser', lbl: 'À préciser',  test: d => dmEtat(d).st === 'apreciser' },
     { cle: 'toutes',    lbl: 'Toutes',      test: d => true },
-    { cle: 'rejetee',   lbl: 'Rejetées',    test: d => dmEtat(d).st === 'rejetee' }
+    { cle: 'rejetee',   lbl: 'Rejetées',    test: d => dmEtat(d).st === 'rejetee' },
+    { cle: 'archive',   lbl: 'Archivées',   test: d => dmArchivee(d), archives: true }
   ];
   window.dmFiltrer = function (c) { dmFiltre = c; dmRender(); };
   window.dmVue = function (v) {
@@ -319,9 +332,11 @@
 
     let l = dmListe().filter(function (d) {
       if (!d) return false;
-      if (!fEtat.test(d)) return false;
+      // Les archivées ne sortent que par leur propre filtre, ou par la recherche.
+      if (dmArchivee(d) !== !!fEtat.archives && !(q && dmArchivee(d))) return false;
+      if (!fEtat.test(d) && !fEtat.archives) return false;
       const e0 = dmEtat(d);
-      if (e0.st === 'acceptee' && e0.et === 'fait' && (d.majAt || d.ts || 0) < limite && !q) return false;
+      if (!dmArchivee(d) && e0.st === 'acceptee' && e0.et === 'fait' && (d.majAt || d.ts || 0) < limite && !q) return false;
       if (fNature && d.nature !== fNature) return false;
       if (fGene && d.gene !== fGene) return false;
       if (fMoi === 'mien' && d.auteur !== moi) return false;
@@ -342,8 +357,13 @@
     if (ch) {
       const base = dmListe().filter(function (d) { return !!d; });
       ch.innerHTML = DM_FILTRES.map(function (f) {
-        const n = base.filter(f.test).length;
+        // Chaque compteur ne compte que ce que son filtre montre : sans cela,
+        // « Toutes » afficherait aussi les archivees, qu'elle n'affiche pas.
+        const n = base.filter(function (d) {
+          return f.archives ? dmArchivee(d) : (!dmArchivee(d) && f.test(d));
+        }).length;
         if (f.cle === 'rejetee' && !n) return '';
+        if (f.cle === 'archive' && !n) return '';
         return '<button class="dm-chip' + (dmFiltre === f.cle ? ' sel' : '') + '" onclick="dmFiltrer(\'' + f.cle + '\')">'
           + E(f.lbl) + '<span class="n">' + n + '</span></button>';
       }).join('');
@@ -351,10 +371,10 @@
 
     if (dmVueCourante === 'colonnes') {
       const cols = [
-        { cle: 'apreciser', lbl: 'À préciser',     col: '#b45309' },
-        { cle: 'afaire',    lbl: 'À faire',        col: '#6b7a72' },
-        { cle: 'encours',   lbl: 'En cours',       col: '#6A1B9A' },
-        { cle: 'fait',      lbl: 'Fait récemment', col: '#2E7D32' }
+        { cle: 'nouveau',   lbl: 'Nouveau',    col: '#1565C0' },
+        { cle: 'apreciser', lbl: 'À préciser', col: '#b45309' },
+        { cle: 'afaire',    lbl: 'À faire',    col: '#6b7a72' },
+        { cle: 'encours',   lbl: 'En cours',   col: '#6A1B9A' }
       ];
       if (avecRefus) cols.push({ cle: 'rejetee', lbl: 'Rejetées', col: '#b91c1c' });
       el.style.display = 'grid';
@@ -362,7 +382,8 @@
       el.innerHTML = cols.map(function (c) {
         const items = l.filter(function (d) {
           const e = dmEtat(d);
-          return c.cle === 'apreciser' ? e.st === 'apreciser'
+          return c.cle === 'nouveau'   ? e.st === 'nouveau'
+               : c.cle === 'apreciser' ? e.st === 'apreciser'
                : c.cle === 'rejetee'   ? e.st === 'rejetee'
                : (e.st === 'acceptee' && e.et === c.cle);
         });
@@ -508,7 +529,7 @@
       auteur: u.id, auteurNom: dmNom(),
       nature: dmForm.nature, gene: dmForm.gene,
       module: (document.getElementById('dm-f-module').value || '').trim(),
-      texte: texte, statut: 'acceptee', etape: 'afaire', motif: '',
+      texte: texte, statut: 'nouveau', etape: 'afaire', motif: '',
       // L'auteur compte pour un vote : c'est le CDC, et cela evite une demande
       // affichee « 0 vote » alors que quelqu'un a pris la peine de l'ecrire.
       soutiens: [u.id], fil: [],
@@ -645,6 +666,60 @@
     dmOuvrir(id);
   };
 
+  // ── Les deux retours a l'auteur ─────────────────────────────────────────
+  // Une boite a idees meurt de deux facons : le depot penible, et le silence.
+  // Ces deux fonctions comblent le silence — mais sans jamais faire echouer le
+  // changement d'etat : si la todo ou la messagerie n'est pas chargee, l'etat
+  // est quand meme enregistre.
+
+  // « A preciser » sans rien demander a personne n'est qu'un classement. On
+  // pose donc la tache chez l'auteur, qui est le seul a pouvoir preciser.
+  function dmTodoPreciser(d) {
+    try {
+      if (!d || !d.auteur) return;
+      if (typeof todoPerso === 'undefined' || !Array.isArray(todoPerso)) return;
+      const marque = 'dm:' + d.id;
+      // Aller-retour entre deux etats : on ne repose pas dix fois la meme tache.
+      if (todoPerso.some(function (t) { return t && t.origine === marque && !t.fait; })) return;
+      const now = Date.now();
+      todoPerso.unshift({
+        id: now, ts: now, pour: d.auteur, par: (dmUser() || {}).id || null,
+        texte: 'Préciser l’idée n°' + (d.num || '') + ' — ' + String(d.texte || '').slice(0, 60),
+        fait: false, origine: marque, updatedAt: now
+      });
+    } catch (e) { console.warn('dm→todo', e); }
+  }
+
+  // La demande est faite : son auteur doit l'apprendre, et etre invite a
+  // l'essayer. C'est ce retour qui fait revenir les gens deposer une idee.
+  const DM_MSG_FAIT = 'Votre demande d’amélioration a été prise en compte, vous pouvez d’ores et déjà la tester ! N’hésitez pas à nous faire un retour !';
+  function dmMessageFait(d) {
+    try {
+      const u = dmUser(); if (!u || !d || !d.auteur) return;
+      if (d.auteur === u.id) return;                 // s'ecrire a soi-meme n'apprend rien
+      if (typeof convos === 'undefined' || !Array.isArray(convos)) return;
+      if (typeof messages === 'undefined' || !Array.isArray(messages)) return;
+      const now = Date.now();
+      // On rouvre le fil a deux s'il existe, plutot que d'en creer un second :
+      // sinon l'historique se disperse en doublons (meme regle que mp-module).
+      let c = convos.find(function (x) {
+        return x && !x.titre && Array.isArray(x.membres) && x.membres.length === 2
+          && x.membres.indexOf(u.id) >= 0 && x.membres.indexOf(d.auteur) >= 0;
+      });
+      if (!c) {
+        const vu = {}; vu[u.id] = now;
+        c = { id: now, ts: now, par: u.id, membres: [u.id, d.auteur], titre: '', vu: vu, updatedAt: now };
+        convos.unshift(c);
+      }
+      messages.push({
+        id: now + 1, convoId: c.id, ts: now + 1, uid: u.id,
+        txt: 'Idée n°' + (d.num || '') + ' — ' + DM_MSG_FAIT,
+        fichier: null, updatedAt: now + 1
+      });
+      c.vu = c.vu || {}; c.vu[u.id] = now + 1; c.updatedAt = now + 1;
+    } catch (e) { console.warn('dm→messagerie', e); }
+  }
+
   window.dmStatut = function (id, st) {
     if (!dmAdmin()) { alert('Réservé aux administrateurs.'); return; }
     const d = dmListe().find(function (x) { return x.id === id; }); if (!d || !DM_ETATS[st]) return;
@@ -663,6 +738,7 @@
     // Une demande acceptée doit porter une étape : sans elle, la colonne reste
     // vide et la demande n'apparaît dans aucune colonne de la vue par étapes.
     if (st === 'acceptee' && !DM_ETAPES[d.etape]) d.etape = avant.et || 'afaire';
+    if (st === 'apreciser') dmTodoPreciser(d);
     d.fil = Array.isArray(d.fil) ? d.fil : [];
     d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— état : ' + DM_ETATS[st].lbl + (st === 'rejetee' ? ' (' + d.motif + ')' : '') });
     dmTouche(d); dmMarquerLue(d);
@@ -677,8 +753,13 @@
     const avant = dmEtat(d);
     if (avant.st !== 'acceptee' || avant.et === et) return;
     d.statut = 'acceptee'; d.etape = et;
+    // « Fait » : on previent l'auteur et on archive. L'archivage vient APRES le
+    // message, pour qu'une demande ne disparaisse jamais sans que son auteur
+    // l'ait appris.
+    if (et === 'fait') { dmMessageFait(d); d.archiveAt = Date.now(); }
+    else if (d.archiveAt) { d.archiveAt = null; }   // retour en arriere : elle revient au tableau
     d.fil = Array.isArray(d.fil) ? d.fil : [];
-    d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— étape : ' + DM_ETAPES[et].lbl });
+    d.fil.push({ ts: Date.now(), uid: (dmUser() || {}).id || '?', nom: dmNom(), texte: '— étape : ' + DM_ETAPES[et].lbl + (et === 'fait' ? ' — auteur prévenu, demande archivée' : '') });
     dmTouche(d); dmMarquerLue(d);
     dmSave(true);
     if (typeof logAction === 'function') logAction('Demande — étape ' + DM_ETAPES[et].lbl, '#' + (d.num || ''));
