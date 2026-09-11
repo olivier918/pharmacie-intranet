@@ -166,6 +166,8 @@
   .mp-choix label:hover{border-color:var(--g-border)}
   .mp-choix label.on{background:var(--g-pale);border-color:var(--g-dark);color:var(--g-dark);box-shadow:inset 0 0 0 1px var(--g-dark)}
   .mp-choix input{position:absolute;opacity:0;pointer-events:none}
+  .mp-lot.mp-lot-neuf{border-style:dashed;color:var(--g-dark);font-weight:700}
+  .mp-lot.mp-lot-neuf:hover{border-style:solid;background:var(--g-pale)}
   .mp-choix .coche{position:absolute;top:5px;right:6px;font-size:.72rem;color:var(--g-dark);opacity:0}
   .mp-choix label.on .coche{opacity:1}
   /* Groupes et postes : des pastilles, pas des cases — on clique pour ajouter,
@@ -468,10 +470,14 @@
             const dispo = (x.membres || []).filter(m => m !== u.id).length;
             return '<button class="mp-lot" onclick="mpAjouterGroupe(' + x.id + ')">'
               + E(x.nom) + '<span class="n">' + dispo + '</span>'
-              + (mpAdmin() ? '<span class="x" onclick="event.stopPropagation();mpSupprimerGroupe(' + x.id + ')" title="Supprimer ce groupe">✕</span>' : '')
+              + (mpAdmin() ? '<span class="x" onclick="event.stopPropagation();mpFormGroupe(' + x.id + ')" title="Modifier ce groupe">✎</span>' : '')
               + '</button>';
           }).join('')
-        : '<span style="font-size:.8rem;color:var(--gray-500)">Aucun groupe. Sélectionnez des personnes puis « en faire un groupe ».</span>');
+        : '<span style="font-size:.8rem;color:var(--gray-500)">Aucun groupe pour l’instant.</span>')
+        // Un bouton TOUJOURS visible : la creation n'apparaissait qu'une fois
+        // deux personnes cochees, dans une ligne de comptage. Personne ne l'a
+        // jamais trouvee — une fonction introuvable n'existe pas.
+        + (mpAdmin() ? '<button class="mp-lot mp-lot-neuf" onclick="mpFormGroupe(null)">＋ Nouveau groupe</button>' : '');
     }
   }
   let mpPostesCache = {};
@@ -492,17 +498,63 @@
     mpCases().forEach(function (c) { c.checked = false; });
     mpMajChoix();
   };
-  window.mpEnFaireUnGroupe = function () {
-    if (!mpAdmin()) { alert('Seuls les administrateurs peuvent créer un groupe.'); return; }
-    const choisis = mpCases().filter(c => c.checked).map(c => c.value);
-    if (choisis.length < 2) { alert('Choisissez au moins deux personnes.'); return; }
-    const nom = prompt('Nom du groupe (ex. Comptoir, Logistique)');
-    if (!nom || !nom.trim()) return;
-    const now = Date.now();
-    mpGroupes().push({ id: now, nom: nom.trim().slice(0, 30), membres: choisis, par: (mpUser() || {}).id, updatedAt: now });
-    mpSave(true); mpRendLots();
-    if (typeof logAction === 'function') logAction('Groupe de destinataires créé', nom.trim());
+  // ── Composer un groupe ──────────────────────────────────────────────────
+  // Un groupe est une liste de l'officine — PDA, oncologie, comptoir — qui ne
+  // recoupe aucun poste. Il se compose une fois, et sert ensuite a tous.
+  //
+  // Il peut contenir SON AUTEUR. C'etait le defaut de la premiere version : la
+  // liste des cases excluait la personne connectee (on ne s'ecrit pas a
+  // soi-meme), et un groupe « PDA » compose par le pharmacien responsable ne
+  // contenait donc pas le pharmacien responsable. Quand quelqu'un d'autre s'en
+  // servait ensuite, il manquait precisement la personne concernee.
+  let mpGrpEdit = null;
+  window.mpFormGroupe = function (id) {
+    if (!mpAdmin()) { alert('Seuls les administrateurs composent les groupes.'); return; }
+    mpGrpEdit = id || null;
+    const g = id ? mpGroupes().find(x => x.id === id) : null;
+    const membres = g ? (g.membres || []) : mpCases().filter(c => c.checked).map(c => c.value);
+    document.getElementById('mp-g-h').textContent = g ? 'Modifier le groupe' : 'Nouveau groupe de destinataires';
+    document.getElementById('mp-g-nom').value = g ? (g.nom || '') : '';
+    document.getElementById('mp-g-supr').style.display = g ? '' : 'none';
+    document.getElementById('mp-g-qui').innerHTML = mpStaff().map(function (s) {
+      const on = membres.indexOf(s.id) >= 0;
+      return '<label' + (on ? ' class="on"' : '') + ' onclick="setTimeout(mpGrpMaj,0)">'
+        + '<input type="checkbox" value="' + E(s.id) + '"' + (on ? ' checked' : '') + '>'
+        + '<span class="coche">✓</span>'
+        + '<span class="mp-pastille" style="background:' + (s.col || '#6b7a72') + '">' + E(s.id) + '</span>'
+        + E(s.prenom || s.id) + '</label>';
+    }).join('');
+    mpGrpMaj();
+    document.getElementById('mp-ov-g').classList.add('open');
   };
+  window.mpGrpMaj = function () {
+    const cases = [].slice.call(document.querySelectorAll('#mp-g-qui input'));
+    cases.forEach(function (c) { c.closest('label').classList.toggle('on', c.checked); });
+    const n = cases.filter(c => c.checked).length;
+    const z = document.getElementById('mp-g-compte');
+    if (z) z.textContent = n ? n + ' personne' + (n > 1 ? 's' : '') + ' dans ce groupe' : 'Personne de sélectionné.';
+  };
+  window.mpFermerGroupe = function () { document.getElementById('mp-ov-g').classList.remove('open'); mpGrpEdit = null; };
+  window.mpEnregistrerGroupe = function () {
+    const nom = (document.getElementById('mp-g-nom').value || '').trim();
+    const choisis = [].slice.call(document.querySelectorAll('#mp-g-qui input:checked')).map(c => c.value);
+    if (!nom) { alert('Donnez un nom au groupe (ex. PDA, Oncologie, Comptoir).'); return; }
+    if (choisis.length < 2) { alert('Un groupe compte au moins deux personnes.'); return; }
+    const now = Date.now();
+    if (mpGrpEdit) {
+      const g = mpGroupes().find(x => x.id === mpGrpEdit);
+      if (g) { g.nom = nom.slice(0, 30); g.membres = choisis; g.updatedAt = now; }
+    } else {
+      mpGroupes().push({ id: now, nom: nom.slice(0, 30), membres: choisis, par: (mpUser() || {}).id, updatedAt: now });
+      if (typeof logAction === 'function') logAction('Groupe de destinataires créé', nom);
+    }
+    mpFermerGroupe(); mpSave(true); mpRendLots();
+  };
+  window.mpSupprimerGroupeForm = function () {
+    if (!mpGrpEdit) return;
+    const id = mpGrpEdit; mpFermerGroupe(); mpSupprimerGroupe(id);
+  };
+
   window.mpSupprimerGroupe = function (id) {
     if (!mpAdmin()) return;
     const l = mpGroupes(), i = l.findIndex(x => x.id === id); if (i < 0) return;
@@ -523,7 +575,7 @@
       z.innerHTML = n
         ? '<span><b>' + n + '</b> personne' + (n > 1 ? 's' : '') + ' sélectionnée' + (n > 1 ? 's' : '') + '</span>'
           + '<button onclick="mpToutDecocher()">tout décocher</button>'
-          + (n > 1 && mpAdmin() ? '<button onclick="mpEnFaireUnGroupe()">en faire un groupe</button>' : '')
+          + (n > 1 && mpAdmin() ? '<button onclick="mpFormGroupe(null)">en faire un groupe</button>' : '')
         : '<span>Personne de sélectionné.</span>';
     }
   };
@@ -576,11 +628,30 @@
     mpSave(true); mpFermerFil(); mpRender();
   };
 
+  const MP_MODALE_G = '<div class="overlay" id="mp-ov-g">'
+    + '<div class="mbox" style="max-width:560px">'
+    + '<div class="mbox-h"><b id="mp-g-h">Nouveau groupe de destinataires</b>'
+    + '<button class="x" onclick="mpFermerGroupe()">✕</button></div>'
+    + '<div class="mbox-b">'
+    + '<div class="fg"><label>Nom du groupe</label>'
+    + '<input type="text" id="mp-g-nom" maxlength="30" placeholder="Ex. PDA, Oncologie, Comptoir"></div>'
+    + '<div class="fg"><label>Qui en fait partie</label><div class="mp-choix" id="mp-g-qui"></div>'
+    + '<div class="mp-compte" id="mp-g-compte"></div></div>'
+    + '<div style="font-size:.76rem;color:var(--gray-500);line-height:1.5">'
+    + 'Le groupe sert à composer une conversation en un clic. Vous pouvez vous y inclure : '
+    + 'il servira aussi à vos collègues, et c’est souvent vous qu’ils voudront joindre.</div>'
+    + '</div>'
+    + '<div class="mbox-f"><button class="btn bp" onclick="mpEnregistrerGroupe()">Enregistrer</button>'
+    + '<button class="btn bs" onclick="mpFermerGroupe()">Annuler</button>'
+    + '<span style="flex:1"></span>'
+    + '<button class="btn bs" id="mp-g-supr" style="color:#C62828" onclick="mpSupprimerGroupeForm()">Supprimer</button></div>'
+    + '</div></div>';
+
   const MP_MODALE = '<div class="overlay" id="mp-ov-n">'
     + '<div class="mbox" style="max-width:620px">'
     + '<div class="mbox-h"><b>Nouvelle conversation</b><button class="x" onclick="mpFermerNouvelle()">✕</button></div>'
     + '<div class="mbox-b">'
-    + '<div class="fg"><label>Groupes</label><div class="mp-lots" id="mp-n-groupes"></div></div>'
+    + '<div class="fg"><label>Groupes de l’officine</label><div class="mp-lots" id="mp-n-groupes"></div></div>'
     + '<div class="fg"><label>Par poste</label><div class="mp-lots" id="mp-n-postes"></div></div>'
     + '<div class="fg"><label>Personnes</label><div class="mp-choix" id="mp-n-qui"></div>'
     + '<div class="mp-compte" id="mp-n-compte"></div></div>'
@@ -616,8 +687,10 @@
       sec.id = 'sec-mp'; sec.className = 'sec'; sec.innerHTML = MP_SECTION;
       sref.parentNode.insertBefore(sec, sref);
     }
-    const m = document.createElement('div'); m.innerHTML = MP_MODALE;
-    if (m.firstElementChild) document.body.appendChild(m.firstElementChild);
+    [MP_MODALE, MP_MODALE_G].forEach(function (h) {
+      const m = document.createElement('div'); m.innerHTML = h;
+      if (m.firstElementChild) document.body.appendChild(m.firstElementChild);
+    });
 
     if (typeof SEC_LABEL === 'object' && SEC_LABEL) SEC_LABEL.mp = 'Messagerie';
   }
