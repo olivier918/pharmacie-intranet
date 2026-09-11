@@ -160,6 +160,7 @@
   .ac-td-e.tard{color:var(--red);font-weight:700}
   .ac-ajout{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
   .ac-ongs{display:flex;gap:4px;margin-bottom:10px}
+  .ac-vise{box-shadow:0 0 0 3px var(--g-mid,#2E7D54),0 8px 24px rgba(46,125,84,.18);transition:box-shadow .3s}
   .ac-ongs:empty{display:none}
   .ac-ong{border:none;background:none;font-family:inherit;font-size:.83rem;font-weight:700;color:var(--gray-500);
     cursor:pointer;padding:5px 11px;border-radius:9px;display:inline-flex;align-items:center;gap:7px}
@@ -218,7 +219,7 @@
   </div>
 
   <div class="ac-grid ac-2e">
-    <div class="ac-card">
+    <div class="ac-card" id="ac-carte-todo">
       <div class="ac-h"><svg class="ico"><use href="#ic-valider"></use></svg> Ma todo
         <span class="ac-n" id="ac-td-n">0</span></div>
       <div class="ac-b">
@@ -576,6 +577,9 @@
     const mien = acMesTodos(), conf = acConfiees(), neuves = acAFeliciter();
     const cpt = document.getElementById('ac-td-n');
     if (cpt) cpt.textContent = mien.length;
+    // La pastille de la barre laterale suit la carte : cocher une tache doit la
+    // faire baisser tout de suite, sans attendre un rechargement.
+    if (typeof updateNavBadges === 'function') { try { updateNavBadges(); } catch (e) {} }
 
     // Onglets : le second n'apparait que si l'on a confie quelque chose. Un
     // onglet vide en permanence n'apprend rien et prend de la place.
@@ -938,6 +942,34 @@
     if (typeof markDeleted === 'function') markDeleted('agenda', acRdvEdit);
     l.splice(i, 1); acFermerRdv(); acSave(true); acRender();
   };
+  // Emmene a l'accueil et attire l'oeil sur la carte todo. Le halo dure une
+  // seconde : sans lui, on arrive sur une page dense sans savoir ou regarder.
+  window.acAllerTodo = function (btn) {
+    if (typeof showSec === 'function') showSec('accueil');
+    if (typeof acRender === 'function') acRender();
+    document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    setTimeout(function () {
+      const c = document.getElementById('ac-carte-todo'); if (!c) return;
+      c.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      c.classList.add('ac-vise');
+      setTimeout(function () { c.classList.remove('ac-vise'); }, 1100);
+    }, 60);
+  };
+
+  // Nombre de taches en cours qui me reviennent. C'est ce que porte la pastille.
+  window.acTodoCount = function () {
+    try { return acMesTodos().length; } catch (e) { return 0; }
+  };
+  // Rouge s'il y a une tache qu'on m'a confiee et que je n'ai pas vue passer,
+  // sinon ambre. Une pastille qui ne distingue rien ne dit rien.
+  window.acTodoLevel = function () {
+    try {
+      if (!acTodoCount()) return '';
+      return acMesTodos().some(acNeuve) ? 'red' : 'orange';
+    } catch (e) { return ''; }
+  };
+
   // ── Partager un moment ────────────────────────────────────────────────────
   let acImg = null;
   // `acMomEdit` : identifiant de la publication en cours de modification, ou
@@ -1219,6 +1251,19 @@
       b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-patients"></use></svg>'
         + '<span class="sb-label">Accueil</span>';
       premier.parentNode.insertBefore(b, premier);
+    }
+
+    // ── « To Do List » : un raccourci, pas un module ────────────────────────
+    // Il n'ouvre pas d'ecran a lui : il emmene a l'accueil et met la carte todo
+    // en evidence. Dupliquer la liste sur une page dediee aurait cree deux
+    // endroits ou cocher la meme case, et deux endroits a maintenir.
+    if (premier && !document.querySelector('.sb-item[data-todo]')) {
+      const t = document.createElement('button');
+      t.className = 'sb-item'; t.setAttribute('data-todo', '1');
+      t.setAttribute('onclick', 'acAllerTodo(this)');
+      t.innerHTML = '<svg class="ico sb-ico"><use href="#ic-valider"></use></svg>'
+        + '<span class="sb-label">To Do List</span><span class="sb-badge" id="navb-todo"></span>';
+      premier.parentNode.insertBefore(t, premier);
     }
 
     const ref = document.querySelector('.sec');

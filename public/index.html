@@ -3222,6 +3222,19 @@ function updateNavBadges(){
           : 'Rien à préparer aujourd’hui';
     } else { rn.textContent=''; }
   }
+  // To Do List : le nombre de taches en cours qui me reviennent. ROUGE s'il y
+  // en a une qu'on m'a confiee et que je n'ai pas encore vue passer.
+  const td=document.getElementById('navb-todo');
+  if(td){
+    const n=(typeof window.acTodoCount==='function')?window.acTodoCount():0;
+    const lvl=(typeof window.acTodoLevel==='function')?window.acTodoLevel():'';
+    td.classList.remove('on','red','orange','green');
+    if(n>0 && lvl){
+      td.textContent=n>99?'99+':String(n);
+      td.classList.add('on', lvl);
+      td.title = lvl==='red' ? 'Une tâche vous a été confiée' : n+' tâche'+(n>1?'s':'')+' en cours';
+    } else { td.textContent=''; }
+  }
   // Messagerie personnelle : ROUGE des qu'un message vous est adresse et
   // n'est pas lu. Le module s'installe apres coup, d'ou le test d'existence.
   const mp=document.getElementById('navb-mp');
@@ -10193,6 +10206,7 @@ function openRenouvSms(o){
 // (renouvellement, fiches, dépannage, planning) apparaissent donc tout seuls,
 // et un module futur n'obligera à modifier aucune liste ici.
 function modCle(b){
+  if(b.getAttribute('data-todo')) return 'todo';
   return b.getAttribute('data-sec') || (b.getAttribute('data-pl') ? 'planning' : null);
 }
 function modulesDispo(){
