@@ -562,6 +562,8 @@ tr:hover td{background:#fafffe}
             <option>Domicile</option><option>EHPAD</option><option>IDE MDS</option>
             <option>IDE 9</option><option>Pharmacie</option>
           </select>
+          <input type="text" id="dv-q" class="ctl-search" placeholder="Rechercher un patient…"
+            oninput="renderD()" style="flex:1;min-width:180px">
         </div>
         <div id="dlist"></div>
       </div>
@@ -3302,10 +3304,17 @@ function renderD(){
 
   updateNavBadges();
 
+  // Recherche par nom. Volontairement TOUTES DATES : on cherche un patient
+  // precisement parce qu'on ne sait plus quel jour sa livraison a ete saisie.
+  // La restreindre au jour affiche en ferait un filtre decoratif.
+  const q=((document.getElementById('dv-q')||{}).value||'').trim().toLowerCase();
+
   // Base data for the selected period (day or week) — no status/lieu filter
   let periodData=[...deliveries];
-  if(delivView==='jour') periodData=periodData.filter(d=>d.date===date);
-  else {
+  if(q) periodData=periodData.filter(d=>
+    ((d.nom||'')+' '+(d.prenom||'')+' '+(d.adresse||'')+' '+(d.tel||'')).toLowerCase().includes(q));
+  else if(delivView==='jour') periodData=periodData.filter(d=>d.date===date);
+  else if(!q){
     const dt=new Date(date);
     const mo=new Date(dt); mo.setDate(dt.getDate()-((dt.getDay()||7)-1));
     const su=new Date(mo); su.setDate(mo.getDate()+6);
@@ -3331,7 +3340,9 @@ function renderD(){
   if(lf)data=data.filter(d=>d.lieu===lf);
 
   const el=document.getElementById('dlist');
-  if(!data.length){el.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:2rem;font-size:.88rem">Aucune livraison pour cette sélection.</div>';return}
+  if(!data.length){el.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:2rem;font-size:.88rem">'
+    +(q?'Aucune livraison ne correspond à «\u00a0'+ctlEsc(q)+'\u00a0», toutes dates confondues.':'Aucune livraison pour cette sélection.')
+    +'</div>';return}
 
   function fmtDate(iso){
     const [y,m,d]=iso.split('-');
@@ -3340,7 +3351,10 @@ function renderD(){
     return days[dt.getDay()]+' '+d+'/'+m+'/'+y;
   }
 
-  if(delivView==='jour' && sf!=='facturer'){
+  // Une recherche traverse les dates : elle doit donc etre regroupee PAR DATE,
+  // comme la vue semaine, sinon tous les resultats se retrouvent sous l en-tete
+  // du jour affiche — et paraissent dater de ce jour-la.
+  if(delivView==='jour' && sf!=='facturer' && !q){
     // Single date header then list
     const dateLabel=fmtDate(date);
     const cnt=data.length;
