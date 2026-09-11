@@ -868,10 +868,14 @@ tr:hover td{background:#fafffe}
         <div class="fgrid">
           <div class="fg" style="position:relative">
             <label>Nom patient <span class="req">*</span></label>
-            <input type="text" id="cr-nom" placeholder="NOM" oninput="acPatient('cr-nom','cr-prenom',null,'cr-pat-ac','cr-tel','cr-mail','cr-adresse','cr-commune')" autocomplete="off">
+            <input type="text" id="cr-nom" placeholder="NOM" oninput="acPatient('cr-nom','cr-prenom','cr-dob','cr-pat-ac','cr-tel','cr-mail','cr-adresse','cr-commune')" autocomplete="off">
             <div id="cr-pat-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="cr-prenom" placeholder="Prénom"></div>
+          <!-- Deux homonymes dans la meme commune, ca arrive. La date de naissance
+               est ce qui distingue, et c'est elle qu'on verifie avant de reclamer
+               de l'argent a quelqu'un. -->
+          <div class="fg"><label>Date de naissance</label><input type="date" id="cr-dob"></div>
           <div class="fg"><label>Téléphone</label><input type="tel" id="cr-tel" placeholder="06 …"></div>
           <div class="fg"><label>E-mail</label><input type="email" id="cr-mail" placeholder="patient@mail.fr"></div>
           <div class="fg" style="grid-column:1/-1"><label>Adresse</label><input type="text" id="cr-adresse" placeholder="N° et rue"></div>
@@ -6414,7 +6418,7 @@ function credRelEtape(r){
 function credRelances(c){
   const list=(c.relances||[]).slice();
   if(list.length) return list;
-  return [{date:c.dateAvance||c.createdAt||'', type:'sur place', etape:1, by:c.createdBy||'?',
+  return [{date:credDepart(c), type:'sur place', etape:1, by:c.createdBy||'?',
            notes:'Saisie du crédit — relance orale au comptoir', _virtual:true}];
 }
 // Matérialise la relance orale implicite avant toute écriture (dossiers antérieurs).
@@ -6475,8 +6479,35 @@ function updCredFormMotif(){
   }
 }
 
+// ── La date de naissance, lue sur le credit ou a defaut sur la fiche patient ──
+// Les credits anterieurs ne la portent pas : on la retrouve dans `patients`
+// plutot que de reecrire la base (piege n°7 — on traduit a la lecture).
+function credDob(c){
+  if(!c) return '';
+  if(c.dob) return c.dob;
+  const p=patients.find(x=>x.nom===c.nom&&x.prenom===c.prenom);
+  return (p&&p.dob)||'';
+}
+function credSaisieTxt(c){
+  const d=credDepart(c);
+  if(!d || d===c.dateAvance) return '';
+  return ' · saisi le '+new Date(d+'T12:00').toLocaleDateString('fr-FR');
+}
+function credDobTxt(c){
+  const d=credDob(c);
+  return d? new Date(d+'T12:00').toLocaleDateString('fr-FR') : '';
+}
+
+// ── Le point de depart du compte a rebours ────────────────────────────────
+// C'est la date de SAISIE, pas celle de l'avance. Une avance peut porter la
+// date d'une ordonnance vieille de trois semaines ; le delai de relance ne
+// commence que le jour ou la pharmacie a enregistre la creance et pouvait
+// donc agir. Compter depuis l'avance ferait naitre des dossiers deja en
+// retard, et rendrait le filtre « a relancer » illisible.
+function credDepart(c){ return c.createdAt||c.dateAvance||''; }
+
 function credLastContact(c){
-  let last=c.dateAvance||'';
+  let last=credDepart(c);
   (c.relances||[]).forEach(r=>{ if(r.date && r.date>last) last=r.date; });
   return last;
 }
@@ -6660,7 +6691,7 @@ function renderCreds(){
             ${sibBadge}
           </div>
           <div style="font-size:.75rem;color:var(--gray-500);margin-top:3px">
-            ${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avance du ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}
+            ${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avance du ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}${credSaisieTxt(c)}${credDobTxt(c)?` · né(e) le ${credDobTxt(c)}`:''}${c.tel?` · ${ico('telephone')} ${c.tel}`:''}
           </div>
           ${c.produits?`<div style="font-size:.75rem;color:var(--gray-700);margin-top:2px">${c.produits}</div>`:''}
           ${credDerniereNoteHtml(c)}
@@ -6699,7 +6730,7 @@ function toggleCredForm(){
   if(!shown){
     credEditId=null;
     document.getElementById('cred-form-title').textContent='Nouveau crédit';
-    ['cr-nom','cr-prenom','cr-tel','cr-mail','cr-adresse','cr-commune','cr-produits','cr-notes'].forEach(i=>document.getElementById(i).value='');
+    ['cr-nom','cr-prenom','cr-dob','cr-tel','cr-mail','cr-adresse','cr-commune','cr-produits','cr-notes'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('cr-date').value=new Date().toISOString().split('T')[0];
     document.getElementById('cr-montant').value='';
     document.getElementById('cr-motif').value='comptoir';
@@ -6719,6 +6750,7 @@ function editCred(id){
   document.getElementById('cred-form-title').textContent='Modifier le crédit';
   document.getElementById('cr-nom').value=c.nom||'';
   document.getElementById('cr-prenom').value=c.prenom||'';
+  document.getElementById('cr-dob').value=credDob(c)||'';
   document.getElementById('cr-tel').value=c.tel||'';
   document.getElementById('cr-mail').value=c.mail||'';
   document.getElementById('cr-adresse').value=c.adresse||'';
@@ -6742,6 +6774,7 @@ function saveCred(){
   if(motif!=='avance' && montant<=0){alert('Le montant doit être supérieur à 0.');return}
   const obj={
     nom, prenom,
+    dob:document.getElementById('cr-dob').value||'',
     tel:document.getElementById('cr-tel').value.trim(),
     mail:document.getElementById('cr-mail').value.trim(),
     adresse:document.getElementById('cr-adresse').value.trim(),
@@ -6752,16 +6785,17 @@ function saveCred(){
     motif,
     notes:document.getElementById('cr-notes').value.trim(),
   };
-  upsertPatient({nom,prenom,tel:obj.tel,mail:obj.mail,adresse:obj.adresse,commune:obj.commune});
+  upsertPatient({nom,prenom,dob:obj.dob,tel:obj.tel,mail:obj.mail,adresse:obj.adresse,commune:obj.commune});
   if(credEditId){
     const c=credits.find(x=>x.id===credEditId); if(c){ Object.assign(c,obj); c.updatedAt=Date.now(); }
   } else {
     // La saisie du crédit VAUT relance n° 1 (orale, au comptoir ou par téléphone).
     const canal1=document.querySelector('input[name="cr-canal1"]:checked')?.value||'sur place';
+    const jourSaisie=isoLocal(new Date());   // jamais toISOString() : la veille avant 02 h
     credits.unshift({id:Date.now(),...obj,status:'en cours',
-      relances:[{date:obj.dateAvance, type:canal1, etape:1, by:currentUser?.id||'?',
+      relances:[{date:jourSaisie, type:canal1, etape:1, by:currentUser?.id||'?',
         notes:'Relance orale '+(canal1==='tel'?'par téléphone':'au comptoir')+' à la saisie du crédit'}],
-      createdBy:currentUser?.id||'?',createdAt:new Date().toISOString().split('T')[0],updatedAt:Date.now()});
+      createdBy:currentUser?.id||'?',createdAt:jourSaisie,updatedAt:Date.now()});
   }
   toggleCredForm();
   renderCreds();
@@ -6963,7 +6997,7 @@ function openCredDetail(id){
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
           <div style="font-weight:700;font-size:1.1rem">${credAmountHtml(c)}</div>
-          <div style="font-size:.76rem;color:var(--gray-500);margin-top:2px">${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avancé le ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}</div>
+          <div style="font-size:.76rem;color:var(--gray-500);margin-top:2px">${CRED_MOTIF_LBL[c.motif]||c.motif||'—'} · avancé le ${c.dateAvance?new Date(c.dateAvance).toLocaleDateString('fr-FR'):'—'}${credSaisieTxt(c)}${credDobTxt(c)?` · né(e) le ${credDobTxt(c)}`:''}</div>
         </div>
         <span class="badge" style="${CRED_STAT_COLOR[c.status]||''};padding:4px 11px;font-size:.78rem">${CRED_STAT_LBL[c.status]||c.status}</span>
       </div>
@@ -7040,7 +7074,7 @@ function openCredMsgModal(id, etape, canal, date, notes){
   currentMsgNotes=notes||'';
   document.getElementById('cred-msg-info').innerHTML=
     `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${credStepper(c)}<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}</div>
-     <div style="font-size:.78rem;color:var(--gray-500);margin-top:5px">${c.tel?`${ico('telephone')} ${c.tel}`:''}${c.mail?` · ${c.mail}`:''} · avance du ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}</div>`;
+     <div style="font-size:.78rem;color:var(--gray-500);margin-top:5px">${credDobTxt(c)?`né(e) le ${credDobTxt(c)} · `:''}${c.tel?`${ico('telephone')} ${c.tel}`:''}${c.mail?` · ${c.mail}`:''} · avance du ${new Date(c.dateAvance).toLocaleDateString('fr-FR')}${credSaisieTxt(c)} · ${CRED_MOTIF_LBL[c.motif]||''}</div>`;
   document.getElementById('cmsg-confirm').style.display='none';
   document.getElementById('cmsg-confirm-btn').style.display='';
   renderCredMsg();
@@ -7186,7 +7220,7 @@ function viewArchivedCredMsg(credId, relIdx){
   });
   document.getElementById('cred-msg-info').innerHTML=
     `<strong>${c.nom} ${c.prenom}</strong> · ${credAmountTxt(c)}<br>
-     <span style="font-size:.78rem;color:var(--gray-500)">Avance du ${new Date(c.dateAvance).toLocaleDateString('fr-FR')} · ${CRED_MOTIF_LBL[c.motif]||''}</span>`;
+     <span style="font-size:.78rem;color:var(--gray-500)">${credDobTxt(c)?`Né(e) le ${credDobTxt(c)} · `:''}Avance du ${new Date(c.dateAvance).toLocaleDateString('fr-FR')}${credSaisieTxt(c)} · ${CRED_MOTIF_LBL[c.motif]||''}</span>`;
   const hint=document.getElementById('cmsg-niv-hint');
   if(hint) hint.innerHTML=`<strong style="color:${E.col}">Message archivé — étape ${e}/5 · ${E.lbl}</strong>`;
   if(r.subject){
