@@ -2,7 +2,8 @@
    Module RENOUVELLEMENT — préparation anticipée des ordonnances
    Intégré à l'intranet Pharmacie du Centre. Isolé (préfixe rn / rn-)
    pour ne rien casser dans l'existant.
-   Réutilise : patients + acPatient/upsertPatient (annuaire),
+   Réutilise : patients + upsertPatient (annuaire ; la recherche est propre au
+   module, voir rnCherchePatient),
    currentUser (préparateur connecté), deliveries (bascule livraison),
    /api/send-mail (email patient via Brevo), saveAll (persistance).
    Données : globales renouvellements[] et renouvArchives[] (rubriques).
@@ -95,6 +96,7 @@
   .rn-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;display:inline-block}
   .rn-b-liv{background:#EDE7F6;color:#5E35B1}.rn-b-comp{background:#E0F2F1;color:#00695C}
   .rn-b-ponct{background:#FFF3E0;color:#B45309}
+  .rn-drop .rn-neuf{color:#1D5C3A;font-weight:600;border-top:1px solid #dfe8e2}
   .rn-b-last{background:#FFF3E0;color:#E65100}.rn-b-frigo{background:#E1F5FE;color:#0277BD}
   .rn-b-newordo{background:#FFEBEE;color:#c62828}
   .rn-b-due{background:#C62828;color:#fff;box-shadow:0 0 0 2px rgba(198,40,40,.14)}
@@ -158,6 +160,24 @@
   <div class="rn-ov" id="rn-ov-form"><div class="rn-modal">
     <h3 id="rn-form-title">Nouvelle ordonnance à préparer</h3>
     <div class="rn-body">
+      <!-- La recherche est un champ A PART, et non l'attribut cache du champ
+           « Nom ». Chercher quelqu'un et enregistrer quelqu'un sont deux gestes
+           differents : les melanger faisait surgir un menu de suggestions au
+           moment ou l'on saisissait justement un patient inconnu. -->
+      <div class="rn-row2">
+        <div class="rn-fg"><label>Rechercher un patient déjà enregistré</label>
+          <input class="rn-inp" id="rn-cherche" autocomplete="off" placeholder="Taper un nom…"
+            oninput="rnCherchePatient()">
+          <div class="rn-drop" id="rn-drop"></div>
+          <div class="rn-hint">Remplit la fiche. Pour un nouveau patient, laisser vide et saisir ci-dessous.</div></div>
+        <div class="rn-fg"><label>Nature de la fiche</label>
+          <select class="rn-inp" id="rn-type" onchange="rnFormType()">
+            <option value="renouv">Renouvellement d’ordonnance — revient à chaque cycle</option>
+            <option value="ponctuel">Événement ponctuel — une seule fois</option>
+          </select></div>
+      </div>
+      <div class="rn-fg" id="rn-fg-nature" style="display:none"><label>Type d’événement</label>
+        <select class="rn-inp" id="rn-nature"></select></div>
       <div class="rn-row-id">
         <div class="rn-fg"><label>Civilité</label>
           <select class="rn-inp" id="rn-civ">
@@ -165,17 +185,8 @@
             <option value="F">Madame</option>
             <option value="M">Monsieur</option>
           </select></div>
-        <div class="rn-fg" style="grid-column:1/-1"><label>Nature de la fiche</label>
-          <select class="rn-inp" id="rn-type" onchange="rnFormType()">
-            <option value="renouv">Renouvellement d’ordonnance — revient à chaque cycle</option>
-            <option value="ponctuel">Événement ponctuel — une seule fois</option>
-          </select></div>
-        <div class="rn-fg" id="rn-fg-nature" style="display:none;grid-column:1/-1"><label>Type d’événement</label>
-          <select class="rn-inp" id="rn-nature"></select></div>
         <div class="rn-fg"><label>Nom <span class="rn-req">*</span></label>
-          <input class="rn-inp" id="rn-nom" autocomplete="off" placeholder="NOM"
-            oninput="acPatient('rn-nom','rn-prenom','rn-dob','rn-drop','rn-tel','rn-mail','rn-adresse','')">
-          <div class="rn-drop" id="rn-drop"></div></div>
+          <input class="rn-inp" id="rn-nom" autocomplete="off" placeholder="NOM"></div>
         <div class="rn-fg"><label>Prénom <span class="rn-req">*</span></label><input class="rn-inp" id="rn-prenom" placeholder="Prénom"></div>
       </div>
       <div class="rn-row2">
@@ -532,11 +543,52 @@
     }).join('');
     g('rn-type').value = (it && it.ponctuel) ? 'ponctuel' : 'renouv';
     g('rn-nature').value = (it && it.nature) || 'bpm';
+    g('rn-cherche').value = '';
     rnFormType();
     rnOpen('rn-ov-form');
   };
   // Un formulaire qui montre « Cycle » pour une facturation unique invite a
   // remplir un champ qui ne veut rien dire. On masque plutot que de griser.
+  // ── Recherche d'un patient connu ────────────────────────────────────────
+  // Volontairement propre au module plutot que le helper commun : celui-ci
+  // ecrit le nom dans le champ ou l'on tape, ce qui conviendrait mal ici — on
+  // tape dans la barre de recherche et l'on veut remplir la FICHE. Au passage,
+  // les resultats sont gardes en memoire au lieu d'etre recopies dans du HTML :
+  // un patient nomme O'Brien cassait la version qui les interpolait.
+  let rnResCherche = [];
+  window.rnCherchePatient = function () {
+    const q = (document.getElementById('rn-cherche').value || '').trim().toLowerCase();
+    const drop = document.getElementById('rn-drop');
+    if (q.length < 1) { drop.style.display = 'none'; return; }
+    const src = (typeof patients !== 'undefined' && Array.isArray(patients)) ? patients : [];
+    rnResCherche = src.filter(function (p) {
+      return ((p.nom || '') + ' ' + (p.prenom || '')).toLowerCase().indexOf(q) >= 0;
+    }).slice(0, 6);
+    drop.style.display = 'block';
+    if (!rnResCherche.length) {
+      drop.innerHTML = '<div class="ac-item rn-neuf">Aucun patient connu à ce nom — saisir la fiche ci-dessous.</div>';
+      return;
+    }
+    drop.innerHTML = rnResCherche.map(function (p, i) {
+      return '<div class="ac-item" onmousedown="rnRemplirPatient(' + i + ')">'
+        + '<strong>' + rnEsc(p.nom) + ' ' + rnEsc(p.prenom) + '</strong>'
+        + '<span>' + (p.dob ? rnFmtFr(p.dob) : '') + (p.tel ? ' · ' + rnEsc(p.tel) : '') + '</span></div>';
+    }).join('') + '<div class="ac-item rn-neuf" onmousedown="rnFermerCherche()">+ Nouveau patient — saisir la fiche ci-dessous</div>';
+  };
+  window.rnFermerCherche = function () { document.getElementById('rn-drop').style.display = 'none'; };
+  window.rnRemplirPatient = function (i) {
+    const p = rnResCherche[i]; if (!p) return;
+    const g = id => document.getElementById(id);
+    g('rn-nom').value = p.nom || ''; g('rn-prenom').value = p.prenom || '';
+    if (p.dob) g('rn-dob').value = p.dob;
+    if (p.tel) g('rn-tel').value = p.tel;
+    if (p.mail) g('rn-mail').value = p.mail;
+    if (p.adresse) g('rn-adresse').value = p.adresse;
+    g('rn-cherche').value = '';
+    rnFermerCherche();
+    g('rn-lib').focus();
+  };
+
   window.rnFormType = function () {
     const g = i => document.getElementById(i);
     const p = g('rn-type').value === 'ponctuel';
