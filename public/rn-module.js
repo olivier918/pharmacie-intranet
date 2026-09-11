@@ -19,6 +19,22 @@
   function rnAddDays(base, n) { const d = new Date(base); d.setDate(d.getDate() + n); return d; }
   function rnFmtFr(iso) { if (!iso) return ''; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
   const RN_SOON_DAYS = 7;   // fenêtre « à préparer » avant la date prévue
+
+  // ── Les événements ponctuels ────────────────────────────────────────────
+  // Une échéance qui ne revient pas : facturer une étape de BPM, facturer une
+  // ordonnance restée en attente. Ils vivent dans la MÊME liste que les
+  // renouvellements, parce que la question de l'opérateur est « qu'est-ce qui
+  // m'attend cette semaine », et qu'un second onglet est un onglet qu'on oublie
+  // d'ouvrir. Ils s'en distinguent sur trois points : pas de cycle, pas de mode
+  // de remise, et la validation archive sans reprogrammer.
+  const RN_NATURES = {
+    bpm:        { lbl: 'Facturation BPM',            ico: '\uD83D\uDCCB' },
+    ordo:       { lbl: 'Ordonnance en attente',      ico: '\uD83D\uDCC4' },
+    facturation:{ lbl: 'Facturation à faire',        ico: '\u20AC' },
+    controle:   { lbl: 'Contrôle / suivi',           ico: '\u2713' },
+    autre:      { lbl: 'Autre échéance',             ico: '\u25CF' }
+  };
+  function rnNature(it) { return RN_NATURES[it && it.nature] || RN_NATURES.autre; }
   function rnDayDiff(iso) { const d = new Date(String(iso).slice(0, 10) + 'T12:00'); d.setHours(0, 0, 0, 0); return Math.round((d - rnToday()) / 86400000); }
   function rnEsc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   window.rnOpen = function (id) { document.getElementById(id).classList.add('rn-on'); };
@@ -78,6 +94,7 @@
   .rn-meta{font-size:12.5px;color:#6b7a72;display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:3px}
   .rn-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;display:inline-block}
   .rn-b-liv{background:#EDE7F6;color:#5E35B1}.rn-b-comp{background:#E0F2F1;color:#00695C}
+  .rn-b-ponct{background:#FFF3E0;color:#B45309}
   .rn-b-last{background:#FFF3E0;color:#E65100}.rn-b-frigo{background:#E1F5FE;color:#0277BD}
   .rn-b-newordo{background:#FFEBEE;color:#c62828}
   .rn-b-due{background:#C62828;color:#fff;box-shadow:0 0 0 2px rgba(198,40,40,.14)}
@@ -148,6 +165,13 @@
             <option value="F">Madame</option>
             <option value="M">Monsieur</option>
           </select></div>
+        <div class="rn-fg" style="grid-column:1/-1"><label>Nature de la fiche</label>
+          <select class="rn-inp" id="rn-type" onchange="rnFormType()">
+            <option value="renouv">Renouvellement d’ordonnance — revient à chaque cycle</option>
+            <option value="ponctuel">Événement ponctuel — une seule fois</option>
+          </select></div>
+        <div class="rn-fg" id="rn-fg-nature" style="display:none;grid-column:1/-1"><label>Type d’événement</label>
+          <select class="rn-inp" id="rn-nature"></select></div>
         <div class="rn-fg"><label>Nom <span class="rn-req">*</span></label>
           <input class="rn-inp" id="rn-nom" autocomplete="off" placeholder="NOM"
             oninput="acPatient('rn-nom','rn-prenom','rn-dob','rn-drop','rn-tel','rn-mail','rn-adresse','')">
@@ -162,18 +186,18 @@
         <div class="rn-fg"><label>Email patient (pour « c'est prêt »)</label><input class="rn-inp" id="rn-mail" type="email" placeholder="facultatif"></div>
         <div class="rn-fg"><label>Adresse</label><input class="rn-inp" id="rn-adresse" placeholder="N° et rue"></div>
       </div>
-      <div class="rn-fg"><label>Ce qu'il faut renouveler <span class="rn-req">*</span></label>
+      <div class="rn-fg"><label id="rn-lib-lbl">Ce qu'il faut renouveler <span class="rn-req">*</span></label>
         <textarea class="rn-inp" id="rn-lib" rows="2" placeholder="Ex. : pilulier 28 j — traitement de fond + CNO"></textarea></div>
       <div class="rn-row2">
-        <div class="rn-fg"><label>Date de prochaine préparation <span class="rn-req">*</span></label><input class="rn-inp" id="rn-date" type="date"></div>
-        <div class="rn-fg"><label>Cycle (jours)</label><input class="rn-inp" id="rn-cycle" type="number" value="28" min="1"></div>
+        <div class="rn-fg"><label id="rn-date-lbl">Date de prochaine préparation <span class="rn-req">*</span></label><input class="rn-inp" id="rn-date" type="date"></div>
+        <div class="rn-fg" id="rn-fg-cycle"><label>Cycle (jours)</label><input class="rn-inp" id="rn-cycle" type="number" value="28" min="1"></div>
       </div>
       <div class="rn-row2">
         <div class="rn-fg"><label>Prescripteur</label><input class="rn-inp" id="rn-presc" placeholder="Dr …"></div>
-        <div class="rn-fg"><label>Remise</label><select class="rn-inp" id="rn-remise"><option value="comptoir">Retrait au comptoir</option><option value="livraison">Livraison</option></select></div>
+        <div class="rn-fg" id="rn-fg-remise"><label>Remise</label><select class="rn-inp" id="rn-remise"><option value="comptoir">Retrait au comptoir</option><option value="livraison">Livraison</option></select></div>
       </div>
       <div class="rn-fg"><label>Notes</label><input class="rn-inp" id="rn-notes" placeholder="Ex. : frigo, appeler avant…"></div>
-      <div class="rn-fg rn-chk"><input type="checkbox" id="rn-flast"><label style="margin:0" for="rn-flast">Dernier renouvellement possible (une nouvelle ordonnance sera à fournir avant le prochain renouvellement)</label></div>
+      <div class="rn-fg rn-chk" id="rn-fg-last"><input type="checkbox" id="rn-flast"><label style="margin:0" for="rn-flast">Dernier renouvellement possible (une nouvelle ordonnance sera à fournir avant le prochain renouvellement)</label></div>
     </div>
     <div class="rn-foot"><button class="rn-btn rn-ghost" onclick="rnClose('rn-ov-form')">Annuler</button><button class="rn-btn rn-pri" onclick="rnSaveForm()">Enregistrer</button></div>
   </div></div>
@@ -340,6 +364,11 @@
     const _tag = _d < 0 ? '<span class="rn-badge rn-b-due">\u25CF En retard \u2014 \u00e0 pr\u00e9parer</span> '
       : _d === 0 ? '<span class="rn-badge rn-b-due">\u25CF \u00c0 pr\u00e9parer aujourd\'hui</span> '
       : _d <= RN_SOON_DAYS ? '<span class="rn-badge rn-b-soon">\u25CF \u00c0 pr\u00e9parer \u2014 dans ' + _d + ' j</span> ' : '';
+    if (it.ponctuel) {
+      const n = rnNature(it);
+      return _tag + '<span class="rn-badge rn-b-ponct">' + n.ico + ' ' + n.lbl + '</span>'
+        + (/frigo/i.test(it.notes || '') ? ' <span class="rn-badge rn-b-frigo">Frigo</span>' : '');
+    }
     return _tag +
       (it.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
       (it.needsNewOrdo ? ' <span class="rn-badge rn-b-newordo">Nouvelle ordo à fournir</span>' : '') +
@@ -387,11 +416,13 @@
 
   function rnCard(it) {
     const diff = rnDayDiff(it.date); const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
+    // Un evenement ponctuel n'a rien a demander au patient : pas de bouton de
+    // confirmation ni de lien. On ne propose que ce qui a un sens ici.
     return '<div class="rn-card rn-' + cls + '"><div class="rn-main">' + rnMainHtml(it) +
       '</div><div class="rn-acts">' +
-      rnIb('rnPrep', it, '\u2713', 'Préparer l’ordonnance', 'rn-ib-pri') +
-      rnIbConf(it) +
-      rnIbLien(it) +
+      rnIb('rnPrep', it, '\u2713', it.ponctuel ? 'Marquer comme fait' : 'Préparer l’ordonnance', 'rn-ib-pri') +
+      (it.ponctuel ? '' : rnIbConf(it)) +
+      (it.ponctuel ? '' : rnIbLien(it)) +
       rnIb('rnReport', it, '\uD83D\uDCC5', 'Reporter ou annuler') +
       rnIb('rnOpenForm', it, '\u270E', 'Modifier') +
       '</div></div>';
@@ -449,9 +480,11 @@
     return '<div class="rn-card" style="border-left:4px solid #9fb0a6"><div class="rn-main">' +
       '<div class="rn-who">' + rnEsc(x.nom) + ' ' + rnEsc(x.prenom) + '<span class="rn-dob">' + rnFmtFr(x.dob) + '</span></div>' +
       '<div class="rn-lib">' + rnEsc(x.lib) + '</div>' +
-      '<div class="rn-meta"><span>📅 Préparée le <b>' + rnFmtFr(x.prepDate) + '</b></span>' +
+      '<div class="rn-meta"><span>📅 ' + (x.ponctuel ? 'Fait le' : 'Préparée le') + ' <b>' + rnFmtFr(x.prepDate) + '</b></span>' +
       '<span>👤 <span class="rn-chip" style="background:' + (x.byCol || '#777') + '">' + rnEsc(x.byName) + '</span></span>' +
-      (x.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>') +
+      (x.ponctuel
+        ? '<span class="rn-badge rn-b-ponct">' + rnNature(x).ico + ' ' + rnNature(x).lbl + '</span>'
+        : (x.remise === 'livraison' ? '<span class="rn-badge rn-b-liv">Livraison</span>' : '<span class="rn-badge rn-b-comp">Comptoir</span>')) +
       (x.notif ? '<span class="rn-badge rn-b-okpat">' + (x.notif.canal === 'sms' ? '💬 patient prévenu par SMS' : '✉️ patient prévenu par email') + '</span>' : '') +
       '<span style="color:#6b7a72">' + rnEsc(x.outcome) + '</span></div>' +
       '</div>' +
@@ -494,13 +527,34 @@
     g('rn-date').value = it ? it.date : rnIso(rnAddDays(rnToday(), 28)); g('rn-cycle').value = it ? it.cycle : 28;
     g('rn-presc').value = v('presc'); g('rn-remise').value = v('remise', 'comptoir'); g('rn-notes').value = v('notes');
     g('rn-flast').checked = it ? !!it.dernier : false; g('rn-drop').style.display = 'none';
+    g('rn-nature').innerHTML = Object.keys(RN_NATURES).map(function (k) {
+      return '<option value="' + k + '">' + RN_NATURES[k].ico + '  ' + RN_NATURES[k].lbl + '</option>';
+    }).join('');
+    g('rn-type').value = (it && it.ponctuel) ? 'ponctuel' : 'renouv';
+    g('rn-nature').value = (it && it.nature) || 'bpm';
+    rnFormType();
     rnOpen('rn-ov-form');
   };
+  // Un formulaire qui montre « Cycle » pour une facturation unique invite a
+  // remplir un champ qui ne veut rien dire. On masque plutot que de griser.
+  window.rnFormType = function () {
+    const g = i => document.getElementById(i);
+    const p = g('rn-type').value === 'ponctuel';
+    g('rn-fg-nature').style.display = p ? '' : 'none';
+    g('rn-fg-cycle').style.display  = p ? 'none' : '';
+    g('rn-fg-remise').style.display = p ? 'none' : '';
+    g('rn-fg-last').style.display   = p ? 'none' : '';
+    g('rn-lib-lbl').innerHTML  = p ? 'Ce qu’il faut faire <span class="rn-req">*</span>' : 'Ce qu\'il faut renouveler <span class="rn-req">*</span>';
+    g('rn-date-lbl').innerHTML = p ? 'Date prévue <span class="rn-req">*</span>' : 'Date de prochaine préparation <span class="rn-req">*</span>';
+    g('rn-lib').placeholder = p ? 'Ex. : facturer l’étape 2 du BPM' : 'Ex. : pilulier 28 j — traitement de fond + CNO';
+  };
+
   window.rnSaveForm = function () {
     const g = i => document.getElementById(i);
+    const ponctuel = g('rn-type').value === 'ponctuel';
     const manque = [
       ['rn-nom', 'le nom'], ['rn-prenom', 'le prénom'], ['rn-dob', 'la date de naissance'],
-      ['rn-lib', 'ce qu’il faut renouveler'], ['rn-date', 'la date']
+      ['rn-lib', ponctuel ? 'ce qu’il faut faire' : 'ce qu’il faut renouveler'], ['rn-date', 'la date']
     ].find(function (c) { return !String(g(c[0]).value || '').trim(); });
     if (manque) {
       rnToast('Il manque ' + manque[1] + '.');
@@ -511,8 +565,13 @@
     const obj = {
       civilite: g('rn-civ').value, nom: g('rn-nom').value.trim().toUpperCase(), prenom: g('rn-prenom').value.trim(), dob: g('rn-dob').value,
       tel: g('rn-tel').value.trim(), mail: g('rn-mail').value.trim(), adresse: g('rn-adresse').value.trim(),
-      lib: g('rn-lib').value.trim(), date: g('rn-date').value, cycle: parseInt(g('rn-cycle').value || '28', 10),
-      presc: g('rn-presc').value.trim(), remise: g('rn-remise').value, notes: g('rn-notes').value.trim(), dernier: g('rn-flast').checked
+      lib: g('rn-lib').value.trim(), date: g('rn-date').value,
+      cycle: ponctuel ? 0 : parseInt(g('rn-cycle').value || '28', 10),
+      presc: g('rn-presc').value.trim(),
+      remise: ponctuel ? '' : g('rn-remise').value,
+      notes: g('rn-notes').value.trim(),
+      dernier: ponctuel ? false : g('rn-flast').checked,
+      ponctuel: ponctuel, nature: ponctuel ? g('rn-nature').value : ''
     };
     // updatedAt : indispensable pour que la fusion serveur (mergeById) sache quelle version est la plus récente.
     if (rnEditId) { const _it = rnList().find(x => x.id === rnEditId); if (_it) { Object.assign(_it, obj); _it.updatedAt = Date.now(); } rnToast('Ordonnance modifiée.'); }
@@ -525,12 +584,17 @@
   // ---------- préparation ----------
   window.rnPrep = function (id) {
     const it = rnList().find(x => x.id === id); rnCurId = id;
+    if (it && it.ponctuel) return rnPrepPonctuel(it);
     document.getElementById('rn-prep-who').textContent = it.nom + ' ' + it.prenom;
     document.getElementById('rn-prep-lib').textContent = it.lib;
     document.getElementById('rn-prep-remise').innerHTML = 'Remise prévue : ' + (it.remise === 'livraison' ? '<b style="color:#5E35B1">Livraison</b>' : '<b style="color:#00695C">Retrait au comptoir</b>');
     document.getElementById('rn-prep-date').value = rnIso(rnAddDays(rnToday(), it.cycle || 28));
     document.getElementById('rn-prep-last').checked = !!it.dernier;
     document.getElementById('rn-prep-nomore').checked = false;
+    // La fenetre est partagee avec les evenements ponctuels, qui en masquent
+    // une partie : on la remet dans son etat complet.
+    document.getElementById('rn-prep-last').closest('.rn-fg').style.display = '';
+    document.getElementById('rn-prep-nomore').closest('.rn-fg').style.display = '';
     // Le geste principal dépend du mode de remise : au comptoir on valide, et
     // prévenir le patient vient après ; en livraison on valide et la livraison
     // se crée dans la foulée — le patient sera prévenu par le livreur.
@@ -542,6 +606,31 @@
         : '<button class="rn-btn rn-pri" onclick="rnValider()">\u2713 Valider</button>');
     rnPrepToggle(); rnOpen('rn-ov-prep');
   };
+  // Un ponctuel ne se reprogramme pas : un seul geste, « Fait », et la fiche
+  // part aux archives. Pas de date suivante a saisir, pas de mail patient a
+  // proposer — une facturation est un geste interne.
+  function rnPrepPonctuel(it) {
+    const n = rnNature(it);
+    document.getElementById('rn-prep-who').textContent = it.nom + ' ' + it.prenom;
+    document.getElementById('rn-prep-lib').textContent = it.lib;
+    document.getElementById('rn-prep-remise').innerHTML = n.ico + ' <b>' + rnEsc(n.lbl) + '</b> — échéance du ' + rnFmtFr(it.date);
+    document.getElementById('rn-prep-next').style.display = 'none';
+    document.getElementById('rn-prep-last').closest('.rn-fg').style.display = 'none';
+    document.getElementById('rn-prep-nomore').closest('.rn-fg').style.display = 'none';
+    document.getElementById('rn-prep-note').style.display = 'none';
+    document.getElementById('rn-prep-foot').innerHTML =
+      '<button class="rn-btn rn-ghost" onclick="rnClose(\'rn-ov-prep\')">Annuler</button>' +
+      '<button class="rn-btn rn-pri" onclick="rnValiderPonctuel()">\u2713 Fait</button>';
+    rnOpen('rn-ov-prep');
+  }
+  window.rnValiderPonctuel = function () {
+    const it = rnList().find(x => x.id === rnCurId); if (!it) return;
+    it._close = true; rnPendingNext = null;
+    rnClose('rn-ov-prep');
+    rnFinish('ponctuel');
+    rnToast('Événement marqué comme fait.');
+  };
+
   window.rnPrepExcl = function (which) {
     if (which === 'last' && document.getElementById('rn-prep-last').checked) document.getElementById('rn-prep-nomore').checked = false;
     if (which === 'nomore' && document.getElementById('rn-prep-nomore').checked) document.getElementById('rn-prep-last').checked = false;
@@ -721,7 +810,7 @@
   // ---------- finalisation + archivage ----------
   function rnArchive(it, outcome, mode, undo) {
     const u = rnUser();
-    rnArch().unshift({ id: rnNewId(), nom: it.nom, prenom: it.prenom, dob: it.dob, lib: it.lib, remise: mode || it.remise, prepDate: rnIso(rnToday()), byName: (u.prenom + ' ' + u.nom).trim() || u.id, byCol: u.col, outcome, undo: undo || null, updatedAt: Date.now() });
+    rnArch().unshift({ id: rnNewId(), nom: it.nom, prenom: it.prenom, dob: it.dob, lib: it.lib, remise: mode || it.remise, ponctuel: !!it.ponctuel, nature: it.nature || '', prepDate: rnIso(rnToday()), byName: (u.prenom + ' ' + u.nom).trim() || u.id, byCol: u.col, outcome, undo: undo || null, updatedAt: Date.now() });
   }
   window.rnFinish = function (mode) {
     const it = rnList().find(x => x.id === rnCurId); if (!it) return;
@@ -731,7 +820,7 @@
     let base;
     if (it._close) { const _l = rnList(), _i = _l.findIndex(x => x.id === rnCurId); if (_i >= 0) _l.splice(_i, 1); base = 'clôturée — plus de renouvellement'; }
     else { it.date = rnPendingNext; it.needsNewOrdo = !!it._newOrdo; it.updatedAt = Date.now(); base = (it._newOrdo ? 'dernier de l’ordonnance (nouvelle ordonnance à fournir) — ' : '') + 'prochain renouvellement le ' + rnFmtFr(rnPendingNext); delete it._delivId; }
-    rnArchive(it, (mode === 'livraison' ? 'Livraison — ' : 'Comptoir — ') + base, mode, undo);
+    rnArchive(it, mode === 'ponctuel' ? (rnNature(it).lbl + ' — fait') : ((mode === 'livraison' ? 'Livraison — ' : 'Comptoir — ') + base), mode, undo);
     rnCurId = null; rnPendingNext = null; rnPersist(); rnRender();
   };
 
