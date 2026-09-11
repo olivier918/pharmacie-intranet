@@ -3253,7 +3253,18 @@ function setView(v,btn){
 // départ : une fois livrée (ordonnance en main), il reste à finaliser la
 // facturation. Le dossier reste signalé, toutes dates confondues, jusqu'au
 // clic « Facturé ».
-function dAFacturer(d){ return !!(d && d.ordo && d.status==='done' && !d.factureAt); }
+// ── Les lieux de RETRAIT ────────────────────────────────────────────────────
+// A la pharmacie et pour l'IDE 9, c'est le patient ou l'infirmiere qui vient :
+// il n'y a pas de tournee, donc pas de livraison a valider. Le dossier est
+// termine des qu'il est PREPARE, et la troisieme etape n'existe pas.
+const LIEUX_RETRAIT=['Pharmacie','IDE 9'];
+function dRetrait(d){ return !!(d && LIEUX_RETRAIT.indexOf(String(d.lieu||'').trim())>=0); }
+// Etat terminal, qui depend du lieu.
+function dTermine(d){ return dRetrait(d) ? (d.status==='prep'||d.status==='done') : d.status==='done'; }
+
+// Sans ce rattrapage, une ordonnance retiree au comptoir ne serait JAMAIS
+// proposee a la facturation : elle n'atteint jamais le statut « done ».
+function dAFacturer(d){ return !!(d && d.ordo && dTermine(d) && !d.factureAt); }
 function marquerFacture(id){
   const d=deliveries.find(x=>x.id===id); if(!d) return;
   if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
@@ -3397,6 +3408,7 @@ function dCard(d){
   const saisieQuand=d.createdAt&&d.createdAt.date?` le ${d.createdAt.date} à ${d.createdAt.heure}`:'';
 
   const currentIdx={wait:0,prep:1,done:2}[d.status];
+  const retrait=dRetrait(d);
 
   // Step state logic:
   //  🟢 is-done   → current step + all previous (GREEN — validated)
@@ -3421,7 +3433,19 @@ function dCard(d){
 
   // When fully delivered: show summary card instead of stepper
   let statusBlock;
-  if(d.status==='done'&&d.livrAt){
+  if(retrait && d.status!=='wait'){
+    // Retrait : le dossier est clos des la preparation. Meme resume visuel
+    // qu'une livraison achevee, avec le mot juste.
+    const q=d.prepAt||d.livrAt||null;
+    statusBlock=`<div class="deliv-summary">
+      <div class="deliv-summary__icon">${icoPrep}</div>
+      <div class="deliv-summary__text">
+        <span class="deliv-summary__title">Préparé — à retirer sur place</span>
+        ${q?`<span class="deliv-summary__when">${ico('calendrier')} ${q.date||''} · ${ico('heure')} ${q.heure||''}</span>`:''}
+        <span class="deliv-summary__who">par ${staffName(d.prepBy||d.livrBy)}</span>
+      </div>
+    </div>`;
+  } else if(d.status==='done'&&d.livrAt){
     statusBlock=`<div class="deliv-summary">
       <div class="deliv-summary__icon">${icoDone}</div>
       <div class="deliv-summary__text">
@@ -3444,12 +3468,12 @@ function dCard(d){
           <span class="status-stepper__label">Préparé</span>
           <span class="status-stepper__sublabel">${subPrep}</span>
         </button>
-        <div class="status-stepper__connector"><div class="status-stepper__connector-fill" style="width:${fillW(1)}"></div></div>
+        ${retrait?'':`<div class="status-stepper__connector"><div class="status-stepper__connector-fill" style="width:${fillW(1)}"></div></div>
         <button type="button" class="status-stepper__step ${stepClass(2)}" data-step="2" onclick="askStatusFromStepper(${d.id},2)">
           <span class="status-stepper__circle">${icoDone}</span>
           <span class="status-stepper__label">Livré</span>
           <span class="status-stepper__sublabel">${subDone}</span>
-        </button>
+        </button>`}
       </div>
     </div>`;
   }
@@ -3506,6 +3530,7 @@ function askStatusFromStepper(id, targetStep){
   const d=deliveries.find(x=>x.id===id);
   if(!d)return;
   const statusMap=['wait','prep','done'];
+  if(dRetrait(d) && targetStep===2) return;   // pas de livraison a valider sur place
   const currentIdx={wait:0,prep:1,done:2}[d.status];
   if(targetStep===currentIdx) return;
   // Backwards: only allow one step at a time (safety against accidental reset)
