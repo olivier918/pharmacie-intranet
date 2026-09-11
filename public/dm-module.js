@@ -692,7 +692,12 @@
 
   // La demande est faite : son auteur doit l'apprendre, et etre invite a
   // l'essayer. C'est ce retour qui fait revenir les gens deposer une idee.
-  const DM_MSG_FAIT = 'Votre demande d’amélioration a été prise en compte, vous pouvez d’ores et déjà la tester ! N’hésitez pas à nous faire un retour !';
+  // Le message part sous le nom de celui qui a valide — pour qu une reponse
+  // atteigne quelqu un de reel — mais il s annonce comme automatique. Sans
+  // cette mention, l expediteur retrouve dans SA messagerie des messages qu il
+  // n a pas ecrits et se demande ce qu ils font la ; et le destinataire croit a
+  // un mot personnel.
+  const DM_MSG_FAIT = '\uD83E\uDD16 Message automatique de PILOT — Votre demande d’amélioration a été prise en compte, vous pouvez d’ores et déjà la tester ! N’hésitez pas à nous faire un retour !';
   function dmMessageFait(d) {
     try {
       const u = dmUser(); if (!u || !d || !d.auteur) return;
