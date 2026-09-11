@@ -75,8 +75,39 @@
   .rn-inp{font-family:inherit;font-size:14px;border:1px solid #dfe8e2;border-radius:9px;outline:none;background:#fff;width:100%;color:#222}
   input.rn-inp,select.rn-inp{height:42px;padding:0 12px}
   textarea.rn-inp{padding:9px 12px;min-height:60px;resize:vertical}
-  .rn-inp:focus{border-color:#1D5C3A}
-  .rn-search{max-width:210px}
+  .rn-inp{box-shadow:inset 0 1px 2px rgba(29,92,58,.05);transition:border-color .13s,box-shadow .13s}
+  .rn-inp:focus{border-color:#3C9268;box-shadow:0 0 0 3px rgba(60,146,104,.15)}
+  .rn-inp::placeholder{color:#a9b5ae}
+
+  /* Deux natures de fiche, donc deux cartes a choisir — et non une liste
+     deroulante qui cache l'un des deux choix tant qu'on ne l'ouvre pas. */
+  .rn-alt{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+  @media(max-width:640px){.rn-alt{grid-template-columns:1fr}}
+  .rn-alt label{display:block;margin:0;cursor:pointer}
+  .rn-alt input{position:absolute;opacity:0;width:0;height:0}
+  .rn-altc{border:1.5px solid #dfe8e2;border-radius:11px;padding:11px 13px;background:#fff;
+    display:flex;gap:10px;align-items:flex-start;transition:border-color .13s,background .13s,box-shadow .13s}
+  .rn-altc .i{font-size:19px;line-height:1.1;flex:none}
+  .rn-altc .t{font-size:13.5px;font-weight:700;color:#233;display:block}
+  .rn-altc .s{font-size:11.5px;color:#6b7a72;display:block;margin-top:2px;line-height:1.4}
+  .rn-alt label:hover .rn-altc{border-color:#b8d3c4}
+  .rn-alt input:checked + .rn-altc{border-color:#1D5C3A;background:#F2F8F4;
+    box-shadow:0 2px 8px rgba(29,92,58,.13)}
+  .rn-alt input:focus-visible + .rn-altc{box-shadow:0 0 0 3px rgba(60,146,104,.3)}
+
+  /* Les natures d'evenement en pastilles : cinq choix se lisent d'un coup. */
+  .rn-puces{display:flex;flex-wrap:wrap;gap:7px}
+  .rn-puces label{margin:0;cursor:pointer}
+  .rn-puces input{position:absolute;opacity:0;width:0;height:0}
+  .rn-puce{display:inline-flex;align-items:center;gap:5px;border:1px solid #dfe8e2;background:#fff;
+    border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:600;color:#4a5a52;transition:all .13s}
+  .rn-puces label:hover .rn-puce{border-color:#b8d3c4}
+  .rn-puces input:checked + .rn-puce{background:#FFF3E0;border-color:#E8A33D;color:#8a4b00}
+  /* La recherche prend toute la largeur, sur sa propre ligne : un champ de
+     210 px coince entre des boutons se cherche du regard a chaque fois. */
+  .rn-search{width:100%;padding-left:36px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7a72' stroke-width='2' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.5-3.5'/></svg>");
+    background-repeat:no-repeat;background-position:11px center;background-size:16px}
+  .rn-searchrow{margin:0 0 16px}
   .rn-daygroup{margin-bottom:16px}
   .rn-dayhead{display:flex;align-items:center;gap:10px;margin:6px 2px 8px}
   .rn-dayhead .rn-d{font-weight:700;font-size:14px}
@@ -117,8 +148,24 @@
   .rn-ov{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:16px;z-index:10000}
   .rn-ov.rn-on{display:flex}
   .rn-modal{background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-  .rn-modal h3{margin:0;padding:16px 18px;border-bottom:1px solid #e2ebe5;font-size:16px;color:#1D5C3A}
-  .rn-body{padding:16px 18px}.rn-foot{padding:12px 18px;border-top:1px solid #e2ebe5;display:flex;justify-content:flex-end;gap:9px;background:#fafcfb;flex-wrap:wrap}
+  /* Un en-tete qui a une couleur donne un haut a la fenetre : sans lui, le
+     formulaire commence nulle part et tout se vaut. */
+  .rn-modal h3{margin:0;padding:15px 18px;font-size:16px;color:#fff;font-weight:700;
+    background:linear-gradient(135deg,#1D5C3A 0%,#2E7D54 55%,#3C9268 100%);
+    display:flex;align-items:center;gap:9px}
+  .rn-modal h3::before{content:'';width:26px;height:26px;border-radius:8px;flex:none;
+    background:rgba(255,255,255,.18);
+    -webkit-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M9 2h6v3H9z'/><path d='M6 5h12v17H6z'/><path d='M9 11h6M9 15h4'/></svg>") center/15px no-repeat,linear-gradient(#fff,#fff);
+    mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M9 2h6v3H9z'/><path d='M6 5h12v17H6z'/><path d='M9 11h6M9 15h4'/></svg>") center/15px no-repeat}
+  .rn-body{padding:16px 18px}
+  /* Trois blocs plutot qu'une pile de champs : l'oeil sait ou il en est. */
+  .rn-sect{border:1px solid #e6efe9;border-radius:12px;padding:13px 14px 3px;margin-bottom:14px;background:#fcfdfc}
+  .rn-sect + .rn-sect{margin-top:0}
+  .rn-sect-h{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;color:#1D5C3A;margin:0 0 11px}
+  .rn-sect-h .p{width:7px;height:7px;border-radius:50%;background:#3C9268;flex:none;
+    box-shadow:0 0 0 3px rgba(60,146,104,.16)}
+  .rn-sect-h .r{flex:1;height:1px;background:linear-gradient(90deg,#d9e8e0,transparent)}.rn-foot{padding:12px 18px;border-top:1px solid #e2ebe5;display:flex;justify-content:flex-end;gap:9px;background:#fafcfb;flex-wrap:wrap}
   .rn-fg{margin-bottom:13px;position:relative}
   .rn-fg label{display:block;font-size:12.5px;font-weight:600;color:#44524b;margin-bottom:5px;min-height:16px;line-height:1.3}
   .rn-req{color:#c62828}
@@ -150,7 +197,8 @@
         <button class="rn-tab" id="rn-tab-arch" onclick="rnSetView('arch')">Archives</button>
       </div>
       <span class="rn-count" id="rn-count"></span>
-      <span class="rn-grow"></span>
+    </div>
+    <div class="rn-searchrow">
       <input class="rn-inp rn-search" id="rn-search" placeholder="Rechercher un patient…" oninput="rnRender()">
     </div>
     <div id="rn-listwrap"></div>
@@ -160,24 +208,35 @@
   <div class="rn-ov" id="rn-ov-form"><div class="rn-modal">
     <h3 id="rn-form-title">Nouvelle ordonnance à préparer</h3>
     <div class="rn-body">
-      <!-- La recherche est un champ A PART, et non l'attribut cache du champ
-           « Nom ». Chercher quelqu'un et enregistrer quelqu'un sont deux gestes
-           differents : les melanger faisait surgir un menu de suggestions au
-           moment ou l'on saisissait justement un patient inconnu. -->
-      <div class="rn-row2">
+      <div class="rn-sect">
+        <div class="rn-sect-h"><span class="p"></span>Nature de la fiche<span class="r"></span></div>
+        <!-- Deux cartes plutot qu'une liste deroulante : les deux possibilites
+             sont visibles ensemble, et le choix se voit sans ouvrir quoi que
+             ce soit. -->
+        <div class="rn-alt">
+          <label><input type="radio" name="rn-type-r" value="renouv" checked onchange="rnFormType()">
+            <span class="rn-altc"><span class="i">🔁</span><span><span class="t">Renouvellement</span>
+            <span class="s">Une ordonnance qui revient à chaque cycle</span></span></span></label>
+          <label><input type="radio" name="rn-type-r" value="ponctuel" onchange="rnFormType()">
+            <span class="rn-altc"><span class="i">📌</span><span><span class="t">Événement ponctuel</span>
+            <span class="s">Une échéance unique, qui ne se reprogramme pas</span></span></span></label>
+        </div>
+        <div class="rn-fg" id="rn-fg-nature" style="display:none;margin-top:12px">
+          <label>Type d’événement</label>
+          <div class="rn-puces" id="rn-nature"></div></div>
+      </div>
+
+      <div class="rn-sect">
+        <div class="rn-sect-h"><span class="p"></span>Le patient<span class="r"></span></div>
+        <!-- La recherche est un champ A PART, et non l'attribut cache du champ
+             « Nom ». Chercher quelqu'un et enregistrer quelqu'un sont deux
+             gestes differents : les melanger faisait surgir un menu de
+             suggestions au moment ou l'on saisissait un patient inconnu. -->
         <div class="rn-fg"><label>Rechercher un patient déjà enregistré</label>
           <input class="rn-inp" id="rn-cherche" autocomplete="off" placeholder="Taper un nom…"
             oninput="rnCherchePatient()">
           <div class="rn-drop" id="rn-drop"></div>
           <div class="rn-hint">Remplit la fiche. Pour un nouveau patient, laisser vide et saisir ci-dessous.</div></div>
-        <div class="rn-fg"><label>Nature de la fiche</label>
-          <select class="rn-inp" id="rn-type" onchange="rnFormType()">
-            <option value="renouv">Renouvellement d’ordonnance — revient à chaque cycle</option>
-            <option value="ponctuel">Événement ponctuel — une seule fois</option>
-          </select></div>
-      </div>
-      <div class="rn-fg" id="rn-fg-nature" style="display:none"><label>Type d’événement</label>
-        <select class="rn-inp" id="rn-nature"></select></div>
       <div class="rn-row-id">
         <div class="rn-fg"><label>Civilité</label>
           <select class="rn-inp" id="rn-civ">
@@ -197,6 +256,10 @@
         <div class="rn-fg"><label>Email patient (pour « c'est prêt »)</label><input class="rn-inp" id="rn-mail" type="email" placeholder="facultatif"></div>
         <div class="rn-fg"><label>Adresse</label><input class="rn-inp" id="rn-adresse" placeholder="N° et rue"></div>
       </div>
+      </div>
+
+      <div class="rn-sect">
+        <div class="rn-sect-h"><span class="p"></span>L’échéance<span class="r"></span></div>
       <div class="rn-fg"><label id="rn-lib-lbl">Ce qu'il faut renouveler <span class="rn-req">*</span></label>
         <textarea class="rn-inp" id="rn-lib" rows="2" placeholder="Ex. : pilulier 28 j — traitement de fond + CNO"></textarea></div>
       <div class="rn-row2">
@@ -208,7 +271,8 @@
         <div class="rn-fg" id="rn-fg-remise"><label>Remise</label><select class="rn-inp" id="rn-remise"><option value="comptoir">Retrait au comptoir</option><option value="livraison">Livraison</option></select></div>
       </div>
       <div class="rn-fg"><label>Notes</label><input class="rn-inp" id="rn-notes" placeholder="Ex. : frigo, appeler avant…"></div>
-      <div class="rn-fg rn-chk" id="rn-fg-last"><input type="checkbox" id="rn-flast"><label style="margin:0" for="rn-flast">Dernier renouvellement possible (une nouvelle ordonnance sera à fournir avant le prochain renouvellement)</label></div>
+      <div class="rn-fg rn-chk" id="rn-fg-last" style="margin-bottom:13px"><input type="checkbox" id="rn-flast"><label style="margin:0" for="rn-flast">Dernier renouvellement possible (une nouvelle ordonnance sera à fournir avant le prochain renouvellement)</label></div>
+      </div>
     </div>
     <div class="rn-foot"><button class="rn-btn rn-ghost" onclick="rnClose('rn-ov-form')">Annuler</button><button class="rn-btn rn-pri" onclick="rnSaveForm()">Enregistrer</button></div>
   </div></div>
@@ -545,11 +609,13 @@
     g('rn-date').value = it ? it.date : rnIso(rnAddDays(rnToday(), 28)); g('rn-cycle').value = it ? it.cycle : 28;
     g('rn-presc').value = v('presc'); g('rn-remise').value = v('remise', 'comptoir'); g('rn-notes').value = v('notes');
     g('rn-flast').checked = it ? !!it.dernier : false; g('rn-drop').style.display = 'none';
+    const nat = (it && it.nature) || 'bpm';
     g('rn-nature').innerHTML = Object.keys(RN_NATURES).map(function (k) {
-      return '<option value="' + k + '">' + RN_NATURES[k].ico + '  ' + RN_NATURES[k].lbl + '</option>';
+      return '<label><input type="radio" name="rn-nature-r" value="' + k + '"' + (k === nat ? ' checked' : '') + '>'
+        + '<span class="rn-puce">' + RN_NATURES[k].ico + ' ' + RN_NATURES[k].lbl + '</span></label>';
     }).join('');
-    g('rn-type').value = (it && it.ponctuel) ? 'ponctuel' : 'renouv';
-    g('rn-nature').value = (it && it.nature) || 'bpm';
+    const vt = (it && it.ponctuel) ? 'ponctuel' : 'renouv';
+    document.querySelectorAll('input[name="rn-type-r"]').forEach(function (r) { r.checked = (r.value === vt); });
     g('rn-cherche').value = '';
     rnFormType();
     rnOpen('rn-ov-form');
@@ -596,9 +662,19 @@
     g('rn-lib').focus();
   };
 
+  // Les deux cartes et les pastilles remplacent deux listes deroulantes : on
+  // lit donc la case cochee, et non la valeur d'un <select>.
+  function rnTypeVal() {
+    const r = document.querySelector('input[name="rn-type-r"]:checked');
+    return r ? r.value : 'renouv';
+  }
+  function rnNatureVal() {
+    const r = document.querySelector('input[name="rn-nature-r"]:checked');
+    return r ? r.value : 'bpm';
+  }
   window.rnFormType = function () {
     const g = i => document.getElementById(i);
-    const p = g('rn-type').value === 'ponctuel';
+    const p = rnTypeVal() === 'ponctuel';
     g('rn-fg-nature').style.display = p ? '' : 'none';
     g('rn-fg-cycle').style.display  = p ? 'none' : '';
     g('rn-fg-remise').style.display = p ? 'none' : '';
@@ -610,7 +686,7 @@
 
   window.rnSaveForm = function () {
     const g = i => document.getElementById(i);
-    const ponctuel = g('rn-type').value === 'ponctuel';
+    const ponctuel = rnTypeVal() === 'ponctuel';
     const manque = [
       ['rn-nom', 'le nom'], ['rn-prenom', 'le prénom'], ['rn-dob', 'la date de naissance'],
       ['rn-lib', ponctuel ? 'ce qu’il faut faire' : 'ce qu’il faut renouveler'], ['rn-date', 'la date']
@@ -630,7 +706,7 @@
       remise: ponctuel ? '' : g('rn-remise').value,
       notes: g('rn-notes').value.trim(),
       dernier: ponctuel ? false : g('rn-flast').checked,
-      ponctuel: ponctuel, nature: ponctuel ? g('rn-nature').value : ''
+      ponctuel: ponctuel, nature: ponctuel ? rnNatureVal() : ''
     };
     // updatedAt : indispensable pour que la fusion serveur (mergeById) sache quelle version est la plus récente.
     if (rnEditId) { const _it = rnList().find(x => x.id === rnEditId); if (_it) { Object.assign(_it, obj); _it.updatedAt = Date.now(); } rnToast('Ordonnance modifiée.'); }
