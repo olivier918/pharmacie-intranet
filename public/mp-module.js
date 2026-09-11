@@ -178,11 +178,22 @@
   .mp-lot:hover{border-color:var(--g-border);background:var(--g-pale);color:var(--g-dark)}
   .mp-lot .n{opacity:.6;font-weight:600}
   .mp-lot .x{opacity:.45;font-weight:700}
+  /* Les deux raccourcis se tiennent dans un meme encadre : ils repondent a la
+     meme question — « a qui ? » — et se lisent ensemble. */
+  .mp-raccourcis{border:1px solid var(--gray-200);border-radius:12px;padding:.9rem 1rem;
+    background:#fbfcfb;margin-bottom:1rem}
+  .mp-fac{font-weight:500;text-transform:none;letter-spacing:0;color:var(--gray-500);font-size:.72rem}
   .mp-lot .x:hover{opacity:1;color:var(--red)}
-  .mp-compte{font-size:.82rem;color:var(--gray-500);margin-top:.6rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* La ligne de comptage devient une barre d'etat : elle porte le nombre
+     choisi et les deux gestes qui s'y rapportent, au lieu de flotter sous la
+     grille comme une note de bas de page. */
+  .mp-compte{font-size:.81rem;color:var(--gray-600);margin-top:.7rem;display:flex;align-items:center;
+    gap:9px;flex-wrap:wrap;background:var(--gray-100);border-radius:9px;padding:.5rem .75rem}
   .mp-compte b{color:var(--g-dark)}
-  .mp-compte button{border:none;background:none;font-family:inherit;font-size:.8rem;font-weight:700;
-    color:var(--g-dark);cursor:pointer;padding:0;text-decoration:underline}
+  .mp-compte span:first-child{flex:1;min-width:0}
+  .mp-compte button{border:1px solid var(--gray-200);background:#fff;border-radius:7px;padding:3px 10px;
+    font-family:inherit;font-size:.78rem;font-weight:600;color:var(--gray-700);cursor:pointer}
+  .mp-compte button:hover{border-color:var(--g-border);background:var(--g-pale);color:var(--g-dark)}
   .mp-retour{display:none;border:none;background:none;font-family:inherit;font-size:.8rem;color:var(--g-dark);font-weight:700;cursor:pointer;padding:0}
   @media(max-width:820px){.mp-retour{display:inline}}
   `;
@@ -649,17 +660,21 @@
 
   const MP_MODALE = '<div class="overlay" id="mp-ov-n">'
     + '<div class="mbox" style="max-width:620px">'
-    + '<div class="mbox-h"><b>Nouvelle conversation</b><button class="x" onclick="mpFermerNouvelle()">✕</button></div>'
+    + '<div class="mbox-h"><b>Nouveau message</b><button class="x" onclick="mpFermerNouvelle()" title="Fermer">✕</button></div>'
     + '<div class="mbox-b">'
+    // Deux raccourcis d'abord, la liste complete ensuite : on compose presque
+    // toujours avec un groupe ou un poste, et rarement personne par personne.
+    + '<div class="mp-raccourcis">'
     + '<div class="fg"><label>Groupes de l’officine</label><div class="mp-lots" id="mp-n-groupes"></div></div>'
-    + '<div class="fg"><label>Par poste</label><div class="mp-lots" id="mp-n-postes"></div></div>'
-    + '<div class="fg"><label>Personnes</label><div class="mp-choix" id="mp-n-qui"></div>'
+    + '<div class="fg" style="margin-bottom:0"><label>Par poste</label><div class="mp-lots" id="mp-n-postes"></div></div>'
+    + '</div>'
+    + '<div class="fg"><label>Ou choisir une à une</label><div class="mp-choix" id="mp-n-qui"></div>'
     + '<div class="mp-compte" id="mp-n-compte"></div></div>'
-    + '<div class="fg" id="mp-n-titre-bloc" style="display:none"><label>Nom du groupe (facultatif)</label>'
+    + '<div class="fg" id="mp-n-titre-bloc" style="display:none"><label>Nom de la conversation <span class="mp-fac">facultatif</span></label>'
     + '<input type="text" id="mp-n-titre" maxlength="50" placeholder="Ex. Préparation de la vitrine"></div>'
     + '</div>'
-    + '<div class="mbox-f"><button class="btn bs" onclick="mpFermerNouvelle()">Annuler</button>'
-    + '<button class="btn bp" onclick="mpCreer()">Créer</button></div>'
+    + '<div class="mbox-f"><button class="btn bp" onclick="mpCreer()">Ouvrir la conversation</button>'
+    + '<button class="btn bs" onclick="mpFermerNouvelle()">Annuler</button></div>'
     + '</div></div>';
 
   // ── Injection ─────────────────────────────────────────────────────────────

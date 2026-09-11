@@ -338,6 +338,31 @@ tr:hover td{background:#fafffe}
 .overlay.open{display:flex}
 .mbox{background:#fff;border-radius:14px;padding:1.75rem;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.2)}
 .mbox h3{font-size:1rem;margin-bottom:1.25rem;color:var(--g-dark);font-weight:600}
+/* ── Fenêtres en trois blocs : en-tête, corps, pied ──────────────────────────
+   Ces trois classes etaient ECRITES dans le HTML de plusieurs modules mais
+   n'avaient jamais ete definies : d'ou des blocs qui flottaient sans separation
+   et une croix de fermeture posee au fil du texte, a gauche du titre. Les
+   definir ici les corrige partout d'un coup. */
+.mbox:has(.mbox-h){padding:0}
+.mbox-h{display:flex;align-items:center;gap:12px;padding:1rem 1.25rem;
+  border-bottom:1px solid var(--gray-200);background:linear-gradient(180deg,#fbfdfc,#f4f8f5);
+  border-radius:14px 14px 0 0;position:sticky;top:0;z-index:2}
+.mbox-h b{font-size:1rem;color:var(--g-dark);font-weight:700;letter-spacing:-.01em;flex:1;min-width:0}
+/* La croix se ferme a DROITE, la ou tout le monde la cherche. */
+.mbox-h .x{margin-left:auto;flex:none;width:30px;height:30px;border:none;background:none;border-radius:50%;
+  cursor:pointer;font-size:.95rem;line-height:1;color:var(--gray-500);display:inline-flex;
+  align-items:center;justify-content:center;transition:background .12s,color .12s}
+.mbox-h .x:hover{background:var(--gray-100);color:var(--gray-900)}
+.mbox-b{padding:1.25rem}
+.mbox-b > .fg{margin-bottom:1rem}
+.mbox-b > .fg:last-child{margin-bottom:0}
+.mbox-b .fg > label{display:block;font-size:.74rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--gray-600);margin-bottom:.45rem}
+.mbox-b .fg > input[type=text],.mbox-b .fg > input[type=email],.mbox-b .fg > input[type=date],
+.mbox-b .fg > input[type=tel],.mbox-b .fg > select,.mbox-b .fg > textarea{width:100%}
+.mbox-f{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:.9rem 1.25rem;
+  border-top:1px solid var(--gray-200);background:#fafbfa;border-radius:0 0 14px 14px;
+  position:sticky;bottom:0}
 
 /* ── TICKET ── */
 .ticket{border:1px dashed var(--gray-300);border-radius:8px;padding:1.25rem;font-family:'Courier New',monospace;font-size:.82rem;line-height:1.9}
