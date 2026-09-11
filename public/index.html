@@ -85,6 +85,21 @@ header{grid-area:hd;background:#fff;color:var(--gray-900);padding:0 1.5rem;displ
 .sidebar{grid-area:sb;background:#fff;border-right:1px solid var(--gray-200);padding:.6rem 0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:2px;position:sticky;top:64px;align-self:start;height:calc(100vh - 64px);transition:width .2s ease;z-index:150}
 .sb-item{display:flex;align-items:center;gap:14px;padding:.7rem 1.1rem;border:none;background:none;cursor:pointer;color:var(--gray-700);font-size:.9rem;font-weight:500;text-align:left;border-left:3px solid transparent;transition:background .12s,color .12s,border-color .12s;width:100%;font-family:inherit;white-space:nowrap}
 .sb-item:hover{background:var(--g-pale);color:var(--g-dark)}
+/* Intercalaire : separe les outils de reglage du travail quotidien. */
+.sb-sep{height:1px;background:var(--gray-200);margin:.55rem 1.1rem}
+#app.sb-collapsed .sb-sep{margin:.55rem .5rem}
+/* Reordonner son menu */
+.mo-l{display:flex;flex-direction:column;gap:6px;max-width:420px}
+.mo-i{display:flex;align-items:center;gap:10px;padding:8px 11px;border:1px solid var(--gray-200);
+  border-radius:9px;background:#fff;font-size:.87rem;font-weight:600;cursor:grab;user-select:none}
+.mo-i.mo-drag{opacity:.45}
+.mo-i.mo-over{border-color:var(--g-mid);box-shadow:0 0 0 3px rgba(46,125,84,.15)}
+.mo-i .mo-g{color:var(--gray-500);font-size:1rem;letter-spacing:-2px;flex:none}
+.mo-i .mo-b{margin-left:auto;display:flex;gap:4px}
+.mo-i .mo-b button{width:26px;height:26px;border:1px solid var(--gray-200);background:#fff;border-radius:7px;
+  cursor:pointer;font-size:.8rem;line-height:1;color:var(--gray-700)}
+.mo-i .mo-b button:hover{border-color:var(--g-mid);color:var(--g-dark)}
+.mo-i.mo-fige{background:var(--gray-100);cursor:default}
 .sb-item.active{background:var(--g-pale);color:var(--g-dark);border-left-color:var(--g-mid);font-weight:600}
 .sb-ico{width:22px;height:22px;flex-shrink:0}
 .sb-label{overflow:hidden;text-overflow:ellipsis}
@@ -1251,6 +1266,20 @@ tr:hover td{background:#fafffe}
             <button class="btn bp" onclick="modSavePerso()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer mon menu</button>
             <button class="btn bs" onclick="modResetPerso()">Revenir au réglage de mon poste</button>
             <span id="mod-perso-ok" style="display:none;color:#2E7D32;font-size:.85rem">Enregistré</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-reglages"></use></svg> Ordre du menu</span></div>
+          <p style="color:var(--gray-500);font-size:.85rem;margin:.2rem 0 1rem;line-height:1.5">
+            Par défaut, les modules sont classés par ordre alphabétique, l'accueil en tête, la boîte à idées et le Back Office en fin de liste.
+            Faites glisser une ligne pour changer l'ordre, ou utilisez les flèches. Ce réglage ne concerne que vous et vous suit sur tous les postes.
+          </p>
+          <div id="mod-ordre" class="mo-l"></div>
+          <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap;align-items:center">
+            <button class="btn bp" onclick="modSaveOrdre()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer l’ordre</button>
+            <button class="btn bs" onclick="modResetOrdre()">Revenir à l’ordre alphabétique</button>
+            <span id="mod-ordre-ok" style="display:none;color:#2E7D32;font-size:.85rem">Enregistré</span>
           </div>
         </div>
 
@@ -10206,7 +10235,75 @@ function modInedit(cle){
   if(!connus) return false;
   return connus.indexOf(cle) < 0;
 }
+// ═══════════ ORDRE DU MENU ═══════════
+// L'accueil ouvre, les outils de reglage ferment, et entre les deux l'ordre
+// alphabetique — le seul qui ne demande a personne de se souvenir d'un
+// classement. Les modules s'inserant d'eux-memes dans la barre, un ordre ecrit
+// en dur aurait ete faux des le module suivant.
+const MOD_TETE = ['accueil'];
+const MOD_QUEUE = ['demandes', 'backoffice'];   // boite a idees, puis back office
+
+// Comparaison « fr » insensible aux accents : Élise se range avec Elise.
+function modCmpNom(a, b){
+  return String(a.nom||'').localeCompare(String(b.nom||''), 'fr', {sensitivity:'base'});
+}
+
+// L'ordre par defaut, calcule a partir de ce qui est REELLEMENT dans la barre.
+function modOrdreDefaut(){
+  const dispo = modulesDispo();
+  const tete  = MOD_TETE.filter(c=>dispo.some(m=>m.cle===c));
+  const queue = MOD_QUEUE.filter(c=>dispo.some(m=>m.cle===c));
+  const milieu = dispo.filter(m=>tete.indexOf(m.cle)<0 && queue.indexOf(m.cle)<0)
+                      .sort(modCmpNom).map(m=>m.cle);
+  return tete.concat(milieu, queue);
+}
+
+// L'ordre choisi par l'operateur, complete de ce qui est apparu depuis. Un
+// module ajoute apres l'enregistrement n'a ete range nulle part : il prend sa
+// place alphabetique au lieu d'etre relegue en bout de liste, ou personne ne
+// l'aurait vu.
+function modOrdreEffectif(){
+  const defaut = modOrdreDefaut();
+  const rec = (currentUser && staffDB.find(s=>s.id===currentUser.id)) || null;
+  const perso = rec && Array.isArray(rec.ordreModules) ? rec.ordreModules : null;
+  if(!perso) return defaut;
+  const connus = perso.filter(c=>defaut.indexOf(c)>=0);
+  const nouveaux = defaut.filter(c=>connus.indexOf(c)<0);
+  if(!nouveaux.length) return connus;
+  const out = connus.slice();
+  nouveaux.forEach(function(c){
+    const i = defaut.indexOf(c);
+    // On l'insere apres son voisin de gauche dans l'ordre par defaut.
+    let apres = -1;
+    for(let k=i-1;k>=0;k--){ const j=out.indexOf(defaut[k]); if(j>=0){ apres=j; break; } }
+    out.splice(apres+1, 0, c);
+  });
+  return out;
+}
+
+// Reordonne les boutons en place. On DEPLACE les elements existants plutot que
+// de les reconstruire : ils portent des identifiants de pastille, des
+// gestionnaires poses par les modules, et tout cela survit au deplacement.
+function ordonnerSidebar(){
+  const bar = document.getElementById('sidebar'); if(!bar) return;
+  const ordre = modOrdreEffectif();
+  const par = {};
+  bar.querySelectorAll('.sb-item').forEach(function(b){
+    const c = modCle(b); if(c && !par[c]) par[c] = b;
+  });
+  let sep = bar.querySelector('.sb-sep');
+  if(!sep){ sep = document.createElement('div'); sep.className = 'sb-sep'; }
+  const debutQueue = ordre.findIndex(c=>MOD_QUEUE.indexOf(c)>=0);
+  ordre.forEach(function(c, i){
+    const b = par[c]; if(!b) return;
+    if(i === debutQueue && debutQueue > 0) bar.appendChild(sep);
+    bar.appendChild(b);
+  });
+  if(debutQueue < 0 && sep.parentNode) sep.parentNode.removeChild(sep);
+}
+
 function appliquerModules(){
+  ordonnerSidebar();
   const liste = modulesAutorises();
   let actifMasque = false;
   document.querySelectorAll('.sidebar .sb-item').forEach(function(b){
@@ -10260,6 +10357,7 @@ function renderModulesUI(){
   const perso = rec && Array.isArray(rec.modules) ? rec.modules : null;
   const parPoste = rec && modulesParPoste ? modulesParPoste[rec.poste] : null;
   modCases('mod-perso', perso || parPoste, !(perso||parPoste));
+  renderModulesOrdre();
   if(isAdmin()) renderModulesPoste();
 }
 function renderModulesPoste(){
@@ -10281,6 +10379,95 @@ function renderModulesPoste(){
       : '';
   }
 }
+// ─── Ordre du menu : glisser-deposer, et les fleches ───
+// Les fleches ne sont pas un ornement : le glisser-deposer HTML5 ne repond pas
+// au doigt sur une tablette, et l'officine en a. Chaque ligne offre donc les
+// deux gestes.
+let _moOrdre = [];
+function moHtml(){
+  const noms={}; modulesDispo().forEach(m=>noms[m.cle]=m.nom);
+  return _moOrdre.map(function(c,i){
+    const fige = MOD_TETE.indexOf(c)>=0 || MOD_QUEUE.indexOf(c)>=0;
+    return '<div class="mo-i'+(fige?' mo-fige':'')+'"'+(fige?'':' draggable="true"')+' data-mod="'+c+'" data-i="'+i+'">'
+      + '<span class="mo-g">'+(fige?'·':'⠿')+'</span>'
+      + '<span>'+ctlEsc(noms[c]||c)+'</span>'
+      + (fige
+          ? '<span style="margin-left:auto;font-size:.68rem;color:var(--gray-500)">place fixe</span>'
+          : '<span class="mo-b"><button type="button" title="Monter" onclick="modBouger('+i+',-1)">▲</button>'
+            + '<button type="button" title="Descendre" onclick="modBouger('+i+',1)">▼</button></span>')
+      + '</div>';
+  }).join('');
+}
+function renderModulesOrdre(){
+  const el=document.getElementById('mod-ordre'); if(!el) return;
+  const dispo={}; modulesDispo().forEach(m=>dispo[m.cle]=1);
+  _moOrdre = modOrdreEffectif().filter(c=>dispo[c]);
+  moRedessiner();
+}
+// Un deplacement ne doit jamais faire sortir un element de sa zone : l'accueil
+// reste en tete, la boite a idees et le back office en queue.
+function moZone(cle){
+  if(MOD_TETE.indexOf(cle)>=0) return 0;
+  if(MOD_QUEUE.indexOf(cle)>=0) return 2;
+  return 1;
+}
+window.modBouger=function(i, d){
+  const j=i+d;
+  if(j<0||j>=_moOrdre.length) return;
+  if(moZone(_moOrdre[i])!==1 || moZone(_moOrdre[j])!==1) return;
+  const t=_moOrdre[i]; _moOrdre[i]=_moOrdre[j]; _moOrdre[j]=t;
+  moRedessiner();
+};
+// Redessine a partir de l'ordre EN COURS D'EDITION, qui n'est pas encore
+// enregistre : c'est ce qui distingue cette fonction de renderModulesOrdre.
+function moRedessiner(){
+  const el=document.getElementById('mod-ordre'); if(!el) return;
+  el.innerHTML = moHtml();
+  moBrancherDnD(el);
+}
+function moBrancherDnD(el){
+  let src=null;
+  el.querySelectorAll('.mo-i[draggable="true"]').forEach(function(n){
+    n.addEventListener('dragstart', function(e){ src=n; n.classList.add('mo-drag'); e.dataTransfer.effectAllowed='move'; });
+    n.addEventListener('dragend',   function(){ n.classList.remove('mo-drag'); el.querySelectorAll('.mo-over').forEach(x=>x.classList.remove('mo-over')); });
+  });
+  el.querySelectorAll('.mo-i').forEach(function(n){
+    n.addEventListener('dragover', function(e){
+      if(!src || n===src) return;
+      if(moZone(n.getAttribute('data-mod'))!==1) return;   // on ne se pose pas sur une place fixe
+      e.preventDefault(); n.classList.add('mo-over');
+    });
+    n.addEventListener('dragleave', function(){ n.classList.remove('mo-over'); });
+    n.addEventListener('drop', function(e){
+      e.preventDefault(); n.classList.remove('mo-over');
+      if(!src || n===src) return;
+      const de=_moOrdre.indexOf(src.getAttribute('data-mod'));
+      const vers=_moOrdre.indexOf(n.getAttribute('data-mod'));
+      if(de<0||vers<0||moZone(_moOrdre[vers])!==1) return;
+      _moOrdre.splice(vers, 0, _moOrdre.splice(de,1)[0]);
+      moRedessiner();
+    });
+  });
+}
+window.modSaveOrdre=function(){
+  if(!currentUser) return;
+  const rec=staffDB.find(s=>s.id===currentUser.id); if(!rec) return;
+  rec.ordreModules=_moOrdre.slice();
+  rec.updatedAt=Date.now();
+  if(typeof schedSave==='function') schedSave();
+  if(typeof logAction==='function') logAction('Ordre du menu modifié', rec.ordreModules.length+' modules');
+  ordonnerSidebar(); modOk('mod-ordre-ok');
+};
+window.modResetOrdre=function(){
+  if(!currentUser) return;
+  const rec=staffDB.find(s=>s.id===currentUser.id); if(!rec) return;
+  // `null` et non `delete` : staffDB se fusionne CHAMP PAR CHAMP cote serveur,
+  // une cle supprimee serait reintroduite par la copie d'un autre poste.
+  rec.ordreModules=null; rec.updatedAt=Date.now();
+  if(typeof schedSave==='function') schedSave();
+  ordonnerSidebar(); renderModulesOrdre(); modOk('mod-ordre-ok');
+};
+
 window.modSavePerso=function(){
   if(!currentUser) return;
   const rec=staffDB.find(s=>s.id===currentUser.id); if(!rec) return;
