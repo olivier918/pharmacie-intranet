@@ -2476,6 +2476,26 @@ let _loadedOK=false;    // passe à true UNIQUEMENT après lecture réussie de l
 let _suppressSave=false; // true pendant un rafraîchissement : on ne ré-écrit pas ce qu'on vient de lire
 let _savePending=false;  // true tant qu'une modif locale n'est pas persistée : la synchro ne doit pas l'écraser
 let tombstones=[];       // sync : suppressions horodatées (tombstones), toutes collections à id
+// Les modeles livres avec l'application COMPLETENT la liste enregistree, ils ne
+// la remplacent pas. Sans cela, un nouveau modele d'origine n'apparaissait
+// jamais : la base porte deja une liste, qui ecrasait les valeurs par defaut au
+// chargement — c'est ce qui a fait disparaitre « Rappel de vaccination » et
+// « Produit non disponible ».
+// Un modele que quelqu'un a volontairement supprime porte une pierre tombale :
+// on ne le ressuscite pas.
+function completerModelesSms(){
+  try{
+    if(!Array.isArray(smsTemplates)) smsTemplates=[];
+    const presents=new Set(smsTemplates.map(t=>t&&t.id));
+    const enterres=new Set((Array.isArray(tombstones)?tombstones:[])
+      .filter(x=>x&&x.c==='smsTemplates').map(x=>x.id));
+    SMS_TPL_DEFAULT.forEach(function(t){
+      if(presents.has(t.id)||enterres.has(t.id)) return;
+      smsTemplates.push(Object.assign({},t,{updatedAt:Date.now()}));
+    });
+  }catch(e){ console.warn('modeles SMS',e); }
+}
+
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
 const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
@@ -2607,6 +2627,7 @@ async function loadAll(){
     if(data.renouvArchives)renouvArchives=data.renouvArchives;
     if(Array.isArray(data.smsLog))smsLog=data.smsLog;
     if(Array.isArray(data.smsTemplates))smsTemplates=data.smsTemplates;
+    completerModelesSms();
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.banque)banque=data.banque;
     if(data.ADMIN)Object.assign(ADMIN,data.ADMIN);
