@@ -1011,9 +1011,12 @@ tr:hover td{background:#fafffe}
           <div class="fg"><label>Date</label><input type="date" id="ca-date"></div>
           <div class="fg"><label>Montant logiciel (€) <span class="req">*</span></label><input type="number" id="ca-logiciel" placeholder="0.00" step="0.01" min="0" oninput="updEcartPreview()"></div>
           <div class="fg"><label>Montant prélevé (€) <span class="req">*</span></label>
-            <div style="display:flex;gap:6px">
-              <input type="number" id="ca-preleve" placeholder="0.00" step="0.01" min="0" style="flex:1" oninput="updEcartPreview()">
-              <button class="btn bs sm" type="button" onclick="openBillCounter()" title="Compter billets et pièces"><svg class="ico"><use href="#ic-euro"></use></svg> Compter</button>
+            <!-- Les colonnes de cette grille descendent a 180 px : l'input et le
+                 bouton cote a cote n'y tenaient pas, et le bouton debordait sous
+                 la case voisine. Ils s'empilent proprement quand la place manque. -->
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <input type="number" id="ca-preleve" placeholder="0.00" step="0.01" min="0" style="flex:1 1 110px;min-width:0" oninput="updEcartPreview()">
+              <button class="btn bs sm" type="button" style="flex:1 0 auto;white-space:nowrap" onclick="openBillCounter()" title="Compter billets et pièces"><svg class="ico"><use href="#ic-euro"></use></svg> Compter</button>
             </div>
           </div>
           <div class="fg"><label>Écart du jour</label><input type="text" id="ca-ecart" readonly style="background:var(--gray-100);font-weight:700"></div>
@@ -1039,7 +1042,8 @@ tr:hover td{background:#fafffe}
           <div class="fg"><label>Billets de 100 €</label><input type="number" min="0" step="1" id="cf-100" oninput="updCoffre()" placeholder="0"></div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;flex-wrap:wrap;gap:8px">
-          <div style="font-size:.95rem">Total : <strong id="cf-total" style="font-size:1.3rem;color:var(--g-dark)">0,00 €</strong> <span id="cf-count" style="font-size:.8rem;color:var(--gray-500)"></span></div>
+          <div style="font-size:.95rem">Total : <strong id="cf-total" style="font-size:1.3rem;color:var(--g-dark)">0,00 €</strong> <span id="cf-count" style="font-size:.8rem;color:var(--gray-500)"></span>
+            <div id="cf-vs" style="font-size:.78rem;color:var(--gray-500);margin-top:3px;line-height:1.45"></div></div>
           <div style="display:flex;gap:8px">
             <button class="btn bs sm" onclick="resetCoffre()">Effacer</button>
             <button class="btn bp" onclick="printCoffre()"><svg class="ico"><use href="#ic-imprimer"></use></svg> Imprimer l'enveloppe</button>
@@ -7614,6 +7618,7 @@ function caisseState(){
 }
 
 function updEcartPreview(){
+  try{ updCoffre(); }catch(e){}
   const log=caisseNum(document.getElementById('ca-logiciel')?.value);
   const pre=caisseNum(document.getElementById('ca-preleve')?.value);
   const el=document.getElementById('ca-ecart');
@@ -7859,6 +7864,23 @@ function updCoffre(){
   COFFRE.forEach(v=>{ const n=parseInt(document.getElementById('cf-'+v)?.value||'0',10)||0; total+=n*v; count+=n; });
   const t=document.getElementById('cf-total'); if(t) t.textContent=euro(total);
   const c=document.getElementById('cf-count'); if(c) c.textContent=count?('· '+count+' billet'+(count>1?'s':'')):'';
+
+  // Rapprochement avec le releve du soir. L'enveloppe n'est PAS le prelevement :
+  // elle ne contient que des coupures de 10 a 100 €, jamais les pieces ni les
+  // billets de 5 €. La reporter automatiquement dans « prelevé » fausserait
+  // l'ecart du jour. On se contente donc de montrer les deux nombres cote a
+  // cote et leur difference — c'est a l'operateur de savoir si elle s'explique.
+  const z=document.getElementById('cf-vs'); if(!z) return;
+  const pre=caisseNum(document.getElementById('ca-preleve')?.value);
+  if(!total && !pre){ z.textContent=''; return; }
+  if(!pre){ z.textContent='Le relevé du soir n’indique pas encore de montant prélevé.'; return; }
+  const reste=Math.round((pre-total)*100)/100;
+  z.innerHTML='Prélevé du soir : <b>'+euro(pre)+'</b> · dans l’enveloppe : <b>'+euro(total)+'</b> · '
+    + (Math.abs(reste)<0.005
+        ? 'rien ne reste en pièces.'
+        : reste>0
+          ? 'reste <b>'+euro(reste)+'</b> en pièces et petites coupures.'
+          : '<span style="color:var(--red)">l’enveloppe dépasse le prélèvement de '+euro(-reste)+'.</span>');
 }
 function resetCoffre(){ COFFRE.forEach(v=>{ const e=document.getElementById('cf-'+v); if(e) e.value=''; }); updCoffre(); }
 function printCoffre(){
