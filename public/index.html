@@ -7617,12 +7617,18 @@ function caisseState(){
   return {cumEsp,cumEcart,streak,streakStart,seuil,duree,alert:streak>duree,evs};
 }
 
-function updEcartPreview(){
-  try{ updCoffre(); }catch(e){}
+// L'ecart seul, sans toucher au comptage : appele aussi bien par la saisie que
+// par le report de l'enveloppe. Les separer evite que l'un rappelle l'autre en
+// boucle.
+function majEcart(){
   const log=caisseNum(document.getElementById('ca-logiciel')?.value);
   const pre=caisseNum(document.getElementById('ca-preleve')?.value);
   const el=document.getElementById('ca-ecart');
   if(el){ const ec=pre-log; el.value=euroSigned(ec); el.style.color = ec<0?'var(--red)':(ec>0?'var(--g-dark)':'var(--gray-700)'); }
+}
+function updEcartPreview(){
+  majEcart();
+  try{ updCoffre(); }catch(e){}
 }
 
 function renderCaisse(){
@@ -7865,22 +7871,46 @@ function updCoffre(){
   const t=document.getElementById('cf-total'); if(t) t.textContent=euro(total);
   const c=document.getElementById('cf-count'); if(c) c.textContent=count?('· '+count+' billet'+(count>1?'s':'')):'';
 
-  // Rapprochement avec le releve du soir. L'enveloppe n'est PAS le prelevement :
-  // elle ne contient que des coupures de 10 a 100 €, jamais les pieces ni les
-  // billets de 5 €. La reporter automatiquement dans « prelevé » fausserait
-  // l'ecart du jour. On se contente donc de montrer les deux nombres cote a
-  // cote et leur difference — c'est a l'operateur de savoir si elle s'explique.
-  const z=document.getElementById('cf-vs'); if(!z) return;
-  const pre=caisseNum(document.getElementById('ca-preleve')?.value);
-  if(!total && !pre){ z.textContent=''; return; }
-  if(!pre){ z.textContent='Le relevé du soir n’indique pas encore de montant prélevé.'; return; }
-  const reste=Math.round((pre-total)*100)/100;
-  z.innerHTML='Prélevé du soir : <b>'+euro(pre)+'</b> · dans l’enveloppe : <b>'+euro(total)+'</b> · '
-    + (Math.abs(reste)<0.005
-        ? 'rien ne reste en pièces.'
-        : reste>0
-          ? 'reste <b>'+euro(reste)+'</b> en pièces et petites coupures.'
-          : '<span style="color:var(--red)">l’enveloppe dépasse le prélèvement de '+euro(-reste)+'.</span>');
+  // A l'officine, le montant preleve EST celui de l'enveloppe qui part au
+  // coffre : ce qui sort du tiroir, ce sont ces coupures et rien d'autre. Le
+  // comptage alimente donc « prelevé » de lui-meme.
+  //
+  // Avec une reserve, qui est tout l'interet de _cfPose : on n'ecrase JAMAIS un
+  // montant saisi a la main. On ne reecrit que le champ vide, ou celui que ce
+  // comptage a lui-meme rempli. Une correction tapee par un operateur doit
+  // survivre a la saisie d'un billet de plus.
+  const pEl=document.getElementById('ca-preleve');
+  const z=document.getElementById('cf-vs');
+  if(!pEl){ return; }
+  const pre=caisseNum(pEl.value);
+  const brut=(pEl.value||'').trim();
+  const aNous = !brut || Math.abs(pre-_cfPose)<0.005;
+  if(total>0 && aNous){
+    pEl.value=(Math.round(total*100)/100).toFixed(2);
+    _cfPose=Math.round(total*100)/100;
+    majEcart();
+  }
+  if(!z) return;
+  const preN=caisseNum(pEl.value);
+  if(!total && !preN){ z.textContent=''; return; }
+  if(Math.abs(preN-total)<0.005){
+    z.innerHTML='<span style="color:var(--g-dark)">Reporté dans « prélevé » du relevé du soir.</span>';
+  } else {
+    // Les deux nombres different : quelqu'un a saisi le prelevement a la main.
+    // On ne tranche pas a sa place, on propose.
+    z.innerHTML='Le relevé du soir indique <b>'+euro(preN)+'</b>, l’enveloppe <b>'+euro(total)+'</b>. '
+      + '<button type="button" class="btn bs sm" style="margin-left:6px" onclick="reporterCoffre()">Reporter l’enveloppe</button>';
+  }
+}
+// Montant que CE comptage a pose dans « prelevé ». Sert a distinguer notre
+// propre ecriture d'une saisie humaine.
+let _cfPose=null;
+function reporterCoffre(){
+  let total=0; COFFRE.forEach(v=>{ total+=(parseInt(document.getElementById('cf-'+v)?.value||'0',10)||0)*v; });
+  const pEl=document.getElementById('ca-preleve'); if(!pEl) return;
+  pEl.value=(Math.round(total*100)/100).toFixed(2);
+  _cfPose=Math.round(total*100)/100;
+  majEcart(); updCoffre();
 }
 function resetCoffre(){ COFFRE.forEach(v=>{ const e=document.getElementById('cf-'+v); if(e) e.value=''; }); updCoffre(); }
 function printCoffre(){
@@ -7895,6 +7925,13 @@ function printCoffre(){
     }
   });
   if(!rows) rows='<tr><td colspan="3" style="text-align:center;color:#999">Aucun billet saisi</td></tr>';
+  // L'enveloppe part au coffre : c'est le moment ou le prelevement est reel.
+  // Si le releve porte un autre montant, on le signale plutot que d'imprimer
+  // une enveloppe qui ne correspondra pas a la caisse du jour.
+  const preAv=caisseNum(document.getElementById('ca-preleve')?.value);
+  if(total>0 && Math.abs(preAv-total)>=0.005){
+    if(!confirm('Le relevé du soir indique un prélèvement de '+euro(preAv)+', alors que l’enveloppe contient '+euro(total)+'.\n\nImprimer quand même ?\n\n(Annuler pour corriger — le bouton « Reporter l’enveloppe » met les deux d’accord.)')) return;
+  }
   const oper = currentUser ? (currentUser.prenom+' '+currentUser.nom) : '';
   const html=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Enveloppe coffre — ${dateShort}</title>
 <style>
