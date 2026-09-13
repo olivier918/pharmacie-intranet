@@ -1380,6 +1380,7 @@ tr:hover td{background:#fafffe}
             <button class="btn bs" onclick="cfEtat()">Où en est-on ?</button>
             <button class="btn bp" onclick="cfChiffrer()"><svg class="ico"><use href="#ic-securite"></use></svg> Chiffrer les fichiers en clair</button>
             <button class="btn bs" onclick="cfReemballer()">Réemballer après rotation de clé</button>
+            <button class="btn bs" onclick="cfEchantillon()">Exporter un fichier scellé (épreuve de la clé)</button>
           </div>
           <div id="cf-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.6"></div>
         </div>
@@ -11112,6 +11113,30 @@ async function cfReemballer(){
     +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
       +rates.map(x=>'• '+String(x).replace(/[<>]/g,'')).join('<br>')+'</div>':'');
   if(total) tracer('modification','ordonnance',null,'Rotation de clé lancée');
+}
+
+// L'épreuve de la clé : on exporte UN fichier scellé, et on l'ouvre ailleurs,
+// hors de l'application, avec la seule copie papier de la clé. Ce qui sort d'ici
+// est chiffré — sans la clé, c'est un bloc d'octets.
+async function cfEchantillon(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  try{
+    const r=await fetch('/api/coffre/echantillon',{cache:'no-store'});
+    const j=await r.json();
+    if(!j.ok){ alert(j.error||'Export impossible.'); return; }
+    const nom='essai-restauration-'+j.id.slice(0,8)+'.json';
+    const url=URL.createObjectURL(new Blob([JSON.stringify(j,null,2)],{type:'application/json'}));
+    const a=document.createElement('a'); a.href=url; a.download=nom;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    cfDire('<div><b>'+nom+' téléchargé.</b></div>'
+      +'<div style="font-size:.82rem;color:var(--gray-500);margin-top:5px;line-height:1.6">'
+      +'Ce fichier est chiffré : sans la clé, il ne contient rien de lisible.<br>'
+      +'Dans un Terminal, au même endroit que le fichier :<br>'
+      +'<span style="font-family:ui-monospace,monospace;font-size:.9em">node ouvrir-une-ordonnance.js '+nom+'</span><br>'
+      +'La clé se tape à l\u2019invite — recopiée du papier du coffre, jamais copiée depuis le serveur : '
+      +'c\u2019est le papier qu\u2019on éprouve, pas la configuration.</div>');
+  }catch(e){ alert('Export impossible : '+e.message); }
 }
 
 // ═══════════ JOURNAL DES ACCÈS (registre serveur) ═══════════

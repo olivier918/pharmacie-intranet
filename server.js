@@ -470,6 +470,24 @@ app.post('/api/coffre/chiffrer', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// Export d'UN fichier scelle, pour l'epreuve de la cle. Ce qui sort est
+// chiffre : sans la cle, ce n'est qu'un bloc d'octets. Le but est justement de
+// verifier, hors de l'application et hors de la plateforme, que la copie papier
+// de la cle rouvre reellement une ordonnance — voir outils/ouvrir-une-ordonnance.js.
+app.get('/api/coffre/echantillon', async (req, res) => {
+  const uid = await gardeCoffre(req, res); if (!uid) return;
+  try {
+    const r = await db.query(
+      'SELECT id, mime, algo, enveloppe, marque, octets FROM app_images'
+      + ' WHERE algo IS NOT NULL ORDER BY created_at DESC LIMIT 1');
+    if (!r.rows.length) return res.status(404).json({ ok: false, error: 'Aucun fichier chiffré à éprouver.' });
+    const l = r.rows[0];
+    traces.noter(db, uid, 'export', 'ordonnance', l.id, 'Export scellé pour l\'épreuve de la clé');
+    res.json({ ok: true, id: l.id, mime: l.mime, algo: l.algo, marque: l.marque,
+      enveloppe: l.enveloppe.toString('base64'), octets: l.octets.toString('base64') });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // Rotation : on ne reecrit que les petites cles, jamais les fichiers.
 app.post('/api/coffre/reemballer', async (req, res) => {
   const uid = await gardeCoffre(req, res); if (!uid) return;
