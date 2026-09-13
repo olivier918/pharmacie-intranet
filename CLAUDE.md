@@ -135,6 +135,37 @@ Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
 c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
 protège pas d'un essai en force.
 
+## Chiffrement au repos des ordonnances (`coffre.js`)
+
+Les scans sont chiffrés avant d'être écrits dans `app_images`. La clé
+(`SCANS_CLE`) vit dans la configuration de la plateforme, **pas** dans la base :
+un export de base seul est inutilisable. Ce que cela ne protège pas : une
+application compromise, qui a la clé par construction. Le dire franchement évite
+de croire la maison plus sûre qu'elle ne l'est.
+
+Quatre règles :
+
+1. **L'identifiant reste le condensat des octets EN CLAIR**, calculé avant le
+   chiffrement. C'est ce qui préserve la déduplication — et la capacité de
+   restaurer un scan en réenvoyant les mêmes octets, qui a sauvé 72 ordonnances
+   le 13/09/2026.
+2. **`algo` nul veut dire « encore en clair ».** Le chemin de lecture sert les
+   deux époques ; sans clé, le module est inerte et rien ne change.
+3. **Enveloppe.** Chaque fichier a sa propre clé, emballée par la clé maîtresse.
+   Une rotation ne réécrit que des clés de 32 octets, jamais les fichiers.
+4. **On relit avant de remplacer.** Reprise comme rotation : chiffrer, relire,
+   comparer, et seulement ensuite écrire. Un fichier qui ne se relit pas à
+   l'identique reste intact — même schéma que la conversion des codes PIN et que
+   la sortie des scans du blob.
+
+Rotation : poser la nouvelle `SCANS_CLE`, déplacer l'ancienne dans
+`SCANS_CLES_ANCIENNES`, déployer, réemballer depuis le Back Office, puis retirer
+l'ancienne **une fois le compteur à zéro**.
+
+**Si la clé est perdue, les ordonnances sont perdues.** Aucune ligne de code ne
+couvre ce risque : il se couvre par une deuxième copie de la clé ailleurs, et
+par un essai de restauration réellement fait.
+
 ## Journal des accès : deux journaux, deux natures
 
 Il y a désormais **deux** journaux, et les confondre serait une faute.

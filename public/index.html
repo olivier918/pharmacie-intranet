@@ -1361,6 +1361,28 @@ tr:hover td{background:#fafffe}
           </div>
           <div id="reprise-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.5"></div>
         </div>
+
+        <!-- CHIFFREMENT AU REPOS -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-securite"></use></svg> Chiffrement des ordonnances</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">
+            Les scans sont chiffrés avant d'être écrits en base, avec une clé qui vit dans la configuration
+            du serveur — pas dans la base. Une sauvegarde qui s'échapperait sans la clé est inutilisable.
+            <br>Cela ne protège pas d'une application compromise : elle a la clé par construction. C'est
+            l'accès à la base seule que l'on ferme ici.
+          </p>
+          <div style="background:#FFF3E0;border-radius:8px;padding:.7rem .9rem;font-size:.82rem;line-height:1.5;margin-bottom:.9rem">
+            <b>Si la clé est perdue, les ordonnances sont perdues.</b> Elle doit exister à au moins deux endroits
+            qui ne peuvent pas disparaître ensemble — et il faut s'en être servi une fois pour restaurer,
+            sinon ce n'est pas une clé, c'est une croyance.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn bs" onclick="cfEtat()">Où en est-on ?</button>
+            <button class="btn bp" onclick="cfChiffrer()"><svg class="ico"><use href="#ic-securite"></use></svg> Chiffrer les fichiers en clair</button>
+            <button class="btn bs" onclick="cfReemballer()">Réemballer après rotation de clé</button>
+          </div>
+          <div id="cf-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.6"></div>
+        </div>
       </div>
 
       <!-- MAINTENANCE : reprise des scans de location -->
@@ -10986,6 +11008,100 @@ function renderJournal(){
       }).join('')
     + '</tbody></table></div>'
     + (f.length>PLAFOND?`<div style="text-align:center;color:var(--gray-500);padding:.7rem;font-size:.8rem">${f.length-PLAFOND} action(s) plus anciennes non affichées — affinez la période ou la recherche.</div>`:'');
+}
+
+// ═══════════ CHIFFREMENT AU REPOS DES ORDONNANCES ═══════════
+// L'écran ne connaît pas la clé et n'a aucun moyen de la connaître : elle vit
+// dans la configuration du serveur. Ce qui remonte ici, c'est une empreinte
+// publique — huit caractères du condensat de la clé — qui répond à « avec
+// laquelle de mes clés ce fichier a-t-il été scellé » sans rien révéler.
+function cfDire(html){ const z=document.getElementById('cf-etat'); if(z) z.innerHTML=html; }
+
+async function cfEtat(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return null; }
+  cfDire('<span style="color:var(--gray-500)">Lecture…</span>');
+  try{
+    const j=await (await fetch('/api/coffre/etat',{cache:'no-store'})).json();
+    if(!j.ok){ cfDire('<span style="color:#B91C1C">'+(j.error||'indisponible')+'</span>'); return null; }
+    const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    cfDire(
+      (j.erreur
+        ? '<div style="background:#FFEBEE;border-radius:8px;padding:8px 11px;margin-bottom:8px"><b>Clé refusée :</b> '+esc(j.erreur)+'</div>'
+        : j.actif
+          ? '<div><b style="color:#2E7D32">Chiffrement actif</b> · clé <span style="font-family:ui-monospace,monospace">'+esc(j.marque)+'</span>'
+            +(j.anciennes?' · '+j.anciennes+' ancienne(s) clé(s) conservée(s) pour la lecture':'')+'</div>'
+          : '<div><b style="color:#EF6C00">Aucune clé définie</b> — les scans restent en clair. Posez <span style="font-family:ui-monospace,monospace">SCANS_CLE</span> dans la configuration du serveur.</div>')
+      +'<div style="margin-top:6px"><b>'+j.chiffres+'</b> fichier(s) chiffré(s) · <b>'+j.clair+'</b> encore en clair'
+      +(j.aReemballer?' · <b>'+j.aReemballer+'</b> à réemballer sur la clé courante':'')
+      +' · '+j.total+' au total</div>'
+      +(j.actif&&!j.clair&&!j.aReemballer?'<div style="font-size:.8rem;color:var(--gray-500);margin-top:5px">Tout est scellé sur la clé courante.</div>':''));
+    return j;
+  }catch(e){ cfDire('<span style="color:#B91C1C">Lecture impossible : '+e.message+'</span>'); return null; }
+}
+
+// Reprise par paquets. Chaque fichier est chiffré, RELU, et comparé octet pour
+// octet avant que le clair ne soit remplacé — un fichier qui ne se relit pas à
+// l'identique reste intact. C'est le schéma qui a fonctionné pour les codes PIN
+// et pour la sortie des scans du fichier de données.
+async function cfChiffrer(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const e0=await cfEtat(); if(!e0) return;
+  if(!e0.actif){ alert('Aucune clé n\u2019est définie sur le serveur : rien à chiffrer.'); return; }
+  if(!e0.clair){ alert('Aucun fichier en clair : il n\u2019y a rien à reprendre.'); return; }
+  if(!confirm('Chiffrer '+e0.clair+' fichier(s) encore en clair ?\n\n'
+    +'Chaque fichier est chiffré, relu et comparé AVANT que le clair ne soit remplacé.\n'
+    +'Un fichier qui ne se relit pas à l\u2019identique est laissé intact.\n\n'
+    +'Assurez-vous d\u2019avoir une deuxième copie de la clé AILLEURS avant de continuer.')) return;
+
+  let total=0; const rates=[];
+  for(let tour=0; tour<200; tour++){
+    cfDire('<span style="color:var(--gray-500)">Chiffrement… '+total+' fichier(s) repris.</span>');
+    let j;
+    try{ j=await (await fetch('/api/coffre/chiffrer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lot:20})})).json(); }
+    catch(err){ rates.push('Interruption : '+err.message); break; }
+    if(!j.ok){ rates.push(j.error||'refus du serveur'); break; }
+    total+=j.faits;
+    (j.rates||[]).forEach(x=>rates.push(x));
+    if(!j.reste) break;
+    if(!j.faits) break;   // plus rien ne progresse : on n'insiste pas
+  }
+  await cfEtat();
+  const z=document.getElementById('cf-etat');
+  if(z) z.innerHTML='<div><b>'+total+' fichier(s) chiffré(s).</b></div>'+z.innerHTML
+    +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
+      +rates.map(x=>'• '+String(x).replace(/[<>]/g,'')).join('<br>')+'</div>':'');
+  if(total) tracer('modification','ordonnance',null,'Chiffrement au repos lancé');
+}
+
+// Rotation : seules les petites clés de fichier sont réécrites, jamais les
+// fichiers. L'ancienne clé doit rester dans SCANS_CLES_ANCIENNES le temps de
+// l'opération, et ne se retire qu'une fois le compteur à zéro.
+async function cfReemballer(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const e0=await cfEtat(); if(!e0) return;
+  if(!e0.actif){ alert('Aucune clé définie sur le serveur.'); return; }
+  if(!e0.aReemballer){ alert('Tous les fichiers sont déjà scellés sur la clé courante.'); return; }
+  if(!confirm('Réemballer '+e0.aReemballer+' fichier(s) sur la clé courante ?\n\n'
+    +'Le contenu des fichiers n\u2019est pas réécrit : seule la petite clé de chaque fichier change.\n\n'
+    +'Ne retirez l\u2019ancienne clé de SCANS_CLES_ANCIENNES qu\u2019une fois le compteur à zéro.')) return;
+
+  let total=0; const rates=[];
+  for(let tour=0; tour<200; tour++){
+    cfDire('<span style="color:var(--gray-500)">Réemballage… '+total+' fichier(s).</span>');
+    let j;
+    try{ j=await (await fetch('/api/coffre/reemballer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lot:100})})).json(); }
+    catch(err){ rates.push('Interruption : '+err.message); break; }
+    if(!j.ok){ rates.push(j.error||'refus du serveur'); break; }
+    total+=j.faits;
+    (j.rates||[]).forEach(x=>rates.push(x));
+    if(!j.reste || !j.faits) break;
+  }
+  await cfEtat();
+  const z=document.getElementById('cf-etat');
+  if(z) z.innerHTML='<div><b>'+total+' fichier(s) réemballé(s).</b></div>'+z.innerHTML
+    +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
+      +rates.map(x=>'• '+String(x).replace(/[<>]/g,'')).join('<br>')+'</div>':'');
+  if(total) tracer('modification','ordonnance',null,'Rotation de clé lancée');
 }
 
 // ═══════════ JOURNAL DES ACCÈS (registre serveur) ═══════════

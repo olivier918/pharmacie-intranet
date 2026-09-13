@@ -25,6 +25,7 @@ const smsProgrammes = require('./sms-programmes');
 const identite = require('./identite');
 const traces = require('./traces');
 const securite = require('./securite');
+const coffre = require('./coffre');
 paiement.installWebhook(app, express, { onPaid: marquerCreditPaye });
 
 // ─── Durcissement : en-tetes de securite et freins de debit (voir securite.js) ───
@@ -286,6 +287,12 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Chiffrement au repos (voir coffre.js). Colonnes ajoutees apres coup :
+    // `algo` nul signifie « encore en clair », et c'est le seul marqueur dont
+    // la lecture a besoin pour servir les deux epoques sans rien casser.
+    await db.query('ALTER TABLE app_images ADD COLUMN IF NOT EXISTS algo TEXT');
+    await db.query('ALTER TABLE app_images ADD COLUMN IF NOT EXISTS enveloppe BYTEA');
+    await db.query('ALTER TABLE app_images ADD COLUMN IF NOT EXISTS marque TEXT');
     dbError = null;
     dbConnectedAt = new Date().toISOString();
     console.log('  🐘 Base PostgreSQL connectée !');
@@ -340,10 +347,17 @@ app.post('/api/images', async (req, res) => {
     if (octets.length > IMG_MAX_OCTETS) {
       return res.status(413).json({ ok: false, error: 'Fichier trop lourd (max 8 Mo)' });
     }
+    // L'identifiant est le condensat des octets EN CLAIR, calcule avant le
+    // chiffrement : c'est ce qui preserve la deduplication, et la capacite de
+    // restaurer un scan en reenvoyant les memes octets.
     const id = crypto.createHash('sha256').update(octets).digest('hex').slice(0, 32);
+    const scelle = coffre.chiffrer(octets);
     await db.query(
-      'INSERT INTO app_images (id, mime, octets, taille) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING',
-      [id, mime, octets, octets.length]
+      'INSERT INTO app_images (id, mime, octets, taille, algo, enveloppe, marque)'
+      + ' VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING',
+      scelle
+        ? [id, mime, scelle.octets, octets.length, scelle.algo, scelle.enveloppe, scelle.marque]
+        : [id, mime, octets, octets.length, null, null, null]
     );
     res.json({ ok: true, id: id, url: '/api/images/' + id });
   } catch (err) {
@@ -357,16 +371,112 @@ app.get('/api/images/:id', async (req, res) => {
     if (!db) return res.status(503).end();
     const id = String(req.params.id || '');
     if (!/^[0-9a-f]{32}$/.test(id)) return res.status(400).end();
-    const r = await db.query('SELECT mime, octets FROM app_images WHERE id = $1', [id]);
+    const r = await db.query('SELECT mime, octets, algo, enveloppe, marque FROM app_images WHERE id = $1', [id]);
     if (!r.rows.length) return res.status(404).end();
+    // Les deux epoques cohabitent : `algo` nul rend les octets tels quels.
+    let clair;
+    try { clair = coffre.dechiffrer(r.rows[0]); }
+    catch (e) {
+      console.error('  ⛔ Scan ' + id + ' illisible : ' + e.message);
+      return res.status(500).end();
+    }
     // Immuable : le nom EST le contenu. Le navigateur ne redemandera jamais.
     res.set('Cache-Control', 'public, max-age=31536000, immutable');
     res.set('Content-Type', r.rows[0].mime);
-    res.send(r.rows[0].octets);
+    res.send(clair);
   } catch (err) {
     console.error('Erreur lecture image:', err.message);
     res.status(500).end();
   }
+});
+
+// ─── COFFRE : chiffrement au repos des scans (voir coffre.js) ──────────────
+// Trois routes d'administration. Aucune n'est automatique : une operation qui
+// reecrit des ordonnances se declenche a la main, se verifie piece par piece,
+// et se lit dans le journal des acces apres coup.
+async function gardeCoffre(req, res) {
+  const uid = identite.qui(req);
+  if (!uid) { res.status(401).json({ ok: false, error: 'non_identifie' }); return null; }
+  if (!(await estAdministrateur(uid))) { res.status(403).json({ ok: false, error: 'interdit' }); return null; }
+  if (!db) { res.status(503).json({ ok: false, error: 'base_indisponible' }); return null; }
+  return uid;
+}
+
+app.get('/api/coffre/etat', async (req, res) => {
+  if (!(await gardeCoffre(req, res))) return;
+  try {
+    const d = coffre.diagnostic();
+    const r = await db.query(
+      'SELECT COUNT(*) FILTER (WHERE algo IS NULL) AS clair,'
+      + ' COUNT(*) FILTER (WHERE algo IS NOT NULL) AS chiffres,'
+      + ' COUNT(*) FILTER (WHERE algo IS NOT NULL AND marque IS DISTINCT FROM $1) AS areemballer,'
+      + ' COUNT(*) AS total FROM app_images', [d.marque]);
+    const l = r.rows[0] || {};
+    res.json({ ok: true, actif: d.actif, marque: d.marque, anciennes: d.anciennes, erreur: d.erreur,
+      clair: +l.clair || 0, chiffres: +l.chiffres || 0, aReemballer: +l.areemballer || 0, total: +l.total || 0 });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Reprise des fichiers encore en clair. C'est l'exception assumee a la regle
+// « pas de migration ecrite en base » — comme pour les codes PIN, le but EST de
+// faire disparaitre du clair. Chaque fichier est chiffre, RELU, et compare
+// octet pour octet AVANT que le clair ne soit remplace. Un fichier qui ne se
+// relit pas a l'identique reste intact.
+app.post('/api/coffre/chiffrer', async (req, res) => {
+  const uid = await gardeCoffre(req, res); if (!uid) return;
+  if (!coffre.actif()) return res.status(400).json({ ok: false, error: 'Aucune clé : définissez SCANS_CLE.' });
+  const lot = Math.min(50, Math.max(1, parseInt((req.body || {}).lot, 10) || 20));
+  let faits = 0; const rates = [];
+  try {
+    const r = await db.query('SELECT id, octets FROM app_images WHERE algo IS NULL ORDER BY created_at LIMIT $1', [lot]);
+    for (const ligne of r.rows) {
+      try {
+        const clair = ligne.octets;
+        const scelle = coffre.chiffrer(clair);
+        const relu = coffre.dechiffrer({ algo: scelle.algo, octets: scelle.octets,
+                                         enveloppe: scelle.enveloppe, marque: scelle.marque });
+        if (!relu.equals(clair)) throw new Error('la relecture ne redonne pas les mêmes octets');
+        const maj = await db.query(
+          'UPDATE app_images SET octets = $2, algo = $3, enveloppe = $4, marque = $5 WHERE id = $1 AND algo IS NULL',
+          [ligne.id, scelle.octets, scelle.algo, scelle.enveloppe, scelle.marque]);
+        if (maj.rowCount) faits++;
+      } catch (e) { rates.push(ligne.id + ' : ' + e.message); }
+    }
+    const reste = await db.query('SELECT COUNT(*) AS n FROM app_images WHERE algo IS NULL');
+    if (faits) traces.noter(db, uid, 'modification', 'ordonnance', null, 'Chiffrement au repos de ' + faits + ' fichier(s)');
+    res.json({ ok: true, faits, rates, reste: +(reste.rows[0] || {}).n || 0 });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// Rotation : on ne reecrit que les petites cles, jamais les fichiers.
+app.post('/api/coffre/reemballer', async (req, res) => {
+  const uid = await gardeCoffre(req, res); if (!uid) return;
+  if (!coffre.actif()) return res.status(400).json({ ok: false, error: 'Aucune clé : définissez SCANS_CLE.' });
+  const d = coffre.diagnostic();
+  const lot = Math.min(200, Math.max(1, parseInt((req.body || {}).lot, 10) || 100));
+  let faits = 0; const rates = [];
+  try {
+    const r = await db.query(
+      'SELECT id, octets, algo, enveloppe, marque FROM app_images'
+      + ' WHERE algo IS NOT NULL AND marque IS DISTINCT FROM $1 LIMIT $2', [d.marque, lot]);
+    for (const ligne of r.rows) {
+      try {
+        const neuve = coffre.reemballer(ligne);
+        if (!neuve) continue;
+        // Meme exigence que pour la reprise : on relit avant de remplacer.
+        coffre.dechiffrer({ algo: ligne.algo, octets: ligne.octets,
+                            enveloppe: neuve.enveloppe, marque: neuve.marque });
+        const maj = await db.query(
+          'UPDATE app_images SET enveloppe = $2, marque = $3 WHERE id = $1 AND marque IS DISTINCT FROM $3',
+          [ligne.id, neuve.enveloppe, neuve.marque]);
+        if (maj.rowCount) faits++;
+      } catch (e) { rates.push(ligne.id + ' : ' + e.message); }
+    }
+    const reste = await db.query(
+      'SELECT COUNT(*) AS n FROM app_images WHERE algo IS NOT NULL AND marque IS DISTINCT FROM $1', [d.marque]);
+    if (faits) traces.noter(db, uid, 'modification', 'ordonnance', null, 'Rotation de clé : ' + faits + ' fichier(s) réemballé(s)');
+    res.json({ ok: true, faits, rates, reste: +(reste.rows[0] || {}).n || 0 });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 // ─── ENVOI D'UNE DEMANDE EN DEVELOPPEMENT ──────────────────────────────────
@@ -1372,6 +1482,13 @@ async function start() {
     ? '  🔗 Liens patients construits sur ' + renouvBase()
     : '  🔗 Liens patients sur l\'adresse courante (definir RENOUV_BASE_URL pour un sous-domaine dedie)');
   paiement.logStatus();
+  (() => {
+    const d = coffre.diagnostic();
+    if (d.erreur) console.error('  ⛔ Chiffrement des scans : ' + d.erreur);
+    else if (d.actif) console.log('  🔐 Scans chiffrés au repos (clé ' + d.marque
+      + (d.anciennes ? ', ' + d.anciennes + ' ancienne(s) en déchiffrement seul' : '') + ')');
+    else console.warn('  ⚠️  Scans d\'ordonnance stockés EN CLAIR (définir SCANS_CLE pour les chiffrer)');
+  })();
   // Reprise des codes en clair : voir identite.js — c'est l'exception assumee a
   // la regle « pas de migration ecrite en base », puisque le but EST d'en faire
   // disparaitre un secret.
