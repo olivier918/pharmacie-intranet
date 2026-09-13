@@ -11039,12 +11039,20 @@ async function cfEtat(){
       // Rapprochement : un fichier n'est pas un renvoi. Le même document joint
       // deux fois ne fait qu'une ligne, puisque son nom est son contenu.
       +'<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--gray-200);font-size:.82rem">'
-      +'<b>'+j.uniques+'</b> document(s) distinct(s) référencé(s) dans les dossiers'
-      +(j.orphelins?' · <b>'+j.orphelins+'</b> fichier(s) non référencé(s) (photos, signatures, images diverses)':'')
+      +'<b>'+j.uniques+'</b> image(s) attendue(s) par les fiches'
+      +(j.orphelins?' · <b>'+j.orphelins+'</b> fichier(s) plus référencé(s) par aucune fiche':'')
+      +(j.ailleurs?'<div style="color:var(--gray-500);margin-top:3px">'+j.ailleurs
+        +' autre(s) chaîne(s) de 32 caractères ailleurs dans les données — pierres tombales, journaux, archives. '
+        +'Ce ne sont pas des images : elles ne sont pas comptées ici.</div>':'')
       +(j.manquants
          ? '<div style="margin-top:6px;background:#FFEBEE;border-radius:8px;padding:7px 10px"><b style="color:#B91C1C">'
-           +j.manquants+' document(s) référencé(s) sans fichier correspondant.</b> Lancez « Restaurer les scans manquants » ci-dessus.</div>'
-         : '<div style="color:var(--gray-500);margin-top:4px">Chaque document référencé a bien son fichier.</div>')
+           +j.manquants+' image(s) attendue(s) sans fichier correspondant.</b> Lancez « Restaurer les scans manquants » ci-dessus.'
+           +(j.dou&&j.dou.length
+              ? '<div style="margin-top:5px;font-family:ui-monospace,monospace;font-size:.9em;color:#7F1D1D">'
+                +j.dou.map(function(x){ return x.n+' — '+esc(x.chemin); }).join('<br>')+'</div>'
+              : '')
+           +'</div>'
+         : '<div style="color:var(--gray-500);margin-top:4px">Chaque image attendue a bien son fichier.</div>')
       +'</div>');
     return j;
   }catch(e){ cfDire('<span style="color:#B91C1C">Lecture impossible : '+e.message+'</span>'); return null; }

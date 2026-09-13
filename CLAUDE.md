@@ -135,6 +135,31 @@ Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
 c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
 protège pas d'un essai en force.
 
+## Deux questions opposées sur le même ensemble
+
+`imagesReferencees()` et `imagesAttendues()` parcourent le même blob et ne
+doivent surtout pas être confondues — l'une a été utilisée à la place de l'autre
+le 13/09/2026 au soir, et a annoncé 44 ordonnances perdues qui n'existaient pas.
+
+| | « Que puis-je supprimer ? » | « Que me manque-t-il ? » |
+|---|---|---|
+| Fonction | `imagesReferencees()` | `imagesAttendues()` |
+| Trop large | **sans danger** | invente des pertes, fait paniquer |
+| Trop étroit | **efface des ordonnances** | cache une perte réelle |
+| Méthode | reconnaît un identifiant à sa **forme**, ratisse tout | liste explicite de champs : `scanId`, `imgId`, `photo`, `sig` |
+
+Une chaîne de 32 caractères hexadécimaux dans une pierre tombale, un journal ou
+une archive n'a jamais désigné une image. Le balayeur doit quand même la garder
+— le coût d'une erreur n'est pas le même des deux côtés.
+
+**Règle** : avant de réutiliser une fonction de parcours, demander dans quel sens
+son erreur coûte cher. Si la réponse diffère de l'usage d'origine, il faut une
+seconde fonction, pas un paramètre.
+
+Et un compteur de pertes doit dire **d'où** viennent les manquants
+(`locations.renewals.scanId`, `staffDB.photo`…) : un chiffre brut ne dit pas
+s'il faut s'inquiéter.
+
 ## Chiffrement au repos des ordonnances (`coffre.js`)
 
 Les scans sont chiffrés avant d'être écrits dans `app_images`. La clé

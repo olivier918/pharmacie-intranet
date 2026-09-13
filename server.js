@@ -420,22 +420,36 @@ app.get('/api/coffre/etat', async (req, res) => {
     // donc normal — mais il ne doit jamais cacher un renvoi SANS fichier.
     // C'est precisement ce qui s'est produit le 13/09, et ce qu'on avait
     // explique au lieu de le compter.
-    let uniques = 0, manquants = 0, orphelins = 0;
+    let uniques = 0, manquants = 0, orphelins = 0, dou = [], ailleurs = 0;
     try {
       const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
       const blob = (cur.rows[0] && cur.rows[0].data) || {};
-      const ids = Array.from(imagesReferencees(blob));
-      uniques = ids.length;   // imagesReferencees rend un ensemble : deja dedoublonne
+      const attendues = imagesAttendues(blob);
+      const ids = Array.from(attendues.keys());
+      uniques = ids.length;
+      // Tout le reste : des chaines de 32 caracteres hexadecimaux qui ne sont
+      // pas posees dans un champ d'image. Comptees a part, sans alarme.
+      ailleurs = Math.max(0, ouSontLesIdentifiants(blob).size - uniques);
       if (ids.length) {
-        const p = await db.query('SELECT COUNT(*) AS n FROM app_images WHERE id = ANY($1)', [ids]);
-        manquants = ids.length - (+p.rows[0].n || 0);
+        const p = await db.query('SELECT id FROM app_images WHERE id = ANY($1)', [ids]);
+        const presents = new Set(p.rows.map(x => x.id));
+        const perdus = ids.filter(x => !presents.has(x));
+        manquants = perdus.length;
+        // D'ou viennent-ils ? Un compteur brut ne dit pas s'il faut s'inquieter ;
+        // « 12 dans locations.renewals.scanId » le dit.
+        const parRubrique = {};
+        perdus.forEach(id => (attendues.get(id) || []).forEach(c => { parRubrique[c] = (parRubrique[c] || 0) + 1; }));
+        dou = Object.entries(parRubrique).sort((a, b) => b[1] - a[1]).slice(0, 8)
+          .map(([chemin, n]) => ({ chemin, n }));
+        orphelins = Math.max(0, (+l.total || 0) - presents.size);
+      } else {
+        orphelins = +l.total || 0;
       }
-      orphelins = Math.max(0, (+l.total || 0) - (uniques - manquants));
     } catch (e) { /* le rapprochement est un confort, jamais un blocage */ }
 
     res.json({ ok: true, actif: d.actif, marque: d.marque, anciennes: d.anciennes, erreur: d.erreur,
       clair: +l.clair || 0, chiffres: +l.chiffres || 0, aReemballer: +l.areemballer || 0, total: +l.total || 0,
-      uniques, manquants, orphelins });
+      uniques, manquants, orphelins, ailleurs, dou });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -1270,6 +1284,53 @@ function imagesReferencees(blob) {
   };
   voir(blob);
   return vus;
+}
+
+// ── La meme marche, mais en notant D'OU vient chaque identifiant ────────────
+// Deux questions opposees se posent sur le meme ensemble, et une seule fonction
+// ne peut pas servir les deux :
+//
+//   « QUE PUIS-JE SUPPRIMER ? »  Trop large est SANS DANGER, trop etroit
+//   efface des ordonnances. D'ou la marche ci-dessus, qui reconnait un
+//   identifiant a sa FORME et ratisse tout — c'est la lecon du 13/09.
+//
+//   « QUE ME MANQUE-T-IL ? »  Trop large invente des pertes qui n'existent pas
+//   et fait paniquer ; trop etroit cache une perte reelle. La forme ne suffit
+//   plus : une chaine de 32 caracteres hexadecimaux dans un journal, un
+//   horodatage archive ou une pierre tombale n'a jamais designe une image.
+//
+// On garde donc le ratissage — mais on retient le chemin, pour pouvoir dire
+// d'ou vient un identifiant sans fichier, au lieu de compter un chiffre brut.
+function ouSontLesIdentifiants(blob) {
+  const ou = new Map();   // id -> Set de rubriques
+  const voir = (v, chemin) => {
+    if (v === null || v === undefined) return;
+    if (typeof v === 'string') {
+      if (/^[0-9a-f]{32}$/.test(v)) {
+        if (!ou.has(v)) ou.set(v, new Set());
+        ou.get(v).add(chemin);
+      }
+      return;
+    }
+    if (Array.isArray(v)) { v.forEach(x => voir(x, chemin)); return; }
+    if (typeof v === 'object') { Object.keys(v).forEach(k => voir(v[k], chemin + '.' + k)); return; }
+  };
+  Object.keys(blob || {}).forEach(k => voir(blob[k], k));
+  return ou;
+}
+
+// Ce qui designe VRAIMENT une image : les champs que l'application affiche
+// comme telle. Liste explicite et assumee — ici, se tromper par exces invente
+// des pertes, alors que pour le balayeur c'est l'inverse.
+const CHAMPS_IMAGE = ['scanId', 'imgId', 'photo', 'sig'];
+function imagesAttendues(blob) {
+  const ou = ouSontLesIdentifiants(blob);
+  const attendues = new Map();
+  for (const [id, chemins] of ou) {
+    const retenus = Array.from(chemins).filter(c => CHAMPS_IMAGE.some(f => c.endsWith('.' + f)));
+    if (retenus.length) attendues.set(id, retenus);
+  }
+  return attendues;
 }
 async function balayerImages() {
   if (!db) return;
