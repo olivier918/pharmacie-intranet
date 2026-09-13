@@ -132,6 +132,36 @@ function sansSecretsEntrants(recu) {
   return recu;
 }
 
+// ── Ce que la fusion ne doit jamais emporter ────────────────────────────────
+// mergeState fait `Object.assign({}, existing, incoming)` : une rubrique OBJET
+// envoyee par un poste REMPLACE celle de la base, elle ne s'y fond pas. Or le
+// client envoie desormais `ADMIN = { mail }`, sans empreinte — la premiere
+// sauvegarde venue effacait donc `pwHash` et `pwSel`, et plus personne ne
+// passait l'ecran de connexion.
+//
+// staffDB echappe au probleme : il se fusionne CHAMP par champ, et un
+// enregistrement entrant sans `pinHash` laisse celui de la base en place. On le
+// protege quand meme, parce qu'une fusion peut changer et que cette erreur-la
+// coute une officine bloquee un matin.
+function preserverSecrets(existant, fusionne) {
+  if (!fusionne || typeof fusionne !== 'object') return fusionne;
+  const A = (existant && existant.ADMIN) || null;
+  if (A && (A.pwHash || A.pwSel)) {
+    fusionne.ADMIN = Object.assign({}, fusionne.ADMIN || {});
+    if (!fusionne.ADMIN.pwHash) { fusionne.ADMIN.pwHash = A.pwHash; fusionne.ADMIN.pwSel = A.pwSel; }
+    if (!fusionne.ADMIN.mail && A.mail) fusionne.ADMIN.mail = A.mail;
+  }
+  if (Array.isArray(fusionne.staffDB) && Array.isArray(existant && existant.staffDB)) {
+    const avant = new Map(existant.staffDB.filter(s => s && s.id != null).map(s => [s.id, s]));
+    fusionne.staffDB.forEach(function (s) {
+      if (!s || s.id == null) return;
+      const a = avant.get(s.id); if (!a) return;
+      if (!s.pinHash && a.pinHash) { s.pinHash = a.pinHash; s.pinSel = a.pinSel; }
+    });
+  }
+  return fusionne;
+}
+
 // ── La reprise des codes existants ──────────────────────────────────────────
 // CLAUDE.md interdit d'ecrire une migration de donnees en base — la regle est
 // bonne, et celle-ci en est l'exception assumee : le but EST de faire
@@ -236,19 +266,24 @@ function installer(app, deps) {
     try {
       const data = await lireEtat();
       const A = data.ADMIN || {};
-      const okMail = memeEmpreinte(
+      const attenduMail = String(A.mail || '').trim().toLowerCase();
+      const okMail = !attenduMail || memeEmpreinte(
         crypto.createHash('sha256').update(mail).digest('hex'),
-        crypto.createHash('sha256').update(String(A.mail || '').toLowerCase()).digest('hex'));
-      // Soupape : si la base ne porte aucune empreinte — premiere ouverture,
-      // restauration d'une sauvegarde ancienne — un mot de passe pose en
-      // variable d'environnement permet d'entrer et de reconfigurer. Sans elle,
-      // une base sans ADMIN enfermerait toute l'equipe dehors.
+        crypto.createHash('sha256').update(attenduMail).digest('hex'));
+      // Soupape ADMIN_PASSWORD. Elle vaut TOUJOURS, et non plus seulement quand
+      // la base est vide : le 13/09/2026, une empreinte effacee par la fusion a
+      // enferme l'officine dehors, et la soupape — conditionnee a l'absence
+      // d'empreinte — ne s'est pas ouverte. Une clé de secours qui ne fonctionne
+      // que dans le cas qu'on avait prevu n'est pas une clé de secours.
+      // Elle vit dans une variable d'environnement, jamais dans le code ni en
+      // base ; la connaitre suppose l'acces a la console d'hebergement.
       const secours = (process.env.ADMIN_PASSWORD || '').trim();
-      const okPw = (A.pwHash && A.pwSel)
-        ? memeEmpreinte(empreinte(pw, A.pwSel), A.pwHash)
-        : (!!secours && memeEmpreinte(
-            crypto.createHash('sha256').update(pw).digest('hex'),
-            crypto.createHash('sha256').update(secours).digest('hex')));
+      const parSecours = !!secours && !!pw && memeEmpreinte(
+        crypto.createHash('sha256').update(pw).digest('hex'),
+        crypto.createHash('sha256').update(secours).digest('hex'));
+      const parEmpreinte = !!(A.pwHash && A.pwSel) && memeEmpreinte(empreinte(pw, A.pwSel), A.pwHash);
+      const okPw = parEmpreinte || parSecours;
+      if (parSecours && !parEmpreinte && journaliser) journaliser('secours', 'Accès administrateur par ADMIN_PASSWORD');
       if (!okMail || !okPw) { noterEchec(req); return res.status(401).json({ ok: false, error: 'identifiants_refuses' }); }
       oublierEchecs(req);
       return res.json({ ok: true });
@@ -323,6 +358,6 @@ function diagnostic(data) {
 }
 
 module.exports = {
-  installer, sansSecrets, sansSecretsEntrants, convertirCodes, diagnostic,
+  installer, sansSecrets, sansSecretsEntrants, preserverSecrets, convertirCodes, diagnostic,
   qui, empreinte, nouveauSel, SECRETS_STAFF
 };

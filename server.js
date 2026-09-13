@@ -1097,7 +1097,10 @@ app.post('/api/data', async (req, res) => {
       // contrôles, crédits…), ne doit PAS les effacer de la base.
       const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
       const existing = (cur.rows[0] && cur.rows[0].data) || {};
-      const merged = maint.pruneRetention(mergeState(existing, incoming));
+      // preserverSecrets : la fusion REMPLACE les rubriques objet. Le client
+      // envoie ADMIN sans empreinte — sans cette ligne, la premiere sauvegarde
+      // venue efface pwHash et plus personne ne passe l'ecran de connexion.
+      const merged = identite.preserverSecrets(existing, maint.pruneRetention(mergeState(existing, incoming)));
       await db.query(
         'UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1',
         [JSON.stringify(merged)]
@@ -1109,7 +1112,10 @@ app.post('/api/data', async (req, res) => {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       let existing = {};
       if (fs.existsSync(DATA_FILE)) { try { existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {} }
-      const merged = maint.pruneRetention(mergeState(existing, incoming));
+      // preserverSecrets : la fusion REMPLACE les rubriques objet. Le client
+      // envoie ADMIN sans empreinte — sans cette ligne, la premiere sauvegarde
+      // venue efface pwHash et plus personne ne passe l'ecran de connexion.
+      const merged = identite.preserverSecrets(existing, maint.pruneRetention(mergeState(existing, incoming)));
       fs.writeFileSync(DATA_FILE, JSON.stringify(merged, null, 2), 'utf8');
       // Backup quotidien
       const today = new Date().toISOString().split('T')[0];
