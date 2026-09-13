@@ -24,7 +24,13 @@ const temperatures = require('./temperatures');
 const smsProgrammes = require('./sms-programmes');
 const identite = require('./identite');
 const traces = require('./traces');
+const securite = require('./securite');
 paiement.installWebhook(app, express, { onPaid: marquerCreditPaye });
+
+// ─── Durcissement : en-tetes de securite et freins de debit (voir securite.js) ───
+// Monte le plus tot possible : les en-tetes doivent accompagner TOUTES les
+// reponses, y compris les fichiers statiques et les pages du portail.
+const freins = securite.installer(app, { qui: (req) => identite.qui(req) });
 
 // Parse JSON bodies up to 50MB (for base64 images in preps)
 app.use(express.json({ limit: '50mb' }));
@@ -106,6 +112,15 @@ function initMail() {
   const { SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env;
   if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
     try {
+      // nodemailer a ete RETIRE des dependances le 13/09/2026 : douze avis de
+      // securite ouverts, dont plusieurs injections CRLF, sans correctif avant
+      // une version majeure 10 — et ce chemin n'a jamais servi, l'officine
+      // envoyant par l'API Brevo depuis toujours. Garder une bibliotheque
+      // vulnerable pour un chemin mort n'est pas un compromis, c'est un oubli.
+      //
+      // Le require est laisse en place : si le SMTP redevenait necessaire, un
+      // `npm install nodemailer@^10` suffit a le rallumer, et d'ici la l'echec
+      // du require tombe proprement dans le catch ci-dessous.
       const nodemailer = require('nodemailer');
       const port = parseInt(process.env.SMTP_PORT || '587', 10);
       mailTransport = nodemailer.createTransport({
@@ -120,8 +135,10 @@ function initMail() {
       console.log('  ✉️  Envoi SMTP configuré (' + SMTP_HOST + ')');
       return;
     } catch (err) {
-      mailError = err.message;
-      console.error('  ❌ Erreur configuration SMTP:', err.message);
+      mailError = /Cannot find module/.test(err.message)
+        ? 'Le chemin SMTP demande nodemailer, retire des dependances. Installez nodemailer@^10 pour le retablir.'
+        : err.message;
+      console.error('  ❌ Erreur configuration SMTP:', mailError);
     }
   }
   console.log('  ✉️  Aucun service d\'envoi configuré (ni Brevo ni SMTP)');
@@ -188,6 +205,33 @@ function sendViaBrevo({ to, cc, subject, text, from, attachments }) {
   });
 }
 
+// ── Le certificat du serveur de base de donnees ─────────────────────────────
+// Jusqu'ici : `rejectUnauthorized: false`, c'est-a-dire « chiffre mais ne
+// verifie pas a qui je parle ». Sur le reseau prive de Railway le risque reste
+// theorique ; apres la migration HDS il ne le sera plus, et un hebergeur
+// certifie fournit son autorite de certification.
+//
+// Trois cas, du meilleur au moins bon :
+//   1. PG_CA_CERT contient l'autorite (le certificat lui-meme, pas un chemin) :
+//      on verifie contre elle. C'est ce qu'il faudra poser chez l'hebergeur HDS.
+//   2. PG_SSL_STRICT=1 : on verifie contre les autorites du systeme.
+//   3. sinon : comportement actuel, mais dit a voix haute au demarrage — une
+//      faiblesse silencieuse est une faiblesse qu'on oublie.
+function reglageSSL() {
+  const ca = (process.env.PG_CA_CERT || '').trim();
+  if (ca) {
+    console.log('  🔐 PostgreSQL : certificat verifie contre PG_CA_CERT');
+    return { rejectUnauthorized: true, ca: ca.replace(/\\n/g, '\n') };
+  }
+  if ((process.env.PG_SSL_STRICT || '') === '1') {
+    console.log('  🔐 PostgreSQL : certificat verifie contre les autorites du systeme');
+    return { rejectUnauthorized: true };
+  }
+  console.warn('  ⚠️  PostgreSQL : liaison chiffree mais certificat NON verifie.');
+  console.warn('     A reprendre avec l\'hebergeur HDS : poser PG_CA_CERT, ou PG_SSL_STRICT=1.');
+  return { rejectUnauthorized: false };
+}
+
 async function initDB() {
   if (!DATABASE_URL) {
     if (REQUIRE_DB) {
@@ -205,7 +249,7 @@ async function initDB() {
     const { Pool } = require('pg');
     db = new Pool({
       connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
+      ssl: reglageSSL()
     });
     // Create table if not exists
     await db.query(`
@@ -611,9 +655,12 @@ function destinataires(v) {
     .filter(a => a && ADRESSE_OK.test(a) && !vus.has(a.toLowerCase()) && vus.add(a.toLowerCase()))
     .slice(0, 10);
 }
-app.post('/api/send-mail', async (req, res) => {
+app.post('/api/send-mail', freins.mail[0], freins.mail[1], async (req, res) => {
   if (!mailMethod) return res.status(400).json({ ok: false, error: 'Aucun service d\'envoi configuré sur le serveur.' });
-  const { subject, text, attachments } = req.body || {};
+  const { text, attachments } = req.body || {};
+  // L'objet part dans un en-tete SMTP : un saut de ligne y ajouterait des
+  // destinataires caches. Les adresses sont deja filtrees, l'objet ne l'etait pas.
+  const subject = securite.enTeteSur((req.body || {}).subject, 300);
   const to = destinataires((req.body || {}).to);
   const cc = destinataires((req.body || {}).cc);
   if (!to.length) return res.status(400).json({ ok: false, error: 'Aucune adresse destinataire valide.' });
@@ -729,7 +776,7 @@ app.get('/api/sms-status', (req, res) => {
 });
 
 // ─── Envoi d'un SMS, déclenché par l'utilisateur depuis l'appli ───
-app.post('/api/send-sms', async (req, res) => {
+app.post('/api/send-sms', freins.sms[0], freins.sms[1], async (req, res) => {
   if (!smsConfigured()) return res.status(400).json({ ok: false, error: 'Service SMS non configuré sur le serveur (BREVO_API_KEY + BREVO_SMS_SENDER).' });
   const { to, text, tag } = req.body || {};
   const msisdn = toMsisdnFR(to);

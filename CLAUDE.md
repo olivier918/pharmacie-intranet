@@ -218,7 +218,14 @@ Message de commit : une ligne de titre en français, puis un paragraphe qui
 explique le problème constaté et la raison du choix retenu.
 
 Pas de dépendance nouvelle sans nécessité démontrée : trois en tout aujourd'hui
-(`express`, `nodemailer`, `pg`).
+(`express`, `pg` — et rien d'autre).
+
+`nodemailer` a été retiré le 13/09/2026 : douze avis de sécurité ouverts, aucun
+correctif avant une version majeure 10, et un chemin SMTP jamais emprunté puisque
+l'officine envoie par l'API Brevo. Les en-têtes de sécurité sont écrits à la main
+dans `securite.js` plutôt que délégués à `helmet`, pour la même raison : une
+quinzaine d'en-têtes ne justifie pas une dépendance de plus. **Avant d'ajouter un
+paquet, se demander ce qu'il fait qu'on ne saurait pas écrire en vingt lignes.**
 
 ---
 

@@ -7,6 +7,14 @@ data/*.json
 # Réglages locaux de Claude Code / de l'éditeur
 .claude/settings.local.json
 
+# Secrets locaux : ne doivent JAMAIS entrer dans l'historique. Le fichier
+# n'existe pas aujourd'hui, mais un « git add . » au premier developpement local
+# y embarquerait la cle Stripe et les identifiants PostgreSQL, dans un historique
+# jusqu'ici propre.
+.env
+.env.*
+!.env.example
+
 # Divers
 *.log
 Thumbs.db
