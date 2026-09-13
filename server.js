@@ -412,8 +412,30 @@ app.get('/api/coffre/etat', async (req, res) => {
       + ' COUNT(*) FILTER (WHERE algo IS NOT NULL AND marque IS DISTINCT FROM $1) AS areemballer,'
       + ' COUNT(*) AS total FROM app_images', [d.marque]);
     const l = r.rows[0] || {};
+
+    // ── Rapprochement ────────────────────────────────────────────────────
+    // Le nombre de FICHIERS et le nombre de RENVOIS vers des fichiers n'ont
+    // aucune raison d'etre egaux : l'identifiant etant le condensat du contenu,
+    // un meme document joint deux fois ne fait qu'une seule ligne. L'ecart est
+    // donc normal — mais il ne doit jamais cacher un renvoi SANS fichier.
+    // C'est precisement ce qui s'est produit le 13/09, et ce qu'on avait
+    // explique au lieu de le compter.
+    let uniques = 0, manquants = 0, orphelins = 0;
+    try {
+      const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
+      const blob = (cur.rows[0] && cur.rows[0].data) || {};
+      const ids = Array.from(imagesReferencees(blob));
+      uniques = ids.length;   // imagesReferencees rend un ensemble : deja dedoublonne
+      if (ids.length) {
+        const p = await db.query('SELECT COUNT(*) AS n FROM app_images WHERE id = ANY($1)', [ids]);
+        manquants = ids.length - (+p.rows[0].n || 0);
+      }
+      orphelins = Math.max(0, (+l.total || 0) - (uniques - manquants));
+    } catch (e) { /* le rapprochement est un confort, jamais un blocage */ }
+
     res.json({ ok: true, actif: d.actif, marque: d.marque, anciennes: d.anciennes, erreur: d.erreur,
-      clair: +l.clair || 0, chiffres: +l.chiffres || 0, aReemballer: +l.areemballer || 0, total: +l.total || 0 });
+      clair: +l.clair || 0, chiffres: +l.chiffres || 0, aReemballer: +l.areemballer || 0, total: +l.total || 0,
+      uniques, manquants, orphelins });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 

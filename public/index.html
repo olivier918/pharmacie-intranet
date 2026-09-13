@@ -11034,7 +11034,17 @@ async function cfEtat(){
       +'<div style="margin-top:6px"><b>'+j.chiffres+'</b> fichier(s) chiffré(s) · <b>'+j.clair+'</b> encore en clair'
       +(j.aReemballer?' · <b>'+j.aReemballer+'</b> à réemballer sur la clé courante':'')
       +' · '+j.total+' au total</div>'
-      +(j.actif&&!j.clair&&!j.aReemballer?'<div style="font-size:.8rem;color:var(--gray-500);margin-top:5px">Tout est scellé sur la clé courante.</div>':''));
+      +(j.actif&&!j.clair&&!j.aReemballer?'<div style="font-size:.8rem;color:var(--gray-500);margin-top:5px">Tout est scellé sur la clé courante.</div>':'')
+      // Rapprochement : un fichier n'est pas un renvoi. Le même document joint
+      // deux fois ne fait qu'une ligne, puisque son nom est son contenu.
+      +'<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--gray-200);font-size:.82rem">'
+      +'<b>'+j.uniques+'</b> document(s) distinct(s) référencé(s) dans les dossiers'
+      +(j.orphelins?' · <b>'+j.orphelins+'</b> fichier(s) non référencé(s) (photos, signatures, images diverses)':'')
+      +(j.manquants
+         ? '<div style="margin-top:6px;background:#FFEBEE;border-radius:8px;padding:7px 10px"><b style="color:#B91C1C">'
+           +j.manquants+' document(s) référencé(s) sans fichier correspondant.</b> Lancez « Restaurer les scans manquants » ci-dessus.</div>'
+         : '<div style="color:var(--gray-500);margin-top:4px">Chaque document référencé a bien son fichier.</div>')
+      +'</div>');
     return j;
   }catch(e){ cfDire('<span style="color:#B91C1C">Lecture impossible : '+e.message+'</span>'); return null; }
 }
