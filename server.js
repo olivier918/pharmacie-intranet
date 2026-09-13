@@ -965,41 +965,61 @@ paiement.installApi(app);
 // écriture sur l'état courant. `updatedAt` est réhaussé pour que la fusion par
 // enregistrement (mergeById) fasse gagner cette version sur la copie qu'un poste
 // resté ouvert pourrait renvoyer ensuite. Renvoie true si un dossier a été modifié.
+// Renvoie null si rien n'a ete applique, sinon { partiel, du, recu }.
 async function marquerCreditPaye(creditId, info) {
+  let verdict = null;
   const appliquer = (data) => {
     if (!data || !Array.isArray(data.credits)) return false;
     const c = data.credits.find((x) => x && String(x.id) === String(creditId));
     if (!c) return false;
     const p = c.paiement || {};
-    if (p.status === 'paye' && p.ref === info.ref) return false;   // déjà encaissé (doublon d'événement)
+    if ((p.status === 'paye' || p.status === 'partiel') && p.ref === info.ref) return false;   // doublon d'événement
+
+    // Le montant encaisse n'etait jamais compare a la somme due : un reglement
+    // de 1 euro sur 300 dus passait le dossier a « payé ». On tolere un centime
+    // d'arrondi, et rien de plus.
+    const du = Number(c.montant) || 0;
+    const recu = Number(info.montant) || 0;
+    const insuffisant = du > 0 && recu + 0.005 < du;
+
     c.paiement = Object.assign({}, p, {
-      status: 'paye',
+      status: insuffisant ? 'partiel' : 'paye',
       ref: info.ref,
       paidAt: info.at,
-      montantPaye: info.montant
+      montantPaye: recu
     });
-    // On s'arrête à « payé » : l'argent est encaissé sur Stripe, mais la vente
-    // n'est pas soldée dans Winpharma. Passer directement à « soldé » ferait
-    // disparaître le dossier de la liste active et la saisie serait oubliée.
-    // La clôture est un geste humain, confirmé depuis l'intranet.
-    c.status = 'payé';
+    if (insuffisant) {
+      // Le dossier reste ouvert, et il porte de quoi comprendre sans aller
+      // fouiller le tableau de bord Stripe.
+      c.paiement.duAuPaiement = du;
+      c.paiement.reste = Math.round((du - recu) * 100) / 100;
+    } else {
+      delete c.paiement.duAuPaiement;
+      delete c.paiement.reste;
+      // On s'arrête à « payé » : l'argent est encaissé sur Stripe, mais la vente
+      // n'est pas soldée dans Winpharma. Passer directement à « soldé » ferait
+      // disparaître le dossier de la liste active et la saisie serait oubliée.
+      // La clôture est un geste humain, confirmé depuis l'intranet.
+      c.status = 'payé';
+    }
     c.updatedAt = Date.now();
+    verdict = { partiel: insuffisant, du, recu };
     return true;
   };
 
   if (db) {
     const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
     const data = (cur.rows[0] && cur.rows[0].data) || {};
-    if (!appliquer(data)) return false;
+    if (!appliquer(data)) return null;
     await db.query('UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(data)]);
-    return true;
+    return verdict;
   }
   refuserDisque('credit paye');
-  if (!fs.existsSync(DATA_FILE)) return false;
+  if (!fs.existsSync(DATA_FILE)) return null;
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  if (!appliquer(data)) return false;
+  if (!appliquer(data)) return null;
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-  return true;
+  return verdict;
 }
 
 // ─── Archive l'état ACTUEL avant qu'il ne soit remplacé (filet anti-écrasement) ───

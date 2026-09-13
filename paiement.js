@@ -159,11 +159,17 @@ async function creerLien({ creditId, montantCents, libelle, dossier }) {
     return await stripeCall('POST', '/v1/payment_links',
       Object.assign({ restrictions: { completed_sessions: { limit: 1 } } }, base));
   } catch (err) {
-    if (err.statusCode === 400) {
-      console.warn('Stripe : paramètre « restrictions » refusé, création du lien sans limite de règlement.');
-      return await stripeCall('POST', '/v1/payment_links', base);
-    }
-    throw err;
+    // Le repli ne vaut que pour CE parametre. Auparavant il se declenchait sur
+    // n'importe quelle erreur 400 — un libelle refuse, un prix invalide — et
+    // rendait alors le lien reutilisable a l'insu de tous : un second reglement
+    // ecrasait ref, paidAt et montantPaye du premier, et le double encaissement
+    // ne subsistait que dans le tableau de bord Stripe.
+    const surRestrictions = err.statusCode === 400
+      && (/restrictions/i.test(String(err.stripeParam || '')) || /restrictions/i.test(String(err.message || '')));
+    if (!surRestrictions) throw err;
+    console.warn('Stripe : paramètre « restrictions » refusé, création du lien sans limite de règlement.');
+    console.warn('  ⚠️  Ce lien accepte plusieurs règlements : le garde-fou devient le contrôle à l\'écran.');
+    return await stripeCall('POST', '/v1/payment_links', base);
   }
 }
 
@@ -173,17 +179,36 @@ function desactiverLien(linkId) {
 }
 
 // ── Recherche d'un règlement abouti sur un lien (bouton « Vérifier ») ──
+// Trois reponses possibles, et il fallait les distinguer : `status: 'complete'`
+// signifie que le patient est alle au bout du tunnel — pour un prelevement
+// SEPA, les fonds peuvent mettre plusieurs jours a arriver, ou ne jamais
+// arriver. Le webhook filtrait correctement sur `payment_status === 'paid'` ;
+// ce bouton, non. Deux chemins qui soldent un dossier n'appliquaient pas la
+// meme regle, et c'est le plus permissif qui gagnait.
 async function chercherReglement(linkId) {
   const r = await stripeCall('GET',
     '/v1/checkout/sessions?limit=10&payment_link=' + encodeURIComponent(linkId), null);
   const sessions = (r && r.data) || [];
-  const payee = sessions.find((s) => s.payment_status === 'paid' || s.status === 'complete');
-  if (!payee) return null;
-  return {
-    ref: payee.id,
-    montant: (payee.amount_total || 0) / 100,
-    at: new Date((payee.created || Math.floor(Date.now() / 1000)) * 1000).toISOString()
-  };
+
+  const payee = sessions.find((s) => s.payment_status === 'paid');
+  if (payee) {
+    return { etat: 'paye', reglement: {
+      ref: payee.id,
+      montant: (payee.amount_total || 0) / 100,
+      at: new Date((payee.created || Math.floor(Date.now() / 1000)) * 1000).toISOString()
+    } };
+  }
+
+  // Le patient a rempli le formulaire, les fonds ne sont pas la. Le dire
+  // explicitement evite l'appel a l'officine — « j'ai payé, ça ne marche pas ».
+  const enCours = sessions.find((s) => s.status === 'complete' || s.payment_status === 'unpaid');
+  if (enCours) {
+    return { etat: 'en_attente', reglement: {
+      montant: (enCours.amount_total || 0) / 100,
+      at: new Date((enCours.created || Math.floor(Date.now() / 1000)) * 1000).toISOString()
+    } };
+  }
+  return { etat: 'aucun' };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -249,6 +274,14 @@ function installWebhook(app, express, deps) {
     // Stripe enverra un autre evenement quand ils arriveront.
     if (s.payment_status && s.payment_status !== 'paid') return res.json({ received: true, enAttente: true });
 
+    // Le marqueur pose a la creation, enfin relu : le meme compte Stripe peut
+    // servir a autre chose un jour, et un paiement venu d'ailleurs n'a rien a
+    // faire dans les credits de l'officine.
+    if (s.metadata && s.metadata.source && s.metadata.source !== 'intranet-phc') {
+      console.warn('  💳 Paiement reçu d\'une autre origine (' + s.metadata.source + ') — ignoré.');
+      return res.json({ received: true, autreOrigine: true });
+    }
+
     const creditId = (s.metadata && s.metadata.creditId) || null;
     if (!creditId) {
       console.warn('  💳 Paiement reçu sans creditId dans les métadonnées — rien à solder.');
@@ -265,6 +298,15 @@ function installWebhook(app, express, deps) {
         montant,
         at: new Date().toISOString()
       }), 20000, 'traitement trop long');
+
+      // Montant insuffisant : le dossier n'est PAS solde, il est marque
+      // « partiel ». Auparavant marquerCreditPaye passait le credit a « payé »
+      // quel que soit le montant, y compris 1 euro sur 300 dus.
+      if (ok && ok.partiel) {
+        if (evt.id) { traites.add(evt.id); if (traites.size > 500) traites.delete(traites.values().next().value); }
+        console.warn(`  ⚠️  Paiement PARTIEL sur le crédit ${creditId} : ${ok.recu.toFixed(2)} € reçus sur ${ok.du.toFixed(2)} € dus (réf. Stripe ${s.id}). Dossier laissé ouvert.`);
+        return res.json({ received: true, partiel: true });
+      }
 
       if (ok) {
         // Marque APRES le succes, jamais avant : marquer d'abord ferait ignorer
@@ -339,7 +381,8 @@ function installApi(app) {
     if (!/^plink_/.test(linkId)) return res.status(400).json({ ok: false, error: 'Identifiant de lien invalide.' });
     try {
       const r = await chercherReglement(linkId);
-      return res.json({ ok: true, paye: !!r, reglement: r });
+      return res.json({ ok: true, paye: r.etat === 'paye', enAttente: r.etat === 'en_attente',
+        reglement: r.reglement || null });
     } catch (err) {
       console.error('Vérification paiement:', err.message);
       return res.status(500).json({ ok: false, error: err.message });

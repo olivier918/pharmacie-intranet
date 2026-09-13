@@ -7124,6 +7124,8 @@ function renderCreds(){
     const pay=(c.paiement&&c.paiement.url&&!credAttenteSaisie(c))
       ? (c.paiement.status==='paye'
           ? `<div style="font-size:.74rem;color:#2E7D32;margin-top:3px">${ico('euro')} Réglé en ligne${c.paiement.montantPaye?` · ${Number(c.paiement.montantPaye).toFixed(2)} €`:''}</div>`
+          : c.paiement.status==='partiel'
+          ? `<div style="font-size:.74rem;color:#B45309;margin-top:3px;font-weight:600">${ico('euro')} Règlement partiel · ${Number(c.paiement.montantPaye||0).toFixed(2)} € reçus sur ${Number(c.paiement.duAuPaiement||c.montant||0).toFixed(2)} € — reste ${Number(c.paiement.reste||0).toFixed(2)} €</div>`
           : `<div style="font-size:.74rem;color:#0277BD;margin-top:3px">${ico('euro')} Lien de paiement ${(c.paiement.envois||[]).length?'transmis':'créé'} · en attente de règlement</div>`)
       : '';
 
@@ -10462,17 +10464,37 @@ async function checkCredPayment(){
     const r=await fetch('/api/paiement/verifier?linkId='+encodeURIComponent(c.paiement.linkId));
     const j=await r.json();
     if(!r.ok||!j.ok) throw new Error(j.error||'Vérification impossible');
+    // « Le patient est allé au bout du tunnel » n'est pas « les fonds sont
+    // arrivés » : pour un prélèvement SEPA, plusieurs jours peuvent passer, et
+    // parfois rien n'arrive. Le webhook l'a toujours su ; ce bouton, non.
+    if(j.enAttente){
+      const m=(j.reglement&&j.reglement.montant)?` de ${Number(j.reglement.montant).toFixed(2)} €`:'';
+      sent.textContent=`Le patient a validé un règlement${m}, mais les fonds ne sont pas encore arrivés `
+        +`(prélèvement bancaire en cours). Le dossier se soldera tout seul dès l'encaissement.`;
+      return;
+    }
     if(!j.paye){ sent.textContent='Aucun règlement enregistré pour l\'instant sur ce lien.'; return; }
     const reg=j.reglement||{};
-    c.paiement.status='paye';
+    // Même règle que le serveur : un montant insuffisant ne solde rien.
+    const du=Number(c.montant)||0, recu=Number(reg.montant)||0;
+    const insuffisant = du>0 && recu+0.005<du;
+    c.paiement.status=insuffisant?'partiel':'paye';
     c.paiement.ref=reg.ref||null;
     c.paiement.paidAt=reg.at||new Date().toISOString();
-    c.paiement.montantPaye=reg.montant;
-    // On s'arrête à « payé » : la clôture attend la saisie dans Winpharma.
-    c.status='payé';
+    c.paiement.montantPaye=recu;
+    if(insuffisant){
+      c.paiement.duAuPaiement=du;
+      c.paiement.reste=Math.round((du-recu)*100)/100;
+      sent.textContent=`Règlement PARTIEL : ${recu.toFixed(2)} € reçus sur ${du.toFixed(2)} € dus. `
+        +`Il reste ${c.paiement.reste.toFixed(2)} € — le dossier reste ouvert.`;
+    } else {
+      delete c.paiement.duAuPaiement; delete c.paiement.reste;
+      // On s'arrête à « payé » : la clôture attend la saisie dans Winpharma.
+      c.status='payé';
+      sent.textContent='Règlement confirmé — reste à solder le crédit dans Winpharma.';
+    }
     c.updatedAt=Date.now();
     renderCreds();
-    sent.textContent='Règlement confirmé — reste à solder le crédit dans Winpharma.';
   }catch(e){
     sent.textContent='Vérification impossible : '+(e.message||'erreur inconnue');
   }
