@@ -135,6 +135,37 @@ Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
 c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
 protège pas d'un essai en force.
 
+## Journal des accès : deux journaux, deux natures
+
+Il y a désormais **deux** journaux, et les confondre serait une faute.
+
+| | Journal d'activité | Journal des accès |
+|---|---|---|
+| Où | rubrique `journal` du blob | table `app_acces` |
+| Écrit par | le navigateur | le serveur (`traces.js`) |
+| Fusionné entre postes | oui | non |
+| Effaçable | oui | **non** |
+| Répond à | « que s'est-il passé dans l'officine ? » | « qui a ouvert la fiche de X, et quand ? » |
+
+Trois règles pour `traces.js` :
+
+1. **L'auteur vient du cookie, jamais du corps de la requête.** Un poste peut
+   mentir sur ce qu'il consulte ; il ne peut pas mentir sur qui il est.
+2. **Aucune route de suppression ni de modification, pas même pour un
+   administrateur.** Un journal qu'on peut nettoyer ne prouve rien, et c'est la
+   première chose qu'un contrôle vérifie.
+3. **On note l'ouverture, jamais le contenu.** Un journal qui recopie les données
+   de santé devient lui-même une donnée de santé à protéger.
+
+`tracer(action, objet, ref, detail)` côté navigateur n'attend jamais la réponse :
+le journal accompagne le geste, il ne le retarde pas. Un journal qui bloque le
+comptoir serait débranché la semaine suivante.
+
+La règle « administrateur » doit rester **identique** des deux côtés —
+`staffIsAdmin()` dans `index.html` et `estAdministrateur()` dans `server.js`, y
+compris la reprise sur `OF`/`AF` quand personne n'est encore marqué. Un écart
+entre les deux se manifeste par un onglet visible et un 403 incompréhensible.
+
 ## Données personnelles
 
 Le blob contient des noms de patients, des adresses, des dates de naissance et
@@ -147,6 +178,8 @@ des informations de santé. En conséquence :
   contenant une image ou un document ;
 - le journal d'activité consigne l'action, jamais la saisie, et jamais le contenu
   d'un message ;
+- le journal des accès consigne la nature de la fiche ouverte et sa référence
+  interne, jamais le nom du patient ni rien de son contenu ;
 - ne jamais recopier de données réelles dans un test, un exemple ou un commentaire.
 
 ---

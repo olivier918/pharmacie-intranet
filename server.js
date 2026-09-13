@@ -23,6 +23,7 @@ const paiement = require('./paiement');
 const temperatures = require('./temperatures');
 const smsProgrammes = require('./sms-programmes');
 const identite = require('./identite');
+const traces = require('./traces');
 paiement.installWebhook(app, express, { onPaid: marquerCreditPaye });
 
 // Parse JSON bodies up to 50MB (for base64 images in preps)
@@ -412,8 +413,37 @@ async function ecrireEtatBrut(data) {
 identite.installer(app, {
   lireEtat: lireEtatBrut,
   ecrireEtat: ecrireEtatBrut,
-  journaliser: (uid, texte) => { try { console.log('  🔑 ' + texte + ' — ' + uid); } catch (e) {} }
+  // Tout ce que le serveur constate lui-meme part aussi au journal des acces :
+  // ouverture de session, changement de code, entree par le mot de passe de
+  // secours. Ces lignes-la ne dependent d'aucun navigateur.
+  journaliser: (uid, texte) => {
+    try { console.log('  🔑 ' + texte + ' — ' + uid); } catch (e) {}
+    const acte = /^Ouverture/i.test(texte) ? 'connexion'
+               : /^Fermeture/i.test(texte) ? 'deconnexion'
+               : 'modification';
+    traces.noter(db, uid, acte, 'session', null, texte);
+  }
 });
+
+// ─── Journal des acces (voir traces.js) ───
+// « Administrateur » n'est pas une notion du journal : c'est celle de l'equipe,
+// portee par staffDB. On la lit a chaque fois plutot que de la mettre en cache,
+// pour qu'un retrait de droit prenne effet immediatement.
+async function estAdministrateur(uid) {
+  try {
+    const etat = await lireEtatBrut();
+    const liste = etat.staffDB || [];
+    const s = liste.find(x => x && x.id === uid);
+    if (!s) return false;
+    // Meme regle que le navigateur (staffIsAdmin) : tant que PERSONNE n'est
+    // marque administrateur, ce sont les deux titulaires. Si le serveur ne
+    // reprenait pas cette reprise, l'onglet s'afficherait et la lecture serait
+    // refusee — l'ecart entre les deux regles se voit en 403 incomprehensible.
+    const quelquUnMarque = liste.some(x => x && x.admin === true);
+    return quelquUnMarque ? s.admin === true : (uid === 'OF' || uid === 'AF');
+  } catch (e) { return false; }
+}
+traces.installer(app, { getDb: () => db, qui: identite.qui, estAdmin: estAdministrateur });
 
 // ─── SMS programmes (voir sms-programmes.js) ───
 const smsProg = smsProgrammes.installer(app, {
@@ -1309,6 +1339,17 @@ async function start() {
     if (!d.avecEmpreinte) console.error('  ⛔ AUCUN code ne permet d\'ouvrir une session : personne ne pourra se connecter.');
     if (!d.adminEmpreinte && !d.adminSecours) console.error('  ⛔ Aucun mot de passe administrateur : definissez ADMIN_PASSWORD pour entrer.');
   } catch (e) { console.error('  ⛔ Reprise des codes impossible :', e.message); }
+  try {
+    await traces.creerTable(db);
+    if (db) {
+      const n = await traces.purger(db);
+      console.log('  📓 Journal des accès : conservation ' + traces.JOURS_GARDE + ' jours'
+        + (n ? ', ' + n + ' ligne(s) hors délai purgée(s)' : ''));
+      // Une purge par jour suffit : le journal ne grossit pas assez vite pour
+      // justifier davantage, et un intervalle long survit aux redemarrages.
+      setInterval(() => { traces.purger(db).catch(() => {}); }, 24 * 60 * 60 * 1000);
+    }
+  } catch (e) { console.error('  ⛔ Journal des accès indisponible :', e.message); }
   await temperatures.demarrer(db);
   if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention

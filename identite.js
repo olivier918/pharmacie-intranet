@@ -255,7 +255,14 @@ function installer(app, deps) {
     } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  app.post('/api/session/fin', (req, res) => { retirerCookie(res); res.json({ ok: true }); });
+  app.post('/api/session/fin', (req, res) => {
+    // On lit l'identite AVANT de retirer le cookie : apres, il n'y a plus
+    // personne a nommer dans le journal.
+    const uid = qui(req);
+    retirerCookie(res);
+    if (uid && journaliser) journaliser(uid, 'Fermeture de session');
+    res.json({ ok: true });
+  });
 
   // Le mot de passe administrateur du planning, retire du fichier public.
   app.post('/api/session/admin', async (req, res) => {

@@ -602,6 +602,7 @@
   window.rnOpenForm = function (id) {
     rnInject(); rnEditId = id || null;
     const it = id ? rnList().find(x => x.id === id) : null;
+    if (it && typeof tracer === 'function') tracer('consultation', 'renouvellement', it.id, 'Fiche ouverte en modification');
     document.getElementById('rn-form-title').textContent = it ? "Modifier l'ordonnance" : 'Nouvelle ordonnance à préparer';
     const g = i => document.getElementById(i); const v = (k, d = '') => it ? (it[k] == null ? d : it[k]) : d;
     g('rn-civ').value = v('civilite'); g('rn-nom').value = v('nom'); g('rn-prenom').value = v('prenom'); g('rn-dob').value = v('dob'); g('rn-tel').value = v('tel');
@@ -719,6 +720,7 @@
   // ---------- préparation ----------
   window.rnPrep = function (id) {
     const it = rnList().find(x => x.id === id); rnCurId = id;
+    if (it && typeof tracer === 'function') tracer('consultation', 'renouvellement', id, 'Préparation ouverte');
     if (it && it.ponctuel) return rnPrepPonctuel(it);
     document.getElementById('rn-prep-who').textContent = it.nom + ' ' + it.prenom;
     document.getElementById('rn-prep-lib').textContent = it.lib;

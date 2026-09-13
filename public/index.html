@@ -1251,6 +1251,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot8" onclick="boTab('sonnette')"><svg class="ico"><use href="#ic-sonnette"></use></svg> Sonnette</button>
         <button class="btn bs" id="bot11" onclick="boTab('modules')"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Modules affichés</button>
         <button class="btn bs" id="bot10" onclick="boTab('journal')"><svg class="ico"><use href="#ic-archives"></use></svg> Journal d'activité</button>
+        <button class="btn bs" id="bot12" onclick="boTab('acces')"><svg class="ico"><use href="#ic-securite"></use></svg> Journal des accès</button>
       </div>
 
       <!-- MATÉRIEL EN LOCATION -->
@@ -1387,6 +1388,39 @@ tr:hover td{background:#fafffe}
           </div>
           <div id="jr-stats" style="margin-bottom:1rem"></div>
           <div id="jr-list"></div>
+        </div>
+      </div>
+
+      <!-- JOURNAL DES ACCÈS — registre serveur, distinct du journal d'activité -->
+      <div id="bo-acces" style="display:none">
+        <div class="card">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-securite"></use></svg> Journal des accès aux données de santé</span></div>
+          <div style="font-size:.8rem;color:var(--gray-600);margin-bottom:.9rem;line-height:1.6">
+            Qui a ouvert quelle fiche, et quand. Ce registre est tenu par le serveur : le nom inscrit est celui de la
+            session ouverte, pas celui que le poste annonce, et <b>aucune ligne ne peut être modifiée ni effacée</b>,
+            y compris par un administrateur. Il note l'ouverture d'une fiche, jamais ce qu'elle contenait.
+            <div style="margin-top:.5rem">C'est la pièce que demande un contrôle HDS ou une réquisition. Le consulter est
+            lui-même journalisé. <span id="jac-garde"></span></div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:1rem">
+            <div class="fg" style="margin:0"><label>Période</label>
+              <select id="jac-per" onchange="renderAcces()">
+                <option value="1">Aujourd'hui</option>
+                <option value="7" selected>7 derniers jours</option>
+                <option value="30">30 derniers jours</option>
+                <option value="90">3 derniers mois</option>
+                <option value="0">Tout ce qui est conservé</option>
+              </select></div>
+            <div class="fg" style="margin:0"><label>Opérateur</label>
+              <select id="jac-who" onchange="renderAcces()"><option value="">Tous</option></select></div>
+            <div class="fg" style="margin:0"><label>Nature</label>
+              <select id="jac-obj" onchange="renderAcces()"><option value="">Toutes</option></select></div>
+            <div class="fg" style="margin:0;flex:1;min-width:170px"><label>Rechercher</label>
+              <input type="text" id="jac-q" placeholder="nom, référence, action…" oninput="renderAcces()"></div>
+            <button class="btn bs" onclick="exportAcces()"><svg class="ico"><use href="#ic-archives"></use></svg> Exporter (CSV)</button>
+          </div>
+          <div id="jac-stats" style="margin-bottom:1rem"></div>
+          <div id="jac-list"></div>
         </div>
       </div>
 
@@ -3001,6 +3035,23 @@ function bandeauAnniversaire(prenom){
 // - Full logout clears day session
 
 let currentUser=null, delivView='jour', currentThread=null, bpmFilter=null, renouvellements=[], renouvArchives=[];
+
+// ═══════════ JOURNAL DES ACCÈS ═══════════
+// Un appel, et on n'attend pas la réponse : le journal accompagne le geste, il
+// ne le retarde jamais. Si le serveur est injoignable, la fiche s'ouvre quand
+// même — un journal qui bloque le comptoir serait débranché la semaine suivante.
+//
+// On n'envoie ici QUE la nature de ce qui est ouvert, jamais son contenu, et
+// jamais le nom de la personne qui regarde : celui-là, le serveur le lit dans
+// le cookie de session. Un poste ne peut pas signer à la place d'un autre.
+function tracer(action, objet, ref, detail){
+  try{
+    fetch('/api/acces',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:action,objet:objet,ref:ref==null?null:String(ref),detail:detail||null})})
+      .catch(function(){});
+  }catch(e){}
+}
+window.tracer=tracer;
 let timerSec=300, timerInt=null;
 let selId='', pinStr='';
 
@@ -3888,6 +3939,7 @@ let currentTicketId=null;
 function openTicket(id){
   currentTicketId=id;
   const d=deliveries.find(x=>x.id===id);if(!d)return;
+  tracer('consultation','livraison',id,'Bon de livraison ouvert');
   const today=new Date().toLocaleDateString('fr-FR');
   document.getElementById('ticket-content').innerHTML=ticketHTML(d,today);
   openModal('ticket-modal');
@@ -4356,14 +4408,16 @@ function renderBpm(){
     </tr>`).join('')}</tbody></table>`;
 }
 function filterBpm(s){bpmFilter=bpmFilter===s?null:s;renderBpm()}
-function updBpm(id,s){const p=bpmList.find(x=>x.id===id);if(p){p.status=s;renderBpm()}}
+function updBpm(id,s){const p=bpmList.find(x=>x.id===id);if(p){p.status=s;tracer('modification','bpm',id,'Statut BPM : '+s);renderBpm()}}
 function newBpm(){
   const nom=prompt('Nom (MAJUSCULES) :');if(!nom)return;
   const prenom=prompt('Prénom :');if(!prenom)return;
   const med=prompt('Médecin référent :')||'—';
   const nb=parseInt(prompt('Nombre de médicaments :')||'0')||0;
   const notes=prompt('Notes :')||'';
-  bpmList.push({id:Date.now(),nom:nom.toUpperCase(),prenom,dob:'—',med,nb,status:'eligible',notes});
+  const bpmNouveau={id:Date.now(),nom:nom.toUpperCase(),prenom,dob:'—',med,nb,status:'eligible',notes};
+  bpmList.push(bpmNouveau);
+  tracer('creation','bpm',bpmNouveau.id,'Patient inclus dans le suivi BPM');
   // Upsert patient
   upsertPatient({nom:nom.toUpperCase(),prenom});
   // Upsert medecin
@@ -4376,11 +4430,11 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10','bot11'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal','bo-modules'];
+const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10','bot11','bot12'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal','bo-modules','bo-acces'];
 function boTab(t){
-  if((t==='compte'||t==='backups'||t==='journal') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9,modules:10};
+  if((t==='compte'||t==='backups'||t==='journal'||t==='acces') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
+  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9,modules:10,acces:11};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
@@ -4390,6 +4444,7 @@ function boTab(t){
   if(t==='smstpl')renderSmsTpl();
   if(t==='backups')renderBackups();
   if(t==='journal')renderJournal();
+  if(t==='acces')renderAcces();
   if(t==='sonnette' && typeof rpiFill==='function') rpiFill();
   if(t==='modules')renderModulesUI();
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
@@ -4778,6 +4833,8 @@ function applyAdminUI(){
   if(b6) b6.style.display = admin ? '' : 'none';
   const b10=document.getElementById('bot10'); // onglet « Journal d'activité »
   if(b10) b10.style.display = admin ? '' : 'none';
+  const b12=document.getElementById('bot12'); // onglet « Journal des accès »
+  if(b12) b12.style.display = admin ? '' : 'none';
   // Essai de l'effet anniversaire : outil d'administrateur, invisible aux autres.
   const ba=document.getElementById('btn-essai-anniv');
   if(ba) ba.style.display = admin ? '' : 'none';
@@ -5668,6 +5725,7 @@ let renouvEditId=null;
 
 function openRenouvellement(id){
   const l=locations.find(x=>x.id===id); if(!l) return;
+  tracer('consultation','renouvellement',id,'Fiche de renouvellement ouverte');
   renouvEditId=id;
   document.getElementById('rn-date-presc').value=new Date().toISOString().split('T')[0];
   document.getElementById('rn-duree').value='';
@@ -5728,6 +5786,7 @@ function viewRenewalScan(locId, idx){
   const l=locations.find(x=>x.id===locId);
   const r=l&&l.renewals&&l.renewals[idx];
   if(!r||!aUnScan(r)){alert('Scan non disponible.');return;}
+  tracer('consultation','ordonnance',locId,'Scan de renouvellement ouvert');
   const w=window.open();
   if(!w){alert('Autorisez les fenêtres pop-up pour visualiser le scan.');return;}
   const isImg=(r.scanType||'').startsWith('image/');
@@ -6479,6 +6538,7 @@ function locOrdos(l){
 }
 function openLocOrdos(id){
   const l=locations.find(x=>x.id===id); if(!l) return;
+  tracer('consultation','location',id,'Dossier d\u2019ordonnances ouvert');
   const list=locOrdos(l);
   document.getElementById('ordo-info').innerHTML=
     `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}`;
@@ -6508,6 +6568,7 @@ function delLocOrdo(id,idx){
   const l=locations.find(x=>x.id===id); if(!l) return;
   const o=locOrdos(l)[idx]; if(!o) return;
   if(!confirm('Supprimer le document « '+(o.nom||o.titre)+' » ('+o.titre+') du dossier de '+l.nom+' '+l.prenom+' ?\n\nLe fichier sera effacé définitivement. La date et la durée de l\u2019ordonnance sont conservées.')) return;
+  tracer('suppression','ordonnance',id,'Document supprimé : '+(o.titre||''));
   // L'index 0 est l'ordonnance initiale si le dossier en a une ; ensuite viennent
   // les renouvellements dans l'ordre. On retrouve la cible par ce même calcul.
   const initiale=!!(l.scan||aUnScan(l));
@@ -6526,6 +6587,7 @@ function viewLocOrdo(id,idx){
   const l=locations.find(x=>x.id===id); if(!l) return;
   const o=locOrdos(l)[idx];
   if(!o||!o.src){alert('Fichier non disponible.');return;}
+  tracer('consultation','ordonnance',l.id,'Ordonnance archivée ouverte');
   const w=window.open();
   if(!w){alert('Autorisez les fenêtres pop-up pour visualiser l\'ordonnance.');return;}
   const isImg=(o.type||'').startsWith('image/');
@@ -7309,6 +7371,7 @@ function credNoteSupprimer(id, noteId){
 
 function openCredDetail(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
+  tracer('consultation','credit',id,'Fiche crédit ouverte');
   document.getElementById('cred-detail-title').textContent=`${c.nom} ${c.prenom}`;
   const rels=credRelances(c).map((r,i)=>({...r,_idx:i}))
     .sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||'')));
@@ -10883,6 +10946,146 @@ function renderJournal(){
       }).join('')
     + '</tbody></table></div>'
     + (f.length>PLAFOND?`<div style="text-align:center;color:var(--gray-500);padding:.7rem;font-size:.8rem">${f.length-PLAFOND} action(s) plus anciennes non affichées — affinez la période ou la recherche.</div>`:'');
+}
+
+// ═══════════ JOURNAL DES ACCÈS (registre serveur) ═══════════
+// Deux journaux, deux natures, et il ne faut pas les confondre. Le « journal
+// d'activité » vit dans le blob : il raconte la vie de l'officine et se fusionne
+// entre postes comme le reste. Celui-ci vit dans sa propre table, ne se fusionne
+// pas, ne se modifie pas, et répond à une seule question — qui a ouvert quelle
+// fiche. C'est celui qu'un contrôle vient lire.
+let jacLignes = null;
+
+const JAC_OBJ = {
+  patient:'Patient', ordonnance:'Ordonnance', renouvellement:'Renouvellement', credit:'Crédit',
+  bpm:'BPM', preparation:'Préparation', location:'Location', controle:'Contrôle',
+  livraison:'Livraison', collaborateur:'Collaborateur', journal:'Journal', session:'Session', autre:'Autre'
+};
+const JAC_ACT = {
+  consultation:['Consultation','#1D4ED8'], modification:['Modification','#B45309'],
+  creation:['Création','#0D9488'], suppression:['Suppression','#B91C1C'],
+  impression:['Impression','#6B7280'], envoi:['Envoi','#7C3AED'], export:['Export','#9333EA'],
+  connexion:['Connexion','#166534'], deconnexion:['Déconnexion','#6B7280']
+};
+
+async function chargerAcces(){
+  const per=parseInt((document.getElementById('jac-per')||{}).value||'7',10);
+  const q=[];
+  if(per>0){ const d=new Date(); d.setDate(d.getDate()-per+1); d.setHours(0,0,0,0); q.push('depuis='+encodeURIComponent(d.toISOString())); }
+  q.push('limite=2000');
+  const r=await fetch('/api/acces?'+q.join('&'));
+  if(r.status===403){ throw new Error('Réservé aux administrateurs.'); }
+  const j=await r.json();
+  if(!j.ok) throw new Error(j.error||'indisponible');
+  const g=document.getElementById('jac-garde');
+  if(g) g.textContent='Conservation : '+Math.round((j.garde_jours||0)/365*10)/10+' an(s).';
+  return j.lignes||[];
+}
+
+async function renderAcces(){
+  if(!isAdmin()) return;
+  const el=document.getElementById('jac-list'); if(!el) return;
+  // Le filtre de période se joue côté serveur : recharger est donc nécessaire
+  // quand il change, mais pas quand on tape dans la recherche.
+  const per=(document.getElementById('jac-per')||{}).value;
+  if(jacLignes===null || jacLignes._per!==per){
+    el.innerHTML='<div style="color:var(--gray-500);padding:1rem;font-size:.85rem">Chargement…</div>';
+    try{ const L=await chargerAcces(); L._per=per; jacLignes=L; }
+    catch(e){ el.innerHTML='<div style="color:#B91C1C;padding:1rem;font-size:.85rem">Journal indisponible : '+String(e.message||e)+'</div>'; return; }
+  }
+  const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // Les listes déroulantes sont construites sur ce que le journal contient
+  // vraiment : un collaborateur parti reste sélectionnable tant que ses lignes
+  // sont conservées, ce qui est précisément l'intérêt du registre.
+  const selW=document.getElementById('jac-who');
+  if(selW){
+    const vus={}; const ops=[];
+    jacLignes.forEach(e=>{ if(e&&e.uid&&!vus[e.uid]){ vus[e.uid]=1; ops.push([e.uid, (typeof staffName==='function'?staffName(e.uid):null)||e.uid]); } });
+    ops.sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'fr'));
+    const cur=selW.value;
+    selW.innerHTML='<option value="">Tous</option>'+ops.map(o=>`<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
+    selW.value=cur;
+  }
+  const selO=document.getElementById('jac-obj');
+  if(selO){
+    const vus={}; jacLignes.forEach(e=>{ if(e&&e.objet) vus[e.objet]=1; });
+    const cur=selO.value;
+    selO.innerHTML='<option value="">Toutes</option>'+Object.keys(vus).sort().map(k=>`<option value="${esc(k)}">${esc(JAC_OBJ[k]||k)}</option>`).join('');
+    selO.value=cur;
+  }
+
+  const who=(document.getElementById('jac-who')||{}).value||'';
+  const obj=(document.getElementById('jac-obj')||{}).value||'';
+  const q=((document.getElementById('jac-q')||{}).value||'').toLowerCase().trim();
+  const f=jacLignes.filter(e=>{
+    if(who && e.uid!==who) return false;
+    if(obj && e.objet!==obj) return false;
+    if(q){
+      const nom=(typeof staffName==='function'?staffName(e.uid):'')||'';
+      const txt=(nom+' '+e.uid+' '+e.action+' '+(JAC_OBJ[e.objet]||e.objet)+' '+(e.ref||'')+' '+(e.detail||'')).toLowerCase();
+      if(txt.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+
+  const st=document.getElementById('jac-stats');
+  if(st){
+    const parOp={};
+    f.forEach(e=>{ const n=(typeof staffName==='function'?staffName(e.uid):null)||e.uid; parOp[n]=(parOp[n]||0)+1; });
+    const tri=Object.entries(parOp).sort((a,b)=>b[1]-a[1]);
+    const maxi=tri.length?tri[0][1]:0;
+    st.innerHTML = !tri.length ? ''
+      : `<div style="font-size:.72rem;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:.5rem">Accès par opérateur — ${f.length} au total</div>`
+        + tri.map(([nom,n])=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <span style="width:150px;font-size:.83rem;font-weight:600;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nom)}</span>
+            <span style="flex:1;background:var(--gray-100);border-radius:6px;height:15px;overflow:hidden"><span style="display:block;height:100%;width:${maxi?Math.round(n*100/maxi):0}%;background:var(--g-mid)"></span></span>
+            <span style="width:44px;text-align:right;font-size:.8rem;font-weight:700;color:var(--g-dark)">${n}</span>
+          </div>`).join('');
+  }
+
+  if(!f.length){ el.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.5rem;font-size:.86rem">Aucun accès sur cette période.</div>'; return; }
+  const PLAFOND=500;
+  const vue=f.slice(0,PLAFOND);
+  el.innerHTML='<div class="dlist-wrap"><table style="width:100%;border-collapse:collapse;font-size:.83rem">'
+    + '<thead><tr style="background:var(--gray-100);text-align:left">'
+    + ['Quand','Opérateur','Action','Nature','Référence','Détail'].map(h=>'<th style="padding:7px 12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500)">'+h+'</th>').join('')
+    + '</tr></thead><tbody>'
+    + vue.map(e=>{
+        const d=new Date(e.ts);
+        const A=JAC_ACT[e.action]||[e.action,'#6B7280'];
+        const nom=(typeof staffName==='function'?staffName(e.uid):null)||e.uid;
+        return `<tr style="border-top:1px solid var(--gray-200)">
+          <td style="padding:6px 12px;white-space:nowrap;color:var(--gray-700)">${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td style="padding:6px 12px;font-weight:600;white-space:nowrap">${esc(nom)}</td>
+          <td style="padding:6px 12px;white-space:nowrap"><span style="display:inline-block;padding:1px 8px;border-radius:20px;font-size:.72rem;font-weight:700;color:#fff;background:${A[1]}">${esc(A[0])}</span></td>
+          <td style="padding:6px 12px">${esc(JAC_OBJ[e.objet]||e.objet)}</td>
+          <td style="padding:6px 12px;color:var(--gray-500)">${esc(e.ref||'—')}</td>
+          <td style="padding:6px 12px;color:var(--gray-500)">${esc(e.detail||'')}</td></tr>`;
+      }).join('')
+    + '</tbody></table></div>'
+    + (f.length>PLAFOND?`<div style="text-align:center;color:var(--gray-500);padding:.7rem;font-size:.8rem">${f.length-PLAFOND} accès plus anciens non affichés — affinez la période ou la recherche.</div>`:'');
+}
+
+// Un contrôle ou une réquisition demande un fichier, pas une capture d'écran.
+function exportAcces(){
+  if(!jacLignes || !jacLignes.length){ alert('Rien à exporter sur cette période.'); return; }
+  const ent=['Date','Heure','Identifiant','Opérateur','Action','Nature','Référence','Détail'];
+  const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lignes=jacLignes.map(e=>{
+    const d=new Date(e.ts);
+    const nom=(typeof staffName==='function'?staffName(e.uid):null)||e.uid;
+    return [d.toLocaleDateString('fr-FR'), d.toLocaleTimeString('fr-FR'), e.uid, nom,
+            (JAC_ACT[e.action]||[e.action])[0], JAC_OBJ[e.objet]||e.objet, e.ref||'', e.detail||''].map(cell).join(';');
+  });
+  // Le BOM, sans quoi Excel affiche « ClÃ©ment » et l'export devient inutilisable.
+  const csv='﻿'+ent.map(cell).join(';')+'\n'+lignes.join('\n');
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');
+  a.href=url; a.download='journal-acces-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  tracer('export','journal',null,'Export CSV du journal des accès');
 }
 
 // ═══════════ AUTO-SAVE HOOKS ═══════════
