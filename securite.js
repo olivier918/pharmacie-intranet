@@ -32,11 +32,24 @@ const CSP = [
   "font-src 'self' data: https://fonts.gstatic.com",
   // data: et blob: : les scans d'ordonnance affiches avant leur reprise, et les
   // fichiers construits en memoire (exports CSV, PDF).
-  "img-src 'self' data: blob:",
+  //
+  // `https:` en plus, et c'est un arbitrage assume : les raccourcis de la page
+  // d'accueil affichent l'icone du site vers lequel ils pointent, demandee par
+  // le navigateur de l'operateur au site qu'il s'apprete a ouvrir. Ces sites
+  // sont saisis librement par l'equipe — aucune liste d'autorisation ne peut
+  // donc les prevoir. Ce qu'on concede : une image reste un canal de fuite
+  // possible (une adresse peut transporter de l'information dans son chemin) si
+  // un script hostile s'executait deja dans la page. Mais s'il s'executait, le
+  // script-src aurait deja echoue ; et refuser ces icones casserait une
+  // fonction visible pour un gain theorique. La ou cela compte vraiment —
+  // script-src, connect-src, form-action — rien n'est relache.
+  "img-src 'self' data: blob: https:",
   "media-src 'self' data: blob:",
   // Les scans PDF s'ouvrent dans un cadre ; la fenetre d'impression aussi.
   "frame-src 'self' data: blob:",
-  "connect-src 'self'",
+  // cdnjs : uniquement pour que les outils de developpement puissent charger la
+  // carte de source de jsPDF. La page elle-meme ne parle qu'a son serveur.
+  "connect-src 'self' https://cdnjs.cloudflare.com",
   "worker-src 'self' blob:"
 ].join('; ');
 
