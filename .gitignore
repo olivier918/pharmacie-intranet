@@ -15,6 +15,16 @@ data/*.json
 .env.*
 !.env.example
 
+# Tout fichier local de valeurs secretes. Il est ignore ici, mais il reste sur
+# le disque, part dans les sauvegardes et se retrouve dans une archive envoyee
+# par mail : le gestionnaire de mots de passe est fait pour ca, pas un dossier
+# de code. Voir EXPLOITATION.md, « Ou vivent les secrets ».
+*.local.*
+secrets*
+cles*
+*.key
+*.pem
+
 # Divers
 *.log
 Thumbs.db

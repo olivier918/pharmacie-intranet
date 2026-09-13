@@ -1,5 +1,9 @@
 # PILOT — intranet de la Pharmacie du Centre (Mondeville)
 
+> **Exploitation courante** — où est quoi, quelles variables, quelles
+> procédures, que faire quand ça va mal : voir **`EXPLOITATION.md`**.
+> Ce fichier-ci ne parle que des pièges du code.
+
 Outil de travail quotidien d'une officine : livraisons, préparations, crédits,
 caisse, renouvellements d'ordonnances, planning, messagerie, boîte à idées.
 Une dizaine de personnes s'en servent en même temps, sur plusieurs postes.
