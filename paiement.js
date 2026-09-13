@@ -192,6 +192,17 @@ async function chercherReglement(linkId) {
 //  ne peut être vérifiée que sur le corps brut de la requête.
 //  deps = { onPaid(creditId, {ref, montant, at}) : Promise<bool> }
 // ─────────────────────────────────────────────────────────────
+// Borne une promesse dans le temps. Sans cela, une base qui ne repond plus
+// laisse la requete suspendue jusqu'a ce que Stripe coupe : on subit sa
+// decision au lieu de la prendre.
+function avecDelai(promesse, ms, message) {
+  let minuteur;
+  return Promise.race([
+    promesse.finally(() => clearTimeout(minuteur)),
+    new Promise((_, rejeter) => { minuteur = setTimeout(() => rejeter(new Error(message)), ms); })
+  ]);
+}
+
 function installWebhook(app, express, deps) {
   const traites = new Set();   // ids d'événements déjà traités (anti-doublon en mémoire)
 
@@ -211,29 +222,69 @@ function installWebhook(app, express, deps) {
       return res.status(400).send('corps illisible');
     }
 
-    // Réponse immédiate : Stripe exige un 2xx rapide, le traitement suit.
-    res.json({ received: true });
+    // ── L'ORDRE EST LA CORRECTION ────────────────────────────────────────
+    // Avant le 13/09/2026, la reponse partait ICI, et l'echec du traitement
+    // n'etait que journalise. Un hoquet de la base pendant qu'un patient
+    // reglait 180 euros donnait : Stripe recoit 200, ne rejoue JAMAIS, l'argent
+    // est encaisse, le patient voit « reglement enregistre » — et le credit
+    // reste ouvert dans l'intranet, avec la relance qui part quelques jours
+    // plus tard. Desormais on traite d'abord, et un echec repond 500 pour que
+    // Stripe rejoue (il reessaie jusqu'a trois jours).
+    //
+    // La regle qui decide du code de reponse : 200 quand il n'y a RIEN a faire
+    // ou plus rien a tenter, 500 quand un nouvel essai a une chance d'aboutir.
+    // Repondre 500 sur un evenement qu'on ne saura jamais traiter ferait
+    // rejouer Stripe trois jours pour rien, puis passerait le point de
+    // terminaison en echec chez eux.
 
-    if (!evt || evt.type !== 'checkout.session.completed') return;
-    if (evt.id && traites.has(evt.id)) return;
-    if (evt.id) { traites.add(evt.id); if (traites.size > 500) traites.delete(traites.values().next().value); }
+    if (!evt || evt.type !== 'checkout.session.completed') return res.json({ received: true });
+
+    // Doublon AVERE : l'evenement a deja ete traite avec succes. Stripe peut
+    // legitimement rejouer le meme evenement ; on acquitte sans rien refaire.
+    if (evt.id && traites.has(evt.id)) return res.json({ received: true, doublon: true });
 
     const s = (evt.data && evt.data.object) || {};
-    if (s.payment_status && s.payment_status !== 'paid') return;
-    const creditId = (s.metadata && s.metadata.creditId) || null;
-    if (!creditId) return;
+    // « complete » ne veut pas dire « encaisse » : pour un prelevement SEPA,
+    // le patient est alle au bout du tunnel, les fonds n'y sont pas encore.
+    // Stripe enverra un autre evenement quand ils arriveront.
+    if (s.payment_status && s.payment_status !== 'paid') return res.json({ received: true, enAttente: true });
 
+    const creditId = (s.metadata && s.metadata.creditId) || null;
+    if (!creditId) {
+      console.warn('  💳 Paiement reçu sans creditId dans les métadonnées — rien à solder.');
+      return res.json({ received: true, sansDossier: true });
+    }
+
+    const montant = (s.amount_total || 0) / 100;
     try {
-      const ok = await deps.onPaid(creditId, {
+      // Garde-fou : Stripe coupe au bout d'une trentaine de secondes. Si la
+      // base ne repond pas, mieux vaut un 500 clair — qui declenche le rejeu —
+      // qu'une requete suspendue dont Stripe tire seul la conclusion.
+      const ok = await avecDelai(deps.onPaid(creditId, {
         ref: s.id,
-        montant: (s.amount_total || 0) / 100,
+        montant,
         at: new Date().toISOString()
-      });
-      console.log(ok
-        ? `  💳 Paiement en ligne reçu — crédit ${creditId} soldé (${((s.amount_total || 0) / 100).toFixed(2)} €)`
-        : `  💳 Paiement reçu pour le crédit ${creditId}, mais dossier introuvable ou déjà soldé.`);
+      }), 20000, 'traitement trop long');
+
+      if (ok) {
+        // Marque APRES le succes, jamais avant : marquer d'abord ferait ignorer
+        // le rejeu qui suit un echec, et annulerait la correction ci-dessus.
+        if (evt.id) { traites.add(evt.id); if (traites.size > 500) traites.delete(traites.values().next().value); }
+        console.log(`  💳 Paiement en ligne reçu — crédit ${creditId} soldé (${montant.toFixed(2)} €)`);
+        return res.json({ received: true });
+      }
+
+      // Ni erreur ni dossier modifie : soit le credit est introuvable, soit il
+      // etait deja solde. Rejouer n'y changerait rien — on acquitte, et on le
+      // dit assez fort pour qu'un rapprochement soit possible.
+      console.warn(`  💳 Paiement de ${montant.toFixed(2)} € reçu pour le crédit ${creditId} : dossier introuvable ou déjà soldé (réf. Stripe ${s.id}).`);
+      return res.json({ received: true, nonApplique: true });
+
     } catch (err) {
-      console.error('Traitement du paiement:', err.message);
+      // Le seul cas ou l'on veut que Stripe revienne.
+      console.error(`  ⛔ Paiement de ${montant.toFixed(2)} € NON enregistré pour le crédit ${creditId} (réf. Stripe ${s.id}) : ${err.message}`);
+      console.error('     Réponse 500 : Stripe rejouera l\'événement (jusqu\'à trois jours).');
+      return res.status(500).json({ received: false, error: 'traitement impossible' });
     }
   });
 }
