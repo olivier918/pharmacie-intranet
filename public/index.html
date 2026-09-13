@@ -6328,7 +6328,8 @@ async function repriseScansLocations(){
   }catch(e){
     rates.push('Interruption : '+e.message);
   } finally {
-    if(ok) { await enregistrer(); if(typeof logAction==='function') logAction('Reprise des scans de location', ok+' repris'); }
+    if(ok) { await enregistrer(); if(typeof logAction==='function') logAction('Reprise des scans de location', ok+' repris');
+             tracer('modification','ordonnance',null,'Reprise de '+ok+' scan(s) vers le stockage dédié'); }
     _savePending=false;
   }
 
@@ -6502,7 +6503,8 @@ async function retirerScansRepris(){
     }
   }catch(e){ gardes.push('Interruption : '+e.message);
   } finally {
-    if(ote){ await enregistrer(); if(typeof logAction==='function') logAction('Retrait des scans repris', ote+' retirés'); }
+    if(ote){ await enregistrer(); if(typeof logAction==='function') logAction('Retrait des scans repris', ote+' retirés');
+             tracer('suppression','ordonnance',null,'Retrait de '+ote+' original(aux) du fichier de données'); }
     _savePending=false;
   }
 
