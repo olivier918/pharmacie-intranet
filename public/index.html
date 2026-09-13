@@ -2397,7 +2397,11 @@ tr:hover td{background:#fafffe}
 function ico(n){return '<svg class="ico"><use href="#ic-'+n+'"></use></svg>';}
 
 // ═══════════ STATE ═══════════
-const ADMIN = {mail:'admin@pharmacie-mondeville.fr', pw:'pharma2026'};
+// Plus de mot de passe ici : il est verifie par le serveur, qui en detient
+// l'empreinte. Seule l'adresse arrive par /api/data — ce n'est pas un secret.
+// Valeur de depart conservee pour la toute premiere ouverture, avant que la
+// base ne porte quoi que ce soit.
+const ADMIN = {mail:'admin@pharmacie-mondeville.fr'};
 let labo = {nom:'Kerangal Normandie', adr:'Caen', tel:'0231000000', mail:'preparations@kerangal.fr'};
 let banque = {nom:'', mail:''};   // sous-traitant « banque » pour la commande de monnaie
 
@@ -3017,18 +3021,29 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
-function doLogin(){
+// Le mot de passe administrateur etait compare ici, contre une valeur ecrite en
+// clair dans pl-core.js — un fichier servi publiquement, lisible en trois clics
+// dans l'onglet Sources. Il vit maintenant en empreinte cote serveur.
+async function doLogin(){
   const m=document.getElementById('li-mail').value.trim();
   const p=document.getElementById('li-pw').value;
-  if(m===ADMIN.mail&&p===ADMIN.pw){
-    saveAdminSession();
-    document.getElementById('login-screen').style.display='none';
-    document.getElementById('pin-screen').style.display='flex';
-    buildPinChips();
-  } else {
-    document.getElementById('li-err').textContent='Identifiants incorrects.';
-    setTimeout(()=>document.getElementById('li-err').textContent='',3000);
-  }
+  const err=document.getElementById('li-err');
+  const dire=function(t){ if(err){ err.textContent=t; setTimeout(function(){ if(err.textContent===t) err.textContent=''; },3000); } };
+  try{
+    const r=await fetch('/api/session/admin',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mail:m,pw:p})});
+    const j=await r.json().catch(function(){ return null; });
+    if(r.ok && j && j.ok){
+      saveAdminSession();
+      document.getElementById('login-screen').style.display='none';
+      document.getElementById('pin-screen').style.display='flex';
+      buildPinChips();
+      return;
+    }
+    if(r.status===429) return dire('Trop d’essais. Réessayez dans quelques minutes.');
+    if(r.status>=500)  return dire('Serveur injoignable — réessayez.');
+    dire('Identifiants incorrects.');
+  }catch(e){ dire('Serveur injoignable — réessayez.'); }
 }
 
 function buildPinChips(){ /* no-op — chips removed */ }
@@ -3049,25 +3064,46 @@ function kp(v){
   if(pinStr.length===4) checkPin(); else updDots();
 }
 
+// L'ecran affichait le nom des que quatre chiffres etaient tapes : c'etait deja
+// la verification, faite dans le navigateur contre la liste des codes. Elle n'a
+// plus lieu ici — le nom apparait apres la reponse du serveur.
 function previewUser(){
   updDots();
-  // Show matching user name as soon as 4 digits entered
-  if(pinStr.length===4){
-    const match=staffDB.find(x=>x.pin===pinStr);
-    document.getElementById('pin-who').textContent = match ? match.prenom+' '+match.nom : '';
-  } else {
-    document.getElementById('pin-who').textContent = '';
-  }
+  const w=document.getElementById('pin-who');
+  if(w && pinStr.length<4) w.textContent='';
 }
 
 function updDots(){
   document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('on',i<pinStr.length));
 }
 
-function checkPin(){
-  const s=staffDB.find(x=>x.pin===pinStr);
-  if(s){
+// Le code part au serveur, qui seul detient les empreintes. Le navigateur ne
+// sait plus quel code appartient a qui — c'est tout l'objet du changement.
+let _pinEnCours=false;
+async function checkPin(){
+  if(_pinEnCours) return;
+  const code=pinStr;
+  const err=document.getElementById('pin-err');
+  _pinEnCours=true;
+  let s=null, motif='Code incorrect.';
+  try{
+    const r=await fetch('/api/session/pin',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pin:code})});
+    const j=await r.json().catch(function(){ return null; });
+    if(r.ok && j && j.ok && j.user) s=j.user;
+    else if(r.status===429) motif='Trop d’essais. Réessayez dans '+Math.ceil(((j&&j.attente)||60)/60)+' min.';
+    else if(r.status>=500) motif='Serveur injoignable — réessayez.';
+  }catch(e){ motif='Serveur injoignable — réessayez.'; }
+  _pinEnCours=false;
+  if(!s){
+    pinStr=''; updDots();
+    const w0=document.getElementById('pin-who'); if(w0) w0.textContent='';
+    if(err){ err.textContent=motif; setTimeout(function(){ if(err.textContent===motif) err.textContent=''; },3500); }
+    return;
+  }
+  {
     currentUser=s;
+    const w=document.getElementById('pin-who'); if(w) w.textContent=(s.prenom||'')+' '+(s.nom||'');
     logAction('Ouverture de session','');
     document.getElementById('pin-screen').style.display='none';
     document.getElementById('app').style.display='grid';
@@ -3089,11 +3125,6 @@ function checkPin(){
     if(estMonAnniversaire(s) && !anniversaireDejaFete(s.id)){
       setTimeout(function(){ feterAnniversaire(s.prenom||s.id, false); }, 700);
     }
-  } else {
-    document.getElementById('pin-err').textContent='Code PIN incorrect.';
-    document.getElementById('pin-who').textContent='';
-    pinStr=''; updDots();
-    setTimeout(()=>document.getElementById('pin-err').textContent='',2500);
   }
 }
 
@@ -5022,17 +5053,26 @@ function saveStaffPin(){
     err.style.display='block';
     return;
   }
-  const conflict=staffDB.find(x=>x.id!==staffPinEditId&&x.pin===pin);
-  if(conflict){
-    err.textContent=`Ce PIN est déjà utilisé par ${conflict.prenom} ${conflict.nom}.`;
-    err.style.display='block';
-    return;
-  }
-  const s=staffDB.find(x=>x.id===staffPinEditId);
-  if(s)s.pin=pin;
-  staffPinEditId=null;
-  closeModal('staff-pin-modal');
-  renderStaff();
+  // Le doublon ne peut plus se detecter ici : le navigateur ne connait aucun
+  // code. C'est le serveur qui refuse, lui qui detient les empreintes.
+  fetch('/api/session/code',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:staffPinEditId,pin:pin})})
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return {r:r,j:j}; }); })
+    .then(function(o){
+      if(o.r.ok && o.j && o.j.ok){
+        staffPinEditId=null;
+        closeModal('staff-pin-modal');
+        renderStaff();
+        return;
+      }
+      const e=(o.j&&o.j.error)||'';
+      err.textContent = e==='code_deja_pris' ? 'Ce code est déjà utilisé par quelqu’un d’autre.'
+        : e==='interdit' ? 'Seul un administrateur peut changer le code d’un collègue.'
+        : e==='non_identifie' ? 'Session expirée — reconnectez-vous.'
+        : 'Le serveur a refusé ce changement.';
+      err.style.display='block';
+    })
+    .catch(function(){ err.textContent='Serveur injoignable — réessayez.'; err.style.display='block'; });
 }
 function deleteStaff(id){
   const s=staffDB.find(x=>x.id===id);
@@ -5086,11 +5126,30 @@ function saveCompte(){
   const msg=document.getElementById('compte-msg');
   if(!m){msg.style.color='var(--red)';msg.textContent='E-mail requis.';return}
   if(p&&p!==p2){msg.style.color='var(--red)';msg.textContent='Les mots de passe ne correspondent pas.';return}
-  if(m)ADMIN.mail=m;
-  if(p)ADMIN.pw=p;
-  msg.style.color='#2E7D32';msg.textContent='✓ Accès administrateur mis à jour.';
-  document.getElementById('adm-pw').value='';document.getElementById('adm-pw2').value='';
-  setTimeout(()=>msg.textContent='',4000);
+  if(p&&p.length<10){msg.style.color='var(--red)';msg.textContent='Choisissez un mot de passe d’au moins 10 caractères.';return}
+  // Le mot de passe ne transite plus par le blob : il part a la route dediee,
+  // qui en garde l'empreinte. « pharma2026 » etait devinable sans meme lire le
+  // code, et se trouve dans l'historique git — il est a considerer comme
+  // definitivement compromis, partout ou il a pu etre reutilise.
+  fetch('/api/session/admin/maj',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({mail:m,pw:p})})
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return {r:r,j:j}; }); })
+    .then(function(o){
+      if(o.r.ok && o.j && o.j.ok){
+        ADMIN.mail=m;
+        msg.style.color='#2E7D32';msg.textContent='✓ Accès administrateur mis à jour.';
+        document.getElementById('adm-pw').value='';document.getElementById('adm-pw2').value='';
+        setTimeout(()=>msg.textContent='',4000);
+        return;
+      }
+      const e=(o.j&&o.j.error)||'';
+      msg.style.color='var(--red)';
+      msg.textContent = e==='interdit' ? 'Réservé aux administrateurs.'
+        : e==='mot_de_passe_trop_court' ? 'Mot de passe trop court.'
+        : e==='non_identifie' ? 'Session expirée — reconnectez-vous.'
+        : 'Le serveur a refusé ce changement.';
+    })
+    .catch(function(){ msg.style.color='var(--red)'; msg.textContent='Serveur injoignable — réessayez.'; });
 }
 
 // ═══════════ LOCATIONS ═══════════

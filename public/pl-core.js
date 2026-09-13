@@ -24,7 +24,13 @@
   window.plEchanges = [];       // échanges de jours entre collaborateurs (ou permutation de ses propres jours)
   window.staffDB = [];          // lecture seule ici : sert aux noms et à l'identification par PIN
   window.currentUser = null;
-  window.ADMIN = { mail: 'admin@pharmacie-mondeville.fr', pw: 'pharma2026' };
+  // Le mot de passe administrateur etait ecrit ICI, en clair, dans un fichier
+  // servi publiquement : telechargeable par quiconque atteint le serveur, et
+  // lisible en trois clics dans l'onglet Sources. Il vit desormais en empreinte
+  // cote serveur ; seule l'adresse, qui n'est pas un secret, arrive par
+  // /api/data. Le mot de passe d'origine est dans l'historique git : il est a
+  // considerer comme definitivement compromis, partout ou il a pu servir.
+  window.ADMIN = { mail: '' };
   window.tombstones = [];
 
   // Rubriques que CETTE page a le droit d'écrire. Ne jamais y ajouter une rubrique

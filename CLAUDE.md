@@ -112,6 +112,29 @@ rejouée par chaque ancien poste et se bat avec elle-même à la fusion. **Tradu
 
 ---
 
+## Secrets : rien ne sort, rien n'entre
+
+`/api/data` livrait la liste du personnel AVEC les codes PIN, et le mot de passe
+administrateur était écrit en clair dans `public/pl-core.js`. Corrigé le
+13/09/2026 — voir `identite.js`.
+
+Trois règles en découlent, à ne jamais enfreindre :
+
+1. **Aucun secret ne quitte le serveur.** `identite.sansSecrets()` filtre toute
+   réponse contenant `staffDB` ou `ADMIN`. Une nouvelle route qui renvoie l'état
+   doit passer par elle.
+2. **Aucun secret n'entre.** `identite.sansSecretsEntrants()` jette `pin`,
+   `pinHash`, `pinSel` et `ADMIN.pw` reçus d'un client. Sans cela, un poste
+   resté sur une ancienne version réinjecterait les codes qu'il détient encore,
+   et la fusion champ par champ les remettrait en base.
+3. **Un secret ne se vérifie jamais dans le navigateur.** Le code PIN part à
+   `/api/session/pin`. Toute comparaison de secret côté client est, par
+   construction, une comparaison que l'utilisateur peut lire.
+
+Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
+c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
+protège pas d'un essai en force.
+
 ## Données personnelles
 
 Le blob contient des noms de patients, des adresses, des dates de naissance et

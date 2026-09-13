@@ -22,6 +22,7 @@ const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de donné
 const paiement = require('./paiement');
 const temperatures = require('./temperatures');
 const smsProgrammes = require('./sms-programmes');
+const identite = require('./identite');
 paiement.installWebhook(app, express, { onPaid: marquerCreditPaye });
 
 // Parse JSON bodies up to 50MB (for base64 images in preps)
@@ -388,6 +389,31 @@ app.post('/api/dev/issue', async (req, res) => {
 
 // ─── Suivi des armoires refrigerees (voir temperatures.js) ───
 temperatures.routes(app, () => db);
+
+// ─── Identite des operateurs (voir identite.js) ───
+// Lecture et ecriture de l'etat, partagees avec le module : elles suivent le
+// meme chemin que le reste (PostgreSQL si present, fichier sinon).
+async function lireEtatBrut() {
+  if (db) {
+    const r = await db.query('SELECT data FROM app_data WHERE id = 1');
+    return (r.rows[0] && r.rows[0].data) || {};
+  }
+  if (fs.existsSync(DATA_FILE)) { try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {} }
+  return {};
+}
+async function ecrireEtatBrut(data) {
+  if (db) {
+    await db.query('UPDATE app_data SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(data)]);
+    return;
+  }
+  refuserDisque('ecriture identite');
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+identite.installer(app, {
+  lireEtat: lireEtatBrut,
+  ecrireEtat: ecrireEtatBrut,
+  journaliser: (uid, texte) => { try { console.log('  🔑 ' + texte + ' — ' + uid); } catch (e) {} }
+});
 
 // ─── SMS programmes (voir sms-programmes.js) ───
 const smsProg = smsProgrammes.installer(app, {
@@ -1033,14 +1059,17 @@ app.get('/api/data', async (req, res) => {
       // PostgreSQL
       const result = await db.query('SELECT data FROM app_data WHERE id = 1');
       if (result.rows.length > 0 && Object.keys(result.rows[0].data).length > 0) {
-        return res.json(maint.pruneRetention(result.rows[0].data));
+        // sansSecrets : ni code PIN, ni empreinte, ni mot de passe administrateur
+        // ne quittent le serveur. C'etait LE trou — /api/data livrait les codes
+        // de toute l'equipe a chaque poste.
+        return res.json(identite.sansSecrets(maint.pruneRetention(result.rows[0].data)));
       }
       return res.json(null);
     } else {
       // Fichier local
       if (fs.existsSync(DATA_FILE)) {
         const raw = fs.readFileSync(DATA_FILE, 'utf8');
-        return res.json(maint.pruneRetention(JSON.parse(raw)));
+        return res.json(identite.sansSecrets(maint.pruneRetention(JSON.parse(raw))));
       }
       return res.json(null);
     }
@@ -1058,7 +1087,10 @@ app.post('/api/data', async (req, res) => {
   try {
     // On archive l'état existant AVANT de le remplacer
     await snapshotCurrent();
-    const incoming = req.body || {};
+    // Nettoyer la sortie sans nettoyer l'entree ne servirait a rien : un poste
+    // reste sur l'ancienne version renverrait les PIN qu'il detient encore, et
+    // la fusion champ par champ les remettrait sagement en base.
+    const incoming = identite.sansSecretsEntrants(req.body || {});
     if (db) {
       // PostgreSQL — fusion au niveau des rubriques : un client sur une ancienne
       // version, qui n'envoie pas certaines rubriques (retours, bluestone,
@@ -1238,6 +1270,20 @@ async function start() {
     ? '  🔗 Liens patients construits sur ' + renouvBase()
     : '  🔗 Liens patients sur l\'adresse courante (definir RENOUV_BASE_URL pour un sous-domaine dedie)');
   paiement.logStatus();
+  // Reprise des codes en clair : voir identite.js — c'est l'exception assumee a
+  // la regle « pas de migration ecrite en base », puisque le but EST d'en faire
+  // disparaitre un secret.
+  try {
+    const etat = await lireEtatBrut();
+    const n = identite.convertirCodes(etat);
+    if (n > 0) { await ecrireEtatBrut(etat); console.log('  🔑 ' + n + ' code(s) converti(s) en empreinte, clair efface'); }
+    const d = identite.diagnostic(etat);
+    console.log('  🔑 Identite : ' + d.avecEmpreinte + '/' + d.personnes + ' code(s) en empreinte'
+      + (d.encoreEnClair ? ', ' + d.encoreEnClair + ' ENCORE EN CLAIR' : '')
+      + ', administrateur ' + (d.adminEmpreinte ? 'configure' : (d.adminSecours ? 'par ADMIN_PASSWORD' : 'ABSENT')));
+    if (!d.avecEmpreinte) console.error('  ⛔ AUCUN code ne permet d\'ouvrir une session : personne ne pourra se connecter.');
+    if (!d.adminEmpreinte && !d.adminSecours) console.error('  ⛔ Aucun mot de passe administrateur : definissez ADMIN_PASSWORD pour entrer.');
+  } catch (e) { console.error('  ⛔ Reprise des codes impossible :', e.message); }
   await temperatures.demarrer(db);
   if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
