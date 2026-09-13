@@ -1022,13 +1022,24 @@ function mergeState(existing, incoming) {
 // publication qui la porte ne soit enregistree, et sans lui elle disparaitrait
 // dans cet intervalle.
 const IMG_GRACE_H = 24;
+// ⚠ CE QUI S'EST PASSE LE 10/09/2026, ET QU'IL NE FAUT JAMAIS REFAIRE.
+// Cette fonction ne descendait que dans les cles nommees `imgId` ou dans les
+// valeurs qui sont elles-memes des objets. Une chaine rangee sous un AUTRE nom
+// — `scanId`, pour les ordonnances de location — n'etait donc jamais vue. Le
+// balayeur les a prises pour des orphelines et a SUPPRIME 45 scans
+// d'ordonnances. Irreversible sans les instantanes d'historique.
+//
+// La regle qui en decoule : on ne cherche pas les references la ou on croit
+// qu'elles sont, on parcourt TOUT et on reconnait la forme. Un faux positif
+// — une chaine de 32 hexadecimaux qui ne designe rien — ne coute qu'une image
+// gardee pour rien. Un faux negatif coute une ordonnance.
 function imagesReferencees(blob) {
   const vus = new Set();
   const voir = (v) => {
-    if (!v) return;
+    if (v === null || v === undefined) return;
     if (typeof v === 'string') { if (/^[0-9a-f]{32}$/.test(v)) vus.add(v); return; }
     if (Array.isArray(v)) { v.forEach(voir); return; }
-    if (typeof v === 'object') { Object.keys(v).forEach(k => { if (k === 'imgId' || typeof v[k] === 'object') voir(v[k]); }); }
+    if (typeof v === 'object') { Object.keys(v).forEach(k => voir(v[k])); return; }
   };
   voir(blob);
   return vus;
@@ -1049,8 +1060,16 @@ async function balayerImages() {
     console.error('Balayage des images:', err.message);
   }
 }
-setInterval(balayerImages, 6 * 3600 * 1000);
-setTimeout(balayerImages, 5 * 60 * 1000);
+// Le balayage est SUSPENDU par defaut depuis l'incident du 13/09/2026. Il ne
+// reprendra que sur decision explicite, une fois la perte instruite et la
+// correction de imagesReferencees verifiee sur des donnees reelles.
+// Pour le reactiver : BALAYAGE_IMAGES=1.
+if (process.env.BALAYAGE_IMAGES === '1') {
+  setInterval(balayerImages, 6 * 3600 * 1000);
+  setTimeout(balayerImages, 5 * 60 * 1000);
+} else {
+  console.log('  🧹 Balayage des images SUSPENDU (BALAYAGE_IMAGES non defini)');
+}
 
 // ─── Load all data ───
 app.get('/api/data', async (req, res) => {
