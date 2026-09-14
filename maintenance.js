@@ -227,9 +227,33 @@ function changed(before, after) {
   return len(before.deliveries) !== len(after.deliveries) || len(before.preps) !== len(after.preps);
 }
 
+// ─── COMPACTAGE ──────────────────────────────────────────────────────────────
+// PostgreSQL ne rend jamais la place d'une ligne supprimee : il la marque
+// morte et la reutilisera peut-etre plus tard. Un historique qu'on elague en
+// continu finit donc par occuper dix fois ce qu'il contient reellement.
+// VACUUM FULL reecrit la table sans les mortes — au prix d'un verrou exclusif
+// pendant toute la reecriture. C'est pour ce verrou que l'operation se
+// declenche a la main, jamais toute seule.
+//
+// Le nom d'une table ne peut pas etre passe en parametre a PostgreSQL : il
+// finit forcement concatene dans le texte de la requete. La seule protection
+// qui vaille est donc une liste fermee — et c'est la valeur DE LA LISTE qui
+// part dans la requete, jamais la chaine recue du navigateur.
+const TABLES_COMPACTABLES = ['app_data_history', 'app_data', 'app_images', 'app_acces', 'app_temperatures'];
+
+function tableCompactable(nom) {
+  // Une vraie chaine, et rien d'autre. `String(x)` accepterait un objet muni
+  // d'un `toString` — personne ne l'enverra par du JSON, mais une garde qui
+  // depend de ce que l'appelant ne peut pas faire n'est pas une garde.
+  if (typeof nom !== 'string') return null;
+  const i = TABLES_COMPACTABLES.indexOf(nom.trim());
+  return i === -1 ? null : TABLES_COMPACTABLES[i];
+}
+
 module.exports = {
   JOURNAL_DAYS,
   pruneRetention, slimForHistory, pruneStored,
   DELIV_DAYS, PREPS_DAYS, HISTORY_MIN_INTERVAL_MIN, HISTORY_STRIP_FIELDS,
   elagage, PALIERS, PLANCHER_RECENTS,
+  TABLES_COMPACTABLES, tableCompactable,
 };

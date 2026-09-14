@@ -197,6 +197,38 @@ passer.
 JSON** : PostgreSQL compresse les colonnes volumineuses. « Où en est-on ? » du
 Back Office affiche la place réellement occupée, table par table.
 
+## Une table ne rend pas la place qu'on lui reprend
+
+PostgreSQL ne supprime pas une ligne : il la marque morte et réutilisera peut-être
+sa place. Une table qu'on élague tous les jours — l'historique — grandit donc
+indéfiniment alors que son contenu vivant ne bouge pas. Le 14/09/2026,
+`app_data_history` occupait **2,9 Go pour quelques dizaines d'instantanés**.
+
+Conséquences pratiques, dans l'ordre où elles piègent :
+
+1. **La taille d'une table ne dit pas ce qu'elle contient.** Dimensionner un plan
+   d'hébergement sur `pg_total_relation_size` avant compactage, c'est payer pour
+   du vide. Le seul chiffre honnête est celui d'après.
+2. **Une restauration (`pg_dump` / `pg_restore`) ne recopie que les lignes
+   vivantes.** Le ballonnement disparaît donc tout seul lors d'une migration —
+   il n'y a pas d'urgence à compacter *pour* migrer, seulement pour rendre de la
+   place ici et pour connaître le vrai chiffre.
+3. **`VACUUM FULL` prend un verrou exclusif.** Pendant la réécriture, personne ne
+   lit ni n'écrit cette table. Sur `app_data`, c'est tout l'intranet qui attend.
+   L'opération se déclenche à la main, à une heure creuse — jamais depuis un
+   automate, jamais depuis l'élagage.
+4. **Elle dure plus longtemps qu'une requête HTTP.** `POST /api/base/compacter`
+   répond donc *avant* d'avoir fini, sur une connexion dédiée (pas une place du
+   pool immobilisée pendant cinq minutes), et l'écran vient demander où ça en est
+   à `GET /api/base/compactage`.
+
+Et un point de sécurité qui ne se voit pas : **un nom de table ne peut pas être
+passé en paramètre à PostgreSQL.** Il finit forcément concaténé dans le texte de
+la requête. C'est le seul endroit de l'application où une chaîne venue du
+navigateur pourrait entrer dans du SQL. La protection est une liste fermée
+(`maint.TABLES_COMPACTABLES`), et c'est **la valeur de la liste** qui part dans
+la requête, jamais la chaîne reçue. `essais/compactage.js` garde ce point.
+
 ## Identité patient : ce qui fait deux fiches, ou une
 
 Douze collections stockent le nom du patient en **texte libre**, recopié à la

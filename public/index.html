@@ -1387,6 +1387,26 @@ tr:hover td{background:#fafffe}
           </div>
           <div id="cf-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.6"></div>
         </div>
+
+        <!-- PLACE OCCUPÉE EN BASE -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Place occupée en base</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">
+            PostgreSQL ne rend pas la place d'une ligne supprimée : il la marque morte et la réutilisera
+            peut-être un jour. Un historique élagué tous les jours finit donc par occuper bien plus que ce
+            qu'il contient réellement. Compacter réécrit la table sans les lignes mortes —
+            <b>aucune donnée n'est supprimée</b>.
+          </p>
+          <div style="background:#FFF3E0;border-radius:8px;padding:.7rem .9rem;font-size:.82rem;line-height:1.5;margin-bottom:.9rem">
+            <b>Pendant la réécriture, la table est verrouillée :</b> personne ne peut y lire ni y écrire.
+            Quelques secondes pour une petite table, plusieurs minutes pour trois giga-octets.
+            À faire à une heure creuse — et pour <code>app_data</code>, c'est tout l'intranet qui attend.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn bs" onclick="cbEtat()">Où en est-on ?</button>
+          </div>
+          <div id="cb-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.6"></div>
+        </div>
       </div>
 
       <!-- MAINTENANCE : reprise des scans de location -->
@@ -11355,6 +11375,99 @@ async function reprisePhotosSignatures(){
     +'Relancez « Où en est-on ? — et où va le poids » pour voir le fichier alléger.</div>'
     +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
       +rates.map(x=>'• '+String(x).replace(/[<>]/g,'')).join('<br>')+'</div>':''));
+}
+
+// ═══════════ PLACE OCCUPÉE EN BASE ═══════════
+// Le chiffre qui compte pour choisir un plan d'hébergement n'est pas la taille
+// du JSON, ni celle de la table : c'est ce que la table occupe UNE FOIS
+// débarrassée de ses lignes mortes. Tant qu'on ne l'a pas compactée, on ne le
+// connaît pas.
+// Les gestionnaires ne recoivent jamais de texte : ils recoivent un indice, et
+// vont chercher la ligne ici. Meme quand ce texte vient d'une liste fermee du
+// serveur — la regle ne souffre pas d'exception, sinon elle ne se verifie plus.
+let _cbTables=[];
+function cbDire(html){ const z=document.getElementById('cb-etat'); if(z) z.innerHTML=html; }
+function cbPoids(o){ o=+o||0; return o>1048576?(Math.round(o/1048576*10)/10+' Mo'):(Math.round(o/1024)+' Ko'); }
+
+async function cbEtat(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return null; }
+  try{
+    const j=await (await fetch('/api/base/compactage',{cache:'no-store'})).json();
+    if(!j.ok){ cbDire('<span style="color:#B91C1C">'+(j.error||'indisponible')+'</span>'); return null; }
+    const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    _cbTables=j.tables||[];
+    const total=_cbTables.reduce(function(t,x){ return t+x.octets; },0);
+    let h='<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.6px;font-weight:700;color:var(--gray-500);margin-bottom:.4rem">'
+      +'Occupation réelle — '+cbPoids(total)+' au total</div>'
+      +_cbTables.map(function(x,i){
+         return '<div style="display:flex;gap:10px;align-items:center;font-size:.83rem;margin-bottom:3px">'
+           +'<span style="width:170px;font-family:ui-monospace,monospace">'+esc(x.table)+'</span>'
+           +'<b style="width:78px">'+cbPoids(x.octets)+'</b>'
+           +'<span style="color:var(--gray-500)">~'+x.lignes+' ligne(s)</span>'
+           +'<button class="btn bs" style="margin-left:auto;padding:2px 9px;font-size:.78rem" onclick="cbCompacter('+i+')">Compacter</button>'
+           +'</div>'; }).join('');
+    const d=j.dernier;
+    if(d){
+      const duree=Math.round(((d.fin||Date.now())-d.debut)/1000);
+      h+='<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--gray-200);font-size:.83rem">';
+      if(j.encours) h+='<b style="color:#B45309">Compactage en cours</b> sur <span style="font-family:ui-monospace,monospace">'
+        +esc(d.table)+'</span> — '+duree+' s écoulées. La table est verrouillée le temps de la réécriture.';
+      else if(d.erreur) h+='<b style="color:#B91C1C">Échec</b> sur '+esc(d.table)+' : '+esc(d.erreur);
+      else h+='<b style="color:#2E7D32">'+esc(d.table)+' compactée</b> en '+duree+' s — '
+        +cbPoids(d.avant)+' → <b>'+cbPoids(d.apres)+'</b>'
+        +(d.avant>d.apres?' · '+cbPoids(d.avant-d.apres)+' rendus au disque':'');
+      h+='</div>';
+    }
+    cbDire(h);
+    return j;
+  }catch(e){ cbDire('<span style="color:#B91C1C">Lecture impossible : '+e.message+'</span>'); return null; }
+}
+
+async function cbCompacter(i){
+  const vise=_cbTables[i]; if(!vise) return;
+  const table=vise.table;
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const j0=await cbEtat(); if(!j0) return;
+  if(j0.encours){ alert('Un compactage est déjà en cours. Attendez qu’il se termine.'); return; }
+  const t=_cbTables.filter(function(x){ return x.table===table; })[0];
+  if(!confirm('Compacter '+table+(t?' ('+cbPoids(t.octets)+')':'')+' ?\n\n'
+    +'PostgreSQL réécrit la table sans les lignes mortes. AUCUNE donnée n’est supprimée.\n\n'
+    +'Pendant la réécriture, cette table est VERROUILLÉE : personne ne peut y lire ni y écrire.\n'
+    +(table==='app_data'?'app_data est le fichier de données : tout l’intranet attendra.\n':'')
+    +'\nÀ faire à une heure creuse. Continuer ?')) return;
+  let r;
+  try{
+    r=await (await fetch('/api/base/compacter',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({table:table})})).json();
+  }catch(e){ alert('Lancement impossible : '+e.message); return; }
+  if(!r.ok){ alert('Refusé : '+(r.error||'erreur')); return; }
+  // Le serveur a répondu AVANT d'avoir fini — l'opération dure plus longtemps
+  // qu'une requête HTTP ne doit vivre. On vient donc demander où ça en est.
+  for(let i=0;i<300;i++){
+    await new Promise(function(f){ setTimeout(f,2000); });
+    const j=await cbEtat();
+    if(j && !j.encours) return;
+  }
+}
+
+// Export de la liste des renvois sans fichier. Ce qui sort, ce sont des
+// identifiants et des noms de rubriques — aucun nom de patient, aucun contenu :
+// ce fichier peut circuler.
+async function exporterScansManquants(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  try{
+    const j=await (await fetch('/api/coffre/manquants',{cache:'no-store'})).json();
+    if(!j.ok){ alert('Lecture impossible : '+(j.error||'erreur')); return; }
+    if(!j.manquants.length){ alert('Aucune image attendue sans fichier : il n’y a rien à exporter.'); return; }
+    const lignes=['identifiant;emplacement'].concat(j.manquants.map(function(x){
+      return x.id+';'+(x.ou||[]).join(' | '); }));
+    const b=new Blob(['﻿'+lignes.join('\n')],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(b);
+    a.download='scans-manquants-'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1000);
+  }catch(e){ alert('Export impossible : '+e.message); }
 }
 
 // ═══════════ CHIFFREMENT AU REPOS DES ORDONNANCES ═══════════

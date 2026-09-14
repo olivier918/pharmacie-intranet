@@ -583,6 +583,94 @@ app.post('/api/coffre/reemballer', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// Liste COMPLETE des renvois sans fichier. L'etat n'en montre que huit, ce qui
+// suffit pour savoir s'il y a un probleme ; quand il faut agir, il faut les
+// avoir tous. Ce qui sort ici, ce sont des identifiants et des noms de
+// rubriques — jamais un nom de patient ni un contenu.
+app.get('/api/coffre/manquants', async (req, res) => {
+  if (!(await gardeCoffre(req, res))) return;
+  try {
+    const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
+    const attendues = imagesAttendues((cur.rows[0] && cur.rows[0].data) || {});
+    const ids = Array.from(attendues.keys());
+    if (!ids.length) return res.json({ ok: true, manquants: [] });
+    const p = await db.query('SELECT id FROM app_images WHERE id = ANY($1)', [ids]);
+    const presents = new Set(p.rows.map(x => x.id));
+    res.json({ ok: true, manquants: ids.filter(x => !presents.has(x))
+      .map(id => ({ id: id, ou: attendues.get(id) || [] })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ─── COMPACTAGE DE LA BASE ────────────────────────────────────────────────
+// Une ligne supprimee ne rend pas sa place. L'historique, elague tous les
+// jours depuis des mois, occupait 2,9 Go pour quelques dizaines d'instantanes
+// vivants. VACUUM FULL reecrit la table proprement.
+//
+// Deux precautions, et elles expliquent la forme de ces deux routes.
+//
+// LE VERROU. Pendant la reecriture, plus personne n'ecrit NI ne lit la table.
+// Sur `app_data`, cela veut dire que l'intranet entier attend. L'operation se
+// declenche donc a la main, a une heure creuse, et jamais depuis un automate.
+//
+// LA DUREE. Reecrire 3 Go prend plus longtemps qu'une requete HTTP ne doit
+// vivre. La route repond donc AVANT d'avoir fini, et l'ecran vient demander ou
+// ca en est. La liaison est prise sur une connexion dediee : un VACUUM qui
+// occupe une place du pool pendant cinq minutes, c'est une place de moins pour
+// les quinze postes de l'officine.
+let compactage = null;   // { table, debut, fin, avant, apres, erreur }
+
+function compactageEnCours() { return !!(compactage && !compactage.fin); }
+
+async function tailleTable(cl, table) {
+  const r = await cl.query('SELECT pg_total_relation_size($1::regclass) AS o', [table]);
+  return +(r.rows[0] || {}).o || 0;
+}
+
+app.get('/api/base/compactage', async (req, res) => {
+  if (!(await gardeCoffre(req, res))) return;
+  try {
+    // reltuples est une ESTIMATION tenue par l'analyseur, pas un COUNT(*) :
+    // on ne va pas parcourir trois giga-octets pour afficher un nombre de
+    // lignes a cote d'une taille.
+    const tr = await db.query(
+      "SELECT relname AS table, pg_total_relation_size(c.oid) AS octets, c.reltuples::bigint AS lignes"
+      + " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+      + " WHERE n.nspname = current_schema() AND relkind = 'r' AND relname = ANY($1)"
+      + " ORDER BY 2 DESC", [maint.TABLES_COMPACTABLES]);
+    res.json({ ok: true, encours: compactageEnCours(), dernier: compactage,
+      tables: tr.rows.map(r => ({ table: r.table, octets: +r.octets, lignes: +r.lignes })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/base/compacter', async (req, res) => {
+  const uid = await gardeCoffre(req, res); if (!uid) return;
+  const table = maint.tableCompactable((req.body || {}).table);
+  if (!table) return res.status(400).json({ ok: false, error: 'table non autorisee' });
+  if (compactageEnCours()) return res.status(409).json({ ok: false, error: 'compactage deja en cours sur ' + compactage.table });
+  if (!process.env.DATABASE_URL) return res.status(503).json({ ok: false, error: 'base_indisponible' });
+
+  compactage = { table: table, debut: Date.now(), fin: null, avant: null, apres: null, erreur: null };
+  traces.noter(db, uid, 'modification', 'base', table, 'Compactage (VACUUM FULL) lance');
+  res.json({ ok: true, lance: true, table: table });
+
+  // A partir d'ici, plus personne n'attend cette reponse.
+  let cl = null;
+  try {
+    const { Client } = require('pg');
+    cl = new Client({ connectionString: process.env.DATABASE_URL, ssl: reglageSSL() });
+    await cl.connect();
+    compactage.avant = await tailleTable(cl, table);
+    // `table` sort de la liste fermee de maintenance.js, jamais de la requete.
+    await cl.query('VACUUM (FULL, ANALYZE) ' + table);
+    compactage.apres = await tailleTable(cl, table);
+  } catch (e) {
+    compactage.erreur = e.message;
+  } finally {
+    compactage.fin = Date.now();
+    if (cl) { try { await cl.end(); } catch (e) { /* rien a rattraper */ } }
+  }
+});
+
 // ─── ENVOI D'UNE DEMANDE EN DEVELOPPEMENT ──────────────────────────────────
 // Cree une issue GitHub a partir d'une demande de la boite a idees. L'action
 // `.github/workflows/claude.yml` fait le reste quand le corps mentionne
