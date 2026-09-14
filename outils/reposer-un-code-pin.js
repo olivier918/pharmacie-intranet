@@ -76,8 +76,13 @@ function demander(invite) {
   if (process.argv[3]) sortir('Le code ne se passe pas en argument : il resterait dans l\'historique du terminal.');
 
   console.log('\n  Nouveau code pour la fiche « ' + fiche +' ».\n  Rien ne s\'affichera pendant la saisie.\n');
-  const a = await demander('  Code (4 a 8 chiffres) : ');
-  if (!/^\d{4,8}$/.test(a)) sortir('Le code doit faire de 4 a 8 chiffres.');
+  const a = await demander('  Code (EXACTEMENT 4 chiffres) : ');
+  // QUATRE, pas cinq. Le serveur accepte de 4 a 8 chiffres, mais le pave de
+  // l'ecran d'accueil n'en saisit que quatre et part tout seul au quatrieme
+  // (`if(pinStr.length===4) checkPin()` dans public/index.html). Un code plus
+  // long est donc parfaitement valide en base et INSAISISSABLE a l'ecran.
+  // Cet outil a fait perdre une heure une nuit pour cette raison exacte.
+  if (!/^\d{4}$/.test(a)) sortir('Le code doit faire EXACTEMENT 4 chiffres : c\'est tout ce que le pave de l\'ecran sait saisir.');
   const b = await demander('  Le meme, pour verifier : ');
   if (a !== b) sortir('Les deux saisies different. Rien n\'a ete calcule.');
 
@@ -101,6 +106,9 @@ function demander(invite) {
 
   console.log('\n  ✅ Empreinte calculee. Le code lui-meme n\'est nulle part.\n');
   console.log('  Executez ceci dans la console SQL de l\'hebergeur :\n');
+  // La console web de Railway mange le premier caractere de chaque collage.
+  console.log('  (console web : commencez la selection a la fin de la ligne de tirets,');
+  console.log('   le retour a la ligne sera mange a la place du U de UPDATE)\n');
   console.log('─'.repeat(72));
   console.log(sql);
   console.log('─'.repeat(72));
