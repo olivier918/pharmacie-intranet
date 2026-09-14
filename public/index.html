@@ -1347,6 +1347,7 @@ tr:hover td{background:#fafffe}
             <button class="btn bp" onclick="repriseScansLocations()"><svg class="ico"><use href="#ic-archives"></use></svg> Reprendre les scans</button>
             <button class="btn bs" onclick="etatScansLocations()">Où en est-on ? — et où va le poids</button>
             <button class="btn bd" onclick="retirerScansRepris()"><svg class="ico"><use href="#ic-corbeille"></use></svg> Retirer les originaux repris</button>
+            <button class="btn bp" onclick="reprisePhotosSignatures()"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Sortir les photos et signatures</button>
           </div>
           <div style="margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--gray-200)">
             <div style="font-weight:700;font-size:.88rem;color:#C62828;margin-bottom:.35rem">Restauration — incident du 13/09/2026</div>
@@ -3102,6 +3103,66 @@ let psResPatients=[], ctlResPatients=[], bonResPatients=[], girResPatients=[], a
 // L'autocomplétion générique sert dans une dizaine de formulaires : on retient
 // aussi les champs à remplir, puisqu'ils changent d'un formulaire à l'autre.
 let acResPatients=[], acCibles=null, acResMedecins=[], acCibleMedecin=null;
+
+// ═══════════ IMAGES : UN IDENTIFIANT, PAS UN CONTENU ═══════════
+// Photos et signatures vivaient en base64 DANS le fichier de données : 258 Ko
+// pour dix-huit personnes, relus par chaque poste toutes les huit secondes et
+// recopiés dans chaque instantané d'historique. Même maladie que les scans
+// d'ordonnance, même remède — le contenu part dans `app_images`, adressé par le
+// condensat de ses octets, et la fiche ne garde qu'un identifiant.
+//
+// LES DEUX ÉPOQUES COHABITENT, et durablement : les enregistrements archivés
+// (bons de vaccination, contrôles, retours) portent une copie de la signature
+// telle qu'elle était au moment de la signature. On ne les réécrit pas — un
+// document signé ne se retouche pas. Toute lecture passe donc par ces helpers.
+function estIdImage(v){ return typeof v==='string' && /^[0-9a-f]{32}$/.test(v); }
+
+// Pour un <img> ou un background CSS : une adresse suffit, et le navigateur
+// met en cache — c'est tout l'intérêt.
+function imgSrc(v){ return v ? (estIdImage(v) ? '/api/images/'+v : v) : ''; }
+
+// Pour jsPDF, qui ne sait pas aller chercher une adresse : il lui faut les
+// octets. On les rapatrie une fois, au moment de fabriquer le document.
+async function imgDataURL(v){
+  if(!v) return '';
+  if(!estIdImage(v)) return v;
+  try{
+    const r=await fetch('/api/images/'+v); if(!r.ok) return '';
+    const b=await r.blob();
+    return await new Promise(function(res){ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>res(''); fr.readAsDataURL(b); });
+  }catch(e){ return ''; }
+}
+
+// Dépose un contenu et rend son identifiant. Rend la valeur d'origine en cas
+// d'échec : mieux vaut une photo lourde qu'une photo perdue.
+async function imgTeleverser(dataUrl){
+  const m=String(dataUrl||'').match(/^data:([^;]+);base64,(.+)$/);
+  if(!m) return dataUrl||'';
+  try{
+    const r=await fetch('/api/images',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mime:m[1],data:m[2]})});
+    const j=await r.json().catch(()=>null);
+    return (r.ok && j && j.ok && j.id) ? j.id : (dataUrl||'');
+  }catch(e){ return dataUrl||''; }
+}
+
+// jsPDF ne sait pas aller chercher une adresse : il lui faut les octets, et il
+// les veut tout de suite. Plutôt que de rendre asynchrones des fabriques de
+// documents longues et éprouvées, on rapatrie l'image AVANT d'entrer dedans.
+const _imgCache=new Map();
+async function imgPrecharger(){
+  for(const v of arguments){
+    if(!estIdImage(v)||_imgCache.has(v)) continue;
+    const d=await imgDataURL(v);
+    if(d) _imgCache.set(v,d);
+  }
+}
+// Lecture synchrone : rend le contenu si on l'a, la valeur telle quelle si
+// c'est déjà une adresse « data: », et une chaîne vide si le préchargement a
+// échoué — auquel cas le document part sans signature plutôt que de planter.
+function imgData(v){ return v ? (estIdImage(v) ? (_imgCache.get(v)||'') : v) : ''; }
+window.imgSrc=imgSrc; window.imgData=imgData; window.imgPrecharger=imgPrecharger;
+window.estIdImage=estIdImage; window.imgTeleverser=imgTeleverser;
 
 function tracer(action, objet, ref, detail){
   try{
@@ -4981,7 +5042,7 @@ function renderStaff(){
     const adminBtn = admin ? `<button class="btn ${isA?'bd':'bs'} sm" onclick="toggleAdmin('${s.id}')" title="${isA?'Retirer les droits admin':'Donner les droits admin'}"><svg class="ico"><use href="#ic-securite"></use></svg> ${isA?'Retirer admin':'Rendre admin'}</button>` : '';
     return `
     <div class="sfc">
-      <div class="sfav" style="${s.photo?`background-image:url('${s.photo}');background-size:cover;background-position:center;color:transparent`:`background:${s.col}`}">${s.id}</div>
+      <div class="sfav" style="${s.photo?`background-image:url('${imgSrc(s.photo)}');background-size:cover;background-position:center;color:transparent`:`background:${s.col}`}">${s.id}</div>
       <div style="font-weight:600;font-size:.92rem">${s.prenom} ${s.nom}</div>
       <div style="font-size:.74rem;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px">${s.poste}</div>
       ${badge}
@@ -5015,7 +5076,7 @@ function applyUserAvatar(s){
   if(s && s.photo){
     el.textContent='';
     el.style.backgroundColor='#fff';
-    el.style.backgroundImage="url('"+s.photo+"')";
+    el.style.backgroundImage="url('"+imgSrc(s.photo)+"')";
   } else {
     el.style.backgroundImage='none';
     el.style.backgroundColor=(s&&s.col)||'var(--g-mid)';
@@ -5120,7 +5181,7 @@ function renderPhotoState(){
 
 function renderPhotoPreview(){
   const s=staffDB.find(x=>x.id===_photoTargetId);
-  const cur=(s&&s.photo)||'';
+  const cur=imgSrc((s&&s.photo)||'');
   const box=document.getElementById('photo-preview');
   document.getElementById('photo-canvas').style.display='none';
   document.getElementById('photo-zoomwrap').style.display='none';
@@ -5147,9 +5208,9 @@ function onStaffPhotoPick(input){
 
 function markStaffPhotoRemoved(){ _photoPending=''; _photoImg=null; renderPhotoPreview(); }
 
-function saveStaffPhoto(){
+async function saveStaffPhoto(){
   const s=staffDB.find(x=>x.id===_photoTargetId); if(!s) return;
-  if(_photoPending==='crop'){ s.photo=photoExport(); s.updatedAt=Date.now(); }
+  if(_photoPending==='crop'){ s.photo=await imgTeleverser(photoExport()); s.updatedAt=Date.now(); }
   else if(_photoPending===''){
     // Toujours poser une chaîne vide plutôt que supprimer la clé : la fusion serveur
     // se fait au champ, une clé absente laisserait revenir l'ancienne photo.
@@ -5191,7 +5252,7 @@ function openStaffSig(id){
   _sigTargetId=id;
   document.getElementById('sig-name').textContent=s.prenom+' '+s.nom;
   openModal('sig-modal');
-  setTimeout(()=>initSigPad(s.sig),80);
+  setTimeout(()=>initSigPad(imgSrc(s.sig)),80);
 }
 function initSigPad(existing){
   const cv=document.getElementById('sig-canvas'); if(!cv)return;
@@ -5213,11 +5274,12 @@ function initSigPad(existing){
   cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',end);
 }
 function clearSigPad(){ if(_sigCtx&&_sigCanvas){ _sigCtx.clearRect(0,0,_sigCanvas.width,_sigCanvas.height); _sigHas=false; } }
-function saveStaffSig(){
+async function saveStaffSig(){
   if(!_sigTargetId)return;
   const s=staffDB.find(x=>x.id===_sigTargetId); if(!s)return;
   if(!_sigHas){ if(!confirm('Aucun tracé détecté. Effacer la signature enregistrée ?'))return; s.sig=''; }
-  else { s.sig=_sigCanvas.toDataURL('image/png'); }
+  else { s.sig=await imgTeleverser(_sigCanvas.toDataURL('image/png')); }
+  s.updatedAt=Date.now();
   closeModal('sig-modal'); renderStaff(); schedSave();
 }
 
@@ -9657,7 +9719,8 @@ function buildBonPdfDoc(rec){
   d.text(rec.operateur||'—', R, y+5, {align:'right'});
   d.setFont(FONT,'normal'); d.setFontSize(8.2); d.setTextColor(136,136,136);
   d.text((rec.rpps?'RPPS '+rec.rpps+' · ':'')+'FINESS '+OFFICINE.finess, R, y+9.5, {align:'right'});
-  if(rec.sig){ try{ d.addImage(rec.sig,'PNG', R-50, y+11, 50, 16); }catch(e){} }
+  const sigData=imgData(rec.sig);
+  if(sigData){ try{ d.addImage(sigData,'PNG', R-50, y+11, 50, 16); }catch(e){} }
   d.setDrawColor(191,191,191); d.setLineWidth(0.2); d.line(R-64, y+29, R, y+29);
   d.setFont(FONT,'normal'); d.setFontSize(7.6); d.setTextColor(170,170,170);
   d.text('Signature et cachet', R, y+32.5, {align:'right'});
@@ -9670,7 +9733,8 @@ function buildBonPdfDoc(rec){
   d.text('Réf. 611 CNAM - 09/2023 · '+(rec.num||''), R, 291, {align:'right'});
   return d;
 }
-function openBonPdf(w, rec){
+async function openBonPdf(w, rec){
+  await imgPrecharger(rec.sig);
   try{
     const d=buildBonPdfDoc(rec);
     if(d){ const url=URL.createObjectURL(d.output('blob')); if(w){ w.location.href=url; } else { window.open(url,'_blank'); } return; }
@@ -9684,7 +9748,7 @@ function viewBonPdf(id){ const rec=bons.find(x=>x.id===id); if(!rec)return; open
 function buildBonPdfHtml(rec){
   const be=rec.benef||{};
   const naissance=(be.dobFr||'—')+' (rang '+(be.rang||'1')+')';
-  const signBlock=rec.sig?'<img src="'+rec.sig+'">':'';
+  const signBlock=rec.sig?'<img src="'+imgSrc(rec.sig)+'">':'';
   return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     +'<title>Bon de prise en charge — '+ctlEsc(be.nom||'')+' '+ctlEsc(be.prenom||'')+'</title>'
     +'<style>@page{margin:15mm;size:A4}*{box-sizing:border-box;margin:0;padding:0}'
@@ -11132,6 +11196,67 @@ function renderJournal(){
       }).join('')
     + '</tbody></table></div>'
     + (f.length>PLAFOND?`<div style="text-align:center;color:var(--gray-500);padding:.7rem;font-size:.8rem">${f.length-PLAFOND} action(s) plus anciennes non affichées — affinez la période ou la recherche.</div>`:'');
+}
+
+// ═══════════ REPRISE DES PHOTOS ET SIGNATURES ═══════════
+// Elles vivaient en base64 dans le fichier de données — 258 Ko pour dix-huit
+// personnes, relus par chaque poste toutes les huit secondes et recopiés dans
+// chaque instantané. Même schéma que pour les scans, parce qu'il a fait ses
+// preuves : on dépose, on RELIT, on compare, et seulement ensuite on remplace.
+// Un contenu qui ne se relit pas à l'identique reste où il est.
+async function reprisePhotosSignatures(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const zone=document.getElementById('reprise-etat');
+  const dire=function(m){ if(zone) zone.innerHTML=m; };
+
+  const cibles=[];
+  staffDB.forEach(function(s){
+    ['photo','sig'].forEach(function(champ){
+      const v=s&&s[champ];
+      if(typeof v==='string' && /^data:/.test(v)) cibles.push({id:s.id, champ:champ, qui:(s.prenom||'')+' '+(s.nom||''), taille:v.length});
+    });
+  });
+  if(!cibles.length){ dire('<b>Rien à reprendre :</b> aucune photo ni signature ne vit plus dans le fichier de données.'); return; }
+
+  const ko=Math.round(cibles.reduce((t,c)=>t+c.taille*0.75,0)/1024);
+  if(!confirm('Sortir '+cibles.length+' image(s) du fichier de données, soit environ '+ko+' Ko ?\n\n'
+    +'Chaque image est déposée dans le stockage dédié, RELUE et comparée avant que la fiche ne cesse de la porter.\n'
+    +'Une image qui ne se relit pas à l\u2019identique est laissée intacte.\n\n'
+    +'Les documents déjà signés ne sont pas touchés : un document signé ne se retouche pas.')) return;
+
+  let faits=0; const rates=[];
+  _savePending=true;
+  try{
+    for(let i=0;i<cibles.length;i++){
+      const c=cibles[i];
+      dire('Reprise… '+(i+1)+' / '+cibles.length+' — '+faits+' image(s) sortie(s).');
+      const s=staffDB.find(x=>x.id===c.id);
+      const clair=s&&s[c.champ];
+      if(!clair || !/^data:/.test(clair)) continue;   // changée entre-temps
+      try{
+        const id=await imgTeleverser(clair);
+        if(!estIdImage(id)){ rates.push(c.qui+' — '+c.champ+' : dépôt refusé'); continue; }
+        // On RELIT avant de remplacer : c'est toute la garantie.
+        const v=await fetch('/api/images/'+id);
+        if(!v.ok){ rates.push(c.qui+' — '+c.champ+' : introuvable après dépôt'); continue; }
+        const relu=await imgDataURL(id);
+        if(!relu || relu.length<100){ rates.push(c.qui+' — '+c.champ+' : relecture vide'); continue; }
+        s[c.champ]=id; s.updatedAt=Date.now(); faits++;
+      }catch(e){ rates.push(c.qui+' — '+c.champ+' : '+(e.message||'erreur')); }
+    }
+  } finally {
+    if(faits){ await saveAll(); }
+    _savePending=false;
+  }
+
+  renderStaff();
+  if(currentUser){ const moi=staffDB.find(x=>x.id===currentUser.id); if(moi){ currentUser=moi; applyUserAvatar(moi); } }
+  if(faits) tracer('modification','collaborateur',null,'Photos et signatures sorties du fichier de données : '+faits);
+  dire('<b>'+faits+' image(s) sortie(s) du fichier de données.</b>'
+    +'<div style="font-size:.8rem;color:var(--gray-500);margin-top:5px">Elles sont désormais servies à la demande et mises en cache par le navigateur. '
+    +'Relancez « Où en est-on ? — et où va le poids » pour voir le fichier alléger.</div>'
+    +(rates.length?'<div style="margin-top:8px;background:#FFEBEE;border-radius:8px;padding:8px 11px;font-size:.8rem">'
+      +rates.map(x=>'• '+String(x).replace(/[<>]/g,'')).join('<br>')+'</div>':''));
 }
 
 // ═══════════ CHIFFREMENT AU REPOS DES ORDONNANCES ═══════════

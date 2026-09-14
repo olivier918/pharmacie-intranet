@@ -240,7 +240,10 @@
     d.setFont(F, 'normal');
     d.text('Signature et Nom', X(405), YB(494));
     d.text('du pharmacien :', X(405), YB(519));
-    if (rec.sig) { try { d.addImage(rec.sig, 'PNG', X(405), YB(528), 40, 17); } catch (e) { } }
+    // Le contenu est rapatrie par l'appelant (imgPrecharger) : ici on ne fait
+    // que le lire. Voir index.html, « IMAGES : UN IDENTIFIANT, PAS UN CONTENU ».
+    const sigData = (typeof imgData === 'function') ? imgData(rec.sig) : rec.sig;
+    if (sigData) { try { d.addImage(sigData, 'PNG', X(405), YB(528), 40, 17); } catch (e) { } }
     d.setFont(F, 'bold'); d.setFontSize(10);
     d.text(String(rec.pharmacien || ''), X(405), YB(586));
 
@@ -310,15 +313,17 @@
     return 'bon-depannage-' + String(rec.ref || 'sans-ref').replace(/[^\w.-]+/g, '-') + '.pdf';
   }
 
-  window.dpApercu = function (id) {
+  window.dpApercu = async function (id) {
     const rec = dpSyncDom(L().find(x => x.id === id)); if (!rec) return;
+    if (typeof imgPrecharger === 'function') await imgPrecharger(rec.sig);
     const doc = dpPdf(rec);
     if (!doc) { alert("Le générateur de PDF n'est pas disponible sur ce poste."); return; }
     try { window.open(doc.output('bloburl'), '_blank'); }
     catch (e) { doc.save(dpNomFichier(rec)); }
   };
-  window.dpTelecharger = function (id) {
+  window.dpTelecharger = async function (id) {
     const rec = dpSyncDom(L().find(x => x.id === id)); if (!rec) return;
+    if (typeof imgPrecharger === 'function') await imgPrecharger(rec.sig);
     const doc = dpPdf(rec); if (!doc) return;
     doc.save(dpNomFichier(rec));
   };
@@ -333,6 +338,7 @@
       .map(l => '· ' + (l.produit || '') + (l.cip ? ' (CIP ' + l.cip + ')' : '') + ' — ' + (l.qte || '') + (l.patients ? ' · ' + l.patients : '')).join('\n');
     if (!confirm('Envoyer le bon ' + rec.ref + ' à ' + dest + ' ?\n\n' + resume)) return;
 
+    if (typeof imgPrecharger === 'function') await imgPrecharger(rec.sig);
     const doc = dpPdf(rec);
     if (!doc) { alert("Le générateur de PDF n'est pas disponible : téléchargez le bon et envoyez-le manuellement."); return; }
     const b64 = doc.output('datauristring').split(',')[1];

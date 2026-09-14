@@ -139,6 +139,35 @@ Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
 c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
 protège pas d'un essai en force.
 
+## Une image, c'est un identifiant — jamais un contenu
+
+Les scans d'ordonnance, puis les photos et signatures des collaborateurs, ont
+tous commencé leur vie en base64 **dans le fichier de données**. Celui-ci est
+relu EN ENTIER par chaque poste toutes les huit secondes, et recopié dans chaque
+instantané d'historique : une image de 14 Ko y coûte mille fois son poids.
+
+Tout contenu va donc dans `app_images`, adressé par le condensat de ses octets,
+et la fiche ne garde qu'un identifiant de 32 caractères.
+
+**Les deux époques cohabitent durablement**, et ce n'est pas une transition :
+les documents archivés (bons de vaccination, contrôles, retours) portent une
+copie de la signature telle qu'elle était au moment de signer. **Un document
+signé ne se retouche pas.** Toute lecture passe donc par les helpers :
+
+- `imgSrc(v)` — pour un `<img>` ou un fond CSS : rend une adresse, le navigateur
+  met en cache. Sert les deux formes.
+- `imgData(v)` — **synchrone**, pour jsPDF, qui ne sait pas aller chercher une
+  adresse. Rend une chaîne vide si le contenu n'a pas été préchargé : le
+  document part sans signature plutôt que de planter.
+- `imgPrecharger(...)` — à appeler **avant** d'entrer dans une fabrique de PDF.
+- `imgTeleverser(dataUrl)` — dépose et rend l'identifiant. **Rend la valeur
+  d'origine si le dépôt échoue** : mieux vaut une image lourde qu'une image
+  perdue.
+
+Toute reprise suit le schéma éprouvé trois fois : **déposer, RELIRE, comparer,
+et seulement ensuite remplacer.** Ce qui ne se relit pas à l'identique reste où
+il est. `node essais/images.js`.
+
 ## L'historique se règle en durée, pas en nombre
 
 `MAX_HISTORY = 300` paraissait généreux. Un instantané est pris à chaque
