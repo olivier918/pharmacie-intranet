@@ -219,6 +219,19 @@ function sendViaBrevo({ to, cc, subject, text, from, attachments }) {
 //   3. sinon : comportement actuel, mais dit a voix haute au demarrage — une
 //      faiblesse silencieuse est une faiblesse qu'on oublie.
 function reglageSSL() {
+  // Quatrieme cas, apparu avec la reponse de Scalingo du 14/09/2026 : chez eux
+  // la base n'est pas exposee sur le web et la liaison se fait SANS TLS. Si on
+  // laissait `ssl` renseigne, pg tenterait de negocier et la connexion
+  // echouerait. PG_SSL=off le dit explicitement.
+  //
+  // C'est un recul assume par rapport a Railway, ou la liaison est chiffree
+  // (sans verification du certificat) : l'isolation reseau remplace alors le
+  // chiffrement. Elle vaut ce qu'elle vaut — a demander a l'hebergeur s'il
+  // accepte d'activer TLS quand meme, puisqu'il fournit son autorite.
+  if ((process.env.PG_SSL || '').toLowerCase() === 'off') {
+    console.log('  🔐 PostgreSQL : liaison SANS TLS (reseau prive de l\'hebergeur, PG_SSL=off)');
+    return false;
+  }
   const ca = (process.env.PG_CA_CERT || '').trim();
   if (ca) {
     console.log('  🔐 PostgreSQL : certificat verifie contre PG_CA_CERT');
