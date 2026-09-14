@@ -231,13 +231,18 @@
   function ptDoublons() {
     const groupes = [];
     ptIndex().forEach(function (liste, clef) {
-      if (liste.length > 1) {
-        const dates = new Set(liste.map(function (p) { return ptNaiss(p.dob) || '?'; }));
-        groupes.push({ clef: clef, fiches: liste,
-          // Mêmes dates ou dates absentes : probablement la même personne
-          // saisie deux fois. Dates différentes : deux personnes, et c'est sain.
-          nature: dates.size === 1 ? 'doublon probable' : 'homonymes distincts' });
-      }
+      if (liste.length < 2) return;
+      // UNE DATE ABSENTE N'EST PAS UNE DATE DIFFÉRENTE. La première version
+      // comptait « ? » comme une valeur : une fiche datée et une fiche sans
+      // date passaient pour deux personnes distinctes, et le bouton de fusion
+      // disparaissait au moment précis où il servait. Seules les dates CONNUES
+      // séparent.
+      const connues = new Set();
+      liste.forEach(function (p) { const d = ptNaiss(p.dob); if (d) connues.add(d); });
+      const nature = connues.size > 1 ? 'homonymes distincts'
+                   : connues.size === 1 ? 'doublon probable'
+                   : 'a verifier';   // aucune date nulle part : l'humain tranche
+      groupes.push({ clef: clef, fiches: liste, nature: nature, dates: connues.size });
     });
     return groupes;
   }
@@ -323,7 +328,9 @@
     cache = window.ptBalayer();
     const dbl = window.ptDoublons();
     const nRatt = cache.aRattacher.length;
-    const nDbl = dbl.filter(x => x.nature === 'doublon probable').length;
+    // Le compteur annonce ce qu'il y a A FAIRE, donc les groupes fusionnables —
+    // pas seulement les certains. Des homonymes distincts ne demandent rien.
+    const nDbl = dbl.filter(x => x.nature !== 'homonymes distincts').length;
 
     g('pt-onglets').innerHTML =
       bt('fiches', 'Fiches') + bt('rattacher', 'À rattacher', nRatt) + bt('doublons', 'Doublons', nDbl);
@@ -544,7 +551,8 @@
       + 'Les fiches de dates différentes sont deux personnes distinctes — affichées ici pour que '
       + 'personne ne les fusionne par erreur.</div>'
       + (dbl.length ? dbl.map(function (gp) {
-          const al = gp.nature === 'doublon probable';
+          const al = gp.nature !== 'homonymes distincts';   // fusionnable
+          const sur = gp.nature === 'doublon probable';
           // Le bouton n'apparait que sur les doublons probables : sur des
           // homonymes distincts, il ne ferait que declencher un refus, et un
           // bouton qui refuse toujours apprend a ignorer les refus.
@@ -556,7 +564,9 @@
                 + E(gp.clef).replace(/'/g, '&#39;') + '\')">Réunir en une fiche</button>' : '')
             + '</div>'
             + '<div style="font-size:.77rem;font-weight:600;color:' + (al ? '#B45309' : 'var(--gray-500)') + '">'
-            + (al ? 'Doublon probable — mêmes nom, prénom et date' : 'Homonymes distincts — dates de naissance différentes') + '</div>'
+            + (sur ? 'Doublon probable — même nom, et rien ne les sépare'
+               : al ? 'À vérifier — aucune date de naissance pour départager'
+               : 'Homonymes distincts — dates de naissance différentes') + '</div>'
             + '<div>' + gp.fiches.map(c => '<span class="pt-cand"'
                 + (garde === c ? ' style="border-color:var(--g-mid);background:var(--g-pale);font-weight:600"' : '')
                 + '>' + E(c.nom) + ' ' + E(c.prenom) + ' · ' + (fr(c.dob) || '?')

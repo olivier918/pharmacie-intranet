@@ -98,6 +98,33 @@ t('deux homonymes de dates différentes ne sont PAS un doublon',
   dbl.some(g=>g.nature==='homonymes distincts'));
 t('rien n’est fusionné d’office', global.patients.length===4);
 
+// Le cas reel rencontre en production : une fiche datee, une fiche sans date.
+// Une date ABSENTE n'est pas une date DIFFERENTE — les compter ensemble faisait
+// disparaitre le bouton de fusion au moment precis ou il servait.
+global.patients=[{id:'x',nom:'BOYAALICI',prenom:'EMINE',dob:'1948-02-20'},
+                 {id:'y',nom:'BOYAALICI',prenom:'emine',dob:''}];
+G.patients=global.patients;
+let d2=ptDoublons();
+t('une fiche datée et une fiche sans date forment un doublon, pas deux personnes',
+  d2.length===1 && d2[0].nature==='doublon probable');
+
+// Aucune date nulle part : on ne peut ni affirmer ni exclure. L'humain tranche.
+global.patients=[{id:'x',nom:'DUPONT',prenom:'Jean',dob:''},{id:'y',nom:'dupont',prenom:'jean',dob:''}];
+G.patients=global.patients;
+d2=ptDoublons();
+t('sans aucune date, le groupe est « à vérifier » et reste fusionnable',
+  d2.length===1 && d2[0].nature==='a verifier');
+
+// Trois fiches dont deux dates connues et differentes : ce sont bien des
+// personnes distinctes, meme si une troisieme n'a pas de date.
+global.patients=[{id:'x',nom:'MARTIN',prenom:'Jean',dob:'1940-05-05'},
+                 {id:'y',nom:'MARTIN',prenom:'Jean',dob:'1972-11-30'},
+                 {id:'z',nom:'martin',prenom:'jean',dob:''}];
+G.patients=global.patients;
+d2=ptDoublons();
+t('deux dates connues et différentes l’emportent sur une fiche sans date',
+  d2.length===1 && d2[0].nature==='homonymes distincts');
+
 console.log('\nLe texte libre');
 t('« THOMAS Liliane » se sépare au premier espace',
   ptNomDeTexte('THOMAS Liliane').nom==='THOMAS' && ptNomDeTexte('THOMAS Liliane').prenom==='Liliane');
