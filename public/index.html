@@ -3068,6 +3068,28 @@ let currentUser=null, delivView='jour', currentThread=null, bpmFilter=null, reno
 // On n'envoie ici QUE la nature de ce qui est ouvert, jamais son contenu, et
 // jamais le nom de la personne qui regarde : celui-là, le serveur le lit dans
 // le cookie de session. Un poste ne peut pas signer à la place d'un autre.
+// ═══════════ ÉCHAPPEMENT HTML ═══════════
+// Le seul échappeur du fichier. Il couvre le texte ET les attributs — d'où le
+// guillemet double et l'apostrophe, que la plupart des versions locales
+// oubliaient.
+//
+// Ce qu'il NE FAIT PAS, et qu'aucun échappeur ne fait : rendre sûre
+// l'interpolation d'un texte dans un gestionnaire d'événement
+// (`onclick="f('…')"`). Là, le navigateur lit d'abord l'attribut HTML, puis
+// JavaScript lit ce qu'il en reste : deux analyseurs à satisfaire en même
+// temps, et une règle qu'on finit toujours par oublier. **Un gestionnaire ne
+// reçoit qu'un identifiant ou un indice**, jamais une chaîne saisie par
+// quelqu'un. Voir les autocomplétions patient plus bas.
+function hEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+window.hEsc=hEsc;
+
+// Résultats des autocomplétions patient, gardés en mémoire pour que le
+// gestionnaire ne reçoive qu'un indice. Voir la remarque ci-dessus.
+let psResPatients=[], ctlResPatients=[], bonResPatients=[], girResPatients=[], apResPatients=[], retResPatients=[];
+// L'autocomplétion générique sert dans une dizaine de formulaires : on retient
+// aussi les champs à remplir, puisqu'ils changent d'un formulaire à l'autre.
+let acResPatients=[], acCibles=null, acResMedecins=[], acCibleMedecin=null;
+
 function tracer(action, objet, ref, detail){
   try{
     fetch('/api/acces',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -3946,16 +3968,19 @@ function pSearch(){
   const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,5);
   if(!m.length){el.style.display='none';return}
   el.style.display='block';
-  el.innerHTML=m.map(p=>`<div style="padding:8px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="fillP('${p.nom}','${p.prenom}','${(p.adresse||'').replace(/'/g,"\\'")}','${(p.commune||'').replace(/'/g,"\\'")}','${p.tel||''}')">${p.nom} ${p.prenom} — ${p.adresse||''} ${p.commune||''}</div>`).join('');
+  psResPatients=m;
+  el.style.display='block';
+  el.innerHTML=m.map((p,i)=>`<div style="padding:8px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="fillP(${i})">${hEsc(p.nom)} ${hEsc(p.prenom)} — ${hEsc(p.adresse||'')} ${hEsc(p.commune||'')}</div>`).join('');
 }
-function fillP(nom,prenom,adr,commune,tel){
-  document.getElementById('d-nom').value=nom;
-  document.getElementById('d-prenom').value=prenom;
-  document.getElementById('d-adresse').value=adr;
-  document.getElementById('d-commune').value=commune;
-  document.getElementById('d-tel').value=tel;
+function fillP(i){
+  const p=psResPatients[i]; if(!p) return;
+  document.getElementById('d-nom').value=p.nom||'';
+  document.getElementById('d-prenom').value=p.prenom||'';
+  document.getElementById('d-adresse').value=p.adresse||'';
+  document.getElementById('d-commune').value=p.commune||'';
+  document.getElementById('d-tel').value=p.tel||'';
   document.getElementById('ps-sugg').style.display='none';
-  document.getElementById('ps-q').value=nom+' '+prenom;
+  document.getElementById('ps-q').value=((p.nom||'')+' '+(p.prenom||'')).trim();
 }
 
 // TICKET
@@ -4477,6 +4502,7 @@ function boTab(t){
 }
 
 // ═══════════ SAUVEGARDES (historique app_data_history) ═══════════
+let bkDates={};
 async function renderBackups(){
   const host=document.getElementById('bk-list'); if(!host)return;
   host.innerHTML='<div style="color:var(--gray-500);padding:1rem;font-size:.85rem">Chargement…</div>';
@@ -4484,16 +4510,19 @@ async function renderBackups(){
     const r=await fetch('/api/backups?t='+Date.now());
     const list=await r.json();
     if(!Array.isArray(list)||!list.length){ host.innerHTML='<div style="color:var(--gray-500);padding:1rem;font-size:.85rem">Aucune sauvegarde disponible pour le moment.</div>'; return; }
+    // Les dates restent ici : le bouton ne transporte plus qu'un identifiant.
+    bkDates={};
     host.innerHTML='<div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.6rem">'+list.length+' sauvegarde(s) · la plus récente en haut</div>'+list.map(b=>{
       const d=new Date(b.created_at);
       const when=isNaN(d)?b.created_at:d.toLocaleString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      const wj=when.replace(/'/g,"\\'");
+      bkDates[b.id]=when;
+
       return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--gray-200);flex-wrap:wrap">'
-        +'<div><div style="font-weight:600;color:var(--g-dark);font-size:.9rem">'+ico('archives')+' '+when+'</div>'
+        +'<div><div style="font-weight:600;color:var(--g-dark);font-size:.9rem">'+ico('archives')+' '+hEsc(when)+'</div>'
         +'<div style="font-size:.72rem;color:var(--gray-500)">Réf. interne #'+b.id+'</div></div>'
         +'<div style="display:flex;gap:6px">'
         +'<button class="btn bs sm" onclick="viewBackup(\''+b.id+'\')">'+ico('voir')+' Voir</button>'
-        +'<button class="btn bp sm" onclick="restoreBackup(\''+b.id+'\',\''+wj+'\')">'+ico('renouveler')+' Restaurer</button>'
+        +'<button class="btn bp sm" onclick="restoreBackup(\''+b.id+'\')">'+ico('renouveler')+' Restaurer</button>'
         +'</div></div>';
     }).join('');
   }catch(e){ host.innerHTML='<div style="color:var(--red);padding:1rem;font-size:.85rem">Erreur de chargement des sauvegardes : '+e.message+'</div>'; }
@@ -4510,7 +4539,8 @@ async function viewBackup(id){
     w.document.close();
   }catch(e){alert('Erreur : '+e.message);}
 }
-function restoreBackup(id,when){
+function restoreBackup(id){
+  const when=bkDates[id]||('#'+id);
   document.getElementById('conf-title').textContent='Restaurer cette sauvegarde';
   document.getElementById('conf-msg').textContent='Restaurer l\'état du '+when+' ? Les données actuelles seront remplacées par cette sauvegarde. L\'état actuel est lui-même archivé juste avant, donc l\'opération reste réversible.';
   document.getElementById('conf-ok').onclick=async()=>{
@@ -4733,13 +4763,18 @@ function acPatient(nomId, prenomId, dobId, dropId, telId, mailId, adresseId, com
   drop.style.display='block';
   // Une sortie explicite en bas de liste : « ce patient n'est pas dans la liste ».
   // Un menu qu'on ne peut que subir pousse a cliquer sur le mauvais homonyme.
-  drop.innerHTML=m.map(p=>`
-    <div class="ac-item" onmousedown="fillPatient('${p.nom}','${p.prenom}','${p.dob||''}','${p.adresse||''}','${p.tel||''}','${p.mail||''}','${p.commune||''}','${nomId}','${prenomId}','${dobId||''}','${dropId}','${telId||''}','${mailId||''}','${adresseId||''}','${communeId||''}')">
-      <strong>${p.nom} ${p.prenom}</strong>
-      <span>${p.dob?new Date(p.dob+'T12:00').toLocaleDateString('fr-FR'):''} ${p.tel?'· '+p.tel:''}</span>
+  // Les résultats ET les champs à remplir restent en mémoire : le gestionnaire
+  // ne reçoit qu'un indice. Un seul menu est ouvert à la fois (acFermerTout),
+  // donc une seule cible à retenir.
+  acResPatients=m;
+  acCibles={nomId,prenomId,dobId,dropId,telId,mailId,adresseId,communeId};
+  drop.innerHTML=m.map((p,i)=>`
+    <div class="ac-item" onmousedown="fillPatient(${i})">
+      <strong>${hEsc(p.nom)} ${hEsc(p.prenom)}</strong>
+      <span>${p.dob?hEsc(new Date(p.dob+'T12:00').toLocaleDateString('fr-FR')):''} ${p.tel?'· '+hEsc(p.tel):''}</span>
     </div>`).join('')
     + `<div class="ac-item ac-neuf" onmousedown="acNouveau('${dropId}','${prenomId}')">
-         + Nouveau patient — «&nbsp;${(brut||'').replace(/[<>"']/g,'')}&nbsp;»
+         + Nouveau patient — «&nbsp;${hEsc(brut||'')}&nbsp;»
        </div>`;
 }
 // Referme le menu et envoie la saisie au champ suivant.
@@ -4748,22 +4783,19 @@ function acNouveau(dropId, prenomId){
   const p=prenomId&&document.getElementById(prenomId); if(p) setTimeout(function(){p.focus();},0);
 }
 
-function fillPatient(nom,prenom,dob,adresse,tel,mail,commune,nomId,prenomId,dobId,dropId,telId,mailId,adresseId,communeId){
-  document.getElementById(nomId).value=nom;
-  document.getElementById(prenomId).value=prenom;
-  if(dobId&&document.getElementById(dobId))document.getElementById(dobId).value=dob;
-  if(telId&&document.getElementById(telId))document.getElementById(telId).value=tel;
-  if(mailId&&document.getElementById(mailId))document.getElementById(mailId).value=mail;
-  if(adresseId&&document.getElementById(adresseId))document.getElementById(adresseId).value=adresse;
-  if(communeId&&document.getElementById(communeId))document.getElementById(communeId).value=commune;
-  // Also fill delivery search fields if present
-  if(document.getElementById('d-adresse')&&nomId==='d-nom'){
-    document.getElementById('d-adresse').value=adresse;
-    document.getElementById('d-tel').value=tel;
+function fillPatient(i){
+  const p=acResPatients[i], c=acCibles;
+  if(!p||!c) return;
+  const poser=(id,v)=>{ const el=id&&document.getElementById(id); if(el) el.value=v||''; };
+  poser(c.nomId,p.nom); poser(c.prenomId,p.prenom);
+  poser(c.dobId,p.dob); poser(c.telId,p.tel); poser(c.mailId,p.mail);
+  poser(c.adresseId,p.adresse); poser(c.communeId,p.commune);
+  // Le formulaire de livraison a ses propres champs adresse et téléphone.
+  if(document.getElementById('d-adresse')&&c.nomId==='d-nom'){
+    poser('d-adresse',p.adresse); poser('d-tel',p.tel);
   }
-  document.getElementById(dropId).style.display='none';
-  // Save to patients DB
-  upsertPatient({nom,prenom,dob,adresse,commune,tel,mail});
+  const d=document.getElementById(c.dropId); if(d) d.style.display='none';
+  upsertPatient({nom:p.nom,prenom:p.prenom,dob:p.dob,adresse:p.adresse,commune:p.commune,tel:p.tel,mail:p.mail});
 }
 
 function acMedecin(inputId, dropId){
@@ -4773,17 +4805,21 @@ function acMedecin(inputId, dropId){
   const m=medecins.filter(x=>(x.nom+' '+x.prenom+' '+(x.spec||'')).toLowerCase().includes(q)).slice(0,6);
   if(!m.length){drop.style.display='none';return}
   drop.style.display='block';
-  drop.innerHTML=m.map(x=>`
-    <div class="ac-item" onmousedown="fillMedecin('Dr ${x.nom} ${x.prenom}','${inputId}','${dropId}')">
-      <strong>Dr ${x.nom} ${x.prenom}</strong>
-      <span>${x.spec||''} ${x.cabinet?'· '+x.cabinet:''}</span>
+  acResMedecins=m;
+  acCibleMedecin={inputId,dropId};
+  drop.innerHTML=m.map((x,i)=>`
+    <div class="ac-item" onmousedown="fillMedecin(${i})">
+      <strong>Dr ${hEsc(x.nom)} ${hEsc(x.prenom)}</strong>
+      <span>${hEsc(x.spec||'')} ${x.cabinet?'· '+hEsc(x.cabinet):''}</span>
     </div>`).join('');
 }
 
-function fillMedecin(val, inputId, dropId){
-  document.getElementById(inputId).value=val;
-  document.getElementById(dropId).style.display='none';
-  // Auto-save medecin if not already there (from free text)
+function fillMedecin(i){
+  const x=acResMedecins[i], c=acCibleMedecin;
+  if(!x||!c) return;
+  const el=document.getElementById(c.inputId);
+  if(el) el.value=('Dr '+(x.nom||'')+' '+(x.prenom||'')).trim();
+  const d=document.getElementById(c.dropId); if(d) d.style.display='none';
 }
 
 // Close autocomplete on outside click
@@ -7769,7 +7805,7 @@ function printCredLetter(c, niv, subject, body){
   const p=patients.find(x=>x.nom===c.nom && x.prenom===c.prenom);
   const adresse=p?.adresse||'';
   const logoSrc=document.getElementById('print-logo')?.src||'';
-  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const esc=hEsc;   // couvre aussi le guillemet, que cette version locale oubliait
   let cleanBody=body;
   if(isLRAR){
     cleanBody=cleanBody.replace(/^Lettre recommandée avec accusé de réception\s*\n+/i,'').replace(/\n+Mondeville, le [0-9/]+\s*$/,'');
@@ -8304,7 +8340,7 @@ const CTL_SECTIONS = [
 const CTL_OBSO_LBL = {1:'Neuf',2:'Bon',3:'Moyen',4:'Vétuste',5:'Obsolète'};
 function ctlAllItems(){ return CTL_SECTIONS.reduce((a,s)=>a.concat(s.items),[]); }
 function ctlItem(id){ return ctlAllItems().find(i=>i.id===id); }
-function ctlEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const ctlEsc = hEsc;   // ancien nom, conserve : un seul echappeur desormais
 
 let ctlDraft = null;      // brouillon en cours de saisie
 let ctlSignReady = false; // canvas signature initialisé
@@ -8378,20 +8414,21 @@ function ctlPatientSearch(){
   if(q.length<2){el.style.display='none';return;}
   const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
   if(!m.length){el.style.display='none';return;}
-  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  ctlResPatients=m;
   el.style.display='block';
-  el.innerHTML=m.map(p=>{
+  el.innerHTML=m.map((p,i)=>{
     const adr=[p.adresse,p.cp,p.commune].filter(Boolean).join(' ');
-    return '<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="ctlFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.adresse||'')+'\',\''+esc(p.cp||'')+'\',\''+esc(p.commune||'')+'\')">'
-      +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
-      +'<div style="font-size:.74rem;color:var(--gray-500)">'+ctlEsc(adr||'Adresse non renseignée')+'</div></div>';
+    return '<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="ctlFillPatient('+i+')">'
+      +'<div style="font-weight:600;color:var(--gray-900)">'+hEsc(p.nom)+' '+hEsc(p.prenom)+'</div>'
+      +'<div style="font-size:.74rem;color:var(--gray-500)">'+hEsc(adr||'Adresse non renseignée')+'</div></div>';
   }).join('');
 }
-function ctlFillPatient(nom,prenom,adresse,cp,commune){
-  document.getElementById('ctl-patient').value=(nom+' '+prenom).trim();
-  document.getElementById('ctl-loc').value=[adresse,cp,commune].filter(Boolean).join(' ');
+function ctlFillPatient(i){
+  const p=ctlResPatients[i]; if(!p) return;
+  document.getElementById('ctl-patient').value=((p.nom||'')+' '+(p.prenom||'')).trim();
+  document.getElementById('ctl-loc').value=[p.adresse,p.cp,p.commune].filter(Boolean).join(' ');
   document.getElementById('ctl-psugg').style.display='none';
-  if(ctlDraft)ctlDraft.patientRef={nom,prenom};
+  if(ctlDraft)ctlDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }
 
 function buildCtlChecklist(){
@@ -8665,18 +8702,19 @@ function bonPatientSearch(){
   if(q.length<2){el.style.display='none';return;}
   const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
   if(!m.length){el.style.display='none';return;}
-  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  bonResPatients=m;
   el.style.display='block';
-  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="bonFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.dob||'')+'\')">'
-    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
-    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?ctlEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
+  el.innerHTML=m.map((p,i)=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="bonFillPatient('+i+')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+hEsc(p.nom)+' '+hEsc(p.prenom)+'</div>'
+    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?hEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
 }
-function bonFillPatient(nom,prenom,dob){
-  document.getElementById('bon-nom').value=nom;
-  document.getElementById('bon-prenom').value=prenom;
-  if(dob)document.getElementById('bon-dob').value=dob;
+function bonFillPatient(i){
+  const p=bonResPatients[i]; if(!p) return;
+  document.getElementById('bon-nom').value=p.nom||'';
+  document.getElementById('bon-prenom').value=p.prenom||'';
+  if(p.dob)document.getElementById('bon-dob').value=p.dob;
   document.getElementById('bon-psugg').style.display='none';
-  if(bonDraft)bonDraft.patientRef={nom,prenom};
+  if(bonDraft)bonDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }
 
 function validateBon(){
@@ -8814,18 +8852,19 @@ function girPatientSearch(){
   if(q.length<2){el.style.display='none';return;}
   const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
   if(!m.length){el.style.display='none';return;}
-  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  girResPatients=m;
   el.style.display='block';
-  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="girFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.dob||'')+'\')">'
-    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
-    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?ctlEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
+  el.innerHTML=m.map((p,i)=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="girFillPatient('+i+')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+hEsc(p.nom)+' '+hEsc(p.prenom)+'</div>'
+    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?hEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
 }
-function girFillPatient(nom,prenom,dob){
-  document.getElementById('gir-nom').value=nom;
-  document.getElementById('gir-prenom').value=prenom;
-  if(dob)document.getElementById('gir-dob').value=dob;
+function girFillPatient(i){
+  const p=girResPatients[i]; if(!p) return;
+  document.getElementById('gir-nom').value=p.nom||'';
+  document.getElementById('gir-prenom').value=p.prenom||'';
+  if(p.dob)document.getElementById('gir-dob').value=p.dob;
   document.getElementById('gir-psugg').style.display='none';
-  if(girDraft)girDraft.patientRef={nom,prenom};
+  if(girDraft)girDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }
 
 function validateGirerd(){
@@ -9067,18 +9106,19 @@ function apPatientSearch(){
   if(q.length<2){el.style.display='none';return;}
   const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
   if(!m.length){el.style.display='none';return;}
-  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  apResPatients=m;
   el.style.display='block';
-  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="apFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\',\''+esc(p.dob||'')+'\')">'
-    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div>'
-    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?ctlEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
+  el.innerHTML=m.map((p,i)=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="apFillPatient('+i+')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+hEsc(p.nom)+' '+hEsc(p.prenom)+'</div>'
+    +'<div style="font-size:.74rem;color:var(--gray-500)">'+(p.dob?hEsc(new Date(p.dob).toLocaleDateString('fr-FR')):'Date de naissance non renseignée')+'</div></div>').join('');
 }
-function apFillPatient(nom,prenom,dob){
-  document.getElementById('ap-nom').value=nom;
-  document.getElementById('ap-prenom').value=prenom;
-  if(dob)document.getElementById('ap-dob').value=dob;
+function apFillPatient(i){
+  const p=apResPatients[i]; if(!p) return;
+  document.getElementById('ap-nom').value=p.nom||'';
+  document.getElementById('ap-prenom').value=p.prenom||'';
+  if(p.dob)document.getElementById('ap-dob').value=p.dob;
   document.getElementById('ap-psugg').style.display='none';
-  if(apDraft)apDraft.patientRef={nom,prenom};
+  if(apDraft)apDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }
 
 function validateAp(){
@@ -9345,15 +9385,16 @@ function retPatientSearch(){
   if(q.length<2){el.style.display='none';return;}
   const m=patients.filter(p=>(p.nom+' '+p.prenom).toLowerCase().includes(q)).slice(0,6);
   if(!m.length){el.style.display='none';return;}
-  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  retResPatients=m;
   el.style.display='block';
-  el.innerHTML=m.map(p=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="retFillPatient(\''+esc(p.nom)+'\',\''+esc(p.prenom)+'\')">'
-    +'<div style="font-weight:600;color:var(--gray-900)">'+ctlEsc(p.nom)+' '+ctlEsc(p.prenom)+'</div></div>').join('');
+  el.innerHTML=m.map((p,i)=>'<div style="padding:9px 12px;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-200)" onmousedown="retFillPatient('+i+')">'
+    +'<div style="font-weight:600;color:var(--gray-900)">'+hEsc(p.nom)+' '+hEsc(p.prenom)+'</div></div>').join('');
 }
-function retFillPatient(nom,prenom){
-  document.getElementById('ret-patient').value=(nom+' '+prenom).trim();
+function retFillPatient(i){
+  const p=retResPatients[i]; if(!p) return;
+  document.getElementById('ret-patient').value=((p.nom||'')+' '+(p.prenom||'')).trim();
   document.getElementById('ret-psugg').style.display='none';
-  if(retDraft)retDraft.patientRef={nom,prenom};
+  if(retDraft)retDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }
 
 function validateRetour(){

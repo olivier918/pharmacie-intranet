@@ -139,6 +139,30 @@ Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
 c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
 protège pas d'un essai en force.
 
+## Un gestionnaire ne reçoit jamais de texte saisi
+
+`onclick="f('…')"` fait lire la même chaîne par **deux analyseurs** : le
+navigateur découpe l'attribut HTML, puis JavaScript relit ce qu'il en reste. Il
+faut donc satisfaire les deux règles à la fois, et c'est celle qu'on oublie
+toujours.
+
+Huit autocomplétions recopiaient ainsi un nom de patient dans leur gestionnaire.
+Cinq échappaient l'apostrophe et rien d'autre — de l'échappement de chaîne
+JavaScript là où il fallait du HTML ; **trois n'échappaient rien.** Une adresse
+du genre `Résidence "Les Tilleuls"` suffisait à sortir de l'attribut.
+
+**Règle : un gestionnaire ne reçoit qu'un identifiant ou un indice.** Les
+résultats restent en mémoire (`acResPatients`, `ctlResPatients`, …) et le
+gestionnaire va y chercher la ligne. Le nom ne traverse plus jamais le HTML : le
+problème disparaît au lieu d'être colmaté.
+
+Pour le texte affiché, un seul échappeur : **`hEsc()`**, qui couvre `& < > " '`.
+Pas de version locale — c'est ainsi que cinq variantes divergentes sont nées.
+
+`node essais/echappement.js` vérifie les deux règles sur le fichier lui-même.
+C'est ce garde-fou qui a trouvé les trois dernières, invisibles à la recherche
+d'un motif d'échappement puisqu'elles n'en avaient aucun.
+
 ## Deux questions opposées sur le même ensemble
 
 `imagesReferencees()` et `imagesAttendues()` parcourent le même blob et ne
