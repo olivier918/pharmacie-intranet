@@ -1549,11 +1549,14 @@ tr:hover td{background:#fafffe}
             date de naissance divergente, nom inconnu de l'annuaire — il part dans « À rattacher » plutôt que
             d'être attribué au hasard.
           </p>
-          <div class="pt-onglets" id="pt-onglets"></div>
-          <div class="fg" style="margin:0 0 .9rem"><input type="text" id="pt-q" placeholder="Rechercher un patient…"
-            style="border:1px solid var(--gray-200);border-radius:7px;padding:8px 12px;font-size:.88rem;width:100%"
-            oninput="ptRender()"></div>
-          <div id="pt-zone"></div>
+          <div class="pt-ecran">
+            <div class="pt-gauche">
+              <input type="text" id="pt-q" placeholder="Rechercher un patient…" class="pt-recherche" oninput="ptRender()">
+              <div class="pt-onglets" id="pt-onglets"></div>
+              <div class="pt-liste" id="pt-zone"></div>
+            </div>
+            <div class="pt-droite" id="pt-detail"></div>
+          </div>
         </div>
 
         <div class="card" style="margin-bottom:1rem">
@@ -1569,13 +1572,6 @@ tr:hover td{background:#fafffe}
           </div>
           <button class="btn bp" style="margin-top:.9rem" id="bp-submit-btn" onclick="addPatientBO()">+ Ajouter</button>
           <button class="btn bs" style="margin-top:.9rem;display:none" id="bp-cancel-btn" onclick="cancelEditPatient()">Annuler</button>
-        </div>
-        <div class="card">
-          <div class="ch">
-            <span class="ct">Annuaire patients</span>
-            <input type="text" id="pat-q" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.82rem" oninput="renderPatients()">
-          </div>
-          <div class="twrap" id="pat-table"></div>
         </div>
       </div>
 
@@ -4774,7 +4770,15 @@ function renderMedecins(){
 }
 function deleteMedecin(i){if(confirm('Supprimer ce médecin ?')){medecins.splice(i,1);renderMedecins();}}
 
+// L'annuaire en tableau a laisse la place au maitre-detail de pt-module.js :
+// deux listes des memes personnes, c'etait une de trop. Cette fonction reste
+// le point d'entree de tous ses appelants.
 function renderPatients(){
+  if(typeof ptRender==='function') return ptRender();
+  return _renderPatientsTableau();
+}
+function _renderPatientsTableau(){
+  if(!document.getElementById('pat-table')) return;
   const q=(document.getElementById('pat-q')?.value||'').toLowerCase();
   // On garde l'index réel dans `patients` : sans cela, modifier ou supprimer depuis une
   // liste filtrée ou triée agirait sur la mauvaise fiche.

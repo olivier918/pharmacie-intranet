@@ -52,12 +52,18 @@
 
   // Index clé → fiches. Reconstruit à chaque rendu : l'annuaire se remplit tout
   // seul depuis les modules métier, et un index mis en cache mentirait vite.
+  //
+  // LES ALIAS. Fusionner deux fiches ne suffirait pas : l'historique est
+  // rapproché PAR LE NOM, et une livraison saisie au nom de jeune fille ne
+  // remonterait jamais sur la fiche au nom marital. La fiche survivante garde
+  // donc le nom de celle qu'elle absorbe, et l'index la range sous les deux.
+  // Sans cela, l'outil de fusion serait cosmétique.
   function ptIndex() {
     const idx = new Map();
+    const ranger = (c, p) => { if (!idx.has(c)) idx.set(c, []); if (idx.get(c).indexOf(p) < 0) idx.get(c).push(p); };
     ptAnnuaire().forEach(function (p) {
-      const c = ptClef(p.nom, p.prenom);
-      if (!idx.has(c)) idx.set(c, []);
-      idx.get(c).push(p);
+      ranger(ptClef(p.nom, p.prenom), p);
+      (p.alias || []).forEach(function (a) { if (a) ranger(ptClef(a.nom, a.prenom), p); });
     });
     return idx;
   }
@@ -247,169 +253,256 @@
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  L'ÉCRAN — liste, fiche, file à rattacher
+//  L'ÉCRAN — une seule liste, maître à gauche, détail à droite
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//  Pas de fenêtre : une fiche qu'on consulte en travaillant ne doit pas
+//  recouvrir le reste. On choisit à gauche, on lit à droite, on passe au
+//  suivant sans rien fermer.
 // ═══════════════════════════════════════════════════════════════════════════
 (function () {
   'use strict';
   const E = s => (typeof hEsc === 'function' ? hEsc(s) : String(s == null ? '' : s));
   const g = id => document.getElementById(id);
-  let ptCache = null;              // dernier balayage
-  let ptResListe = [];             // fiches affichées, pour l'accès par indice
-  let ptVue = 'fiches';
+  let cache = null, liste = [], choisi = null, vue = 'fiches', onglet = 'tout';
+  let fusionDe = null;                 // fiche retenue pour une fusion
 
-  function ptInjecter() {
+  function injecter() {
     if (g('pt-styles')) return;
     const st = document.createElement('style');
     st.id = 'pt-styles';
     st.textContent = `
-      .pt-onglets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem}
-      .pt-carte{border:1px solid var(--gray-200);border-radius:10px;padding:.7rem .9rem;margin-bottom:7px;
-        display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer;background:#fff}
-      .pt-carte:hover{border-color:var(--g-mid);box-shadow:0 2px 10px -6px rgba(0,0,0,.3)}
-      .pt-nom{font-weight:700;font-size:.95rem;flex:1;min-width:170px}
-      .pt-cpt{display:flex;gap:5px;flex-wrap:wrap}
-      .pt-pastille{font-size:.72rem;padding:1px 8px;border-radius:20px;color:#fff;white-space:nowrap}
-      .pt-vide{text-align:center;color:var(--gray-500);padding:1.6rem;font-size:.88rem}
-      .pt-ev{display:grid;grid-template-columns:88px 26px 1fr;gap:0 10px;padding:9px 2px;
+      .pt-ecran{display:grid;grid-template-columns:290px 1fr;gap:16px;align-items:start}
+      @media(max-width:820px){.pt-ecran{grid-template-columns:1fr}}
+      .pt-gauche{display:flex;flex-direction:column;gap:9px;min-width:0}
+      .pt-recherche{border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px;font-size:.88rem;width:100%}
+      .pt-onglets{display:flex;gap:5px;flex-wrap:wrap}
+      .pt-onglets .btn{padding:4px 9px;font-size:.76rem}
+      .pt-liste{max-height:62vh;overflow:auto;border:1px solid var(--gray-200);border-radius:10px}
+      .pt-l{padding:8px 11px;border-bottom:1px solid var(--gray-200);cursor:pointer;font-size:.85rem;line-height:1.35}
+      .pt-l:last-child{border-bottom:0}
+      .pt-l:hover{background:var(--gray-100)}
+      .pt-l.pt-sel{background:var(--g-pale);border-left:3px solid var(--g-mid);padding-left:8px}
+      .pt-l b{font-weight:700}
+      .pt-l span{display:block;font-size:.74rem;color:var(--gray-500)}
+      .pt-droite{min-width:0}
+      .pt-bloc{border:1px solid var(--gray-200);border-radius:11px;padding:.85rem 1rem;margin-bottom:12px}
+      .pt-coord{display:flex;flex-wrap:wrap;gap:7px 18px;font-size:.85rem}
+      .pt-coord div{min-width:150px}
+      .pt-coord label{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500)}
+      .pt-ctx{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:.7rem}
+      .pt-ctx button{font:inherit;font-size:.78rem;padding:3px 10px;border-radius:20px;cursor:pointer;
+        border:1px solid var(--gray-200);background:#fff;color:var(--gray-700)}
+      .pt-ctx button.on{background:var(--g-mid);border-color:var(--g-mid);color:#fff;font-weight:600}
+      .pt-ev{display:grid;grid-template-columns:86px 24px 1fr;gap:0 10px;padding:8px 2px;
         border-top:1px solid var(--gray-200);align-items:start}
-      .pt-ev-date{font-size:.76rem;color:var(--gray-500);white-space:nowrap;font-variant-numeric:tabular-nums}
-      .pt-ev-t{font-weight:600;font-size:.87rem}
-      .pt-ev-d{font-size:.79rem;color:var(--gray-600);line-height:1.45}
-      .pt-alerte{background:#FFF3E0;border-radius:9px;padding:.7rem .9rem;font-size:.83rem;line-height:1.55;margin-bottom:.9rem}
+      .pt-ev-date{font-size:.75rem;color:var(--gray-500);white-space:nowrap;font-variant-numeric:tabular-nums}
+      .pt-ev-t{font-weight:600;font-size:.86rem}
+      .pt-ev-d{font-size:.78rem;color:var(--gray-600);line-height:1.45}
+      .pt-vide{text-align:center;color:var(--gray-500);padding:1.4rem;font-size:.86rem}
+      .pt-alerte{background:#FFF3E0;border-radius:9px;padding:.7rem .9rem;font-size:.82rem;line-height:1.55;margin-bottom:.8rem}
       .pt-cand{display:inline-block;font-size:.76rem;border:1px solid var(--gray-200);border-radius:7px;
         padding:2px 9px;margin:3px 4px 0 0;background:var(--gray-100)}
+      .pt-alias{display:inline-block;font-size:.72rem;border-radius:20px;padding:1px 8px;margin-left:5px;
+        background:var(--g-pale);color:var(--g-dark)}
     `;
     document.head.appendChild(st);
   }
 
-  // ── Vue liste ────────────────────────────────────────────────────────────
-  window.ptRender = function () {
-    ptInjecter();
-    const hote = g('pt-zone'); if (!hote) return;
-    ptCache = window.ptBalayer();
-    const q = (g('pt-q') && g('pt-q').value || '').toLowerCase().trim();
-
-    const nRatt = ptCache.aRattacher.length;
-    const dbl = window.ptDoublons();
-    const nDbl = dbl.filter(x => x.nature === 'doublon probable').length;
-
-    g('pt-onglets').innerHTML =
-      bouton('fiches', 'Fiches patients', (typeof patients !== 'undefined' ? patients.length : 0))
-      + bouton('rattacher', 'À rattacher', nRatt, nRatt ? '#B45309' : null)
-      + bouton('doublons', 'Doublons', nDbl, nDbl ? '#B45309' : null);
-
-    if (ptVue === 'rattacher') return ptVueRattacher(hote);
-    if (ptVue === 'doublons') return ptVueDoublons(hote, dbl);
-
-    const liste = (typeof patients !== 'undefined' ? patients : [])
-      .filter(p => ((p.nom || '') + ' ' + (p.prenom || '')).toLowerCase().includes(q))
-      .sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''), 'fr'));
-    ptResListe = liste;
-
-    hote.innerHTML = liste.length ? liste.map(function (p, i) {
-      const ev = ptCache.parPatient.get(p.id) || [];
-      const parType = {};
-      ev.forEach(e => { parType[e.type] = (parType[e.type] || 0) + 1; });
-      const pastilles = window.PT_SOURCES
-        .filter((s, j, arr) => arr.findIndex(x => x.type === s.type) === j)
-        .filter(s => parType[s.type])
-        .map(s => '<span class="pt-pastille" style="background:' + s.col + '">' + s.ico + ' ' + parType[s.type] + '</span>')
-        .join('');
-      return '<div class="pt-carte" onclick="ptFiche(' + i + ')">'
-        + '<span class="pt-nom">' + E(p.nom) + ' ' + E(p.prenom)
-        + (p.dob ? '<span style="font-weight:400;color:var(--gray-500);font-size:.8rem"> · ' + E(ptFr(p.dob)) + '</span>'
-                 : '<span style="font-weight:400;color:#B45309;font-size:.78rem"> · date de naissance manquante</span>') + '</span>'
-        + '<span class="pt-cpt">' + (pastilles || '<span style="font-size:.76rem;color:var(--gray-500)">aucune activité</span>') + '</span>'
-        + '</div>';
-    }).join('') : '<div class="pt-vide">Aucun patient' + (q ? ' ne correspond à la recherche' : '') + '.</div>';
-  };
-
-  function bouton(v, lbl, n, col) {
-    return '<button class="btn ' + (ptVue === v ? 'bp' : 'bs') + '" onclick="ptSetVue(\'' + v + '\')">' + lbl
-      + (n ? ' <span style="display:inline-block;min-width:18px;padding:0 5px;border-radius:20px;font-size:.74rem;'
-             + 'background:' + (ptVue === v ? 'rgba(255,255,255,.28)' : (col || 'var(--gray-200)')) + ';'
-             + 'color:' + (ptVue === v ? '#fff' : (col ? '#fff' : 'var(--gray-700)')) + '">' + n + '</span>' : '') + '</button>';
-  }
-  window.ptSetVue = function (v) { ptVue = v; window.ptRender(); };
-  function ptFr(d) { const n = window.ptNaiss(d); return n ? n.split('-').reverse().join('/') : '—'; }
-
-  // ── La fiche ─────────────────────────────────────────────────────────────
-  window.ptFiche = function (i) {
-    const p = ptResListe[i]; if (!p) return;
-    const ev = (ptCache && ptCache.parPatient.get(p.id)) || [];
-    // Ouvrir une fiche patient, c'est consulter des données de santé
-    // rassemblées. Le journal des accès l'enregistre, comme le reste.
-    if (typeof tracer === 'function') tracer('consultation', 'patient', p.id, 'Fiche patient ouverte');
-
-    g('pt-fiche-titre').textContent = (p.nom || '') + ' ' + (p.prenom || '');
-    const coord = [p.dob ? 'Né(e) le ' + ptFr(p.dob) : null, p.adresse, p.commune, p.tel, p.mail].filter(Boolean);
-    g('pt-fiche-corps').innerHTML =
-      '<div style="background:var(--g-pale);border-radius:9px;padding:.75rem .95rem;margin-bottom:1rem;font-size:.85rem;line-height:1.6">'
-      + (coord.length ? coord.map(E).join(' · ') : '<span style="color:var(--gray-500)">Aucune coordonnée enregistrée.</span>')
-      + (!p.dob ? '<div style="color:#B45309;margin-top:5px;font-size:.8rem">Sans date de naissance, cette fiche ne peut pas être départagée d\'un homonyme.</div>' : '')
-      + '</div>'
-      + (ev.length
-          ? '<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.6px;font-weight:700;color:var(--gray-500);margin-bottom:.3rem">'
-            + ev.length + ' événement(s)</div>'
-            + ev.map(e =>
-              '<div class="pt-ev">'
-              + '<span class="pt-ev-date">' + (e.quand ? E(ptDateFr(e.quand)) : 'sans date') + '</span>'
-              + '<span title="' + E(e.lbl) + '">' + e.ico + '</span>'
-              + '<span><span class="pt-ev-t">' + E(e.titre) + '</span>'
-              + (e.detail ? '<div class="pt-ev-d">' + E(e.detail) + '</div>' : '') + '</span></div>').join('')
-          : '<div class="pt-vide">Aucune activité rattachée à ce patient.</div>');
-    g('pt-ov').classList.add('pt-on');
-  };
-  window.ptFermer = function () { const o = g('pt-ov'); if (o) o.classList.remove('pt-on'); };
-  function ptDateFr(d) {
+  function fr(d) { const n = window.ptNaiss(d); return n ? n.split('-').reverse().join('/') : null; }
+  function dateFr(d) {
     const x = new Date(String(d).length <= 10 ? String(d) + 'T12:00' : d);
     return isNaN(x) ? String(d) : x.toLocaleDateString('fr-FR');
   }
+  const TYPES = () => window.PT_SOURCES.filter((s, i, a) => a.findIndex(x => x.type === s.type) === i);
 
-  // ── La file « à rattacher » ──────────────────────────────────────────────
-  function ptVueRattacher(hote) {
-    const f = ptCache.aRattacher;
+  // ── Rendu ────────────────────────────────────────────────────────────────
+  window.ptRender = function () {
+    injecter();
+    if (!g('pt-zone')) return;
+    cache = window.ptBalayer();
+    const dbl = window.ptDoublons();
+    const nRatt = cache.aRattacher.length;
+    const nDbl = dbl.filter(x => x.nature === 'doublon probable').length;
+
+    g('pt-onglets').innerHTML =
+      bt('fiches', 'Fiches') + bt('rattacher', 'À rattacher', nRatt) + bt('doublons', 'Doublons', nDbl);
+
+    if (vue === 'fiches') rendreListe(); else g('pt-zone').innerHTML = '';
+    const d = g('pt-detail');
+    if (vue === 'rattacher') return vueRattacher(d);
+    if (vue === 'doublons') return vueDoublons(d, dbl);
+    rendreDetail(d);
+  };
+  function bt(v, lbl, n) {
+    return '<button class="btn ' + (vue === v ? 'bp' : 'bs') + '" onclick="ptSetVue(\'' + v + '\')">' + lbl
+      + (n ? ' <b style="color:' + (vue === v ? '#fff' : '#B45309') + '">' + n + '</b>' : '') + '</button>';
+  }
+  window.ptSetVue = function (v) { vue = v; window.ptRender(); };
+
+  function rendreListe() {
+    const q = (g('pt-q') && g('pt-q').value || '').toLowerCase().trim();
+    liste = (typeof patients !== 'undefined' ? patients : [])
+      .filter(p => (((p.nom || '') + ' ' + (p.prenom || '')) + ' '
+        + (p.alias || []).map(a => a.nom + ' ' + a.prenom).join(' ')).toLowerCase().includes(q))
+      .sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''), 'fr'));
+    if (choisi && !liste.some(p => p.id === choisi)) choisi = null;
+    if (!choisi && liste.length) choisi = liste[0].id;
+    g('pt-zone').innerHTML = liste.length ? liste.map(function (p, i) {
+      const n = (cache.parPatient.get(p.id) || []).length;
+      return '<div class="pt-l' + (p.id === choisi ? ' pt-sel' : '') + '" onclick="ptChoisir(' + i + ')">'
+        + '<b>' + E(p.nom) + ' ' + E(p.prenom) + '</b>'
+        + '<span>' + (fr(p.dob) || 'date de naissance manquante') + ' · ' + n + ' événement(s)'
+        + ((p.alias || []).length ? ' · ' + p.alias.length + ' autre(s) nom(s)' : '') + '</span></div>';
+    }).join('') : '<div class="pt-vide">Aucun patient' + (q ? ' ne correspond' : '') + '.</div>';
+  }
+  window.ptChoisir = function (i) {
+    const p = liste[i]; if (!p) return;
+    choisi = p.id; onglet = 'tout';
+    if (typeof tracer === 'function') tracer('consultation', 'patient', p.id, 'Fiche patient ouverte');
+    window.ptRender();
+  };
+  window.ptOnglet = function (t) { onglet = t; rendreDetail(g('pt-detail')); };
+
+  // ── Le détail ────────────────────────────────────────────────────────────
+  function rendreDetail(hote) {
+    if (!hote) return;
+    const p = (typeof patients !== 'undefined' ? patients : []).find(x => x.id === choisi);
+    if (!p) { hote.innerHTML = '<div class="pt-vide">Choisissez un patient dans la liste.</div>'; return; }
+    const ev = (cache && cache.parPatient.get(p.id)) || [];
+    const parType = {}; ev.forEach(e => { parType[e.type] = (parType[e.type] || 0) + 1; });
+
+    const coord = [['Né(e) le', fr(p.dob)], ['Adresse', p.adresse], ['Commune', p.commune],
+                   ['Téléphone', p.tel], ['E-mail', p.mail]];
+    const filtre = onglet === 'tout' ? ev : ev.filter(e => e.type === onglet);
+
     hote.innerHTML =
-      '<div class="pt-alerte"><b>Ce que PILOT a refusé de rattacher.</b> Un enregistrement n\'apparaît sur une fiche '
-      + 'que si l\'identité est certaine. Ici, elle ne l\'est pas — et attribuer l\'ordonnance d\'un patient à un autre '
-      + 'serait pire que de ne rien afficher.<br>'
-      + 'La correction se fait à la source : compléter la date de naissance de la fiche, ou corriger l\'orthographe '
-      + 'dans le module concerné.</div>'
+      // ── En haut : qui est-ce ──
+      '<div class="pt-bloc">'
+      + '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:.6rem">'
+      + '<span style="font-weight:700;font-size:1.05rem;color:var(--g-dark)">' + E(p.nom) + ' ' + E(p.prenom) + '</span>'
+      + (p.alias || []).map(a => '<span class="pt-alias">aussi ' + E(a.nom) + ' ' + E(a.prenom) + '</span>').join('')
+      + '<span style="margin-left:auto;display:flex;gap:6px">'
+      + (fusionDe && fusionDe !== p.id
+          ? '<button class="btn bp sm" onclick="ptFusionner()">Fusionner ici</button>'
+            + '<button class="btn bs sm" onclick="ptFusionAnnuler()">Annuler</button>'
+          : '<button class="btn bs sm" onclick="ptFusionDepuis()">Fusionner cette fiche…</button>')
+      + '</span></div>'
+      + '<div class="pt-coord">' + coord.map(c => '<div><label>' + c[0] + '</label>'
+          + (c[1] ? E(c[1]) : '<span style="color:var(--gray-400)">—</span>') + '</div>').join('') + '</div>'
+      + (!p.dob ? '<div style="color:#B45309;font-size:.79rem;margin-top:.55rem">Sans date de naissance, cette fiche '
+          + 'ne peut pas être départagée d\'un homonyme : ses livraisons partiront dans « À rattacher ».</div>' : '')
+      + (fusionDe === p.id ? '<div class="pt-alerte" style="margin:.7rem 0 0">Fiche retenue pour la fusion. '
+          + 'Choisissez maintenant dans la liste la fiche <b>à conserver</b>, puis « Fusionner ici ».</div>' : '')
+      + '</div>'
+
+      // ── En bas : ce qui s'est passé, par menu contextuel ──
+      + '<div class="pt-bloc">'
+      + '<div class="pt-ctx">'
+      + '<button class="' + (onglet === 'tout' ? 'on' : '') + '" onclick="ptOnglet(\'tout\')">Tout (' + ev.length + ')</button>'
+      + TYPES().filter(s => parType[s.type]).map(s =>
+          '<button class="' + (onglet === s.type ? 'on' : '') + '" onclick="ptOnglet(\'' + s.type + '\')">'
+          + s.ico + ' ' + E(s.lbl) + ' (' + parType[s.type] + ')</button>').join('')
+      + '</div>'
+      + (filtre.length ? filtre.map(e =>
+          '<div class="pt-ev"><span class="pt-ev-date">' + (e.quand ? E(dateFr(e.quand)) : 'sans date') + '</span>'
+          + '<span title="' + E(e.lbl) + '">' + e.ico + '</span>'
+          + '<span><span class="pt-ev-t">' + E(e.titre) + '</span>'
+          + (e.detail ? '<div class="pt-ev-d">' + E(e.detail) + '</div>' : '') + '</span></div>').join('')
+        : '<div class="pt-vide">Aucune activité' + (onglet !== 'tout' ? ' de ce type' : '') + ' rattachée à ce patient.</div>')
+      + '</div>';
+  }
+
+  // ── La fusion ────────────────────────────────────────────────────────────
+  // Le seul geste de ce module qui ÉCRIT. Trois garde-fous :
+  //   1. deux dates de naissance connues et différentes : refus net, ce sont
+  //      deux personnes et les réunir mélangerait leurs ordonnances ;
+  //   2. la fiche absorbée laisse son NOM en alias — sans quoi son historique,
+  //      rapproché par le nom, disparaîtrait de la fiche survivante ;
+  //   3. rien n'est écrasé : on ne comble que les champs vides.
+  window.ptFusionDepuis = function () { fusionDe = choisi; window.ptRender(); };
+  window.ptFusionAnnuler = function () { fusionDe = null; window.ptRender(); };
+  window.ptFusionner = function () {
+    if (typeof isAdmin === 'function' && !isAdmin()) { alert('Réservé aux administrateurs.'); return; }
+    const src = patients.find(x => x.id === fusionDe);
+    const cib = patients.find(x => x.id === choisi);
+    if (!src || !cib || src === cib) { fusionDe = null; return; }
+
+    const dS = window.ptNaiss(src.dob), dC = window.ptNaiss(cib.dob);
+    if (dS && dC && dS !== dC) {
+      alert('Fusion refusée.\n\n' + src.nom + ' ' + src.prenom + ' est né(e) le ' + fr(src.dob)
+        + ', et ' + cib.nom + ' ' + cib.prenom + ' le ' + fr(cib.dob) + '.\n\n'
+        + 'Deux dates de naissance différentes désignent deux personnes. Les réunir mélangerait '
+        + 'leurs ordonnances.\n\nSi l\'une des deux dates est fausse, corrigez-la d\'abord.');
+      return;
+    }
+    const nEv = ((cache && cache.parPatient.get(src.id)) || []).length;
+    if (!confirm('Fusionner « ' + src.nom + ' ' + src.prenom + ' » dans « ' + cib.nom + ' ' + cib.prenom + ' » ?\n\n'
+      + 'La fiche conservée est « ' + cib.nom + ' ' + cib.prenom + ' ».\n'
+      + 'Elle gardera « ' + src.nom + ' ' + src.prenom + ' » comme autre nom, pour que l\'historique saisi '
+      + 'sous ce nom-là continue d\'y remonter'
+      + (nEv ? ' (' + nEv + ' événement(s) concerné(s))' : '') + '.\n\n'
+      + 'Les champs vides de la fiche conservée seront comblés ; aucun ne sera écrasé.')) return;
+
+    ['dob', 'adresse', 'commune', 'tel', 'mail'].forEach(function (k) { if (!cib[k] && src[k]) cib[k] = src[k]; });
+    cib.alias = cib.alias || [];
+    const clefC = window.ptClef(cib.nom, cib.prenom);
+    [{ nom: src.nom, prenom: src.prenom }].concat(src.alias || []).forEach(function (a) {
+      if (!a || !a.nom) return;
+      if (window.ptClef(a.nom, a.prenom) === clefC) return;
+      if (cib.alias.some(x => window.ptClef(x.nom, x.prenom) === window.ptClef(a.nom, a.prenom))) return;
+      cib.alias.push({ nom: a.nom, prenom: a.prenom });
+    });
+    cib.updatedAt = Date.now();
+    patients.splice(patients.indexOf(src), 1);
+
+    if (typeof logAction === 'function') logAction('Fusion de fiches patients', src.nom + ' ' + src.prenom + ' → ' + cib.nom + ' ' + cib.prenom);
+    if (typeof tracer === 'function') tracer('modification', 'patient', cib.id, 'Fusion de deux fiches patients');
+    if (typeof saveNow === 'function') saveNow(); else if (typeof schedSave === 'function') schedSave();
+    fusionDe = null; choisi = cib.id;
+    window.ptRender();
+  };
+
+  // ── Les deux vues de contrôle ────────────────────────────────────────────
+  function vueRattacher(hote) {
+    const f = cache.aRattacher;
+    hote.innerHTML = '<div class="pt-bloc">'
+      + '<div class="pt-alerte"><b>Ce que PILOT a refusé de rattacher.</b> Un enregistrement n\'apparaît sur une '
+      + 'fiche que si l\'identité est certaine — attribuer l\'ordonnance d\'un patient à un autre serait pire que '
+      + 'de ne rien afficher.<br>La correction se fait à la source : compléter une date de naissance, corriger '
+      + 'une orthographe, ou fusionner deux fiches.</div>'
       + (f.length ? f.map(function (x) {
           const raison = x.etat === 'homonyme' ? 'Homonymes — ' + E(x.motif)
                       : x.etat === 'ecart' ? 'Date de naissance différente de la fiche'
                       : 'Ce nom n\'est pas dans l\'annuaire';
-          return '<div class="pt-carte" style="cursor:default;align-items:flex-start">'
-            + '<span style="width:26px">' + x.ev.ico + '</span>'
-            + '<span style="flex:1;min-width:220px">'
-            + '<span class="pt-ev-t">' + E(x.nom) + ' ' + E(x.prenom) + (x.dob ? ' · ' + E(x.dob.split('-').reverse().join('/')) : '') + '</span>'
-            + '<div class="pt-ev-d">' + E(x.ev.lbl) + ' — ' + E(x.ev.titre)
-            + (x.ev.quand ? ' · ' + E(ptDateFr(x.ev.quand)) : '') + '</div>'
-            + '<div style="font-size:.78rem;color:#B45309;font-weight:600;margin-top:3px">' + raison + '</div>'
-            + (x.candidats.length ? '<div>' + x.candidats.map(c =>
-                '<span class="pt-cand">' + E(c.nom) + ' ' + E(c.prenom) + ' · ' + E(ptFr(c.dob)) + '</span>').join('') + '</div>' : '')
+          return '<div class="pt-ev"><span class="pt-ev-date">' + (x.ev.quand ? E(dateFr(x.ev.quand)) : '—') + '</span>'
+            + '<span>' + x.ev.ico + '</span><span>'
+            + '<span class="pt-ev-t">' + E(x.nom) + ' ' + E(x.prenom)
+            + (x.dob ? ' · ' + E(x.dob.split('-').reverse().join('/')) : '') + '</span>'
+            + '<div class="pt-ev-d">' + E(x.ev.lbl) + ' — ' + E(x.ev.titre) + '</div>'
+            + '<div style="font-size:.77rem;color:#B45309;font-weight:600">' + raison + '</div>'
+            + (x.candidats.length ? '<div>' + x.candidats.map(c => '<span class="pt-cand">' + E(c.nom) + ' '
+                + E(c.prenom) + ' · ' + (fr(c.dob) || '?') + '</span>').join('') + '</div>' : '')
             + '</span></div>';
-        }).join('')
-        : '<div class="pt-vide">Rien en attente : chaque enregistrement a trouvé son patient.</div>');
+        }).join('') : '<div class="pt-vide">Rien en attente : chaque enregistrement a trouvé son patient.</div>')
+      + '</div>';
   }
-
-  // ── Les doublons de l'annuaire ───────────────────────────────────────────
-  function ptVueDoublons(hote, dbl) {
-    hote.innerHTML =
-      '<div class="pt-alerte"><b>Deux fiches, une seule personne ?</b> Rien n\'est fusionné automatiquement : '
+  function vueDoublons(hote, dbl) {
+    hote.innerHTML = '<div class="pt-bloc">'
+      + '<div class="pt-alerte"><b>Deux fiches, une seule personne ?</b> Rien n\'est fusionné automatiquement : '
       + 'un nom de jeune fille et un nom marital, cela se tranche en connaissant la personne. '
-      + 'Les fiches de dates de naissance différentes sont, elles, deux personnes bien distinctes — '
-      + 'c\'est sain, et c\'est affiché pour que personne ne les fusionne par erreur.</div>'
+      + 'Les fiches de dates différentes sont deux personnes distinctes — affichées ici pour que '
+      + 'personne ne les fusionne par erreur.<br>Pour fusionner : revenez aux fiches, ouvrez celle à '
+      + 'absorber, « Fusionner cette fiche… », puis choisissez celle à conserver.</div>'
       + (dbl.length ? dbl.map(function (gp) {
-          const alerte = gp.nature === 'doublon probable';
-          return '<div class="pt-carte" style="cursor:default;align-items:flex-start">'
-            + '<span style="flex:1;min-width:220px">'
+          const al = gp.nature === 'doublon probable';
+          return '<div class="pt-ev"><span class="pt-ev-date">' + (al ? '⚠️' : '') + '</span><span></span><span>'
             + '<span class="pt-ev-t">' + E(gp.clef.replace('|', ' ')) + '</span>'
-            + '<div style="font-size:.78rem;font-weight:600;margin-top:2px;color:' + (alerte ? '#B45309' : 'var(--gray-500)') + '">'
-            + (alerte ? 'Doublon probable — mêmes nom, prénom et date' : 'Homonymes distincts — dates de naissance différentes') + '</div>'
-            + '<div>' + gp.fiches.map(c => '<span class="pt-cand">' + E(c.nom) + ' ' + E(c.prenom) + ' · ' + E(ptFr(c.dob)) + '</span>').join('') + '</div>'
-            + '</span></div>';
-        }).join('')
-        : '<div class="pt-vide">Aucun nom n\'apparaît deux fois dans l\'annuaire.</div>');
+            + '<div style="font-size:.77rem;font-weight:600;color:' + (al ? '#B45309' : 'var(--gray-500)') + '">'
+            + (al ? 'Doublon probable — mêmes nom, prénom et date' : 'Homonymes distincts — dates de naissance différentes') + '</div>'
+            + '<div>' + gp.fiches.map(c => '<span class="pt-cand">' + E(c.nom) + ' ' + E(c.prenom)
+                + ' · ' + (fr(c.dob) || '?') + '</span>').join('') + '</div></span></div>';
+        }).join('') : '<div class="pt-vide">Aucun nom n\'apparaît deux fois dans l\'annuaire.</div>')
+      + '</div>';
   }
 })();

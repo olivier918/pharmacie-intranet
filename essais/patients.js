@@ -103,5 +103,28 @@ t('« THOMAS Liliane » se sépare au premier espace',
   ptNomDeTexte('THOMAS Liliane').nom==='THOMAS' && ptNomDeTexte('THOMAS Liliane').prenom==='Liliane');
 t('un prénom composé reste entier', ptNomDeTexte('NDAO Papa Demba').prenom==='Papa Demba');
 
+console.log('\nLes alias — ce qui rend une fusion utile');
+// Sans alias, fusionner deux fiches ne ramene pas l'historique : il est
+// rapproche PAR LE NOM. C'est le point qui fait la difference entre un outil
+// de fusion reel et un outil cosmetique.
+global.patients=[{id:'pt:M',nom:'MARTIN',prenom:'Marie',dob:'1970-01-01',
+                  alias:[{nom:'DUPONT',prenom:'Marie'}]}];
+global.deliveries=[{id:20,nom:'DUPONT',prenom:'Marie',date:'2026-03-01',lieu:'Domicile',status:'done'},
+                   {id:21,nom:'MARTIN',prenom:'Marie',date:'2026-09-01',lieu:'Domicile',status:'done'}];
+['preps','renouvellements','renouvArchives','credits','locations','bpmList','smsLog','controles','retours']
+  .forEach(k=>{ global[k]=[]; G[k]=global[k]; });
+G.patients=global.patients; G.deliveries=global.deliveries;
+const ra=ptBalayer();
+t('l’historique saisi sous le nom de jeune fille remonte sur la fiche fusionnée',
+  (ra.parPatient.get('pt:M')||[]).length===2);
+t('... et rien ne part dans la file', ra.aRattacher.length===0);
+
+// Un alias ne doit pas non plus faire fusionner n'importe qui.
+global.patients.push({id:'pt:D',nom:'DUPONT',prenom:'Marie',dob:'1990-05-05'});
+G.patients=global.patients;
+const rb=ptBalayer();
+t('un vrai homonyme du nom aliasé redevient un doute, il n’est pas avalé',
+  rb.aRattacher.length===1 && rb.aRattacher[0].etat==='homonyme');
+
 console.log('\n'+ok+' réussi(s), '+ko+' échec(s)\n');
 process.exit(ko?1:0);
