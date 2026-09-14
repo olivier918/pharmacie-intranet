@@ -389,6 +389,45 @@ des informations de santé. En conséquence :
 
 ---
 
+## Le serveur dit tout au démarrage — le lire AVANT de supposer
+
+Nuit du 14 au 15/09/2026 : deux heures de fausses pistes (données écrasées ?
+blob régressé ? mauvaise base ?) alors que la réponse était en ligne 12 des
+logs du déploiement, depuis le début :
+
+```
+📁 Mode fichier local (pas de DATABASE_URL)
+🔑 Identite : 0/0 code(s) en empreinte, administrateur par ADMIN_PASSWORD
+⛔ AUCUN code ne permet d'ouvrir une session : personne ne pourra se connecter.
+```
+
+**Devant une panne d'application, les logs du démarrage passent avant toute
+hypothèse.** Ce bandeau existe précisément pour répondre à « sur quoi suis-je
+branché et qui peut entrer ». Une session qui propose une explication sans
+l'avoir lu fait perdre du temps à tout le monde.
+
+Deux pièges de configuration en découlent, et ils valent au-delà de cet
+incident :
+
+- **Une variable de connexion recopiée en dur est une bombe à retardement.**
+  `DATABASE_URL` était une copie figée contenant le mot de passe ; la rotation
+  de ce mot de passe a cassé l'application. Une référence
+  `${{Postgres.DATABASE_URL}}` suit toute seule. Attention : `${{DATABASE_URL}}`
+  sans nom de service se pointe elle-même, se résout à VIDE, et ne produit
+  aucune erreur.
+- **`REQUIRE_DB=1` n'est pas un confort.** Sans elle, une `DATABASE_URL`
+  absente ou vide fait démarrer le serveur « avec succès » sur un fichier local
+  qui n'existe pas dans le dépôt : zéro collaborateur, zéro empreinte, et le
+  mot de passe de secours `ADMIN_PASSWORD` qui donne l'illusion que
+  l'application fonctionne. Un serveur qui ne peut pas faire son travail doit
+  refuser de démarrer, pas dégrader en silence.
+
+Corollaire pour les écrans : « Code incorrect » disait la vérité et était
+parfaitement trompeur. Un message d'erreur qui ne distingue pas « le code est
+faux » de « il n'y a aucun code à comparer » envoie chercher au mauvais
+endroit. Quand deux causes opposées produisent le même message, il faut un
+instrument qui les sépare — ici `outils/reposer-un-code-pin.js --verifier`.
+
 ## Vérifier avant de proposer
 
 Il n'y a ni test automatisé ni étape de compilation. Au minimum :
