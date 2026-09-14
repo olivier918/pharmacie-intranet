@@ -436,7 +436,7 @@ app.get('/api/coffre/etat', async (req, res) => {
     // donc normal — mais il ne doit jamais cacher un renvoi SANS fichier.
     // C'est precisement ce qui s'est produit le 13/09, et ce qu'on avait
     // explique au lieu de le compter.
-    let uniques = 0, manquants = 0, orphelins = 0, dou = [], ailleurs = 0;
+    let uniques = 0, manquants = 0, orphelins = 0, dou = [], ailleurs = 0, echantillon = [];
     try {
       const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
       const blob = (cur.rows[0] && cur.rows[0].data) || {};
@@ -457,6 +457,12 @@ app.get('/api/coffre/etat', async (req, res) => {
         perdus.forEach(id => (attendues.get(id) || []).forEach(c => { parRubrique[c] = (parRubrique[c] || 0) + 1; }));
         dou = Object.entries(parRubrique).sort((a, b) => b[1] - a[1]).slice(0, 8)
           .map(([chemin, n]) => ({ chemin, n }));
+        // Un compteur qui annonce une perte doit pouvoir la MONTRER. Deux
+        // compteurs se sont deja contredits sur ce sujet ; celui qui ne sait
+        // pas nommer ce qu'il compte a tort par defaut.
+        echantillon = perdus.slice(0, 6).map(function (id) {
+          return { id: id, ou: (attendues.get(id) || []).join(', ') };
+        });
         orphelins = Math.max(0, (+l.total || 0) - presents.size);
       } else {
         orphelins = +l.total || 0;
@@ -482,7 +488,7 @@ app.get('/api/coffre/etat', async (req, res) => {
 
     res.json({ ok: true, actif: d.actif, marque: d.marque, anciennes: d.anciennes, erreur: d.erreur,
       clair: +l.clair || 0, chiffres: +l.chiffres || 0, aReemballer: +l.areemballer || 0, total: +l.total || 0,
-      uniques, manquants, orphelins, ailleurs, dou, tailles });
+      uniques, manquants, orphelins, ailleurs, dou, echantillon, tailles });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
