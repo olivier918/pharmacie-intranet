@@ -3127,7 +3127,7 @@ async function imgDataURL(v){
   if(!v) return '';
   if(!estIdImage(v)) return v;
   try{
-    const r=await fetch('/api/images/'+v); if(!r.ok) return '';
+    const r=await fetch('/api/images/'+v,{cache:'no-store'}); if(!r.ok) return '';
     const b=await r.blob();
     return await new Promise(function(res){ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>res(''); fr.readAsDataURL(b); });
   }catch(e){ return ''; }
@@ -6604,7 +6604,15 @@ async function restaurerScansPerdus(){
   });
   const morts=[];
   for(const c of cibles){
-    try{ const r=await fetch('/api/images/'+c.id,{method:'GET'}); if(!r.ok) morts.push(c); }
+    // `cache:'no-store'` N'EST PAS UN DETAIL. /api/images renvoie
+    // `immutable, max-age=1 an` — justifie, puisque le nom d'une image EST son
+    // contenu. Mais sans cette option le navigateur repond depuis SA memoire
+    // et n'interroge jamais le serveur : un scan supprime continue de
+    // « repondre » pendant un an sur les postes qui l'ont deja affiche. C'est
+    // ce qui a fait annoncer « aucun scan manquant » les 13 et 14/09 alors que
+    // 26 ordonnances avaient disparu. Une verification qui lit un cache ne
+    // verifie rien.
+    try{ const r=await fetch('/api/images/'+c.id,{method:'GET',cache:'no-store'}); if(!r.ok) morts.push(c); }
     catch(e){ morts.push(c); }
   }
   if(!morts.length){ dire('<b style="color:#2E7D32">Aucun scan manquant.</b> Les '+cibles.length+' références répondent toutes.'); return; }
@@ -6642,7 +6650,7 @@ async function restaurerScansPerdus(){
         // L'identifiant rendu DOIT etre celui qu'attend la fiche. S'il differe,
         // c'est que le contenu n'est pas le bon : on ne touche a rien et on le dit.
         if(j.id!==c.id){ echecs.push(c.qui+' — '+c.quoi+' : contenu different de celui attendu'); reste.splice(i,1); continue; }
-        const v=await fetch('/api/images/'+c.id,{method:'GET'});
+        const v=await fetch('/api/images/'+c.id,{method:'GET',cache:'no-store'});
         if(!v.ok){ echecs.push(c.qui+' — '+c.quoi+' : toujours introuvable après envoi'); reste.splice(i,1); continue; }
         rendus++; reste.splice(i,1);
       }catch(e){ echecs.push(c.qui+' — '+c.quoi+' : '+(e.message||'erreur')); reste.splice(i,1); }
@@ -6703,7 +6711,7 @@ async function retirerScansRepris(){
         const attenduB64=String(z.obj.scanData).split(',')[1]||'';
         const attendu=Math.floor(attenduB64.replace(/=+$/,'').length*3/4);
         const id=z.obj.scanId;
-        const v=await fetch('/api/images/'+id);
+        const v=await fetch('/api/images/'+id,{cache:'no-store'});
         if(!v.ok){ gardes.push(c.qui+' ('+c.quoi+') : copie inaccessible — original conservé'); continue; }
         const buf=await v.arrayBuffer();
         if(Math.abs(buf.byteLength-attendu)>2){
@@ -11237,7 +11245,7 @@ async function reprisePhotosSignatures(){
         const id=await imgTeleverser(clair);
         if(!estIdImage(id)){ rates.push(c.qui+' — '+c.champ+' : dépôt refusé'); continue; }
         // On RELIT avant de remplacer : c'est toute la garantie.
-        const v=await fetch('/api/images/'+id);
+        const v=await fetch('/api/images/'+id,{cache:'no-store'});
         if(!v.ok){ rates.push(c.qui+' — '+c.champ+' : introuvable après dépôt'); continue; }
         const relu=await imgDataURL(id);
         if(!relu || relu.length<100){ rates.push(c.qui+' — '+c.champ+' : relecture vide'); continue; }
