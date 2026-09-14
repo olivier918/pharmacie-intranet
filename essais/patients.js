@@ -126,5 +126,60 @@ const rb=ptBalayer();
 t('un vrai homonyme du nom aliasé redevient un doute, il n’est pas avalé',
   rb.aRattacher.length===1 && rb.aRattacher[0].etat==='homonyme');
 
+console.log('\nLa fusion depuis l’écran des doublons');
+// L'ecran a besoin d'un document ; on lui en donne juste assez pour que le
+// rendu s'arrete tout seul, et on eprouve le GESTE, pas l'affichage.
+global.document={getElementById:()=>null,createElement:()=>({}),head:{appendChild(){}}};
+let demande=null, avertissement=null;
+global.confirm=m=>{demande=m;return true;};
+global.alert=m=>{avertissement=m;};
+global.isAdmin=()=>true;
+global.saveNow=()=>{};
+global.logAction=()=>{};
+
+global.patients=[
+  {id:'a',nom:'MULLER',prenom:'Jérôme',dob:'1950-04-02'},
+  {id:'b',nom:'Muller',prenom:'jerome',dob:'1950-04-02',tel:'0600',adresse:'3 rue du Parc'},
+  {id:'c',nom:'MARTIN',prenom:'Jean',dob:'1940-05-05'},
+  {id:'d',nom:'MARTIN',prenom:'Jean',dob:'1972-11-30'}];
+G.patients=global.patients;
+['deliveries','preps','renouvellements','renouvArchives','credits','locations','bpmList','smsLog','controles','retours']
+  .forEach(k=>{ global[k]=[]; G[k]=global[k]; });
+
+G.ptFusionGroupe(ptClef('MULLER','Jérôme'));
+t('le doublon est réuni en une seule fiche', patients.filter(p=>ptClef(p.nom,p.prenom)===ptClef('MULLER','Jérôme')).length===1);
+const garde=patients.find(p=>ptClef(p.nom,p.prenom)===ptClef('MULLER','Jérôme'));
+t('c’est la fiche la PLUS RENSEIGNÉE qui survit', garde.id==='b' && garde.tel==='0600');
+t('la confirmation dit laquelle est conservée', /Fiche conservée : Muller jerome/.test(demande||''));
+// Deux orthographes du MEME nom donnent la meme cle : un alias n'apporterait
+// rien et encombrerait la fiche. Il ne sert que quand les noms different
+// vraiment — nom de jeune fille contre nom marital.
+t('une simple variante d’orthographe n’ajoute pas d’alias inutile', !(garde.alias||[]).length);
+
+global.patients=[{id:'m',nom:'MARTIN',prenom:'Marie',dob:'1970-01-01',tel:'0611'},
+                 {id:'j',nom:'DUPONT',prenom:'Marie',dob:'1970-01-01'}];
+G.patients=global.patients;
+// Deux noms differents ne forment pas un « doublon » detectable : la fusion se
+// fait alors fiche a fiche, et c'est la meme mecanique qui opere.
+G.ptFusionDepuis(); // aucune fiche choisie : ne doit rien casser
+G.ptFusionGroupe(ptClef('DUPONT','Marie'));
+t('un nom seul dans son groupe n’est pas « fusionné » avec lui-même', patients.length===2);
+
+// Le garde-fou qui compte : deux dates differentes ne fusionnent pas, meme
+// si on force le geste sur le groupe.
+global.patients=[{id:'c',nom:'MARTIN',prenom:'Jean',dob:'1940-05-05'},
+                 {id:'d',nom:'MARTIN',prenom:'Jean',dob:'1972-11-30'}];
+G.patients=global.patients;
+avertissement=null;
+G.ptFusionGroupe(ptClef('MARTIN','Jean'));
+t('deux homonymes de dates différentes ne sont PAS fusionnés', patients.filter(p=>p.nom==='MARTIN').length===2);
+t('... et le refus est expliqué', /dates de naissance différentes/.test(avertissement||''));
+
+// Un refus de l'operateur ne doit rien changer.
+global.confirm=()=>false;
+const n=patients.length;
+G.ptFusionGroupe(ptClef('MARTIN','Jean'));
+t('annuler la confirmation ne touche à rien', patients.length===n);
+
 console.log('\n'+ok+' réussi(s), '+ko+' échec(s)\n');
 process.exit(ko?1:0);

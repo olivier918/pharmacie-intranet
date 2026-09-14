@@ -420,6 +420,69 @@
   //   2. la fiche absorbée laisse son NOM en alias — sans quoi son historique,
   //      rapproché par le nom, disparaîtrait de la fiche survivante ;
   //   3. rien n'est écrasé : on ne comble que les champs vides.
+  // Le geste lui-meme, isole : il sert la fusion piece a piece depuis une
+  // fiche, et la fusion d'un groupe depuis l'ecran des doublons. Un seul
+  // endroit ou les garde-fous sont ecrits.
+  function absorber(src, cib) {
+    const dS = window.ptNaiss(src.dob), dC = window.ptNaiss(cib.dob);
+    if (dS && dC && dS !== dC) return { ok: false, motif: 'dates de naissance différentes' };
+    ['dob', 'adresse', 'commune', 'tel', 'mail'].forEach(function (k) { if (!cib[k] && src[k]) cib[k] = src[k]; });
+    cib.alias = cib.alias || [];
+    const clefC = window.ptClef(cib.nom, cib.prenom);
+    [{ nom: src.nom, prenom: src.prenom }].concat(src.alias || []).forEach(function (a) {
+      if (!a || !a.nom) return;
+      const k = window.ptClef(a.nom, a.prenom);
+      if (k === clefC) return;
+      if (cib.alias.some(x => window.ptClef(x.nom, x.prenom) === k)) return;
+      cib.alias.push({ nom: a.nom, prenom: a.prenom });
+    });
+    cib.updatedAt = Date.now();
+    patients.splice(patients.indexOf(src), 1);
+    if (typeof logAction === 'function') logAction('Fusion de fiches patients', src.nom + ' ' + src.prenom + ' → ' + cib.nom + ' ' + cib.prenom);
+    if (typeof tracer === 'function') tracer('modification', 'patient', cib.id, 'Fusion de deux fiches patients');
+    return { ok: true };
+  }
+  // Laquelle survit ? La plus renseignee, et a egalite celle qui porte le plus
+  // d'historique. Choisir au hasard ferait perdre des coordonnees.
+  function laPlusComplete(fiches) {
+    return fiches.slice().sort(function (a, b) {
+      const remplis = p => ['dob', 'adresse', 'commune', 'tel', 'mail'].filter(k => p[k]).length;
+      const ev = p => ((cache && cache.parPatient.get(p.id)) || []).length;
+      return (remplis(b) - remplis(a)) || (ev(b) - ev(a));
+    })[0];
+  }
+
+  // Fusion d'un groupe entier, depuis l'ecran des doublons.
+  window.ptFusionGroupe = function (clef) {
+    if (typeof isAdmin === 'function' && !isAdmin()) { alert('Réservé aux administrateurs.'); return; }
+    const fiches = (typeof patients !== 'undefined' ? patients : [])
+      .filter(p => window.ptClef(p.nom, p.prenom) === clef);
+    if (fiches.length < 2) { window.ptRender(); return; }
+    const cib = laPlusComplete(fiches);
+    const autres = fiches.filter(p => p !== cib);
+    const nEv = fiches.reduce((n, p) => n + ((cache && cache.parPatient.get(p.id)) || []).length, 0);
+
+    if (!confirm('Réunir ' + fiches.length + ' fiches en une seule ?\n\n'
+      + 'Fiche conservée : ' + cib.nom + ' ' + cib.prenom + (fr(cib.dob) ? ' (' + fr(cib.dob) + ')' : '')
+      + ' — la plus renseignée.\n'
+      + 'Absorbée(s) : ' + autres.map(p => p.nom + ' ' + p.prenom).join(', ') + '\n\n'
+      + 'Les champs vides de la fiche conservée seront comblés ; aucun ne sera écrasé.\n'
+      + 'Les noms absorbés sont gardés comme autres noms, pour que l\'historique saisi sous '
+      + 'ces noms-là continue d\'y remonter'
+      + (nEv ? ' (' + nEv + ' événement(s) concerné(s))' : '') + '.')) return;
+
+    let faits = 0; const refus = [];
+    autres.forEach(function (src) {
+      const r = absorber(src, cib);
+      if (r.ok) faits++; else refus.push(src.nom + ' ' + src.prenom + ' : ' + r.motif);
+    });
+    if (faits && typeof saveNow === 'function') saveNow();
+    else if (faits && typeof schedSave === 'function') schedSave();
+    if (refus.length) alert('Fusion partielle.\n\nNon fusionnée(s) :\n• ' + refus.join('\n• '));
+    choisi = cib.id;
+    window.ptRender();
+  };
+
   window.ptFusionDepuis = function () { fusionDe = choisi; window.ptRender(); };
   window.ptFusionAnnuler = function () { fusionDe = null; window.ptRender(); };
   window.ptFusionner = function () {
@@ -444,20 +507,7 @@
       + (nEv ? ' (' + nEv + ' événement(s) concerné(s))' : '') + '.\n\n'
       + 'Les champs vides de la fiche conservée seront comblés ; aucun ne sera écrasé.')) return;
 
-    ['dob', 'adresse', 'commune', 'tel', 'mail'].forEach(function (k) { if (!cib[k] && src[k]) cib[k] = src[k]; });
-    cib.alias = cib.alias || [];
-    const clefC = window.ptClef(cib.nom, cib.prenom);
-    [{ nom: src.nom, prenom: src.prenom }].concat(src.alias || []).forEach(function (a) {
-      if (!a || !a.nom) return;
-      if (window.ptClef(a.nom, a.prenom) === clefC) return;
-      if (cib.alias.some(x => window.ptClef(x.nom, x.prenom) === window.ptClef(a.nom, a.prenom))) return;
-      cib.alias.push({ nom: a.nom, prenom: a.prenom });
-    });
-    cib.updatedAt = Date.now();
-    patients.splice(patients.indexOf(src), 1);
-
-    if (typeof logAction === 'function') logAction('Fusion de fiches patients', src.nom + ' ' + src.prenom + ' → ' + cib.nom + ' ' + cib.prenom);
-    if (typeof tracer === 'function') tracer('modification', 'patient', cib.id, 'Fusion de deux fiches patients');
+    if (!absorber(src, cib).ok) return;
     if (typeof saveNow === 'function') saveNow(); else if (typeof schedSave === 'function') schedSave();
     fusionDe = null; choisi = cib.id;
     window.ptRender();
@@ -492,16 +542,25 @@
       + '<div class="pt-alerte"><b>Deux fiches, une seule personne ?</b> Rien n\'est fusionné automatiquement : '
       + 'un nom de jeune fille et un nom marital, cela se tranche en connaissant la personne. '
       + 'Les fiches de dates différentes sont deux personnes distinctes — affichées ici pour que '
-      + 'personne ne les fusionne par erreur.<br>Pour fusionner : revenez aux fiches, ouvrez celle à '
-      + 'absorber, « Fusionner cette fiche… », puis choisissez celle à conserver.</div>'
+      + 'personne ne les fusionne par erreur.</div>'
       + (dbl.length ? dbl.map(function (gp) {
           const al = gp.nature === 'doublon probable';
+          // Le bouton n'apparait que sur les doublons probables : sur des
+          // homonymes distincts, il ne ferait que declencher un refus, et un
+          // bouton qui refuse toujours apprend a ignorer les refus.
+          const garde = al ? laPlusComplete(gp.fiches) : null;
           return '<div class="pt-ev"><span class="pt-ev-date">' + (al ? '⚠️' : '') + '</span><span></span><span>'
+            + '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">'
             + '<span class="pt-ev-t">' + E(gp.clef.replace('|', ' ')) + '</span>'
+            + (al ? '<button class="btn bp sm" style="margin-left:auto" onclick="ptFusionGroupe(\''
+                + E(gp.clef).replace(/'/g, '&#39;') + '\')">Réunir en une fiche</button>' : '')
+            + '</div>'
             + '<div style="font-size:.77rem;font-weight:600;color:' + (al ? '#B45309' : 'var(--gray-500)') + '">'
             + (al ? 'Doublon probable — mêmes nom, prénom et date' : 'Homonymes distincts — dates de naissance différentes') + '</div>'
-            + '<div>' + gp.fiches.map(c => '<span class="pt-cand">' + E(c.nom) + ' ' + E(c.prenom)
-                + ' · ' + (fr(c.dob) || '?') + '</span>').join('') + '</div></span></div>';
+            + '<div>' + gp.fiches.map(c => '<span class="pt-cand"'
+                + (garde === c ? ' style="border-color:var(--g-mid);background:var(--g-pale);font-weight:600"' : '')
+                + '>' + E(c.nom) + ' ' + E(c.prenom) + ' · ' + (fr(c.dob) || '?')
+                + (garde === c ? ' — conservée' : '') + '</span>').join('') + '</div></span></div>';
         }).join('') : '<div class="pt-vide">Aucun nom n\'apparaît deux fois dans l\'annuaire.</div>')
       + '</div>';
   }
