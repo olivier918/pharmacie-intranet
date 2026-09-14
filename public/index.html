@@ -11319,7 +11319,7 @@ async function cfEtat(){
            +j.manquants+' image(s) attendue(s) sans fichier correspondant.</b> Lancez « Restaurer les scans manquants » ci-dessus.'
            +(j.echantillon&&j.echantillon.length
               ? '<div style="margin-top:5px;font-family:ui-monospace,monospace;font-size:.82em;color:#7F1D1D">'
-                +j.echantillon.map(function(x){ return esc(x.id)+' — '+esc(x.ou); }).join('<br>')+'</div>'
+                +j.echantillon.map(function(x){ return esc(x.id)+' — '+esc(x.ou)+(x.seul?' → '+esc(x.seul):''); }).join('<br>')+'</div>'
               : '')
            +(j.dou&&j.dou.length
               ? '<div style="margin-top:5px;font-family:ui-monospace,monospace;font-size:.9em;color:#7F1D1D">'

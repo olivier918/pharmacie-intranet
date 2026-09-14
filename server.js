@@ -460,9 +460,20 @@ app.get('/api/coffre/etat', async (req, res) => {
         // Un compteur qui annonce une perte doit pouvoir la MONTRER. Deux
         // compteurs se sont deja contredits sur ce sujet ; celui qui ne sait
         // pas nommer ce qu'il compte a tort par defaut.
-        echantillon = perdus.slice(0, 6).map(function (id) {
-          return { id: id, ou: (attendues.get(id) || []).join(', ') };
-        });
+        // UN COMPTEUR DOIT PROUVER SON AFFIRMATION. Celui-ci s'appuie sur un
+        // `WHERE id = ANY(...)` ; le navigateur, lui, demande /api/images/<id>
+        // et voit l'ordonnance s'afficher. Les deux ne peuvent pas avoir
+        // raison. On refait donc la recherche UN PAR UN, exactement comme la
+        // route de lecture, et on dit ce que chacune repond.
+        echantillon = [];
+        for (const id of perdus.slice(0, 8)) {
+          let seul = null;
+          try {
+            const u = await db.query('SELECT id FROM app_images WHERE id = $1', [id]);
+            seul = u.rows.length ? 'TROUVE a l unite' : 'absent a l unite aussi';
+          } catch (e) { seul = 'erreur : ' + e.message; }
+          echantillon.push({ id: id, ou: (attendues.get(id) || []).join(', '), seul: seul });
+        }
         orphelins = Math.max(0, (+l.total || 0) - presents.size);
       } else {
         orphelins = +l.total || 0;
