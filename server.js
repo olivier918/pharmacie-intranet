@@ -484,18 +484,31 @@ app.get('/api/coffre/etat', async (req, res) => {
     // qui doit dimensionner un plan d'hebergement, jamais une estimation faite
     // sur la taille du JSON.
     let tailles = null;
+    // Meme precaution que pour l'instantane : ces deux lectures touchent
+    // l'historique, qui peut etre verrouille par un compactage en cours. Une
+    // carte de diagnostic qui reste suspendue n'informe personne et occupe une
+    // place du pool. Deux secondes, puis on affiche le reste sans les tailles.
+    let clT = null;
     try {
-      const tr = await db.query(
+      clT = await db.connect();
+      await clT.query("SET lock_timeout = '2s'");
+      const tr = await clT.query(
         "SELECT relname AS table, pg_total_relation_size(c.oid) AS octets"
         + " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
         + " WHERE n.nspname = current_schema() AND relkind = 'r'"
         + "   AND relname IN ('app_data','app_data_history','app_images','app_acces','app_temperatures')"
         + " ORDER BY 2 DESC");
-      const h = await db.query('SELECT COUNT(*) AS n, MIN(created_at) AS plusVieux FROM app_data_history');
+      const h = await clT.query('SELECT COUNT(*) AS n, MIN(created_at) AS plusVieux FROM app_data_history');
       tailles = { tables: tr.rows.map(r => ({ table: r.table, ko: Math.round(+r.octets / 1024) })),
                   instantanes: +(h.rows[0] || {}).n || 0,
                   plusVieux: (h.rows[0] || {}).plusvieux || null };
     } catch (e) { /* diagnostic, jamais bloquant */ }
+    finally {
+      if (clT) {
+        try { await clT.query('RESET lock_timeout'); } catch (e) { /* tant pis */ }
+        clT.release();
+      }
+    }
 
     res.json({ ok: true, actif: d.actif, marque: d.marque, anciennes: d.anciennes, erreur: d.erreur,
       clair: +l.clair || 0, chiffres: +l.chiffres || 0, aReemballer: +l.areemballer || 0, total: +l.total || 0,
@@ -1164,26 +1177,47 @@ async function marquerCreditPaye(creditId, info) {
 async function snapshotCurrent() {
   try {
     if (db) {
-      // Throttle : pas de nouvel instantané si le dernier est très récent (évite les doublons pendant l'édition)
-      const last = await db.query('SELECT created_at FROM app_data_history ORDER BY id DESC LIMIT 1');
-      if (last.rows.length) {
-        const ageMin = (Date.now() - new Date(last.rows[0].created_at).getTime()) / 60000;
-        if (ageMin < maint.HISTORY_MIN_INTERVAL_MIN) return;
-      }
-      const cur = await db.query('SELECT data FROM app_data WHERE id = 1');
-      const data = cur.rows[0] && cur.rows[0].data;
-      if (data && Object.keys(data).length > 0) {
-        // Instantané ALLÉGÉ (sans les champs lourds régénérables)
-        await db.query('INSERT INTO app_data_history (data) VALUES ($1)', [JSON.stringify(maint.slimForHistory(data))]);
-        // Elagage par age : fin sur les heures recentes, grossier sur les mois.
-        const toutes = await db.query('SELECT id, created_at FROM app_data_history');
-        const aJeter = maint.elagage(toutes.rows, Date.now());
-        if (aJeter.length) await db.query('DELETE FROM app_data_history WHERE id = ANY($1)', [aJeter]);
-        // Filet, si la regle de temps laissait tout passer.
-        await db.query(
-          `DELETE FROM app_data_history
-             WHERE id NOT IN (SELECT id FROM app_data_history ORDER BY id DESC LIMIT ${MAX_HISTORY})`
-        );
+      // Un instantane ne doit JAMAIS retarder la sauvegarde qu'il protege.
+      // Cette fonction est ATTENDUE par /api/data : tant qu'elle n'a pas rendu
+      // la main, le poste qui enregistre patiente. Or la table d'historique
+      // peut etre verrouillee — c'est exactement ce que fait un compactage
+      // (VACUUM FULL, voir /api/base/compacter). Sans garde-fou, les quinze
+      // postes de l'officine resteraient figes le temps de la reecriture, et
+      // le pool de connexions se remplirait d'attentes.
+      //
+      // On borne donc l'attente d'un verrou a deux secondes. Au-dela, on
+      // RENONCE a l'instantane et la sauvegarde continue. Meme regle que pour
+      // le journal des acces : ce qui accompagne une action ne doit jamais
+      // faire echouer l'action. Perdre un point de restauration pendant une
+      // maintenance annoncee est sans consequence ; bloquer l'officine, non.
+      const cl = await db.connect();
+      try {
+        await cl.query("SET lock_timeout = '2s'");
+        // Throttle : pas de nouvel instantané si le dernier est très récent (évite les doublons pendant l'édition)
+        const last = await cl.query('SELECT created_at FROM app_data_history ORDER BY id DESC LIMIT 1');
+        if (last.rows.length) {
+          const ageMin = (Date.now() - new Date(last.rows[0].created_at).getTime()) / 60000;
+          if (ageMin < maint.HISTORY_MIN_INTERVAL_MIN) return;
+        }
+        const cur = await cl.query('SELECT data FROM app_data WHERE id = 1');
+        const data = cur.rows[0] && cur.rows[0].data;
+        if (data && Object.keys(data).length > 0) {
+          // Instantané ALLÉGÉ (sans les champs lourds régénérables)
+          await cl.query('INSERT INTO app_data_history (data) VALUES ($1)', [JSON.stringify(maint.slimForHistory(data))]);
+          // Elagage par age : fin sur les heures recentes, grossier sur les mois.
+          const toutes = await cl.query('SELECT id, created_at FROM app_data_history');
+          const aJeter = maint.elagage(toutes.rows, Date.now());
+          if (aJeter.length) await cl.query('DELETE FROM app_data_history WHERE id = ANY($1)', [aJeter]);
+          // Filet, si la regle de temps laissait tout passer.
+          await cl.query(
+            `DELETE FROM app_data_history
+               WHERE id NOT IN (SELECT id FROM app_data_history ORDER BY id DESC LIMIT ${MAX_HISTORY})`
+          );
+        }
+      } finally {
+        // La connexion repart au pool : elle ne doit pas emporter le reglage.
+        try { await cl.query('RESET lock_timeout'); } catch (e) { /* tant pis */ }
+        cl.release();
       }
     } else {
       refuserDisque('snapshot historique');
@@ -1205,7 +1239,11 @@ async function snapshotCurrent() {
       }
     }
   } catch (e) {
-    console.warn('Snapshot historique:', e.message);
+    // 55P03 = lock_not_available : la table est verrouillee par une
+    // maintenance. Ce n'est pas une panne, et surtout pas une raison de faire
+    // echouer la sauvegarde en cours.
+    if (e && e.code === '55P03') console.warn('Snapshot historique : table verrouillee (maintenance), instantane saute.');
+    else console.warn('Snapshot historique:', e.message);
   }
 }
 
