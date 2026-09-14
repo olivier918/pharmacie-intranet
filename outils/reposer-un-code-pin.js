@@ -70,6 +70,36 @@ function demander(invite) {
 }
 
 (async () => {
+  // ── Mode verification ────────────────────────────────────────────────────
+  // Repond a UNE question : le code que j'ai en tete correspond-il a ce que la
+  // base contient ? Sans navigateur, sans serveur, sans rien ecrire. C'est ce
+  // qui separe « je me suis trompe de code » de « l'application ne lit pas
+  // cette base » — deux pannes identiques a l'ecran, opposees dans les faits.
+  //
+  //   node outils/reposer-un-code-pin.js --verifier <pinSel> <pinHash>
+  //
+  // Le sel et l'empreinte ne sont pas des secrets : ils sont deja en base, et
+  // on ne remonte pas d'eux au code.
+  if (process.argv[2] === '--verifier') {
+    const sel = String(process.argv[3] || '').trim();
+    const hash = String(process.argv[4] || '').trim();
+    if (!/^[0-9a-f]{32}$/.test(sel) || !/^[0-9a-f]{64}$/.test(hash)) {
+      sortir('Usage : node outils/reposer-un-code-pin.js --verifier <pinSel> <pinHash>\n'
+        + '     Les deux valeurs se lisent en base, elles ne sont pas secretes.');
+    }
+    const code = await demander('  Code a verifier : ');
+    const calcule = empreinte(code, sel);
+    if (calcule === hash) {
+      console.log('\n  \u2705 CE CODE CORRESPOND a ce que contient la base.');
+      console.log('     Si l\'ecran le refuse quand meme, ce n\'est pas le code :');
+      console.log('     c\'est que l\'application ne lit pas cette base-la.\n');
+      process.exit(0);
+    }
+    console.log('\n  \u274c Ce code NE correspond PAS a ce que contient la base.');
+    console.log('     Reposez-en un : node outils/reposer-un-code-pin.js <fiche>\n');
+    process.exit(1);
+  }
+
   const fiche = String(process.argv[2] || '').trim();
   if (!fiche) sortir('Indiquez l\'identifiant de la fiche.\n     node outils/reposer-un-code-pin.js OF');
   if (!/^[A-Za-z0-9_-]{1,16}$/.test(fiche)) sortir('Identifiant de fiche inattendu : ' + fiche);
