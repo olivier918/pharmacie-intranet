@@ -11167,6 +11167,20 @@ async function cfEtat(){
       +(j.ailleurs?'<div style="color:var(--gray-500);margin-top:3px">'+j.ailleurs
         +' autre(s) chaîne(s) de 32 caractères ailleurs dans les données — pierres tombales, journaux, archives. '
         +'Ce ne sont pas des images : elles ne sont pas comptées ici.</div>':'')
+      // Ce que la base occupe REELLEMENT, compression comprise : le seul chiffre
+      // qui doive servir a choisir un plan d'hebergement.
+      +(j.tailles&&j.tailles.tables&&j.tailles.tables.length
+        ? '<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--gray-200)">'
+          +'<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.6px;font-weight:700;color:var(--gray-500);margin-bottom:.4rem">'
+          +'Place réellement occupée en base — '+Math.round(j.tailles.tables.reduce((t,x)=>t+x.ko,0)/1024*10)/10+' Mo au total</div>'
+          +j.tailles.tables.map(function(x){
+             return '<div style="display:flex;gap:10px;font-size:.82rem"><span style="width:170px;font-family:ui-monospace,monospace">'
+               +esc(x.table)+'</span><b>'+(x.ko>1024?(Math.round(x.ko/1024*10)/10+' Mo'):(x.ko+' Ko'))+'</b></div>'; }).join('')
+          +'<div style="font-size:.8rem;color:var(--gray-500);margin-top:5px">'
+          +j.tailles.instantanes+' instantané(s) d\u2019historique'
+          +(j.tailles.plusVieux?' · le plus ancien remonte au '+new Date(j.tailles.plusVieux).toLocaleString('fr-FR'):'')
+          +'</div></div>'
+        : '')
       +(j.manquants
          ? '<div style="margin-top:6px;background:#FFEBEE;border-radius:8px;padding:7px 10px"><b style="color:#B91C1C">'
            +j.manquants+' image(s) attendue(s) sans fichier correspondant.</b> Lancez « Restaurer les scans manquants » ci-dessus.'

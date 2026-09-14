@@ -50,6 +50,62 @@ const HISTORY_MIN_INTERVAL_MIN = parseInt(process.env.HISTORY_MIN_INTERVAL_MIN |
 // annees a la purge du blob vivant.
 const HISTORY_STRIP_FIELDS = ['bonPdfHtml', 'pdfVersions', 'image'];
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  L'HISTORIQUE — on conserve une DUREE, pas un NOMBRE
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  L'ancien reglage gardait « les 300 derniers instantanes ». Le compte parait
+//  genereux ; il ne l'est pas. Un instantane est pris a chaque ecriture, au
+//  rythme maximal d'un toutes les cinq minutes : une officine ouverte dix
+//  heures avec dix-huit personnes qui saisissent en produit environ cent-vingt
+//  par jour. **Trois cents instantanes, c'est deux jours et demi.**
+//
+//  Le pire des deux mondes : cher en place, et court en couverture. Les scans
+//  supprimes le 13/09 ont ete retrouves dans l'historique parce que la perte a
+//  ete remarquee le LENDEMAIN. Un probleme du vendredi decouvert le lundi
+//  n'aurait plus rien trouve.
+//
+//  On garde donc une duree, avec une resolution qui se relache en vieillissant
+//  — ce qu'on veut d'un historique : fin sur l'heure qui vient de passer,
+//  grossier sur le trimestre. Meme place occupee, couverture sans commune
+//  mesure.
+const PALIERS = [
+  { jusquHeures: 6,          pas: 0 },          // 6 dernieres heures : tout
+  { jusquHeures: 48,         pas: 60 },         // jusqu'a 2 jours : un par heure
+  { jusquHeures: 24 * 30,    pas: 60 * 24 },    // jusqu'a 30 jours : un par jour
+  { jusquHeures: 24 * 180,   pas: 60 * 24 * 7 } // jusqu'a 6 mois : un par semaine
+];
+// Filet : quoi qu'il arrive, les douze derniers restent. Une regle de temps mal
+// reglee ne doit jamais pouvoir vider l'historique.
+const PLANCHER_RECENTS = 12;
+
+// Rend la liste des identifiants A SUPPRIMER. Fonction pure : elle se teste
+// sans base, et c'est la seule facon d'etre sur d'une regle de retention.
+function elagage(lignes, maintenant) {
+  const t = maintenant || Date.now();
+  const tri = lignes.slice()
+    .map(l => ({ id: l.id, t: new Date(l.created_at).getTime() }))
+    .filter(l => isFinite(l.t))
+    .sort((a, b) => b.t - a.t);          // du plus recent au plus ancien
+
+  const garde = new Set();
+  tri.slice(0, PLANCHER_RECENTS).forEach(l => garde.add(l.id));
+
+  const dernierDuSeau = new Map();
+  tri.forEach(function (l) {
+    const ageH = (t - l.t) / 3600000;
+    const palier = PALIERS.find(p => ageH <= p.jusquHeures);
+    if (!palier) return;                  // au-dela du dernier palier : on jette
+    if (palier.pas === 0) { garde.add(l.id); return; }
+    // Un seau par tranche : on garde le plus recent de chaque tranche, et la
+    // liste etant deja triee, c'est le premier rencontre.
+    const seau = palier.pas + ':' + Math.floor(l.t / (palier.pas * 60000));
+    if (!dernierDuSeau.has(seau)) { dernierDuSeau.set(seau, l.id); garde.add(l.id); }
+  });
+
+  return tri.filter(l => !garde.has(l.id)).map(l => l.id);
+}
+
 // Date-butoir yyyy-mm-dd : aujourd'hui - days
 function cutoff(days) {
   const d = new Date();
@@ -175,4 +231,5 @@ module.exports = {
   JOURNAL_DAYS,
   pruneRetention, slimForHistory, pruneStored,
   DELIV_DAYS, PREPS_DAYS, HISTORY_MIN_INTERVAL_MIN, HISTORY_STRIP_FIELDS,
+  elagage, PALIERS, PLANCHER_RECENTS,
 };

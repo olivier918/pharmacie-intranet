@@ -139,6 +139,35 @@ Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
 c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
 protège pas d'un essai en force.
 
+## L'historique se règle en durée, pas en nombre
+
+`MAX_HISTORY = 300` paraissait généreux. Un instantané est pris à chaque
+écriture, au rythme maximal d'un toutes les cinq minutes ; une officine ouverte
+dix heures avec dix-huit personnes en produit environ **cent vingt par jour**.
+**Trois cents instantanés, c'était deux jours et demi** — cher en place, et
+court en couverture. Le pire des deux mondes.
+
+Les scans supprimés le 13/09 ont été retrouvés parce que la perte a été vue le
+**lendemain**. Un problème du vendredi découvert le lundi n'aurait plus rien
+trouvé.
+
+`maint.elagage()` conserve désormais une **durée**, avec une résolution qui se
+relâche en vieillissant : tout sur 6 h, un par heure jusqu'à 2 jours, un par
+jour jusqu'à 30, un par semaine jusqu'à 6 mois. Environ **136 instantanés pour
+six mois de couverture**, au lieu de 300 pour deux jours et demi.
+
+C'est une fonction **pure** : elle prend la liste des lignes et rend les
+identifiants à supprimer. Une règle de rétention qui ne s'éprouve pas est une
+perte de données en attente — `node essais/historique.js`.
+
+Deux filets : les douze derniers instantanés survivent quoi qu'il arrive, et
+`MAX_HISTORY` reste en borne dure au cas où la règle de temps laisserait tout
+passer.
+
+**Pour dimensionner un plan d'hébergement, ne jamais estimer sur la taille du
+JSON** : PostgreSQL compresse les colonnes volumineuses. « Où en est-on ? » du
+Back Office affiche la place réellement occupée, table par table.
+
 ## Identité patient : ce qui fait deux fiches, ou une
 
 Douze collections stockent le nom du patient en **texte libre**, recopié à la

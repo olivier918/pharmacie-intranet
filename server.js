@@ -13,7 +13,10 @@ const PORT = process.env.PORT || 3000;
 const BUILD_ID = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || process.env.BUILD_ID || String(Date.now());
 const DATA_FILE = path.join(__dirname, 'data', 'pharmacie-data.json');
 const HISTORY_DIR = path.join(__dirname, 'data', 'history');
-const MAX_HISTORY = 300; // nombre de snapshots conservés (anti-perte de données)
+// L'historique se regle desormais en DUREE, pas en nombre : voir
+// maintenance.js, « L'HISTORIQUE ». Cette borne ne sert plus que de filet
+// contre une regle de temps mal reglee.
+const MAX_HISTORY = 400;
 
 // ─── Webhook de paiement (Stripe) ───
 // DOIT être déclaré AVANT express.json() et AVANT le portail d'authentification :
@@ -460,9 +463,26 @@ app.get('/api/coffre/etat', async (req, res) => {
       }
     } catch (e) { /* le rapprochement est un confort, jamais un blocage */ }
 
+    // Taille reelle occupee, compression PostgreSQL comprise : c'est ce chiffre
+    // qui doit dimensionner un plan d'hebergement, jamais une estimation faite
+    // sur la taille du JSON.
+    let tailles = null;
+    try {
+      const tr = await db.query(
+        "SELECT relname AS table, pg_total_relation_size(c.oid) AS octets"
+        + " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+        + " WHERE n.nspname = current_schema() AND relkind = 'r'"
+        + "   AND relname IN ('app_data','app_data_history','app_images','app_acces','app_temperatures')"
+        + " ORDER BY 2 DESC");
+      const h = await db.query('SELECT COUNT(*) AS n, MIN(created_at) AS plusVieux FROM app_data_history');
+      tailles = { tables: tr.rows.map(r => ({ table: r.table, ko: Math.round(+r.octets / 1024) })),
+                  instantanes: +(h.rows[0] || {}).n || 0,
+                  plusVieux: (h.rows[0] || {}).plusvieux || null };
+    } catch (e) { /* diagnostic, jamais bloquant */ }
+
     res.json({ ok: true, actif: d.actif, marque: d.marque, anciennes: d.anciennes, erreur: d.erreur,
       clair: +l.clair || 0, chiffres: +l.chiffres || 0, aReemballer: +l.areemballer || 0, total: +l.total || 0,
-      uniques, manquants, orphelins, ailleurs, dou });
+      uniques, manquants, orphelins, ailleurs, dou, tailles });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -1050,6 +1070,11 @@ async function snapshotCurrent() {
       if (data && Object.keys(data).length > 0) {
         // Instantané ALLÉGÉ (sans les champs lourds régénérables)
         await db.query('INSERT INTO app_data_history (data) VALUES ($1)', [JSON.stringify(maint.slimForHistory(data))]);
+        // Elagage par age : fin sur les heures recentes, grossier sur les mois.
+        const toutes = await db.query('SELECT id, created_at FROM app_data_history');
+        const aJeter = maint.elagage(toutes.rows, Date.now());
+        if (aJeter.length) await db.query('DELETE FROM app_data_history WHERE id = ANY($1)', [aJeter]);
+        // Filet, si la regle de temps laissait tout passer.
         await db.query(
           `DELETE FROM app_data_history
              WHERE id NOT IN (SELECT id FROM app_data_history ORDER BY id DESC LIMIT ${MAX_HISTORY})`
