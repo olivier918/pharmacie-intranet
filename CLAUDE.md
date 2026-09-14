@@ -139,6 +139,37 @@ Le freinage de `identite.js` n'est pas un ornement : un PIN à quatre chiffres,
 c'est 10 000 combinaisons. Le hachage protège la base en cas de fuite, il ne
 protège pas d'un essai en force.
 
+## Identité patient : ce qui fait deux fiches, ou une
+
+Douze collections stockent le nom du patient en **texte libre**, recopié à la
+saisie. Rapprocher, c'est décider que deux chaînes désignent la même personne —
+et l'erreur n'y coûte pas la même chose dans les deux sens :
+
+- une fiche qui **oublie** une livraison se corrige ;
+- une fiche qui **attribue** à un patient l'ordonnance d'un autre est une faute
+  grave, et invisible, puisqu'elle s'affiche comme un fait.
+
+D'où la règle : **dans le doute, on ne rattache pas, on signale.**
+
+`ptClef()` met à plat ce qui relève de la saisie — casse, accents, apostrophes,
+espaces — et rien de plus. Réduire davantage (ignorer un tiret de prénom
+composé) ferait fusionner des gens différents.
+
+**La date de naissance est le seul arbitre admis entre homonymes.** Deux MARTIN
+Jean nés en 1940 et en 1972 sont deux personnes : `upsertPatient` crée alors
+deux fiches, et leurs identifiants portent la date (`pt:MARTIN|JEAN#1940-05-05`).
+Sans date, on ne tranche pas — ni pour rattacher, ni pour compléter.
+
+`ptRattacher()` rend quatre verdicts : `sur` (le seul qui autorise l'affichage),
+`homonyme`, `ecart` (dates divergentes), `inconnu`. Tout ce qui n'est pas `sur`
+part dans la file « À rattacher » du Back Office.
+
+**La voie qui ne peut pas se tromper** : un enregistrement portant `patientId`
+court-circuite tout le rapprochement. C'est là qu'il faut aller — le
+rapprochement par nom ne sert qu'à lire l'historique déjà saisi.
+
+`node essais/patients.js` et `node essais/annuaire.js`.
+
 ## Un gestionnaire ne reçoit jamais de texte saisi
 
 `onclick="f('…')"` fait lire la même chaîne par **deux analyseurs** : le

@@ -1539,6 +1539,23 @@ tr:hover td{background:#fafffe}
 
       <!-- PATIENTS -->
       <div id="bo-patients" style="display:none">
+        <!-- FICHES 360° — voir pt-module.js -->
+        <div class="card" style="margin-bottom:1rem">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-patients"></use></svg> Fiches patients</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin:.2rem 0 .9rem">
+            Tout ce qui a été fait avec un patient, au même endroit : livraisons, préparations, renouvellements,
+            crédits, matériel loué, BPM, contrôles, retours et SMS.
+            <br><b>Un enregistrement n'apparaît que si l'identité est certaine.</b> Dans le doute — homonymes,
+            date de naissance divergente, nom inconnu de l'annuaire — il part dans « À rattacher » plutôt que
+            d'être attribué au hasard.
+          </p>
+          <div class="pt-onglets" id="pt-onglets"></div>
+          <div class="fg" style="margin:0 0 .9rem"><input type="text" id="pt-q" placeholder="Rechercher un patient…"
+            style="border:1px solid var(--gray-200);border-radius:7px;padding:8px 12px;font-size:.88rem;width:100%"
+            oninput="ptRender()"></div>
+          <div id="pt-zone"></div>
+        </div>
+
         <div class="card" style="margin-bottom:1rem">
           <div class="ch"><span class="ct">Ajouter un patient</span></div>
           <div class="fgrid">
@@ -4487,7 +4504,7 @@ function boTab(t){
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
-  if(t==='patients')renderPatients();
+  if(t==='patients'){renderPatients(); if(typeof ptRender==='function') ptRender();}
   if(t==='medecins')renderMedecins();
   if(t==='labo'){loadLabo();loadBluestone();}
   if(t==='smstpl')renderSmsTpl();
@@ -4605,18 +4622,57 @@ function cancelEditPatient(){
   document.getElementById('bp-cancel-btn').style.display='none';
 }
 
+// Crée le patient s'il est nouveau, complète sa fiche sinon. Rend la fiche
+// concernée, pour que l'appelant puisse retenir son identifiant.
+//
+// LE RAPPROCHEMENT NE SE FAIT PLUS SUR UNE ÉGALITÉ STRICTE. « MULLER » et
+// « Müller » créaient deux fiches, et l'annuaire se dédoublait à chaque
+// variante de saisie. On compare désormais des clés mises à plat — majuscules,
+// accents retirés, apostrophes et espaces réduits.
+//
+// MAIS on ne fusionne jamais deux dates de naissance différentes : deux
+// MARTIN Jean nés en 1940 et en 1972 sont deux personnes, et les réunir
+// mélangerait leurs ordonnances. À nom identique et date différente, on crée
+// une SECONDE fiche — c'est le seul cas où un doublon apparent est voulu.
 function upsertPatient(p){
-  const ex=patients.find(x=>x.nom===p.nom&&x.prenom===p.prenom);
+  if(!p||(!p.nom&&!p.prenom)) return null;
+  const clef=(typeof ptClef==='function')?ptClef(p.nom,p.prenom):((p.nom||'')+'|'+(p.prenom||''));
+  const dNeuf=(typeof ptNaiss==='function')?ptNaiss(p.dob):(p.dob||null);
+  const memeNom=patients.filter(x=>x&&((typeof ptClef==='function')?ptClef(x.nom,x.prenom):(x.nom+'|'+x.prenom))===clef);
+
+  let ex=null;
+  if(memeNom.length){
+    if(dNeuf){
+      // La date connue désigne, ou distingue.
+      ex=memeNom.find(x=>((typeof ptNaiss==='function')?ptNaiss(x.dob):x.dob)===dNeuf)
+         || memeNom.find(x=>!((typeof ptNaiss==='function')?ptNaiss(x.dob):x.dob))   // fiche sans date : on la complète
+         || null;
+      // Toutes les fiches portent une AUTRE date : c'est quelqu'un d'autre.
+    } else {
+      // Sans date, on ne tranche pas entre homonymes : on ne complète que
+      // s'il n'y a qu'une seule fiche possible.
+      ex=(memeNom.length===1)?memeNom[0]:null;
+    }
+  }
+
   if(ex){
-    // Only update fields that have a value (don't overwrite with empty)
-    if(p.dob)ex.dob=p.dob;
+    // On complète, on n'écrase jamais avec du vide.
+    if(p.dob&&!ex.dob)ex.dob=p.dob;
     if(p.adresse)ex.adresse=p.adresse;
     if(p.commune)ex.commune=p.commune;
     if(p.tel)ex.tel=p.tel;
     if(p.mail)ex.mail=p.mail;
-  } else {
-    patients.push({id:'pt:'+(p.nom||'')+'|'+(p.prenom||''),nom:p.nom,prenom:p.prenom,dob:p.dob||'',adresse:p.adresse||'',commune:p.commune||'',tel:p.tel||'',mail:p.mail||''});
+    ex.updatedAt=Date.now();
+    return ex;
   }
+  // Identifiant dérivé de la clé mise à plat, et suffixé par la date quand
+  // elle existe : deux homonymes de dates différentes ne peuvent plus se
+  // retrouver avec le même identifiant.
+  const neuf={id:'pt:'+clef+(dNeuf?'#'+dNeuf:''),nom:p.nom||'',prenom:p.prenom||'',
+    dob:p.dob||'',adresse:p.adresse||'',commune:p.commune||'',tel:p.tel||'',mail:p.mail||'',
+    updatedAt:Date.now()};
+  patients.push(neuf);
+  return neuf;
 }
 
 function upsertMedecin(m){
@@ -11370,7 +11426,29 @@ fetch('/api/config', { cache: 'no-store' })
 // ═══════════ INIT ═══════════
 document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 </script>
+<div id="pt-ov" class="pt-ov" onclick="if(event.target===this)ptFermer()">
+  <div class="pt-modale">
+    <div class="pt-modale-h">
+      <span class="ct" id="pt-fiche-titre">Fiche patient</span>
+      <button type="button" class="pt-x" onclick="ptFermer()" aria-label="Fermer">&times;</button>
+    </div>
+    <div class="pt-modale-b" id="pt-fiche-corps"></div>
+  </div>
+</div>
+<style>
+.pt-ov{display:none;position:fixed;inset:0;background:rgba(17,24,20,.55);z-index:900;padding:24px;overflow:auto}
+.pt-ov.pt-on{display:flex;align-items:flex-start;justify-content:center}
+.pt-modale{background:#fff;border-radius:14px;max-width:760px;width:100%;margin:auto;
+  box-shadow:0 24px 60px -20px rgba(0,0,0,.5);overflow:hidden}
+.pt-modale-h{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:1rem 1.2rem;border-bottom:1px solid var(--gray-200)}
+.pt-modale-h .ct{font-weight:700;font-size:1.05rem;color:var(--g-dark)}
+.pt-x{background:none;border:0;font-size:1.5rem;line-height:1;cursor:pointer;color:var(--gray-500);padding:0 4px}
+.pt-x:hover{color:var(--gray-900)}
+.pt-modale-b{padding:1.1rem 1.2rem 1.4rem;max-height:72vh;overflow:auto}
+</style>
 <script src="rn-module.js"></script>
+<script src="pt-module.js"></script>
 <script src="fc-module.js"></script>
 <script src="cm-module.js"></script>
 <script src="pl-module.js"></script>
