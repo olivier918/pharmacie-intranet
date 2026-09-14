@@ -1359,6 +1359,8 @@ tr:hover td{background:#fafffe}
               retrouvent leurs scans <b>sans qu'on touche au fichier de données</b>.
             </p>
             <button class="btn bp" onclick="restaurerScansPerdus()"><svg class="ico"><use href="#ic-archives"></use></svg> Restaurer les scans manquants</button>
+            <button class="btn bp" style="background:#B45309;border-color:#B45309" onclick="recupererDepuisCache()"><svg class="ico"><use href="#ic-renouveler"></use></svg> Récupérer depuis le cache de ce navigateur</button>
+            <button class="btn bs" onclick="exporterScansManquants()"><svg class="ico"><use href="#ic-archives"></use></svg> Exporter la liste des manquants</button>
           </div>
           <div id="reprise-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.5"></div>
         </div>
@@ -11204,6 +11206,94 @@ function renderJournal(){
       }).join('')
     + '</tbody></table></div>'
     + (f.length>PLAFOND?`<div style="text-align:center;color:var(--gray-500);padding:.7rem;font-size:.8rem">${f.length-PLAFOND} action(s) plus anciennes non affichées — affinez la période ou la recherche.</div>`:'');
+}
+
+// ═══════════ RÉCUPÉRATION DEPUIS LE CACHE DU NAVIGATEUR ═══════════
+// Le cache qui a menti est aussi celui qui peut sauver. /api/images répond
+// `immutable, max-age=1 an` : un poste ayant affiché une ordonnance en garde
+// les OCTETS pendant un an, même après sa disparition du serveur.
+//
+// On les relit donc depuis ce cache et on les renvoie. L'identifiant d'une
+// image étant le condensat de son contenu, les mêmes octets reprennent le même
+// identifiant : les fiches retrouvent leur ordonnance sans qu'on touche au
+// fichier de données. Et cette propriété fait aussi la vérification — si le
+// serveur rend un identifiant différent, ce ne sont pas les bons octets, et on
+// refuse.
+//
+// URGENT PAR NATURE : un cache s'évince tout seul. À lancer sur chaque poste
+// qui a pu afficher ces dossiers, le plus tôt possible.
+function _b64(blob){
+  return new Promise(function(res,rej){
+    const fr=new FileReader();
+    fr.onload=function(){ const v=String(fr.result||''); const i=v.indexOf(','); res(i<0?'':v.slice(i+1)); };
+    fr.onerror=function(){ rej(new Error('lecture impossible')); };
+    fr.readAsDataURL(blob);
+  });
+}
+async function recupererDepuisCache(){
+  if(!isAdmin()){ alert('Réservé aux administrateurs.'); return; }
+  const zone=document.getElementById('reprise-etat');
+  const dire=function(m){ if(zone) zone.innerHTML=m; };
+
+  const cibles=[];
+  locations.forEach(function(l){
+    if(l.scanId) cibles.push({id:l.scanId, qui:(l.nom||'')+' '+(l.prenom||''), quoi:'ordonnance initiale'});
+    (l.renewals||[]).forEach(function(r,i){
+      if(r.scanId) cibles.push({id:r.scanId, qui:(l.nom||'')+' '+(l.prenom||''), quoi:'renouvellement n°'+(i+1)});
+    });
+  });
+
+  // 1. Ce qui manque VRAIMENT côté serveur : no-store, sans quoi on
+  //    interrogerait le cache et on ne trouverait jamais rien à récupérer.
+  dire('Recherche de ce qui manque au serveur…');
+  const morts=[];
+  for(const c of cibles){
+    try{ const r=await fetch('/api/images/'+c.id,{cache:'no-store'}); if(!r.ok) morts.push(c); }
+    catch(e){ morts.push(c); }
+  }
+  if(!morts.length){ dire('<b style="color:#2E7D32">Rien à récupérer :</b> le serveur répond pour les '+cibles.length+' références.'); return; }
+
+  if(!confirm(morts.length+' ordonnance(s) manquante(s) au serveur.\n\n'
+    +'On va les relire dans le cache de CE navigateur et les renvoyer.\n'
+    +'L\u2019identifiant d\u2019une image étant le condensat de son contenu, une image renvoyée qui ne '
+    +'redonne pas le même identifiant est refusée : aucun risque de rattacher le mauvais document.\n\n'
+    +'Le fichier de données n\u2019est pas modifié.\n\nLancer ?')) return;
+
+  let rendus=0; const absentes=[]; const echecs=[];
+  for(let i=0;i<morts.length;i++){
+    const c=morts[i];
+    dire('Récupération… '+(i+1)+' / '+morts.length+' — <b>'+rendus+'</b> ordonnance(s) rendue(s).');
+    try{
+      // `force-cache` : on veut l'entrée du cache, même périmée, et on ne va sur
+      // le réseau que si elle est absente — auquel cas le serveur répond 404.
+      const r=await fetch('/api/images/'+c.id,{cache:'force-cache'});
+      if(!r.ok){ absentes.push(c.qui+' — '+c.quoi); continue; }
+      const blob=await r.blob();
+      if(!blob || blob.size<500){ absentes.push(c.qui+' — '+c.quoi); continue; }
+      const data=await _b64(blob);
+      if(!data){ echecs.push(c.qui+' — '+c.quoi+' : lecture impossible'); continue; }
+      const env=await fetch('/api/images',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mime:blob.type||'application/octet-stream', data:data})});
+      const j=await env.json().catch(function(){ return null; });
+      if(!env.ok || !j || !j.ok){ echecs.push(c.qui+' — '+c.quoi+' : refus du serveur'); continue; }
+      // LA garantie : mêmes octets, même identifiant. Sinon, ce n'est pas la
+      // bonne ordonnance et on ne touche à rien.
+      if(j.id!==c.id){ echecs.push(c.qui+' — '+c.quoi+' : contenu différent de celui attendu'); continue; }
+      const v=await fetch('/api/images/'+c.id,{cache:'no-store'});
+      if(!v.ok){ echecs.push(c.qui+' — '+c.quoi+' : toujours introuvable après envoi'); continue; }
+      rendus++;
+    }catch(e){ echecs.push(c.qui+' — '+c.quoi+' : '+(e.message||'erreur')); }
+  }
+
+  if(rendus) tracer('creation','ordonnance',null,'Récupération depuis le cache : '+rendus+' ordonnance(s)');
+  const liste=(t,arr,col)=>arr.length?'<div style="margin-top:8px;background:'+col+';border-radius:8px;padding:8px 11px;font-size:.8rem">'
+    +'<b>'+t+'</b><br>'+arr.map(x=>'• '+String(x).replace(/[<>]/g,'')).join('<br>')+'</div>':'';
+  dire('<b style="color:'+(rendus?'#2E7D32':'#B91C1C')+'">'+rendus+' ordonnance(s) récupérée(s)</b> sur '+morts.length+' manquante(s).'
+    +'<div style="font-size:.8rem;color:var(--gray-500);margin-top:5px">Le fichier de données n\u2019a pas été modifié : '
+    +'les fiches retrouvent leur ordonnance parce que l\u2019identifiant est le condensat du contenu.</div>'
+    +liste('Absentes de ce cache — à retenter sur un autre poste :', absentes, '#FFF3E0')
+    +liste('Échecs :', echecs, '#FFEBEE'));
+  renderLocs();
 }
 
 // ═══════════ REPRISE DES PHOTOS ET SIGNATURES ═══════════
