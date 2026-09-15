@@ -1451,7 +1451,9 @@ function applyTombstones(arr, tombs, coll) {
 }
 
 // Collections synchronisées « à id » : réconciliation par enregistrement + tombstones.
-const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps', 'bpmList', 'locations', 'locTypes', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives', 'patients', 'medecins', 'smsLog', 'smsTemplates',
+const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
+  // Planning des preparations : la semaine type (7 lignes fixes) et ses ecarts.
+  'prepTrame', 'prepExceptions', 'bpmList', 'locations', 'locTypes', 'credits', 'controles', 'retours', 'renouvellements', 'renouvArchives', 'patients', 'medecins', 'smsLog', 'smsTemplates',
   // Module Planning (Lot 1) : collections à id, fusion par enregistrement + tombstones
   'plPostes', 'plRotations', 'plContrats', 'plTrames', 'plExceptions', 'plDemandes', 'plReels', 'plNotifs', 'plClotures',
   'plHeuresSup', 'plAbsences', 'plEchanges',

@@ -708,12 +708,13 @@ tr:hover td{background:#fafffe}
           </div>
           <div class="fg">
             <label>Type de demande</label>
-            <select id="p-type">
+            <select id="p-type" onchange="if(window.ppRendChampJour)ppRendChampJour()">
               <option value="realisation-pharmacie">Réalisation Pharmacie</option>
               <option value="realisation-kerangal">Réalisation Kerangal</option>
               <option value="devis-kerangal">Devis Kerangal</option>
             </select>
           </div>
+          <div class="fg" id="pp-jour-champ"></div>
           <div class="fg" style="grid-column:1/-1"><label>Préparation / Formule</label><textarea id="p-prep" placeholder="Description complète de la préparation…"></textarea></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:1.2rem;flex-wrap:wrap;justify-content:flex-end;align-items:center">
@@ -722,6 +723,11 @@ tr:hover td{background:#fafffe}
             <svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer la demande
           </button>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-calendrier"></use></svg> Planning de production</span></div>
+        <div id="pp-planning"></div>
       </div>
 
       <div class="card">
@@ -1386,6 +1392,16 @@ tr:hover td{background:#fafffe}
             <button class="btn bs" onclick="cfEchantillon()">Exporter un fichier scellé (épreuve de la clé)</button>
           </div>
           <div id="cf-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.6"></div>
+        </div>
+
+        <!-- PRÉPARATIONS — CAPACITÉ -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-calendrier"></use></svg> Préparations — capacité</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">
+            La semaine type se pose une fois : elle remplace la réinitialisation hebdomadaire du tableur.
+            Ensuite, on ne déclare que les écarts — une journée fermée, une capacité réduite, un autre responsable.
+          </p>
+          <div id="pp-capacite"></div>
         </div>
 
         <!-- PLACE OCCUPÉE EN BASE -->
@@ -2597,6 +2613,7 @@ let threads = [
   ]},
 ];
 
+let prepTrame = [], prepExceptions = [];
 let preps = [
   {id:1,nom:'CHAUVEAU',prenom:'Marie-José',dob:'1950-03-12',med:'Dr Elodie',prep:'Telmisartan 4mg — 60 gélules (chat)',type:'realisation',scan:'ordo_chauveau.pdf',date:'2026-05-16',status:'en préparation'},
   {id:2,nom:'DALENCON',prenom:'Françoise',dob:'1952-07-20',med:'Dr Martin',prep:'Gabapentine 170mg — 120 gélules (chat)',type:'devis',scan:'ordo_dalencon.pdf',date:'2026-05-14',status:'devis'},
@@ -2667,7 +2684,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2730,7 +2747,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2796,6 +2813,8 @@ async function loadAll(){
     if(data.renouvArchives)renouvArchives=data.renouvArchives;
     if(Array.isArray(data.smsLog))smsLog=data.smsLog;
     if(Array.isArray(data.smsTemplates))smsTemplates=data.smsTemplates;
+    if(Array.isArray(data.prepTrame))prepTrame=data.prepTrame;
+    if(Array.isArray(data.prepExceptions))prepExceptions=data.prepExceptions;
     completerModelesSms();
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.banque)banque=data.banque;
@@ -3421,6 +3440,7 @@ function showSec(name,btn){
   if(name==='livraisons')renderD();
   if(name==='messagerie')renderThreads();
   if(name==='preparations')renderPreps();
+  if(name==='backoffice'&&window.ppRendCapacite)ppRendCapacite();
   if(name==='bpm')renderBpm();
   if(name==='locations'){renderLocs();document.getElementById('loc-form-card').style.display='none';}
   if(name==='controles')renderControles();
@@ -4377,6 +4397,13 @@ function savePrep(){
     heure:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
     status:PREP_TYPES[type].devis?'attente devis':'en cours',
     updatedAt:Date.now()};
+  // Le jour de production ne concerne QUE ce qui est fabrique ici. Kerangal a
+  // son propre delai, suivi par le fil de la demande : il n'occupe personne.
+  if(type===window.PP_TYPE && window.ppJourPourNouvelle){
+    const j=window.ppJourPourNouvelle();
+    if(j) p.jour=j;
+  }
+  window.ppJourRetenu=null;
   upsertPatient({nom,prenom,dob,tel});
   if(med){ const parts=med.replace(/^Dr\.?\s*/i,'').trim().split(' ');
     const mn=parts[parts.length-1].toUpperCase(); const mp=parts.slice(0,-1).join(' ');
@@ -4398,6 +4425,8 @@ function togglePrepArchives(){
 
 function renderPreps(){
   prepMigrer();
+  if(window.ppRendPlanning) ppRendPlanning();
+  if(window.ppRendChampJour) ppRendChampJour();
   const q=(document.getElementById('prep-q')?.value||'').toLowerCase();
   let f=preps.filter(p=>{
     if(!showPrepArchives&&PREP_ARCHIVED.includes(p.status))return false;
@@ -11861,6 +11890,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="pl-module.js"></script>
 <script src="dp-module.js"></script>
 <script src="dm-module.js"></script>
+<script src="pp-module.js"></script>
 <script src="ac-module.js"></script>
 <script src="mp-module.js"></script>
 <script src="tp-module.js"></script>

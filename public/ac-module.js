@@ -551,6 +551,14 @@
       if (rel) parts.push('<button class="ac-al" onclick="showSec(\'credits\')"><span class="ac-pt"></span>'
         + rel + ' crédit' + (rel > 1 ? 's' : '') + ' à relancer</button>');
     }
+    // Les preparations en retard. Le report les fait glisser au jour ouvert
+    // suivant, mais un glissement qu'on ne compte pas finit par ne plus se
+    // voir : c'est ce compteur qui rend le retard visible.
+    if (typeof preps !== 'undefined' && Array.isArray(preps) && typeof ppRetards === 'function') {
+      const r = ppRetards(preps, ppAujourdhui()).length;
+      if (r) parts.push('<button class="ac-al" onclick="showSec(\'preparations\')"><span class="ac-pt"></span>'
+        + r + ' pr\u00e9paration' + (r > 1 ? 's' : '') + ' en retard</button>');
+    }
     // Le solde SMS quand il est confortable : une pastille verte parmi les
     // autres. Quand il ne l'est plus, c'est le bandeau au-dessus qui parle, et
     // on ne redit pas la meme chose deux fois.
