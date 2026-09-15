@@ -3806,7 +3806,7 @@ function dCard(d){
       ${dAFacturer(d)?`<div class="dc-row2"><span class="badge" style="background:#FFF3E0;color:#BF360C;border:1px solid #FFCC80;font-weight:700;padding:3px 9px">${ico('alerte')} Facturation à finaliser — ordonnance récupérée à la livraison</span></div>`:''}
       ${d.factureAt?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('valider')} Facturé le ${new Date(d.factureAt).toLocaleDateString('fr-FR')} par ${staffName(d.factureBy)} <span onclick="annulerFacture(${d.id})" style="cursor:pointer;color:var(--gray-500);text-decoration:underline;margin-left:6px" title="Remettre en attente">annuler</span></span></div>`:''}
       <div class="dc-row2 no-print" style="margin-top:1px">
-        <span class="dc-track">${saisiePar?`Saisie : ${saisiePar}${saisieQuand} · `:''}Préparé : ${prep} · Livré : ${livr}${d.smsAt?` · SMS envoyé le ${new Date(d.smsAt).toLocaleDateString('fr-FR')} par ${staffName(d.smsBy)}`:''}</span>
+        <span class="dc-track">${saisiePar?`Saisie : ${saisiePar}${saisieQuand} · `:''}Préparé : ${prep} · Livré : ${livr}${d.smsAt?` · SMS envoyé le ${new Date(d.smsAt).toLocaleDateString('fr-FR')} par ${staffName(d.smsBy)}${smsMention(d.smsId)}`:''}</span>
       </div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
@@ -4449,7 +4449,7 @@ function prepCard(p){
         ${attente}
       </div>
       ${p.prep?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${p.prep}</span></div>`:''}
-      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}`:''}</span></div>
+      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}${smsMention(p.smsId)}`:''}</span></div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
@@ -9855,6 +9855,54 @@ const SMS_TPL_DEFAULT=[
 // Modèles fournis d'origine ; remplacés par ceux de la base dès la première lecture serveur.
 smsTemplates = SMS_TPL_DEFAULT.map(t => Object.assign({}, t, {updatedAt: 0}));
 
+// ═══════════ ACCUSÉS DE REMISE (voir accuses.js) ═══════════
+// « Envoyé » ne voulait dire qu'une chose : Brevo a accepté la demande. Ces
+// statuts-là viennent des opérateurs, via le webhook — ils disent si le
+// téléphone du patient a vraiment reçu le message.
+//
+// Ils ne vivent PAS dans le fichier de données : ils sont écrits par le
+// serveur, pas par les postes. On les charge à part, au plus une fois par
+// minute, et un seul appel part même si trois écrans se rafraîchissent.
+let smsStatuts={}, smsStatutsQuand=0, smsStatutsEnVol=null;
+function smsChargerStatuts(force){
+  if(!force && smsStatutsQuand && Date.now()-smsStatutsQuand<60000) return Promise.resolve(false);
+  if(smsStatutsEnVol) return smsStatutsEnVol;
+  smsStatutsQuand=Date.now();
+  smsStatutsEnVol=fetch('/api/sms-statuts',{cache:'no-store'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ smsStatuts=(j&&j.ok&&j.statuts)||{}; return true; })
+    .catch(function(){ return false; })
+    .finally(function(){ smsStatutsEnVol=null; });
+  return smsStatutsEnVol;
+}
+function smsEtat(id){
+  if(id===null||id===undefined||id==='') return null;
+  return smsStatuts[String(id)]||null;
+}
+// Un SMS sans accusé n'affiche RIEN. Ce n'est pas un échec : c'est un envoi
+// d'avant le raccordement du webhook, ou un accusé qui n'est pas encore
+// arrivé. Inventer un statut serait pire que n'en montrer aucun.
+const SMS_ETAT_STYLE={
+  'remis':      {lbl:'Remis',    fg:'#2E7D32', bg:'#E8F5E9', bd:'#A5D6A7'},
+  'non remis':  {lbl:'NON REMIS',fg:'#B71C1C', bg:'#FFEBEE', bd:'#EF9A9A'},
+  'en cours':   {lbl:'En cours', fg:'#8a6d3b', bg:'#FFF8E1', bd:'#FFE0A3'},
+  'autre':      {lbl:'Réponse',  fg:'#0277BD', bg:'#E1F5FE', bd:'#90CAF9'}
+};
+function smsBadge(id){
+  const s=smsEtat(id); if(!s) return '';
+  const st=SMS_ETAT_STYLE[s.etat]||SMS_ETAT_STYLE['autre'];
+  const titre=s.detail?' title="'+hEsc(s.detail)+'"':'';
+  return '<span class="badge"'+titre+' style="background:'+st.bg+';color:'+st.fg
+    +';border:1px solid '+st.bd+';padding:1px 8px;font-size:.65rem;font-weight:700">'+st.lbl+'</span>';
+}
+// Version texte, pour les lignes de suivi qui n'acceptent pas de balise.
+function smsMention(id){
+  const s=smsEtat(id); if(!s) return '';
+  return s.etat==='remis' ? ' · remis'
+       : s.etat==='non remis' ? ' · NON REMIS'
+       : s.etat==='en cours' ? ' · remise en attente' : '';
+}
+
 // Journal central : TOUS les SMS de l'intranet y sont consignés, quel que soit le module d'origine.
 const SMS_SOURCE_LBL={module:'Module SMS', credit:'Relance crédit', livraison:'Livraison', renouvellement:'Renouvellement'};
 const SMS_SOURCE_COL={module:'#0277BD', credit:'#C62828', livraison:'#2E7D32', renouvellement:'#6A1B9A'};
@@ -10102,6 +10150,7 @@ function renderSmsLog(){
     host.innerHTML='<div style="text-align:center;color:var(--gray-500);padding:1.6rem;font-size:.88rem">'+(smsLog.length?'Aucun SMS ne correspond à la recherche.':'Aucun SMS envoyé pour le moment.')+'</div>';
     return;
   }
+  smsChargerStatuts(false).then(function(neuf){ if(neuf) renderSmsLog(); });
   host.innerHTML=rows.map(r=>{
     const d=r.date?new Date(r.date):null;
     return `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:11px 14px;margin-bottom:8px;background:#fff">
@@ -10109,7 +10158,7 @@ function renderSmsLog(){
         <div style="min-width:180px;flex:1">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span style="font-weight:700;color:var(--gray-900)">${ctlEsc(r.nom||'')} ${ctlEsc(r.prenom||'')}</span>
-            <span class="badge" style="background:${SMS_SOURCE_COL[r.source||'module']}18;color:${SMS_SOURCE_COL[r.source||'module']};border:1px solid ${SMS_SOURCE_COL[r.source||'module']}55;padding:1px 8px;font-size:.65rem;font-weight:700">${SMS_SOURCE_LBL[r.source||'module']||'—'}</span>
+            <span class="badge" style="background:${SMS_SOURCE_COL[r.source||'module']}18;color:${SMS_SOURCE_COL[r.source||'module']};border:1px solid ${SMS_SOURCE_COL[r.source||'module']}55;padding:1px 8px;font-size:.65rem;font-weight:700">${SMS_SOURCE_LBL[r.source||'module']||'—'}</span>${smsBadge(r.smsId)}
           </div>
           <div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">${ico('telephone')} ${ctlEsc(r.tel||'')} · ${d?d.toLocaleDateString('fr-FR')+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'} · ${staffName(r.by)}${r.manual?' · noté manuellement':''}</div>
         </div>

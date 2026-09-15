@@ -44,7 +44,13 @@ app.use(express.json({ limit: '50mb' }));
 // session valide n'est présente. Désactivé si GATE_PASSWORD n'est pas défini
 // (déploiement sans risque de blocage). N'affecte pas index.html.
 const auth = require('./auth');
+const accuses = require('./accuses');
 auth.install(app);            // routes /api/login, /api/logout (avant le portail)
+// Accuses de remise SMS : Brevo n'a pas de session, il ne peut pas franchir
+// le portail. Sa route est donc montee AVANT, et gardee par un secret
+// d'en-tete plutot que par le mot de passe d'acces (voir accuses.js).
+accuses.installer(app, { getDb: () => db, lireEtat: lireEtatBrut, ecrireEtat: ecrireEtatBrut });
+
 app.use(auth.gate);           // portail : à placer avant le static et les routes /api de données
 console.log(auth.AUTH_DISABLED
   ? '  🔓 Portail d\'accès DÉSACTIVÉ (définir GATE_PASSWORD pour l\'activer)'
@@ -803,6 +809,7 @@ async function estAdministrateur(uid) {
   } catch (e) { return false; }
 }
 traces.installer(app, { getDb: () => db, qui: identite.qui, estAdmin: estAdministrateur });
+accuses.installerLecture(app, { getDb: () => db });
 
 // ─── SMS programmes (voir sms-programmes.js) ───
 const smsProg = smsProgrammes.installer(app, {
@@ -1934,6 +1941,14 @@ async function start() {
       setInterval(() => { traces.purger(db).catch(() => {}); }, 24 * 60 * 60 * 1000);
     }
   } catch (e) { console.error('  ⛔ Journal des accès indisponible :', e.message); }
+  try {
+    await accuses.creerTable(db);
+    if (db) {
+      const n = await accuses.elaguer(db);
+      if (n) console.log('  ✉️  Accuses SMS : ' + n + ' hors delai purge(s)');
+      setInterval(() => { accuses.elaguer(db).catch(() => {}); }, 24 * 60 * 60 * 1000);
+    }
+  } catch (e) { console.error('  ⛔ Accuses de remise SMS indisponibles :', e.message); }
   await temperatures.demarrer(db);
   if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
