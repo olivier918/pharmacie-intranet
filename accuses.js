@@ -44,7 +44,13 @@ const ETATS = {
   unsubscribed: 'autre', unsubscribe: 'autre', replied: 'autre', reply: 'autre', subscribe: 'autre'
 };
 function etatSms(brut) {
-  const k = String(brut == null ? '' : brut).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  // Brevo ecrit `softBounce` a l'inscription du webhook et `soft_bounce` dans
+  // la charge utile qu'il envoie. Deux conventions pour la meme chose, dans le
+  // meme produit. On coupe donc AVANT de passer en minuscules, sans quoi
+  // `softBounce` deviendrait `softbounce` et ne correspondrait a rien.
+  const k = String(brut == null ? '' : brut).trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase().replace(/[\s-]+/g, '_');
   if (!k) return 'autre';
   return ETATS[k] || 'autre';
 }

@@ -23,10 +23,12 @@ const https = require('https');
 const ADRESSE = 'https://pilot.pharmacie-mondeville.fr/api/brevo/sms';
 const EN_TETE = 'x-pilot-hook';
 
-// La documentation ne fixe pas la liste exacte des noms d'evenements du canal
-// SMS. Plutot que de parier, on envoie une liste et on LIT ce que Brevo repond :
-// un refus nomme les valeurs acceptees, ce qui vaut mieux qu'une devinette.
-const EVENEMENTS = ['sent', 'delivered', 'hardBounce', 'softBounce', 'blocked', 'unsubscribed', 'replied'];
+// Les noms d'evenements du canal SMS NE SONT PAS ceux de l'e-mail. Liste
+// etablie le 15/09/2026 sur le modele CreateWebhook des SDK Brevo, apres un
+// premier essai refuse : c'est `unsubscribe` et non `unsubscribed`, `reply` et
+// non `replied`, et `blocked` n'existe pas — il s'appelle `blacklisted`.
+const EVENEMENTS = ['sent', 'accepted', 'delivered', 'softBounce', 'hardBounce',
+                    'blacklisted', 'skip', 'unsubscribe', 'reply'];
 
 function sortir(m) { console.error('\n  ⛔ ' + m + '\n'); process.exit(1); }
 
@@ -102,6 +104,18 @@ function montrer(w) {
     return;
   }
 
+  // Un essai rate n'a rien cree, mais un essai reussi suivi d'un second appel
+  // creerait deux webhooks — donc deux accuses pour chaque SMS. On regarde
+  // avant d'ecrire.
+  const deja = await appeler(cle, 'GET', '/v3/webhooks?type=transactional');
+  const existants = ((deja.corps && deja.corps.webhooks) || []).filter(w => w.url === ADRESSE);
+  if (existants.length) {
+    console.log('\n  \u26a0\ufe0f  Un webhook pointe deja vers cette adresse :\n');
+    existants.forEach(montrer);
+    console.log('\n  Rien n\'a ete cree. Supprimez-le dans Brevo si vous voulez repartir de zero.\n');
+    return;
+  }
+
   const secret = await demander('  Secret (celui de BREVO_HOOK_SECRET) : ');
   if (!secret) sortir('Aucun secret saisi.');
   if (secret.length < 16) sortir('Secret trop court : 32 caracteres attendus.');
@@ -110,9 +124,9 @@ function montrer(w) {
     url: ADRESSE, channel: 'sms', type: 'transactional',
     description: 'PILOT — accuses de remise SMS', events: EVENEMENTS
   };
-  // Deux formes plausibles pour les en-tetes personnalises. On essaie, on lit.
+  // Forme des en-tetes : un TABLEAU de {key, value}. La forme objet a ete
+  // essayee le 15/09/2026 et refusee net (« Failed to parse request body »).
   const formes = [
-    { nom: 'objet', headers: (() => { const o = {}; o[EN_TETE] = secret; return o; })() },
     { nom: 'tableau', headers: [{ key: EN_TETE, value: secret }] }
   ];
 

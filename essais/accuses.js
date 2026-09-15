@@ -18,6 +18,24 @@ t('une réponse du patient n’est pas un échec', a.etatSms('replied') === 'aut
 t('un état inconnu ne devient jamais « remis »', a.etatSms('zzz') !== 'remis');
 t('vide ne devient jamais « remis »', a.etatSms('') !== 'remis' && a.etatSms(null) !== 'remis');
 
+// Les NEUF noms que Brevo accepte a l'inscription du webhook canal SMS.
+// Liste etablie le 15/09/2026 apres un refus en production : ce ne sont PAS
+// ceux de l'e-mail. Si l'un d'eux cesse d'etre traduit, des accuses reels
+// tomberaient silencieusement dans « autre » et aucun badge ne s'afficherait.
+console.log('\nLes neuf evenements du canal SMS, tels que Brevo les nomme');
+[['sent','en cours'],['accepted','en cours'],['delivered','remis'],
+ ['softBounce','non remis'],['hardBounce','non remis'],['blacklisted','non remis'],
+ ['skip','non remis'],['unsubscribe','autre'],['reply','autre']
+].forEach(function (c) {
+  t(c[0] + ' → ' + c[1], a.etatSms(c[0]) === c[1]);
+});
+// Le piege du 15/09 : Brevo ecrit `softBounce` a l'inscription et
+// `soft_bounce` dans la charge utile. Deux conventions, meme produit.
+t('softBounce et soft_bounce donnent le MEME etat',
+  a.etatSms('softBounce') === a.etatSms('soft_bounce'));
+t('hardBounce et hard_bounce aussi',
+  a.etatSms('hardBounce') === a.etatSms('hard_bounce'));
+
 console.log('\nRetrouver de quel envoi il s’agit');
 // Le piege reel : `reference` est tantot une chaine, tantot un objet.
 t('reference en objet {"1":"abc"} est lue',
