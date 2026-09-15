@@ -89,5 +89,48 @@ t('une préparation sans jour ne casse rien',
   w.ppJourEffectif({ type: 'realisation-pharmacie', status: 'en cours' }, AUJ, TR, []) === null);
 t('une trame vide ne produit aucun jour', w.ppJours(AUJ, [], 5).length === 0);
 
+console.log('\nLa coche « fait »');
+const faite = { id: 20, type: 'realisation-pharmacie', status: 'prête', jour: '2026-09-14', faitLe: '2026-09-17', faitPar: 'HL' };
+t('une préparation prête est « faite »', w.ppFait(faite) === true);
+t('une préparation délivrée aussi',
+  w.ppFait({ status: 'délivrée' }) === true && w.ppFait({ status: 'en cours' }) === false);
+t('COCHER NE LA FAIT PAS DISPARAÎTRE : elle s’affiche le jour où le travail a eu lieu',
+  w.ppJourEffectif(faite, AUJ, TR, []) === '2026-09-17');
+t('... et la date promise au patient reste intacte', faite.jour === '2026-09-14');
+t('une fiche ancienne, sans faitLe, retombe sur sa date',
+  w.ppJourEffectif({ type: 'realisation-pharmacie', status: 'prête', jour: '2026-09-14' }, AUJ, TR, []) === '2026-09-14');
+t('une préparation faite n’est plus comptée en retard', w.ppRetards([faite], AUJ).length === 0);
+t('elle occupe toujours sa place : le travail a bien eu lieu',
+  w.ppDuJour('2026-09-17', [faite], AUJ, TR, []).length === 1);
+
+console.log('\nLe rendu ne tombe pas, et dit ce qu’il doit dire');
+(function () {
+  const zone = { innerHTML: '' };
+  global.document.getElementById = id => (id === 'pp-planning' ? zone : null);
+  global.preps = [enRetard, { id: 30, type: 'realisation-pharmacie', status: 'en cours', jour: '2026-09-17', nom: 'MULLER', prenom: 'Jérôme' }, faite];
+  global.prepTrame = TR;
+  // L'exception doit tomber DANS la semaine affichee : EX ferme le 15,
+  // qui est deja passe quand on est le 17. Un ecart dans le passe ne se
+  // voit pas — et c'est normal, la semaine est flottante.
+  global.prepExceptions = [{ date: '2026-09-18', places: 0, motif: 'Pas assez de monde' }];
+  global.staffName = x => String(x || '');
+  global.isAdmin = () => true;
+  const vrai = w.ppAujourdhui; w.ppAujourdhui = () => AUJ;
+  try {
+    w.ppRendPlanning();
+    const h = zone.innerHTML;
+    t('le tableau est produit', /<table class="pp-t"/.test(h));
+    t('les cinq colonnes du tableur sont là',
+      /OP/.test(h) && /Patient/.test(h) && /Prép/.test(h) && /Fait par/.test(h) && /Responsable/.test(h));
+    t('la journée fermée affiche son motif', /Pas assez de monde/.test(h));
+    t('une coche « fait » est proposée', /ppCocherFait\(/.test(h));
+    t('un bouton de déplacement est proposé', /ppDeplacer\(/.test(h));
+    t('la reportée porte sa couleur et son étiquette',
+      /pp-ret/.test(h) && /de retard/.test(h));
+    t('les gestionnaires ne reçoivent que des indices, jamais de texte',
+      !/onclick="pp[A-Za-z]+\('[^0-9]/.test(h));
+  } finally { w.ppAujourdhui = vrai; }
+})();
+
 console.log('\n' + ok + ' réussi(s), ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

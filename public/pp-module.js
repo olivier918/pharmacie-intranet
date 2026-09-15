@@ -116,10 +116,24 @@
   function ppAFaire(p) {
     return !!(p && p.type === PP_TYPE && (p.status === 'en cours' || p.status === 'attente devis'));
   }
+  function ppFait(p) { return !!(p && (p.status === 'prête' || p.status === 'délivrée')); }
+
+  // Trois cas, et le deuxieme n'est pas evident :
+  //
+  //   a faire, jour a venir   -> sa date. Rien a dire.
+  //   FAITE                   -> le jour ou le travail a EU LIEU (`faitLe`).
+  //   a faire, jour passe     -> le premier jour ouvert : elle se reporte.
+  //
+  // Le cas du milieu evite une disparition. Une preparation prevue lundi,
+  // reportee, puis cochee « faite » le jeudi serait retournee au lundi — une
+  // journee passee, donc hors de l'ecran. Elle se serait evaporee sous les
+  // yeux de celui qui vient de la cocher. `faitLe` la garde la ou elle a ete
+  // faite, et `jour` continue de porter ce qui avait ete promis au patient.
   function ppJourEffectif(p, auj, trame, exceptions) {
     if (!p || !p.jour) return null;
-    if (!ppAFaire(p)) return p.jour;        // faite, delivree, abandonnee : sur sa date
-    if (p.jour >= auj) return p.jour;       // pas encore passee
+    if (ppFait(p)) return p.faitLe || p.jour;
+    if (!ppAFaire(p)) return p.jour;        // abandonnee : sur sa date
+    if (p.jour >= auj) return p.jour;
     return ppPremierOuvert(auj, trame, exceptions);
   }
   function ppEnRetard(p, auj) { return !!(ppAFaire(p) && p.jour && p.jour < auj); }
@@ -153,7 +167,7 @@
   G.ppNomJour = ppNomJour; G.ppJJMM = ppJJMM; G.ppPlusJours = ppPlusJours;
   G.ppTravaille = ppTravaille; G.ppPlaces = ppPlaces; G.ppResp = ppResp;
   G.ppMotif = ppMotif; G.ppJours = ppJours; G.ppPremierOuvert = ppPremierOuvert;
-  G.ppAFaire = ppAFaire; G.ppJourEffectif = ppJourEffectif; G.ppEnRetard = ppEnRetard;
+  G.ppAFaire = ppAFaire; G.ppFait = ppFait; G.ppJourEffectif = ppJourEffectif; G.ppEnRetard = ppEnRetard;
   G.ppJoursRetard = ppJoursRetard; G.ppRetards = ppRetards;
   G.ppDuJour = ppDuJour; G.ppLibres = ppLibres;
   G.PP_CLEFS = PP_CLEFS; G.PP_NOMS = PP_NOMS; G.PP_HORIZON = PP_HORIZON; G.PP_TYPE = PP_TYPE;
@@ -202,6 +216,26 @@
   .pp-vide{text-align:center;color:var(--gray-500);padding:1.4rem;font-size:.86rem}
   .pp-retenu{background:#E8F5E9;border:1px solid #A5D6A7;border-radius:9px;padding:7px 12px;
              font-size:.82rem;color:#1D5C3A;font-weight:600}
+  /* Trois etats, trois couleurs, et elles ne disent pas la meme chose :
+     orange = reportee (a rattraper), rouge = au-dela de la capacite du jour,
+     vert = faite. Le blanc reste ce qui est simplement prevu. */
+  .pp-fait{background:#F1F8F2;color:var(--gray-500)}
+  .pp-fait .pp-nom{text-decoration:line-through;text-decoration-color:#A5D6A7}
+  .pp-hors td:first-child{box-shadow:inset 3px 0 0 #C62828}
+  .pp-hors{background:#FFF1F0}
+  .pp-hors .c1{color:#C62828}
+  .pp-ck{width:17px;height:17px;cursor:pointer;accent-color:#2E7D32;vertical-align:middle}
+  .pp-mv{border:none;background:none;cursor:pointer;color:var(--gray-400);font-size:.95rem;
+         padding:0 4px;font-family:inherit;line-height:1}
+  .pp-mv:hover{color:var(--g-dark)}
+  .pp-ovl{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;
+          align-items:center;justify-content:center;padding:16px}
+  .pp-bte{background:#fff;border-radius:14px;padding:18px 20px;max-width:440px;width:100%;
+          box-shadow:0 18px 50px rgba(0,0,0,.25)}
+  .pp-opt{display:block;width:100%;text-align:left;border:1px solid var(--gray-200);background:#fff;
+          border-radius:10px;padding:10px 14px;margin-bottom:7px;font-size:.86rem;font-family:inherit;cursor:pointer}
+  .pp-opt:hover{border-color:var(--g-border);background:var(--g-pale)}
+  .pp-opt[disabled]{opacity:.45;cursor:not-allowed}
   `;
   function ppStyle() {
     if (document.getElementById('pp-style')) return;
@@ -259,19 +293,35 @@
       for (let i = 0; i < lignes; i++) {
         const p = duJour[i] || null;
         const retard = p ? window.ppEnRetard(p, auj) : false;
+        const fait = p ? window.ppFait(p) : false;
+        // Au-dela de ce que la journee peut porter : ce n'est pas une prise de
+        // trop, c'est une accumulation de reports. Le rouge dit qu'il faut
+        // ouvrir une place ou en deplacer une, pas que quelqu'un a triche.
+        const hors = !!p && i >= places;
         const jr = retard ? window.ppJoursRetard(p, auj) : 0;
-        h += '<tr' + (retard ? ' class="pp-ret"' : (p ? '' : ' class="pp-libre"')) + '>'
-          + '<td class="c1">' + (retard ? '⚠' : (i + 1)) + '</td>'
+        const cl = fait ? ' class="pp-fait"' : hors ? ' class="pp-hors"'
+                 : retard ? ' class="pp-ret"' : p ? '' : ' class="pp-libre"';
+        h += '<tr' + cl + '>'
+          + '<td class="c1">' + (fait ? (i + 1) : hors ? '+' : retard ? '⚠' : (i + 1)) + '</td>'
           + '<td class="c2">' + (p ? E(p.by || '') : '') + '</td>'
           + '<td>' + (p
-              ? E((p.nom || '') + ' ' + (p.prenom || ''))
-                + (retard ? '<span class="pp-etiq">prévue le ' + E(window.ppJJMM(p.jour))
+              ? '<span class="pp-nom">' + E((p.nom || '') + ' ' + (p.prenom || '')) + '</span>'
+                + (retard && !fait ? '<span class="pp-etiq">prévue le ' + E(window.ppJJMM(p.jour))
                     + ' · ' + jr + ' j de retard</span>' : '')
+                + (fait ? '' : '<button class="pp-mv" onclick="ppDeplacer(' + idx + ',' + i + ')"'
+                    + ' title="Déplacer vers un autre jour">⇄</button>')
               : (libres
                   ? '<button class="pp-add" onclick="ppChoisirJour(' + idx + ')">+ ajouter</button>'
                   : '')) + '</td>'
           + '<td>' + (p ? E(p.prep || '') : '') + '</td>'
-          + '<td class="c5">' + (p && p.faitPar ? E(nom(p.faitPar)) : '') + '</td>'
+          + '<td class="c5">' + (p
+              ? '<input type="checkbox" class="pp-ck"' + (fait ? ' checked' : '')
+                + (p.status === 'délivrée' ? ' disabled' : '')
+                + ' onchange="ppCocherFait(' + idx + ',' + i + ')"'
+                + ' title="' + (fait ? 'Décocher : la préparation redevient à faire'
+                                      : 'Cocher quand la préparation est faite') + '">'
+                + (p.faitPar ? ' <span style="font-size:.72rem">' + E(nom(p.faitPar)) + '</span>' : '')
+              : '') + '</td>'
           + (i === 0 ? '<td class="c6" rowspan="' + lignes + '">' + E(resp ? nom(resp) : '—') + '</td>' : '')
           + '</tr>';
       }
@@ -314,6 +364,94 @@
             + (iso === window.ppJourRetenu ? '' : ' · première place libre') + '</div>'
           : '<div class="pp-retenu" style="background:#FFEBEE;border-color:#EF9A9A;color:#B71C1C">'
             + 'Aucune place libre. Ouvrez une place sur une journée ci-dessus.</div>');
+  };
+
+  // Les gestionnaires ne recoivent que des INDICES ; on retrouve la fiche en
+  // recalculant la meme liste, triee de la meme facon. Passer l'identifiant
+  // aurait marche aussi, mais la regle du depot est sans exception.
+  function ppPrepA(idx, i) {
+    const iso = ppAffiches[idx]; if (!iso) return null;
+    return window.ppDuJour(iso, P(), window.ppAujourdhui(), T(), X())[i] || null;
+  }
+
+  // ── La coche « fait » ─────────────────────────────────────────────────────
+  // Cocher, c'est dire que la production a eu lieu : le statut passe a
+  // « prete », exactement comme depuis le fil de suivi. Un seul vocabulaire
+  // pour un seul fait — sinon deux ecrans finissent par se contredire.
+  window.ppCocherFait = function (idx, i) {
+    const p = ppPrepA(idx, i); if (!p) return;
+    if (p.status === 'd\u00e9livr\u00e9e') return;
+    const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+    if (window.ppFait(p)) {
+      p.status = 'en cours'; p.faitPar = null; p.faitLe = null;
+    } else {
+      p.status = 'pr\u00eate';
+      p.faitPar = (u && u.id) || null;
+      p.faitLe = window.ppAujourdhui();
+    }
+    p.updatedAt = Date.now();
+    if (typeof schedSave === 'function') schedSave();
+    if (typeof renderPreps === 'function') renderPreps(); else window.ppRendPlanning();
+  };
+
+  // ── Déplacer ──────────────────────────────────────────────────────────────
+  // Un deplacement est une DECISION humaine : la date promise au patient
+  // change vraiment. C'est l'inverse du report, qui n'est qu'un affichage et
+  // ne touche a rien. D'ou la mention explicite dans la boite.
+  let ppDeplace = null;
+
+  function ppBoite(html) {
+    let o = document.getElementById('pp-ovl');
+    if (!o) {
+      o = document.createElement('div'); o.id = 'pp-ovl'; o.className = 'pp-ovl';
+      o.addEventListener('click', function (e) { if (e.target === o) window.ppFermerDeplacement(); });
+      document.body.appendChild(o);
+    }
+    o.innerHTML = '<div class="pp-bte">' + html + '</div>';
+    o.style.display = 'flex';
+  }
+  window.ppFermerDeplacement = function () {
+    const o = document.getElementById('pp-ovl'); if (o) o.style.display = 'none';
+    ppDeplace = null;
+  };
+
+  window.ppDeplacer = function (idx, i) {
+    const p = ppPrepA(idx, i); if (!p) return;
+    ppDeplace = p.id;
+    const trame = T(), exc = X(), auj = window.ppAujourdhui();
+    const jours = window.ppJours(auj, trame, window.PP_HORIZON);
+    const actuel = window.ppJourEffectif(p, auj, trame, exc);
+    let h = '<div style="font-weight:800;font-size:1rem;margin-bottom:2px">D\u00e9placer la pr\u00e9paration</div>'
+      + '<div style="font-size:.84rem;color:var(--gray-600);margin-bottom:12px">'
+      + E((p.nom || '') + ' ' + (p.prenom || ''))
+      + (p.prep ? ' \u2014 ' + E(String(p.prep).slice(0, 70)) : '') + '</div>';
+    jours.forEach(function (iso, k) {
+      const places = window.ppPlaces(iso, trame, exc);
+      const pris = window.ppDuJour(iso, P(), auj, trame, exc).length;
+      const libres = Math.max(0, places - pris);
+      const sien = iso === actuel;
+      const possible = !sien && places > 0 && libres > 0;
+      h += '<button class="pp-opt" onclick="ppDeplacerVers(' + k + ')"' + (possible ? '' : ' disabled') + '>'
+        + '<b style="text-transform:capitalize">' + E(window.ppNomJour(iso) + ' ' + window.ppJJMM(iso)) + '</b>'
+        + ' \u2014 ' + (places === 0 ? 'ferm\u00e9' : sien ? 'journ\u00e9e actuelle'
+            : libres ? libres + ' place' + (libres > 1 ? 's' : '') : 'complet')
+        + '</button>';
+    });
+    h += '<div style="font-size:.78rem;color:var(--gray-500);margin:10px 0 12px;line-height:1.45">'
+      + 'La date annonc\u00e9e au patient devient celle que vous choisissez. '
+      + 'Une journ\u00e9e compl\u00e8te ne peut pas recevoir de pr\u00e9paration de plus.</div>'
+      + '<button class="btn bs" onclick="ppFermerDeplacement()">Annuler</button>';
+    ppBoite(h);
+  };
+
+  window.ppDeplacerVers = function (k) {
+    const p = P().find(x => x && x.id === ppDeplace); if (!p) { window.ppFermerDeplacement(); return; }
+    const iso = window.ppJours(window.ppAujourdhui(), T(), window.PP_HORIZON)[k];
+    if (!iso) return;
+    p.jour = iso; p.updatedAt = Date.now();
+    window.ppFermerDeplacement();
+    if (typeof schedSave === 'function') schedSave();
+    if (typeof renderPreps === 'function') renderPreps(); else window.ppRendPlanning();
   };
 })();
 
