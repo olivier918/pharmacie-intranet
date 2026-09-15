@@ -109,8 +109,14 @@
   .ac-anniv-d{font-size:.82rem;color:#AD1457}
   .ac-fete{font-size:1.7rem;line-height:1}
   .ac-mom-piste{display:flex;gap:12px;overflow-x:auto;scroll-behavior:smooth;padding:2px 2px 8px;scroll-snap-type:x mandatory}
-  .ac-mom{flex:0 0 232px;scroll-snap-align:start;border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:var(--gray-100)}
-  .ac-mom-img{height:120px;background-size:cover;background-position:center}
+  /* Les cartes s'etirent deja a la hauteur de la plus haute (la piste est un
+     flex). En les faisant colonnes, le bloc de texte peut grandir et le
+     bouton « J'aime » tomber en bas : il se retrouve alors A LA MEME
+     HAUTEUR sur toutes les cartes, quelle que soit la longueur du texte.
+     Un bouton qui se deplace d'une carte a l'autre se cherche a chaque
+     fois ; un bouton qui ne bouge pas s'apprend une seule fois. */
+  .ac-mom{flex:0 0 232px;scroll-snap-align:start;border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:var(--gray-100);display:flex;flex-direction:column}
+  .ac-mom-img{height:120px;flex:none;background-size:cover;background-position:center}
   .ac-mom-anniv{border-color:#F48FB1}
   .ac-mom-anniv .ac-mom-txt{background:#FCE4EC}
   .ac-mom-anniv .ac-mom-t{color:#880E4F}
@@ -118,10 +124,10 @@
   .ac-mom-anniv.cejour{border-color:#E91E63;box-shadow:0 0 0 2px rgba(233,30,99,.18)}
   .ac-mom-anniv.passe{opacity:.5}
   .ac-gateau{display:flex;align-items:center;justify-content:center;font-size:2.6rem;background:linear-gradient(135deg,#FCE4EC 0%,#F8BBD0 100%)}
-  .ac-mom-txt{padding:9px 11px}
+  .ac-mom-txt{padding:9px 11px;flex:1;display:flex;flex-direction:column}
   .ac-mom-t{font-weight:700;font-size:.83rem;color:var(--gray-900);line-height:1.3}
   .ac-mom-s{font-size:.78rem;color:var(--gray-700);font-style:italic;margin-top:3px;line-height:1.35}
-  .ac-mom-m{font-size:.7rem;color:var(--gray-500);margin-top:6px;display:flex;align-items:center;gap:7px}
+  .ac-mom-m{font-size:.7rem;color:var(--gray-500);margin-top:auto;padding-top:8px;display:flex;align-items:center;gap:7px}
   /* « J'aime ». C'était un ♡ gris de 0,72 rem, sans bord ni fond, coincé
      entre le nom de l'auteur et deux icônes qui portaient la même classe.
      Rien ne disait qu'on pouvait cliquer, et personne ne cliquait.
