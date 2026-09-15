@@ -9933,8 +9933,8 @@ function smsMention(id){
 }
 
 // Journal central : TOUS les SMS de l'intranet y sont consignés, quel que soit le module d'origine.
-const SMS_SOURCE_LBL={module:'Module SMS', credit:'Relance crédit', livraison:'Livraison', renouvellement:'Renouvellement'};
-const SMS_SOURCE_COL={module:'#0277BD', credit:'#C62828', livraison:'#2E7D32', renouvellement:'#6A1B9A'};
+const SMS_SOURCE_LBL={module:'Module SMS', credit:'Relance crédit', livraison:'Livraison', renouvellement:'Renouvellement', preparation:'Préparation'};
+const SMS_SOURCE_COL={module:'#0277BD', credit:'#C62828', livraison:'#2E7D32', renouvellement:'#6A1B9A', preparation:'#00695C'};
 function smsNewId(){ let id=Date.now(); while(smsLog.some(x=>x.id===id)) id++; return id; }
 function smsLogPush(o){
   o=o||{};

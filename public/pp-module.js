@@ -228,6 +228,7 @@
   .pp-mv{border:none;background:none;cursor:pointer;color:var(--gray-400);font-size:.95rem;
          padding:0 4px;font-family:inherit;line-height:1}
   .pp-mv:hover{color:var(--g-dark)}
+  .pp-sms{color:#00695C;margin-left:6px;font-size:.9rem}
   .pp-ovl{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;
           align-items:center;justify-content:center;padding:16px}
   .pp-bte{background:#fff;border-radius:14px;padding:18px 20px;max-width:440px;width:100%;
@@ -310,6 +311,10 @@
                     + ' · ' + jr + ' j de retard</span>' : '')
                 + (fait ? '' : '<button class="pp-mv" onclick="ppDeplacer(' + idx + ',' + i + ')"'
                     + ' title="Déplacer vers un autre jour">⇄</button>')
+                // Prevenu ? Et le SMS est-il arrive ? L'accuse de remise de
+                // Brevo repond a la seconde question (voir accuses.js).
+                + (p.smsAt ? '<span class="pp-sms" title="Patient prévenu par SMS">✉</span>'
+                    + (typeof smsBadge === 'function' ? smsBadge(p.smsId) : '') : '')
               : (libres
                   ? '<button class="pp-add" onclick="ppChoisirJour(' + idx + ')">+ ajouter</button>'
                   : '')) + '</td>'
@@ -390,9 +395,52 @@
       p.faitLe = window.ppAujourdhui();
     }
     p.updatedAt = Date.now();
+    const neuf = window.ppFait(p);
     if (typeof schedSave === 'function') schedSave();
     if (typeof renderPreps === 'function') renderPreps(); else window.ppRendPlanning();
+    if (neuf) ppProposerSms(p);
   };
+
+  // PROPOSER, pas envoyer. La preparation vient d'etre faite : c'est le moment
+  // ou le patient veut l'apprendre, et celui ou l'on a le dossier sous les
+  // yeux. Mais un SMS part parce que quelqu'un l'a decide, jamais comme effet
+  // de bord d'une case a cocher — decocher par erreur ne doit rien envoyer.
+  // Le texte est une fonction a part, donc eprouvable. Ce qui compte et que
+  // les essais verifient : aucun accent hors GSM-7 (un seul ê, â, î, ô ou û
+  // ferait basculer le message en Unicode, 70 caracteres par segment au lieu
+  // de 160, donc deux credits au lieu d'un), et aucun nom de preparation.
+  window.ppTexteSmsPret = function (prenom) {
+    const pr = String(prenom || '').trim();
+    return 'Bonjour' + (pr ? ' ' + pr : '')
+      + ', votre pr\u00e9paration a bien \u00e9t\u00e9 r\u00e9alis\u00e9e, vous pouvez venir la retirer '
+      + '\u00e0 la Pharmacie du Centre - 02 31 52 15 71.';
+  };
+
+  function ppProposerSms(p) {
+    if (!p || typeof openSmsModal !== 'function') return;
+    if (!p.tel) return;                       // sans mobile, il n'y a rien a proposer
+    const prenom = String(p.prenom || '').trim();
+    // AUCUN nom de preparation dans le message. Une specialite en clair sur un
+    // ecran verrouille est une donnee de sante : regle du depot, sans exception.
+    // Le numero figure en clair car l'expediteur est alphanumerique — le
+    // patient ne peut pas repondre a ce SMS.
+    const texte = window.ppTexteSmsPret(prenom);
+    openSmsModal({
+      titre: 'SMS au patient \u2014 pr\u00e9paration pr\u00eate',
+      tel: p.tel || '', nom: p.nom, prenom: p.prenom,
+      source: 'preparation', tag: 'preparation',
+      info: '<strong>' + E((p.nom || '') + ' ' + (p.prenom || '')) + '</strong>',
+      templates: [{ lbl: 'Pr\u00e9paration pr\u00eate', text: texte }],
+      onSent: function (r) {
+        p.smsAt = new Date().toISOString();
+        p.smsBy = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : '?';
+        p.smsId = (r && r.id) || null;
+        p.updatedAt = Date.now();
+        if (typeof schedSave === 'function') schedSave();
+        if (typeof renderPreps === 'function') renderPreps();
+      }
+    });
+  }
 
   // ── Déplacer ──────────────────────────────────────────────────────────────
   // Un deplacement est une DECISION humaine : la date promise au patient

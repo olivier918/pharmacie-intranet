@@ -132,5 +132,51 @@ console.log('\nLe rendu ne tombe pas, et dit ce qu’il doit dire');
   } finally { w.ppAujourdhui = vrai; }
 })();
 
+console.log('\nLe SMS proposé quand la préparation est faite');
+// On éprouve le message avec les fonctions de l'application elle-même :
+// smsPlain et smsSegments, extraites de public/index.html.
+(function () {
+  const page = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const bout = (n, fin) => { const d = page.indexOf('function ' + n + '('); return page.slice(d, page.indexOf(fin, d) + fin.length); };
+  // smsSegments s'appuie sur les deux tables GSM-7 : on les prend aussi,
+  // telles quelles. Recopier la table serait la meilleure facon de tester
+  // autre chose que ce que l'application fait vraiment.
+  const ligne = n => { const d = page.indexOf('const ' + n + '='); return page.slice(d, page.indexOf('\n', d)); };
+  // `const` declare dans un eval ne sort pas de son eval : on les pose sur
+  // l'objet global pour que smsSegments, evalé a part, les voie.
+  eval(ligne('SMS_GSM7_EXT').replace('const ', 'global.'));
+  eval(ligne('SMS_GSM7').replace('const ', 'global.'));
+  eval(bout('smsPlain', '\n}'));
+  eval(bout('smsSegments', '\n}'));
+
+  const txt = w.ppTexteSmsPret('Marie-José');
+  t('le prénom est repris', /Marie-José/.test(txt));
+  t('sans prénom, la phrase reste correcte', /^Bonjour, votre/.test(w.ppTexteSmsPret('')));
+  t('le numéro de la pharmacie y figure — l’expéditeur est alphanumérique, on ne peut pas répondre',
+    /02 31 52 15 71/.test(txt));
+
+  // Le piege a credits : un seul caractere hors GSM-7 fait basculer tout le
+  // message en Unicode, 70 caracteres par segment au lieu de 160.
+  t('AUCUN caractère hors GSM-7 : ê â î ô û œ et apostrophes typographiques',
+    !/[êâîôûœ’…–—]/.test(txt));
+  t('le texte ne change pas en passant par smsPlain — il est déjà propre',
+    smsPlain(txt) === txt);
+  const seg = smsSegments(txt);
+  // `uni` est LE controle qui compte : c'est l'application elle-meme qui
+  // declare le basculement en Unicode, pas ma liste de caracteres.
+  t('le message reste en GSM-7 — pas de bascule Unicode', seg.uni === false);
+  t('un seul SMS, donc un seul crédit (' + seg.len + ' caractères sur 160)', seg.parts === 1);
+  const longue = smsSegments(w.ppTexteSmsPret('Anne-Charlotte'));
+  t('même avec un prénom long, on reste à un SMS', longue.parts === 1 && longue.uni === false);
+  // Le contre-exemple : un seul ê suffirait a doubler le cout.
+  const piege = smsSegments(txt.replace('réalisée', 'prête'));
+  t('CONTRE-ÉPREUVE : un seul ê ferait basculer le message en Unicode', piege.uni === true);
+
+  // La regle du depot : jamais de nom de specialite dans un SMS. Ce message
+  // ne doit parler que du FAIT que la preparation est prete.
+  t('aucun nom de préparation ni de médicament',
+    !/(mg\b|gélule|crème|suppositoire|solution|comprim|formule)/i.test(txt));
+})();
+
 console.log('\n' + ok + ' réussi(s), ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
