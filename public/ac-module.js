@@ -122,6 +122,23 @@
   .ac-mom-t{font-weight:700;font-size:.83rem;color:var(--gray-900);line-height:1.3}
   .ac-mom-s{font-size:.78rem;color:var(--gray-700);font-style:italic;margin-top:3px;line-height:1.35}
   .ac-mom-m{font-size:.7rem;color:var(--gray-500);margin-top:6px;display:flex;align-items:center;gap:7px}
+  /* « J'aime ». C'était un ♡ gris de 0,72 rem, sans bord ni fond, coincé
+     entre le nom de l'auteur et deux icônes qui portaient la même classe.
+     Rien ne disait qu'on pouvait cliquer, et personne ne cliquait.
+     Trois corrections, et la troisième est la vraie : sa propre ligne (la
+     carte fait 232 px, il n'y avait pas la place à côté du nom), la forme
+     d'un bouton (bord, fond, coins ronds, cible de 30 px), et LE VERBE —
+     une icône seule demande d'avoir déjà compris, un mot l'apprend. */
+  .ac-mom-j{margin-top:8px}
+  .ac-jaime{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-family:inherit;
+            border:1px solid var(--gray-200);background:#fff;border-radius:999px;
+            padding:6px 14px;font-size:.8rem;font-weight:700;color:var(--gray-600);
+            transition:transform .12s ease,border-color .12s ease,background .12s ease,color .12s ease}
+  .ac-jaime .c{font-size:1.05rem;line-height:1}
+  .ac-jaime .n{font-weight:800}
+  .ac-jaime:hover{border-color:#F8BBD0;background:#FFF5F8;color:#C2185B}
+  .ac-jaime:active{transform:scale(.94)}
+  .ac-jaime.on{border-color:#F48FB1;background:#FCE4EC;color:#C2185B}
   .ac-coeur{cursor:pointer;border:none;background:none;font-size:.72rem;font-weight:700;color:var(--gray-500);padding:0;font-family:inherit}
   .ac-coeur.on{color:#E91E63}
   .ac-dots{display:flex;gap:6px;justify-content:center;margin-top:4px}
@@ -376,6 +393,19 @@
       : '';
   }
 
+  // Le compteur n'apparait qu'a partir de 1 : « 0 » n'est pas une information,
+  // c'est un decouragement. Meme regle que pour les compteurs de l'en-tete.
+  function acBoutonJaime(id, aime, nb) {
+    return '<div class="ac-mom-j"><button class="ac-jaime' + (aime ? ' on' : '') + '"'
+      + ' aria-pressed="' + (aime ? 'true' : 'false') + '"'
+      + ' title="' + (aime ? 'Retirer mon j\u2019aime' : 'J\u2019aime cette publication') + '"'
+      + ' onclick="acAimer(' + id + ')">'
+      + '<span class="c">' + (aime ? '\u2665' : '\u2661') + '</span>'
+      + '<span>J\u2019aime</span>'
+      + (nb ? '<span class="n">' + nb + '</span>' : '')
+      + '</button></div>';
+  }
+
   function acCarteMoment(m, u) {
     const aime = !!(u && Array.isArray(m.likes) && m.likes.indexOf(u.id) >= 0);
     const nb = Array.isArray(m.likes) ? m.likes.length : 0;
@@ -388,8 +418,6 @@
       + (m.titre ? '<div class="ac-mom-t">' + E(m.titre) + '</div>' : '')
       + (m.texte ? '<div class="ac-mom-s">' + E(m.texte) + '</div>' : '')
       + '<div class="ac-mom-m"><span>' + E(m.auteurNom || acNom(m.auteur)) + '</span>'
-      + '<button class="ac-coeur' + (aime ? ' on' : '') + '" onclick="acAimer(' + m.id + ')">'
-      + (aime ? '♥' : '♡') + (nb ? ' ' + nb : '') + '</button>'
       + (m.majAt && m.majAt > (m.ts || 0)
           ? '<span style="font-style:italic;opacity:.7">modifié</span>' : '')
       // Modifier : l'AUTEUR seul. Un administrateur peut retirer une publication
@@ -399,7 +427,9 @@
       + (u && (m.auteur === u.id || acAdmin())
           ? '<button class="ac-coeur"' + (u && m.auteur === u.id ? '' : ' style="margin-left:auto"')
             + ' onclick="acRetirerMoment(' + m.id + ')" title="Retirer">✕</button>' : '')
-      + '</div></div></div>';
+      + '</div>'
+      + acBoutonJaime(m.id, aime, nb)
+      + '</div></div>';
   }
 
   function acCarteAnniv(a, u) {
@@ -415,14 +445,13 @@
       + '<div class="ac-mom-s">' + (a.cejour ? 'C’est aujourd’hui ! 🎉'
           : a.jour + ' ' + MOIS_CT[new Date().getMonth()]) + '</div>'
       + '<div class="ac-mom-m">'
-      + (a.attId
-          ? '<button class="ac-coeur' + (aime ? ' on' : '') + '" onclick="acAimer(' + a.attId + ')">'
-            + (aime ? '♥' : '♡') + (nb ? ' ' + nb : '') + '</button>'
-          : '<span style="opacity:.6">Anniversaire</span>')
+      + '<span style="opacity:.6">Anniversaire</span>'
       + '<button class="ac-coeur" style="margin-left:auto" onclick="acFormAnniv(\'' + a.cle + '\')" title="'
       + (a.image ? 'Changer l’image' : 'Ajouter une image ou un GIF') + '">'
       + (a.image ? '✎' : '+ image') + '</button>'
-      + '</div></div></div>';
+      + '</div>'
+      + (a.attId ? acBoutonJaime(a.attId, aime, nb) : '')
+      + '</div></div>';
   }
 
   window.acGlisser = function (i) {
