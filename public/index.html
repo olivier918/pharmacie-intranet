@@ -2613,7 +2613,7 @@ let threads = [
   ]},
 ];
 
-let prepTrame = [], prepExceptions = [];
+let prepTrame = [], prepExceptions = [], prepRotation = [];
 let preps = [
   {id:1,nom:'CHAUVEAU',prenom:'Marie-José',dob:'1950-03-12',med:'Dr Elodie',prep:'Telmisartan 4mg — 60 gélules (chat)',type:'realisation',scan:'ordo_chauveau.pdf',date:'2026-05-16',status:'en préparation'},
   {id:2,nom:'DALENCON',prenom:'Françoise',dob:'1952-07-20',med:'Dr Martin',prep:'Gabapentine 170mg — 120 gélules (chat)',type:'devis',scan:'ordo_dalencon.pdf',date:'2026-05-14',status:'devis'},
@@ -2684,7 +2684,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2747,7 +2747,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2815,6 +2815,7 @@ async function loadAll(){
     if(Array.isArray(data.smsTemplates))smsTemplates=data.smsTemplates;
     if(Array.isArray(data.prepTrame))prepTrame=data.prepTrame;
     if(Array.isArray(data.prepExceptions))prepExceptions=data.prepExceptions;
+    if(Array.isArray(data.prepRotation))prepRotation=data.prepRotation;
     completerModelesSms();
     if(data.bluestone&&data.bluestone.mail)BLUESTONE.mail=data.bluestone.mail;
     if(data.banque)banque=data.banque;

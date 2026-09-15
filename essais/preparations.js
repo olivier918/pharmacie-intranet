@@ -33,6 +33,33 @@ t('une exception sans responsable ne l’efface pas',
   w.ppResp('2026-09-17', TR, [{ date: '2026-09-17', places: 1 }]) === 'JN');
 t('le motif remonte pour le comptoir', w.ppMotif('2026-09-15', TR, EX) === 'Pas assez de monde');
 
+console.log('\nLa rotation des responsables');
+// Ancrage : le lundi 14/09, c'est au premier de la liste.
+const TRR = TR.map(x => x.id === 'j1' ? { id: 'j1', places: 3, resp: 'AF', ancrage: '2026-09-14' } : x);
+const ROT = [{ id: 'a', ordre: 0, resp: 'JC' }, { id: 'b', ordre: 1, resp: 'HL' }, { id: 'c', ordre: 2, resp: 'JN' }];
+t('lundi de la semaine d’ancrage : le premier de la liste', w.ppResp('2026-09-14', TRR, [], ROT) === 'JC');
+t('TOUTE la semaine revient à la même personne',
+  w.ppResp('2026-09-18', TRR, [], ROT) === 'JC' && w.ppResp('2026-09-16', TRR, [], ROT) === 'JC');
+t('la semaine suivante, le suivant', w.ppResp('2026-09-21', TRR, [], ROT) === 'HL');
+t('puis le troisième', w.ppResp('2026-09-28', TRR, [], ROT) === 'JN');
+t('puis la liste reprend au début', w.ppResp('2026-10-05', TRR, [], ROT) === 'JC');
+// Le 25/10/2026, la France repasse a l'heure d'hiver : entre deux lundis il y
+// a 7 j + 1 h. Une troncature ferait deriver la rotation a partir de la.
+t('LE CHANGEMENT D’HEURE NE DÉCALE PAS LA ROTATION',
+  w.ppResp('2026-11-02', TRR, [], ROT) === 'HL' && w.ppResp('2026-10-26', TRR, [], ROT) === 'JC');
+t('une semaine antérieure à l’ancrage tourne aussi, sans reste négatif',
+  w.ppResp('2026-09-07', TRR, [], ROT) === 'JN');
+t('un écart du jour l’emporte sur le roulement',
+  w.ppResp('2026-09-21', TRR, [{ date: '2026-09-21', resp: 'AF' }], ROT) === 'AF');
+t('sans rotation, on retombe sur la semaine type',
+  w.ppResp('2026-09-14', TRR, [], []) === 'AF');
+t('une rotation d’une seule personne ne bouge jamais',
+  w.ppResp('2026-09-14', TRR, [], [ROT[0]]) === 'JC' && w.ppResp('2026-12-21', TRR, [], [ROT[0]]) === 'JC');
+t('l’ordre de la liste fait foi, pas l’ordre du tableau',
+  w.ppResp('2026-09-21', TRR, [], [ROT[2], ROT[0], ROT[1]]) === 'HL');
+t('le lundi d’une date se calcule juste',
+  w.ppLundi('2026-09-20') === '2026-09-14' && w.ppLundi('2026-09-14') === '2026-09-14');
+
 console.log('\nLa semaine flottante — 5 jours ouvrés');
 const J = w.ppJours('2026-09-14', TR, 5);
 t('cinq jours', J.length === 5);

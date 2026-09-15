@@ -76,9 +76,39 @@
     const t = ppLigneTrame(iso, trame);
     return t ? Math.max(0, +t.places || 0) : 0;
   }
-  function ppResp(iso, trame, exceptions) {
+  // ── La rotation des responsables ──────────────────────────────────────────
+  // Une liste ordonnee, toujours la meme, qui avance d'un cran chaque semaine :
+  // la semaine entiere revient a la meme personne, puis on passe a la suivante.
+  //
+  // L'ancrage vit sur la ligne « lundi » de la trame — c'est le lundi a partir
+  // duquel le premier de la liste prend son tour. Le poser ailleurs aurait
+  // demande une collection de plus pour une seule date.
+  function ppLundi(iso) {
+    const d = ppDate(iso);
+    const j = d.getDay();                 // dimanche = 0
+    d.setDate(d.getDate() - ((j + 6) % 7));
+    return ppISO(d);
+  }
+  function ppTour(iso, trame, rotation) {
+    const l = (rotation || []).filter(r => r && r.resp)
+      .slice().sort((a, b) => (+a.ordre || 0) - (+b.ordre || 0));
+    if (!l.length) return null;
+    const j1 = (trame || []).find(x => x && x.id === 'j1');
+    const anc = (j1 && j1.ancrage) || null;
+    if (!anc) return l[0];
+    // Arrondi et non troncature : entre deux lundis a midi, les changements
+    // d'heure de mars et d'octobre font des semaines de 7 j ± 1 h.
+    const sem = Math.round((ppDate(ppLundi(iso)) - ppDate(ppLundi(anc))) / 86400000 / 7);
+    const k = ((sem % l.length) + l.length) % l.length;   // modulo positif : le passe aussi
+    return l[k];
+  }
+  // Trois sources, dans cet ordre. L'ecart du jour l'emporte sur tout : c'est
+  // une decision prise pour CE jour-la, elle doit survivre au roulement.
+  function ppResp(iso, trame, exceptions, rotation) {
     const e = ppException(iso, exceptions);
     if (e && e.resp) return e.resp;
+    const tour = ppTour(iso, trame, rotation);
+    if (tour) return tour.resp;
     const t = ppLigneTrame(iso, trame);
     return (t && t.resp) || null;
   }
@@ -166,7 +196,7 @@
   G.ppISO = ppISO; G.ppAujourdhui = ppAujourdhui; G.ppClef = ppClef;
   G.ppNomJour = ppNomJour; G.ppJJMM = ppJJMM; G.ppPlusJours = ppPlusJours;
   G.ppTravaille = ppTravaille; G.ppPlaces = ppPlaces; G.ppResp = ppResp;
-  G.ppMotif = ppMotif; G.ppJours = ppJours; G.ppPremierOuvert = ppPremierOuvert;
+  G.ppMotif = ppMotif; G.ppLundi = ppLundi; G.ppTour = ppTour; G.ppJours = ppJours; G.ppPremierOuvert = ppPremierOuvert;
   G.ppAFaire = ppAFaire; G.ppFait = ppFait; G.ppJourEffectif = ppJourEffectif; G.ppEnRetard = ppEnRetard;
   G.ppJoursRetard = ppJoursRetard; G.ppRetards = ppRetards;
   G.ppDuJour = ppDuJour; G.ppLibres = ppLibres;
@@ -183,6 +213,7 @@
   const T = () => (typeof prepTrame !== 'undefined' && Array.isArray(prepTrame)) ? prepTrame : [];
   const X = () => (typeof prepExceptions !== 'undefined' && Array.isArray(prepExceptions)) ? prepExceptions : [];
   const P = () => (typeof preps !== 'undefined' && Array.isArray(preps)) ? preps : [];
+  const R = () => (typeof prepRotation !== 'undefined' && Array.isArray(prepRotation)) ? prepRotation : [];
   const nom = id => (typeof staffName === 'function' && id) ? staffName(id) : (id || '');
 
   const STYLE = `
@@ -269,7 +300,7 @@
       const places = window.ppPlaces(iso, trame, exc);
       const duJour = window.ppDuJour(iso, lp, auj, trame, exc);
       const libres = Math.max(0, places - duJour.length);
-      const resp = window.ppResp(iso, trame, exc);
+      const resp = window.ppResp(iso, trame, exc, R());
       const motif = window.ppMotif(iso, trame, exc);
       const titre = window.ppNomJour(iso) + ' ' + window.ppJJMM(iso);
 
@@ -513,6 +544,7 @@
   const T = () => (typeof prepTrame !== 'undefined' && Array.isArray(prepTrame)) ? prepTrame : [];
   const X = () => (typeof prepExceptions !== 'undefined' && Array.isArray(prepExceptions)) ? prepExceptions : [];
   const P = () => (typeof preps !== 'undefined' && Array.isArray(preps)) ? preps : [];
+  const R = () => (typeof prepRotation !== 'undefined' && Array.isArray(prepRotation)) ? prepRotation : [];
   const nom = id => (typeof staffName === 'function' && id) ? staffName(id) : (id || '');
   const ORDRE = [1, 2, 3, 4, 5, 6, 0];        // lundi d'abord, dimanche en dernier
   const BO_SEMAINES = 6;
@@ -551,8 +583,45 @@
     if (assurerTrame() && typeof schedSave === 'function') schedSave();
     const trame = T(), exc = X(), auj = window.ppAujourdhui();
 
+    // ── La rotation ──
+    const rot = R().filter(r => r && r.resp).slice().sort((a, b) => (+a.ordre || 0) - (+b.ordre || 0));
+    const tour = window.ppTour(auj, trame, rot);
     let h = '<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.6px;font-weight:700;'
-      + 'color:var(--gray-500);margin-bottom:.5rem">La semaine type</div>'
+      + 'color:var(--gray-500);margin-bottom:.5rem">La rotation des responsables</div>';
+    if (!rot.length) {
+      h += '<div style="font-size:.83rem;color:var(--gray-500);margin-bottom:.6rem">'
+        + 'Aucune rotation : le responsable vient alors de la semaine type, ci-dessous.</div>';
+    } else {
+      h += '<div style="background:var(--g-pale);border-radius:9px;padding:9px 13px;margin-bottom:.7rem;'
+        + 'display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+        + '<span style="font-size:.83rem">Cette semaine :</span>'
+        + '<select onchange="ppRotCetteSemaine(this.value)" style="font-weight:700">'
+        + rot.map(function (r) {
+            return '<option value="' + E(r.id) + '"' + (tour && tour.id === r.id ? ' selected' : '') + '>'
+              + E(nom(r.resp)) + '</option>'; }).join('')
+        + '</select>'
+        + '<span style="font-size:.78rem;color:var(--gray-500)">la liste avance d’un cran chaque lundi</span>'
+        + '</div>';
+    }
+    h += '<table class="pp-t"><tbody>';
+    rot.forEach(function (r, i) {
+      h += '<tr><td class="c1">' + (i + 1) + '</td>'
+        + '<td style="font-weight:600">' + E(nom(r.resp)) + '</td>'
+        + '<td class="c5" style="text-align:right;white-space:nowrap">'
+        + (i > 0 ? '<button class="pp-mv" onclick="ppRotMonter(' + i + ')" title="Monter">\u2191</button>' : '')
+        + (i < rot.length - 1 ? '<button class="pp-mv" onclick="ppRotDescendre(' + i + ')" title="Descendre">\u2193</button>' : '')
+        + '<button class="pp-mv" onclick="ppRotRetirer(' + i + ')" title="Retirer de la rotation">\u2715</button>'
+        + '</td></tr>';
+    });
+    h += '</tbody></table>'
+      + '<div style="margin-top:7px"><select onchange="ppRotAjouter(this.value)">'
+      + '<option value="">+ ajouter une personne\u2026</option>'
+      + optionsStaff(null).replace('<option value="">\u2014</option>', '') + '</select></div>'
+      + '<div style="font-size:.78rem;color:var(--gray-500);margin-top:6px;line-height:1.5">'
+      + 'La liste est toujours la m\u00eame et tourne toute seule. Pour changer le responsable d’une '
+      + 'journ\u00e9e pr\u00e9cise, utilisez les \u00e9carts plus bas : cette d\u00e9cision-l\u00e0 l’emporte sur le roulement.</div>'
+      + '<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.6px;font-weight:700;'
+      + 'color:var(--gray-500);margin:1.1rem 0 .5rem">La semaine type</div>'
       + '<table class="pp-t"><thead><tr><th>Jour</th><th class="c5">Places</th><th>Responsable</th></tr></thead><tbody>';
     ORDRE.forEach(function (d) {
       const id = window.PP_CLEFS[d];
@@ -565,6 +634,8 @@
     });
     h += '</tbody></table>'
       + '<div style="font-size:.78rem;color:var(--gray-500);margin-top:6px;line-height:1.5">'
+      + (rot.length ? 'La colonne <b>Responsable</b> ci-dessus ne sert que si la rotation est vide. '
+                    : '')
       + '<b>0 place</b> = jour sans production, il n’apparaît pas au comptoir. '
       + 'La trame ne se ressaisit jamais : seuls les écarts ci-dessous se déclarent.</div>';
 
@@ -583,7 +654,7 @@
         + '<td class="c5"><input type="number" min="0" max="12" value="' + places + '"'
         + ' style="width:56px;text-align:center" onchange="ppEcartPlaces(' + i + ',this.value)"></td>'
         + '<td><select onchange="ppEcartResp(' + i + ',this.value)">'
-        + optionsStaff(window.ppResp(iso, trame, exc)) + '</select></td>'
+        + optionsStaff(window.ppResp(iso, trame, exc, R())) + '</select></td>'
         + '<td><input type="text" value="' + E((e && e.motif) || '') + '" placeholder="Pas assez de monde…"'
         + ' style="width:100%" onchange="ppEcartMotif(' + i + ',this.value)"></td>'
         + '<td class="c5">' + (pris ? '<span style="font-size:.72rem;color:var(--gray-500)">' + pris + ' prévue' + (pris > 1 ? 's' : '') + '</span>' : '')
@@ -646,6 +717,48 @@
     const e = X().find(x => x && x.date === iso); if (!e) return;
     if (typeof markDeleted === 'function') markDeleted('prepExceptions', e.id);
     if (typeof prepExceptions !== 'undefined') prepExceptions = prepExceptions.filter(x => x !== e);
+    enregistrer();
+  };
+
+  // ── La rotation ───────────────────────────────────────────────────────────
+  function rotTriee() {
+    return R().filter(r => r && r.resp).slice().sort((a, b) => (+a.ordre || 0) - (+b.ordre || 0));
+  }
+  function rotRenumeroter(l) { l.forEach(function (r, i) { r.ordre = i; r.updatedAt = Date.now(); }); }
+
+  window.ppRotAjouter = function (v) {
+    if (!v || typeof prepRotation === 'undefined') { window.ppRendCapacite(); return; }
+    const l = rotTriee();
+    if (l.some(r => r.resp === v)) { window.ppRendCapacite(); return; }   // deja dans le tour
+    prepRotation.push({ id: Date.now() + Math.floor(Math.random() * 1000), ordre: l.length, resp: v, updatedAt: Date.now() });
+    enregistrer();
+  };
+  window.ppRotRetirer = function (i) {
+    const l = rotTriee(); const r = l[i]; if (!r) return;
+    if (typeof markDeleted === 'function') markDeleted('prepRotation', r.id);
+    prepRotation = prepRotation.filter(x => x !== r);
+    rotRenumeroter(rotTriee());
+    enregistrer();
+  };
+  function rotEchanger(i, j) {
+    const l = rotTriee(); if (!l[i] || !l[j]) return;
+    const a = l[i].ordre; l[i].ordre = l[j].ordre; l[j].ordre = a;
+    l[i].updatedAt = l[j].updatedAt = Date.now();
+    enregistrer();
+  }
+  window.ppRotMonter = function (i) { rotEchanger(i, i - 1); };
+  window.ppRotDescendre = function (i) { rotEchanger(i, i + 1); };
+
+  // Plutot que de faire « decaler » une rotation dans l'abstrait, on dit QUI
+  // est de tour cette semaine et l'ancrage se recale tout seul. C'est la
+  // question que quelqu'un se pose vraiment devant cet ecran.
+  window.ppRotCetteSemaine = function (id) {
+    const l = rotTriee(); const k = l.findIndex(r => String(r.id) === String(id));
+    if (k < 0) return;
+    const j1 = T().find(x => x && x.id === 'j1'); if (!j1) return;
+    const lundi = window.ppLundi(window.ppAujourdhui());
+    j1.ancrage = window.ppPlusJours(lundi, -7 * k);
+    j1.updatedAt = Date.now();
     enregistrer();
   };
 
