@@ -1251,6 +1251,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot2" onclick="boTab('patients')"><svg class="ico"><use href="#ic-patients"></use></svg> Patients</button>
         <button class="btn bs" id="bot5" onclick="boTab('medecins')"><svg class="ico"><use href="#ic-medecin"></use></svg> Médecins</button>
         <button class="btn bs" id="bot3" onclick="boTab('labo')"><svg class="ico"><use href="#ic-realisation"></use></svg> Sous-traitants</button>
+        <button class="btn bs" id="bot13" onclick="boTab('preps')"><svg class="ico"><use href="#ic-realisation"></use></svg> Préparations</button>
         <button class="btn bs" id="bot4" onclick="boTab('compte')"><svg class="ico"><use href="#ic-securite"></use></svg> Compte admin</button>
         <button class="btn bs" id="bot7" onclick="boTab('smstpl')"><svg class="ico"><use href="#ic-messagerie"></use></svg> Modèles SMS</button>
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
@@ -1394,16 +1395,6 @@ tr:hover td{background:#fafffe}
           <div id="cf-etat" style="margin-top:.9rem;font-size:.86rem;line-height:1.6"></div>
         </div>
 
-        <!-- PRÉPARATIONS — CAPACITÉ -->
-        <div class="card" style="margin-top:1rem">
-          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-calendrier"></use></svg> Préparations — capacité</span></div>
-          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">
-            La semaine type se pose une fois : elle remplace la réinitialisation hebdomadaire du tableur.
-            Ensuite, on ne déclare que les écarts — une journée fermée, une capacité réduite, un autre responsable.
-          </p>
-          <div id="pp-capacite"></div>
-        </div>
-
         <!-- PLACE OCCUPÉE EN BASE -->
         <div class="card" style="margin-top:1rem">
           <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Place occupée en base</span></div>
@@ -1427,6 +1418,19 @@ tr:hover td{background:#fafffe}
 
       <!-- MAINTENANCE : reprise des scans de location -->
       <div id="bo-modules-maint" style="display:none"></div>
+
+      <!-- PRÉPARATIONS : capacité de production -->
+      <div id="bo-preps" style="display:none">
+        <div class="card">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-realisation"></use></svg> Capacité de production</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">
+            Tout le planning des préparations se règle ici : qui est responsable, combien de places par jour,
+            et les journées qui sortent de l'ordinaire. La semaine type se pose une fois — elle remplace
+            la réinitialisation hebdomadaire du tableur. Ensuite, on ne déclare que les écarts.
+          </p>
+          <div id="pp-capacite"></div>
+        </div>
+      </div>
 
       <!-- JOURNAL D'ACTIVITÉ (administrateurs) -->
       <div id="bo-journal" style="display:none">
@@ -3441,7 +3445,6 @@ function showSec(name,btn){
   if(name==='livraisons')renderD();
   if(name==='messagerie')renderThreads();
   if(name==='preparations')renderPreps();
-  if(name==='backoffice'&&window.ppRendCapacite)ppRendCapacite();
   if(name==='bpm')renderBpm();
   if(name==='locations'){renderLocs();document.getElementById('loc-form-card').style.display='none';}
   if(name==='controles')renderControles();
@@ -4605,11 +4608,11 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10','bot11','bot12'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal','bo-modules','bo-acces'];
+const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10','bot11','bot12','bot13'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal','bo-modules','bo-acces','bo-preps'];
 function boTab(t){
   if((t==='compte'||t==='backups'||t==='journal'||t==='acces') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9,modules:10,acces:11};
+  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9,modules:10,acces:11,preps:12};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
@@ -4624,6 +4627,7 @@ function boTab(t){
   if(t==='modules')renderModulesUI();
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
   if(t==='materiel')renderMatTypes();
+  if(t==='preps'&&window.ppRendCapacite)ppRendCapacite();
   applyAdminUI();
 }
 
