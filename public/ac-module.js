@@ -133,6 +133,28 @@
   .ac-pt{width:8px;height:8px;border-radius:50%;background:var(--red);flex:none}
   .ac-al.calme{color:var(--gray-500);font-weight:500}
   .ac-al.calme .ac-pt{background:#66BB6A}
+  /* Solde de credits SMS. Deux visages : une pastille qu'on ne remarque pas
+     quand tout va bien, et un bandeau qu'on ne peut pas manquer quand le
+     service va s'arreter. Entre les deux, rien — un avertissement tiede ne
+     change le comportement de personne. */
+  .ac-sms{margin-bottom:16px}
+  .ac-sms:empty{display:none;margin:0}
+  .ac-sms-b{display:flex;align-items:center;gap:15px;border-radius:13px;padding:15px 18px;
+            border:2px solid #C62828;background:#FFEBEE}
+  .ac-sms-b.vide{border-color:#7F1D1D;background:#FDE2E2}
+  .ac-sms-ico{width:34px;height:34px;border-radius:50%;background:#C62828;color:#fff;flex:none;
+              display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:800}
+  .ac-sms-b.vide .ac-sms-ico{background:#7F1D1D}
+  .ac-sms-t{font-weight:800;color:#7F1D1D;font-size:1.02rem;line-height:1.25}
+  .ac-sms-t b{font-size:1.32rem}
+  .ac-sms-s{font-size:.84rem;color:#8a3a3a;margin-top:2px;line-height:1.45}
+  .ac-sms-a{margin-left:auto;flex:none;background:#C62828;color:#fff;border-radius:9px;
+            padding:9px 15px;font-size:.85rem;font-weight:700;text-decoration:none;white-space:nowrap}
+  .ac-sms-a:hover{background:#A31D1D}
+  @media(max-width:640px){
+    .ac-sms-b{flex-wrap:wrap}
+    .ac-sms-a{margin-left:0;width:100%;text-align:center}
+  }
   .ac-fil{display:block;width:100%;text-align:left;border:none;font-family:inherit;border-left:3px solid var(--gray-300);padding:9px 13px;margin-bottom:8px;border-radius:0 9px 9px 0;background:var(--gray-100);cursor:pointer}
   .ac-fil:hover{background:#eef1ef}
   .ac-fil.muet{border-left-color:#C62828}
@@ -202,6 +224,8 @@
     <div class="ac-lien"><button onclick="acFormMoment()">+ Partager quelque chose</button></div>
   </div>
 
+  <div class="ac-sms" id="ac-sms"></div>
+
   <div class="ac-alertes" id="ac-alertes"></div>
 
   <div class="ac-card">
@@ -260,7 +284,9 @@
     if (d) d.textContent = n.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     acRendEntete();
     acRendMoments();
+    acRendSms();
     acRendAlertes();
+    acChargerSms(false);
     acRendFils();
     acRendMessagerie();
     acRendTodos();
@@ -424,6 +450,52 @@
     acSave(true); acRendMoments();
   };
 
+  // ── Solde de credits SMS ──────────────────────────────────────────────────
+  // Le serveur garde la derniere valeur connue et ne redemande a Brevo qu'au
+  // bout d'un quart d'heure ; l'accueil peut donc l'interroger sans scrupule.
+  // On evite quand meme d'appeler a chaque retour sur l'onglet.
+  let acSms = null, acSmsQuand = 0;
+
+  function acChargerSms(force) {
+    if (!force && acSmsQuand && Date.now() - acSmsQuand < 300000) return;
+    acSmsQuand = Date.now();
+    fetch('/api/sms-credits' + (force ? '?force=1' : ''), { cache: 'no-store' })
+      .then(r => r.json())
+      .then(function (j) { acSms = j && j.ok ? j : null; acRendSms(); acRendAlertes(); })
+      .catch(function () { /* un compteur absent ne casse pas l'accueil */ });
+  }
+  window.acRafraichirSms = function () { acChargerSms(true); };
+
+  function acNombreSms(n) {
+    // Un solde peut etre fractionnaire chez Brevo. On n'affiche pas « 12.7 » :
+    // ce qui compte est combien d'envois restent, donc on arrondit vers le BAS.
+    return String(Math.floor(Number(n)));
+  }
+
+  function acRendSms() {
+    const el = document.getElementById('ac-sms'); if (!el) return;
+    const j = acSms;
+    // Pas de service SMS, ou solde inconnu : rien d'alarmant a dire ici. La
+    // pastille discrete des alertes s'en charge.
+    if (!j || !j.configure || (j.niveau !== 'bas' && j.niveau !== 'vide')) { el.innerHTML = ''; return; }
+    const vide = j.niveau === 'vide';
+    el.innerHTML =
+      '<div class="ac-sms-b' + (vide ? ' vide' : '') + '">'
+      + '<div class="ac-sms-ico">!</div>'
+      + '<div>'
+      + '<div class="ac-sms-t">' + (vide
+          ? 'Plus aucun crédit SMS'
+          : 'Crédits SMS : <b>' + acNombreSms(j.credits) + '</b>')
+        + '</div>'
+      + '<div class="ac-sms-s">' + (vide
+          ? 'Les envois de SMS échouent : livraisons, renouvellements et relances de crédits.'
+          : 'Il en reste moins de ' + j.seuil + '. Un message long en consomme plusieurs.')
+        + '</div>'
+      + '</div>'
+      + '<a class="ac-sms-a" href="https://app.brevo.com/" target="_blank" rel="noopener">Recharger sur Brevo</a>'
+      + '</div>';
+  }
+
   // ── Alertes ───────────────────────────────────────────────────────────────
   function acRendAlertes() {
     const el = document.getElementById('ac-alertes'); if (!el) return;
@@ -443,6 +515,15 @@
       }).length;
       if (rel) parts.push('<button class="ac-al" onclick="showSec(\'credits\')"><span class="ac-pt"></span>'
         + rel + ' crédit' + (rel > 1 ? 's' : '') + ' à relancer</button>');
+    }
+    // Le solde SMS quand il est confortable : une pastille verte parmi les
+    // autres. Quand il ne l'est plus, c'est le bandeau au-dessus qui parle, et
+    // on ne redit pas la meme chose deux fois.
+    if (acSms && acSms.configure && acSms.niveau === 'ok') {
+      parts.push('<span class="ac-al calme"><span class="ac-pt"></span>Cr\u00e9dits SMS : '
+        + acNombreSms(acSms.credits) + '</span>');
+    } else if (acSms && acSms.configure && acSms.niveau === 'inconnu') {
+      parts.push('<span class="ac-al calme">Solde SMS indisponible</span>');
     }
     el.innerHTML = parts.join('');
   }

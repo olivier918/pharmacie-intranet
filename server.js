@@ -1090,6 +1090,121 @@ app.get('/api/sms-status', (req, res) => {
   });
 });
 
+// ─── SOLDE DE CREDITS SMS ───────────────────────────────────────────────────
+// Brevo publie le solde sur /v3/account, dans l'entree `sms` du tableau `plan`.
+//
+// Trois precautions, et elles expliquent la forme de ce qui suit.
+//
+// ON NE DEMANDE PAS A CHAQUE OUVERTURE. Quinze postes qui affichent l'accueil
+// feraient une requete chacun pour un nombre qui ne bouge que d'une unite par
+// SMS. On garde donc la derniere valeur lue, rafraichie au plus toutes les
+// quinze minutes, et un seul appel part meme si dix postes demandent en meme
+// temps (`enVol`).
+//
+// CHAQUE ENVOI DONNE LE SOLDE GRATUITEMENT. `sendSmsViaBrevo` recoit deja
+// `remainingCredits` dans la reponse d'envoi : c'est exact, immediat, et ca ne
+// coute pas un appel. Le compteur se tient donc a jour tout seul pendant la
+// journee, et la lecture chez Brevo ne sert qu'a partir d'un etat connu.
+//
+// UNE PANNE DE BREVO N'EST PAS UNE ALERTE. Si l'appel echoue, on sert la
+// derniere valeur connue avec sa date. Afficher « plus de credits » parce que
+// le reseau a hoquete, c'est apprendre a l'equipe a ignorer le bandeau rouge.
+const SMS_SEUIL_BAS = Math.max(0, parseInt(process.env.SMS_SEUIL_BAS, 10) || 50);
+const SMS_FRAICHEUR_MS = 15 * 60 * 1000;
+let _solde = { credits: null, a: 0, erreur: null };
+let _enVol = null;
+
+// Pure, donc eprouvable : ce que Brevo repond -> un nombre de credits.
+// Le tableau `plan` melange les natures (mail, sms, abonnement) ; on ne
+// retient que le SMS. Plusieurs entrees SMS s'additionnent — un compte qui a
+// achete deux packs en montre deux.
+function extraireSoldeSms(reponse) {
+  const plans = reponse && Array.isArray(reponse.plan) ? reponse.plan : [];
+  const sms = plans.filter(p => p && String(p.type || '').toLowerCase() === 'sms');
+  if (!sms.length) return null;
+  // `vu` separe « le compte a zero credit » de « je n'ai pas su lire ». Sans
+  // lui, Number(null) vaut 0 et une reponse abimee ferait clignoter le bandeau
+  // « plus aucun credit SMS » alors que Brevo n'a rien dit de tel. Un compteur
+  // qui crie au loup n'est plus lu le jour ou il a raison.
+  let t = 0, vu = false;
+  for (const p of sms) {
+    if (p.credits === null || p.credits === undefined || p.credits === '') continue;
+    const n = Number(p.credits);
+    if (isFinite(n)) { t += n; vu = true; }
+  }
+  return vu ? t : null;
+}
+
+// Pure aussi : un nombre -> ce que l'ecran doit montrer. Quatre etats, pas
+// deux. « Zero » et « il en reste douze » ne demandent pas la meme phrase, et
+// « je ne sais pas » ne doit surtout pas se confondre avec « il n'y en a plus ».
+function niveauSms(credits, seuil) {
+  if (credits === null || credits === undefined || !isFinite(Number(credits))) return 'inconnu';
+  const n = Number(credits);
+  if (n <= 0) return 'vide';
+  return n < Number(seuil) ? 'bas' : 'ok';
+}
+
+function noterSoldeSms(credits) {
+  const n = Number(credits);
+  if (!isFinite(n) || n < 0) return false;
+  _solde = { credits: n, a: Date.now(), erreur: null };
+  return true;
+}
+
+function lireSoldeChezBrevo() {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const req = https.request({
+      hostname: 'api.brevo.com', path: '/v3/account', method: 'GET',
+      headers: { 'api-key': process.env.BREVO_API_KEY, 'accept': 'application/json' }
+    }, (res) => {
+      let body = '';
+      res.on('data', (c) => body += c);
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          let msg = body; try { msg = JSON.parse(body).message || body; } catch (e) {}
+          return reject(new Error('Brevo compte ' + res.statusCode + ' : ' + String(msg).slice(0, 200)));
+        }
+        let j = null; try { j = JSON.parse(body); } catch (e) { return reject(new Error('Reponse Brevo illisible')); }
+        const c = extraireSoldeSms(j);
+        if (c === null) return reject(new Error('Aucun plan SMS sur ce compte Brevo'));
+        resolve(c);
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(10000, () => { req.destroy(new Error('Delai depasse (Brevo compte)')); });
+    req.end();
+  });
+}
+
+async function rafraichirSoldeSms(force) {
+  if (!process.env.BREVO_API_KEY) return _solde;
+  if (!force && _solde.a && Date.now() - _solde.a < SMS_FRAICHEUR_MS) return _solde;
+  if (_enVol) return _enVol;                       // un seul appel pour tout le monde
+  _enVol = lireSoldeChezBrevo()
+    .then((c) => { noterSoldeSms(c); return _solde; })
+    .catch((e) => { _solde = Object.assign({}, _solde, { erreur: e.message }); return _solde; })
+    .finally(() => { _enVol = null; });
+  return _enVol;
+}
+
+app.get('/api/sms-credits', async (req, res) => {
+  const configure = !!process.env.BREVO_API_KEY;
+  if (!configure) {
+    return res.json({ ok: true, configure: false, seuil: SMS_SEUIL_BAS, credits: null, niveau: 'inconnu' });
+  }
+  const force = String((req.query || {}).force || '') === '1';
+  try { await rafraichirSoldeSms(force); } catch (e) { /* on sert ce qu'on a */ }
+  res.json({
+    ok: true, configure: true, seuil: SMS_SEUIL_BAS,
+    credits: _solde.credits,
+    niveau: niveauSms(_solde.credits, SMS_SEUIL_BAS),
+    verifieA: _solde.a || null,
+    erreur: _solde.erreur || null
+  });
+});
+
 // ─── Envoi d'un SMS, déclenché par l'utilisateur depuis l'appli ───
 app.post('/api/send-sms', freins.sms[0], freins.sms[1], async (req, res) => {
   if (!smsConfigured()) return res.status(400).json({ ok: false, error: 'Service SMS non configuré sur le serveur (BREVO_API_KEY + BREVO_SMS_SENDER).' });
@@ -1101,6 +1216,9 @@ app.post('/api/send-sms', freins.sms[0], freins.sms[1], async (req, res) => {
   if (body.length > 640) return res.status(400).json({ ok: false, error: 'Message trop long (640 caractères maximum, soit 4 SMS).' });
   try {
     const r = await sendSmsViaBrevo({ to: msisdn, text: body, tag: tag || 'intranet' });
+    // Le solde restant vient avec la reponse d'envoi : exact, immediat, et
+    // gratuit. Le compteur de l'accueil se tient a jour sans rien demander.
+    noterSoldeSms(r.credits);
     return res.json({ ok: true, id: r.id, credits: r.credits, to: msisdn });
   } catch (err) {
     console.error('Envoi SMS:', err.message);
@@ -1857,4 +1975,4 @@ async function start() {
 // on n'ouvre ni port ni connexion : on expose les fonctions de fusion pour les vérifier.
 if (require.main === module) start();
 
-module.exports = { mergeState, mergeCaisse, mergePlParams, mergeById, mergeTombstones, applyTombstones, mergeStaff, ensureNatIds, toMsisdnFR, smsSender, smsConfigured };
+module.exports = { extraireSoldeSms, niveauSms, mergeState, mergeCaisse, mergePlParams, mergeById, mergeTombstones, applyTombstones, mergeStaff, ensureNatIds, toMsisdnFR, smsSender, smsConfigured };
