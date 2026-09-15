@@ -244,6 +244,18 @@
   .pp-ret .c1{color:#B45309}
   .pp-etiq{display:inline-block;background:#FFE0B2;color:#8a4b00;border-radius:999px;padding:0 8px;
            font-size:.68rem;font-weight:700;margin-left:6px}
+  /* La feuille de style generale pose un survol qui repeint le fond des
+     cellules en blanc casse. Sur le
+     bandeau de jour — texte BLANC sur fond bleu-vert — le survol repeignait le
+     fond en blanc : la ligne ne disparaissait pas, elle s'effacait. Et les
+     couleurs d'etat, qui SONT l'information, s'effacaient de meme. On les
+     retient toutes, avec une specificite superieure. */
+  .pp-t tr.pp-j:hover td{background:#4E7D8C}
+  .pp-t tr.pp-ferme:hover td{background:#6E6E6E}
+  .pp-t tr.pp-barre:hover td{background:repeating-linear-gradient(45deg,#DEDEDE,#DEDEDE 9px,#CFCFCF 9px,#CFCFCF 18px)}
+  .pp-t tr.pp-ret:hover td{background:#FFE9CC}
+  .pp-t tr.pp-hors:hover td{background:#FFE4E1}
+  .pp-t tr.pp-fait:hover td{background:#E9F3EB}
   .pp-vide{text-align:center;color:var(--gray-500);padding:1.4rem;font-size:.86rem}
   .pp-retenu{background:#E8F5E9;border:1px solid #A5D6A7;border-radius:9px;padding:7px 12px;
              font-size:.82rem;color:#1D5C3A;font-weight:600}
@@ -280,9 +292,27 @@
   let ppAffiches = [];
   window.ppJourRetenu = null;
 
+  // Replier : le planning est en tete du module, et quand on vient seulement
+  // suivre une demande il occupe l'ecran pour rien. L'etat tient dans CE
+  // navigateur — c'est un confort de poste, pas une donnee d'officine.
+  window.ppReplie = function () {
+    try { return localStorage.getItem('pp-replie') === '1'; } catch (e) { return false; }
+  };
+  window.ppBasculerRepli = function () {
+    try { localStorage.setItem('pp-replie', window.ppReplie() ? '0' : '1'); } catch (e) {}
+    window.ppAppliquerRepli();
+  };
+  window.ppAppliquerRepli = function () {
+    const z = document.getElementById('pp-planning'), b = document.getElementById('pp-repli-btn');
+    const r = window.ppReplie();
+    if (z) z.style.display = r ? 'none' : '';
+    if (b) b.textContent = r ? 'Afficher le planning' : 'Réduire';
+  };
+
   window.ppRendPlanning = function () {
     const el = document.getElementById('pp-planning'); if (!el) return;
     ppStyle();
+    window.ppAppliquerRepli();
     const trame = T(), exc = X(), lp = P(), auj = window.ppAujourdhui();
     if (!trame.some(t => t && (+t.places || 0) > 0)) {
       ppAffiches = [];
@@ -372,7 +402,6 @@
     window.ppJourRetenu = iso;
     const t = document.getElementById('p-type');
     if (t) t.value = window.PP_TYPE;
-    window.ppRendChampJour();
     const n = document.getElementById('p-nom');
     if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(function () { n.focus(); }, 350); }
   };
@@ -388,18 +417,12 @@
     return null;
   };
 
-  window.ppRendChampJour = function () {
-    const z = document.getElementById('pp-jour-champ'); if (!z) return;
-    const t = document.getElementById('p-type');
-    if (!t || t.value !== window.PP_TYPE) { z.innerHTML = ''; z.style.display = 'none'; return; }
-    z.style.display = '';
-    const iso = window.ppJourPourNouvelle();
-    z.innerHTML = '<label>Jour de production</label>'
-      + (iso
-          ? '<div class="pp-retenu">' + E(window.ppNomJour(iso) + ' ' + window.ppJJMM(iso))
-            + (iso === window.ppJourRetenu ? '' : ' · première place libre') + '</div>'
-          : '<div class="pp-retenu" style="background:#FFEBEE;border-color:#EF9A9A;color:#B71C1C">'
-            + 'Aucune place libre. Ouvrez une place sur une journée ci-dessus.</div>');
+  // Le jour retenu ne s'affiche plus dans le formulaire : une case de plus a
+  // lire avant chaque saisie, pour une information qui ne change presque
+  // jamais. Elle est dite APRES l'enregistrement, au moment ou elle sert
+  // vraiment — « prevue jeudi 18/09 », a annoncer au patient.
+  window.ppLibelleJour = function (iso) {
+    return iso ? window.ppNomJour(iso) + ' ' + window.ppJJMM(iso) : '';
   };
 
   // Les gestionnaires ne recoivent que des INDICES ; on retrouve la fiche en

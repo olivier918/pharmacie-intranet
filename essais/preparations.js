@@ -132,7 +132,9 @@ t('elle occupe toujours sa place : le travail a bien eu lieu',
 
 console.log('\nLe rendu ne tombe pas, et dit ce qu’il doit dire');
 (function () {
-  const zone = { innerHTML: '' };
+  // `style` : le repli montre puis cache ce conteneur. Un faux DOM sans style
+  // n'est pas un defaut du code, c'est un faux DOM incomplet.
+  const zone = { innerHTML: '', style: {} };
   global.document.getElementById = id => (id === 'pp-planning' ? zone : null);
   global.preps = [enRetard, { id: 30, type: 'realisation-pharmacie', status: 'en cours', jour: '2026-09-17', nom: 'MULLER', prenom: 'Jérôme' }, faite];
   global.prepTrame = TR;

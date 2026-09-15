@@ -708,13 +708,12 @@ tr:hover td{background:#fafffe}
           </div>
           <div class="fg">
             <label>Type de demande</label>
-            <select id="p-type" onchange="if(window.ppRendChampJour)ppRendChampJour()">
+            <select id="p-type">
               <option value="realisation-pharmacie">Réalisation Pharmacie</option>
               <option value="realisation-kerangal">Réalisation Kerangal</option>
               <option value="devis-kerangal">Devis Kerangal</option>
             </select>
           </div>
-          <div class="fg" id="pp-jour-champ"></div>
           <div class="fg" style="grid-column:1/-1"><label>Préparation / Formule</label><textarea id="p-prep" placeholder="Description complète de la préparation…"></textarea></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:1.2rem;flex-wrap:wrap;justify-content:flex-end;align-items:center">
@@ -726,7 +725,9 @@ tr:hover td{background:#fafffe}
       </div>
 
       <div class="card">
-        <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-calendrier"></use></svg> Planning de production</span></div>
+        <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-calendrier"></use></svg> Planning de production</span>
+          <button class="btn bs sm" id="pp-repli-btn" onclick="ppBasculerRepli()">Réduire</button>
+        </div>
         <div id="pp-planning"></div>
       </div>
 
@@ -4415,7 +4416,12 @@ function savePrep(){
   preps.unshift(p);
   ['p-nom','p-prenom','p-dob','p-tel','p-med','p-prep'].forEach(i=>document.getElementById(i).value='');
   const st=document.getElementById('prep-send-status');
-  if(st){ st.style.display='block'; st.style.color='#2E7D32'; st.textContent='✅ Demande enregistrée.'; setTimeout(function(){ st.style.display='none'; },2500); }
+  // Le jour retenu est annonce ICI plutot que dans une case permanente : c'est
+  // le moment ou l'on en a besoin, pour le dire au patient.
+  const quand=(p.jour&&window.ppLibelleJour)?window.ppLibelleJour(p.jour):'';
+  if(st){ st.style.display='block'; st.style.color='#2E7D32';
+    st.textContent='✅ Demande enregistrée'+(quand?' — prévue '+quand:'')+'.';
+    setTimeout(function(){ st.style.display='none'; },4000); }
   renderPreps();
 }
 
@@ -4430,7 +4436,6 @@ function togglePrepArchives(){
 function renderPreps(){
   prepMigrer();
   if(window.ppRendPlanning) ppRendPlanning();
-  if(window.ppRendChampJour) ppRendChampJour();
   const q=(document.getElementById('prep-q')?.value||'').toLowerCase();
   let f=preps.filter(p=>{
     if(!showPrepArchives&&PREP_ARCHIVED.includes(p.status))return false;
