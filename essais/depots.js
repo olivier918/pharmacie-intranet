@@ -118,5 +118,193 @@ t('un jeton mal formé ne rend rien, et ne cherche même pas',
   D.parJeton(etat, '../x') === null && D.parJeton(etat, '') === null);
 t('une base sans dépôt ne rend rien', D.parJeton({}, JJ) === null);
 
-console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
-process.exit(ko ? 1 : 0);
+
+// ══════════════════════════════════════════════════════════════════════════
+//  LA ROUTE ELLE-MÊME
+//  ────────────────────────────────────────────────────────────────────────
+//  Ajouté le 16/09/2026 après un défaut que les 46 vérifications ci-dessus
+//  n'ont pas vu : le gestionnaire lisait l'état, y ajoutait le dépôt, et ne
+//  l'ÉCRIVAIT JAMAIS. Les octets de l'image partaient bien dans app_images,
+//  le patient recevait son numéro, et il ne restait rien.
+//
+//  Éprouver des fonctions pures ne suffit pas quand le travail réel est un
+//  effet de bord. On fait donc passer un vrai dépôt par la vraie route, avec
+//  un état qui n'est modifié QUE par ecrireEtat — c'est ce qui rend le défaut
+//  visible.
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\nLa route de dépôt, de bout en bout');
+
+function fauxApp() {
+  const routes = {};
+  const poser = (m) => (p, ...h) => { routes[m + ' ' + p] = h; };
+  return { get: poser('GET'), post: poser('POST'), routes };
+}
+const fauxExpress = { json: () => (req, res, suite) => suite() };
+
+// Déroule la chaîne de gestionnaires comme le ferait Express.
+async function appeler(handlers, req) {
+  const res = { code: 200, corps: null, fini: false,
+    status(c) { this.code = c; return this; },
+    json(o) { this.corps = o; this.fini = true; return this; },
+    set() { return this; }, end() { this.fini = true; return this; },
+    sendFile() { this.fini = true; return this; } };
+  for (const f of handlers) {
+    const continuer = await new Promise((ok) => {
+      let suivantAppele = false;
+      const suite = () => { suivantAppele = true; ok(true); };
+      let r;
+      try { r = f(req, res, suite); } catch (e) { res.erreur = e; return ok(false); }
+      if (r && typeof r.then === 'function') r.then(() => { if (!suivantAppele) ok(false); },
+                                                     (e) => { res.erreur = e; ok(false); });
+      else if (!suivantAppele) ok(false);
+    });
+    if (!continuer) break;
+  }
+  return res;
+}
+
+// Un JPEG minuscule mais valide en base64.
+const IMG = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a'
+          + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA'
+          + 'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+
+async function bancDepot(opts) {
+  const o = opts || {};
+  const app = fauxApp();
+  // L'etat n'est modifiable QUE par ecrireEtat : une mutation en memoire qui
+  // ne serait pas ecrite ne laisse aucune trace ici, et l'essai echoue.
+  let etat = o.etat || {};
+  let ecritures = 0;
+  D.installer(app, fauxExpress, {
+    lireEtat: async () => JSON.parse(JSON.stringify(etat)),
+    ecrireEtat: async (e) => { etat = JSON.parse(JSON.stringify(e)); ecritures++; },
+    serialiser: (fn) => fn(),
+    deposerImage: async () => (o.image === null ? null : (o.image || 'a'.repeat(32))),
+    ouvert: async () => (o.ouvert !== false),
+    frein: (req, res, suite) => suite()
+  });
+  return { app, lire: () => etat, ecritures: () => ecritures };
+}
+const corpsOk = (n) => ({ body: { nom: 'DUPONT', prenom: 'Marie',
+  fichiers: Array.from({ length: n || 1 },
+  () => ({ mime: 'image/jpeg', data: IMG, nom: 'ordo.jpg' })) }, params: {}, headers: {} });
+
+(async function () {
+  // ── Le dépôt du comptoir ────────────────────────────────────────────────
+  let b = await bancDepot();
+  let r = await appeler(b.app.routes['POST /api/depot'], corpsOk(1));
+  t('un dépôt valide est accepté', r.code === 200 && r.corps && r.corps.ok === true);
+  // LE test qui manquait.
+  t('... et il est VRAIMENT écrit en base', (b.lire().depots || []).length === 1);
+  t('... par un appel à ecrireEtat, pas une mutation en mémoire', b.ecritures() === 1);
+  t('le patient reçoit un numéro à lire au pharmacien', r.corps.num === 1);
+  t('le dépôt porte son origine', (b.lire().depots[0] || {}).origine === 'comptoir');
+  // Sans le nom, une ordonnance envoyée de chez le patient est inexploitable :
+  // il n'y a personne au comptoir pour dire le numéro.
+  t('... le nom du patient', (b.lire().depots[0] || {}).nom === 'DUPONT');
+  t('... et son prénom', (b.lire().depots[0] || {}).prenom === 'Marie');
+  t('... l’heure d’arrivée', !!(b.lire().depots[0] || {}).ts);
+  t('... et le fichier déposé', ((b.lire().depots[0] || {}).fichiers || []).length === 1);
+  t('il n’est rattaché à rien : il partira dans sept jours',
+    !D.rattache(b.lire().depots[0]));
+
+  r = await appeler(b.app.routes['POST /api/depot'], corpsOk(2));
+  t('un second dépôt prend le numéro suivant', r.corps.num === 2);
+  t('... et s’ajoute au premier', b.lire().depots.length === 2);
+  t('... avec ses deux fichiers', b.lire().depots[1].fichiers.length === 2);
+
+  // ── Ce qui ne doit RIEN écrire ──────────────────────────────────────────
+  console.log('\nCe qui est refusé ne doit rien laisser derrière');
+  b = await bancDepot();
+  r = await appeler(b.app.routes['POST /api/depot'],
+    { body: { fichiers: [{ mime: 'text/html', data: IMG }] }, params: {}, headers: {} });
+  t('un type interdit est refusé', r.code === 400);
+  t('... et rien n’est écrit', b.ecritures() === 0 && !(b.lire().depots || []).length);
+
+  b = await bancDepot();
+  r = await appeler(b.app.routes['POST /api/depot'], { body: { fichiers: [] }, params: {}, headers: {} });
+  t('un envoi vide est refusé', r.code === 400 && b.ecritures() === 0);
+
+  // Le nom : exigé sans jeton, jamais redemandé avec.
+  b = await bancDepot();
+  r = await appeler(b.app.routes['POST /api/depot'], { params: {}, headers: {}, body: {
+    fichiers: [{ mime: 'image/jpeg', data: IMG }] } });
+  t('sans nom ni prénom, le dépôt est refusé', r.code === 400);
+  t('... et le message dit quoi faire', /nom/i.test((r.corps || {}).error || ''));
+  t('... et rien n’est écrit', b.ecritures() === 0);
+
+  b = await bancDepot();
+  r = await appeler(b.app.routes['POST /api/depot'], { params: {}, headers: {}, body: {
+    nom: 'DUPONT', prenom: '   ', fichiers: [{ mime: 'image/jpeg', data: IMG }] } });
+  t('un prénom fait d’espaces ne compte pas', r.code === 400 && b.ecritures() === 0);
+
+  b = await bancDepot();
+  r = await appeler(b.app.routes['POST /api/depot'], { params: {}, headers: {}, body: {
+    nom: 'DUPONT', prenom: 'Marie', naissance: '1954-03-12',
+    fichiers: [{ mime: 'image/jpeg', data: IMG }] } });
+  t('la date de naissance est retenue quand elle est donnée',
+    b.lire().depots[0].naissance === '1954-03-12');
+  b = await bancDepot();
+  await appeler(b.app.routes['POST /api/depot'], corpsOk(1));
+  t('... et vaut null quand elle ne l’est pas', b.lire().depots[0].naissance === null);
+
+  // Un seul fichier illisible sur trois : on refuse TOUT. Un envoi a moitie
+  // depose laisserait des octets orphelins et un patient sans reponse claire.
+  b = await bancDepot();
+  r = await appeler(b.app.routes['POST /api/depot'], { params: {}, headers: {}, body: { fichiers: [
+    { mime: 'image/jpeg', data: IMG }, { mime: 'image/jpeg', data: 'pas du base64 !' },
+    { mime: 'image/jpeg', data: IMG }] } });
+  t('un seul fichier illisible fait refuser tout l’envoi', r.code === 400);
+  t('... et rien n’est écrit', b.ecritures() === 0);
+
+  b = await bancDepot({ ouvert: false });
+  r = await appeler(b.app.routes['POST /api/depot'], corpsOk(1));
+  t('dépôt fermé : refusé, et le message renvoie vers la pharmacie',
+    r.code === 503 && /pharmacie/i.test((r.corps || {}).error || ''));
+  t('... et rien n’est écrit', b.ecritures() === 0);
+
+  // ── Le lien envoyé par SMS ──────────────────────────────────────────────
+  console.log('\nLe lien envoyé par SMS');
+  const JET = D.nouveauJeton();
+  const attendu = { depots: [{ id: 9, ts: 1, jeton: JET, prenom: 'Marie',
+    lien: { type: 'location', ref: 11 }, fichiers: [] }] };
+  b = await bancDepot({ etat: attendu });
+  r = await appeler(b.app.routes['POST /api/depot'],
+    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JET }) }));
+  t('le dépôt par lien est accepté, SANS qu’on redemande le nom',
+    r.code === 200 && r.corps.ok === true);
+  t('... et écrit', b.ecritures() === 1);
+  t('... sans numéro : il est déjà rattaché, rien à lire au pharmacien', r.corps.num === null);
+  t('... le dossier d’origine est conservé', D.rattache(b.lire().depots[0]));
+  t('... et le fichier est bien posé', b.lire().depots[0].fichiers.length === 1);
+  t('... la rétention repart de l’arrivée', b.lire().depots[0].ts > 1);
+
+  // Un jeton ne sert qu'UNE fois.
+  r = await appeler(b.app.routes['POST /api/depot'],
+    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JET }) }));
+  t('le même lien ne resservira pas', r.code === 410);
+  t('... et le second envoi n’écrase pas le premier', b.ecritures() === 1);
+
+  b = await bancDepot({ etat: { depots: [] } });
+  r = await appeler(b.app.routes['POST /api/depot'],
+    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: D.nouveauJeton() }) }));
+  t('un jeton inconnu est refusé', r.code === 410 && b.ecritures() === 0);
+
+  // ── L'état que la page publique a le droit de lire ──────────────────────
+  console.log('\nCe que la page publique a le droit de savoir');
+  b = await bancDepot({ etat: attendu });
+  r = await appeler(b.app.routes['GET /api/depot/etat/:jeton'], { params: { jeton: JET }, headers: {} });
+  t('un jeton connu donne le prénom, et rien d’autre',
+    r.corps && r.corps.lien === true && r.corps.prenom === 'Marie'
+    && Object.keys(r.corps).sort().join() === 'lien,ok,ouvert,prenom');
+  r = await appeler(b.app.routes['GET /api/depot/etat/:jeton'],
+    { params: { jeton: D.nouveauJeton() }, headers: {} });
+  t('un jeton inconnu ne dit NI pourquoi, NI de qui il s’agit',
+    r.corps.lien === false && r.corps.prenom === undefined);
+  r = await appeler(b.app.routes['GET /api/depot/etat/:jeton'],
+    { params: { jeton: '../../etc/passwd' }, headers: {} });
+  t('un jeton mal formé ne cherche même pas', r.corps.lien === false);
+
+  console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
+  process.exit(ko ? 1 : 0);
+})();

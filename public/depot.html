@@ -49,6 +49,19 @@
   .second:hover:not(:disabled){border-color:var(--vert)}
   input[type=file]{display:none}
 
+  /* Qui envoie. Sans le nom, une ordonnance arrivée de chez le patient est
+     inexploitable : il n'y a personne au comptoir pour dire un numéro. */
+  .qui{margin-bottom:18px}
+  .qui-l{display:flex;gap:10px}
+  .qui label{flex:1;display:flex;flex-direction:column;gap:4px;font-size:.8rem;
+    font-weight:600;color:var(--gris)}
+  .qui-n{margin-top:10px;display:flex;flex-direction:column;gap:4px;font-size:.8rem;
+    font-weight:600;color:var(--gris)}
+  .qui input{font:inherit;font-size:1rem;border:1px solid var(--trait);border-radius:10px;
+    padding:11px 12px;background:#fff;color:var(--encre);width:100%;box-sizing:border-box}
+  .qui input:focus{outline:none;border-color:var(--vert);box-shadow:0 0 0 3px rgba(52,132,102,.14)}
+  .qui input.manque{border-color:#C0392B;background:#FDF3F2}
+  .fac{font-weight:400;opacity:.75}
   .rendu{margin-top:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .rendu-t{font-size:.82rem;color:var(--gris);font-weight:600}
   .pastilles{display:flex;gap:6px;margin-left:auto}
@@ -115,6 +128,15 @@
   <section class="carte" id="ec-depot">
     <h1 id="titre">Envoyer votre ordonnance</h1>
     <p class="sous" id="sous">Elle nous parviendra directement, sans passer par une messagerie.</p>
+
+    <div class="qui" id="qui">
+      <div class="qui-l">
+        <label>Nom<input type="text" id="f-nom" maxlength="60" autocomplete="family-name" placeholder="DUPONT"></label>
+        <label>Prénom<input type="text" id="f-prenom" maxlength="60" autocomplete="given-name" placeholder="Marie"></label>
+      </div>
+      <label class="qui-n">Date de naissance <span class="fac">facultatif, utile en cas d’homonyme</span>
+        <input type="date" id="f-naissance" autocomplete="bday"></label>
+    </div>
 
     <button class="gros" id="btn-choisir"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M12 11v6"/><path d="M9.2 13.8 12 11l2.8 2.8"/></svg> Choisir mon ordonnance</button>
     <button class="second" id="btn-photo"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#348466" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5a2 2 0 0 1 2-2h2l1.4-2h7.2L17 6.5h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.4"/></svg> La prendre en photo</button>
@@ -419,6 +441,21 @@
 
   $('btn-envoyer').onclick = async function () {
     if (!choisis.length) return;
+    // Sans jeton, le nom est ce qui rend le dépôt exploitable. On le signale
+    // sur le champ lui-même plutôt que par un message général.
+    if (!JETON) {
+      var manque = false;
+      ['f-nom', 'f-prenom'].forEach(function (id) {
+        var e = $(id), vide = !String(e.value || '').trim();
+        e.classList[vide ? 'add' : 'remove']('manque');
+        if (vide) manque = true;
+      });
+      if (manque) {
+        erreur('Merci d’indiquer votre nom et votre prénom, pour que nous sachions à qui est cette ordonnance.');
+        $('f-nom').focus();
+        return;
+      }
+    }
     var b = this;
     b.disabled = true; b.textContent = 'Envoi en cours…'; erreur('');
     try {
@@ -426,6 +463,9 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jeton: JETON,
+          nom: JETON ? '' : String($('f-nom').value || '').trim(),
+          prenom: JETON ? '' : String($('f-prenom').value || '').trim(),
+          naissance: JETON ? '' : String($('f-naissance').value || '').trim(),
           fichiers: choisis.map(function (f) { return { mime: f.mime, data: f.data, nom: f.nom }; })
         })
       });
@@ -438,7 +478,7 @@
       montrer($('ec-fin'), true);
       if (j.num) {
         $('fin-num').innerHTML = '<div class="numero">D-' + String(j.num) + '</div>';
-        $('fin-txt').textContent = 'Indiquez ce numéro à votre pharmacien.';
+        $('fin-txt').textContent = 'Si vous êtes au comptoir, indiquez ce numéro à votre pharmacien. Sinon, nous avons votre nom : vous n’avez rien d’autre à faire.';
       } else {
         $('fin-txt').textContent = 'Votre ordonnance a bien été transmise à la pharmacie. Vous n’avez rien d’autre à faire.';
       }
@@ -468,6 +508,11 @@
           $('sous').textContent = 'Ce lien n’est plus valable, mais vous pouvez tout de même nous envoyer votre ordonnance ici.';
           JETON = null;
           return;
+        }
+        if (JETON && j.lien) {
+          // On sait déjà de qui il s'agit : redemander le nom serait une
+          // formalité sans objet, et une saisie de plus au téléphone.
+          montrer($('qui'), false);
         }
         if (JETON && j.prenom) {
           $('titre').textContent = 'Bonjour ' + j.prenom;

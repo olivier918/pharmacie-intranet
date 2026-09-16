@@ -73,6 +73,19 @@
     const memeJour = d.toDateString() === auj.toDateString();
     return memeJour ? h : pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' ' + h;
   }
+  // De qui est cette ordonnance. Sans jeton, le patient l'a saisi lui-meme ;
+  // avec un jeton, elle etait deja rattachee a un dossier, qui porte le nom.
+  function odIdentite(d) {
+    if (!d) return '';
+    const n = ((d.nom || '') + ' ' + (d.prenom || '')).trim();
+    if (n) return n + (d.naissance ? ' \u00b7 n\u00e9(e) le ' + odJour(d.naissance) : '');
+    if (odRattache(d)) return odNomDossier(d.lien);
+    return 'sans nom';
+  }
+  function odJour(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : String(iso || '');
+  }
   function odNomDossier(lien) {
     if (!lien) return '';
     if (lien.type === 'location') {
@@ -349,6 +362,7 @@
     return '<div class="od-c' + (urgent ? ' urgent' : '') + '">'
       + '<div class="od-c-h">'
       +   '<span class="od-num">D-' + E(String(d.num == null ? '?' : d.num)) + '</span>'
+      +   '<span class="od-qui">' + E(odIdentite(d)) + '</span>'
       +   '<span class="od-meta">'
       +     (d.origine === 'comptoir' ? 'Déposée au comptoir'
               : 'Envoyée par lien' + (d.prenom ? ' par ' + E(d.prenom) : ''))
@@ -481,6 +495,7 @@
   .od-c-h{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
   .od-num{background:#1D5C3A;color:#fff;border-radius:8px;padding:4px 11px;font-weight:800;
     font-size:.92rem;letter-spacing:.03em;font-variant-numeric:tabular-nums;flex:none}
+  .od-qui{font-weight:700;font-size:.95rem;color:#1a2b22}
   .od-meta{font-size:.82rem;color:var(--gray-500)}
   .od-reste{margin-left:auto;font-size:.78rem;color:var(--gray-500)}
   .od-reste.urgent{color:#B35309;font-weight:700}

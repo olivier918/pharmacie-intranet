@@ -149,6 +149,18 @@ module.exports = {
         }
         const corps = req.body || {};
         const jeton = corps.jeton ? String(corps.jeton) : null;
+
+        // Sans jeton, on ne sait PAS de qui vient l'ordonnance. Le numero lu au
+        // pharmacien supposait le patient devant le comptoir ; or l'ordonnance
+        // est le plus souvent dans sa boite mail, et il l'envoie de chez lui.
+        // Le nom est donc exige — c'est le minimum pour que le depot serve a
+        // quelque chose. Avec un jeton, on sait deja : on ne redemande rien.
+        const nom = String(corps.nom || '').trim().slice(0, 60);
+        const prenom = String(corps.prenom || '').trim().slice(0, 60);
+        const naissance = String(corps.naissance || '').trim().slice(0, 10);
+        if (!jeton && (!nom || !prenom)) {
+          return res.status(400).json({ ok: false, error: 'Merci d\u2019indiquer votre nom et votre pr\u00e9nom.' });
+        }
         const brut = Array.isArray(corps.fichiers) ? corps.fichiers : [];
         if (!brut.length) return res.status(400).json({ ok: false, error: 'Aucun fichier reçu.' });
         if (brut.length > DEPOT_MAX_FICHIERS) {
@@ -195,6 +207,7 @@ module.exports = {
             dep.recuLe = maintenant;
             dep.ts = maintenant;                 // la rétention part du dépôt
             dep.updatedAt = maintenant;
+            await d.ecrireEtat(etat);
             return { ok: true, num: null };
           }
 
@@ -202,9 +215,14 @@ module.exports = {
           etat.depots.push({
             id: maintenant, ts: maintenant, num: num,
             origine: 'comptoir', fichiers: poses,
+            nom: nom, prenom: prenom, naissance: naissance || null,
             recuLe: maintenant, lien: null, archiveLe: null,
             updatedAt: maintenant
           });
+          // L'ECRITURE. Sans elle, l'objet est modifie en memoire puis jete :
+          // les octets de l'image restent dans app_images, le patient voit son
+          // numero, et il ne reste rien. C'est arrive.
+          await d.ecrireEtat(etat);
           return { ok: true, num: num };
         });
 
