@@ -96,18 +96,28 @@
     return r ? ((r.nom || '') + ' ' + (r.prenom || '')).trim() : 'dossier introuvable';
   }
 
-  // ── Le visualiseur : redresser, détourer, copier ──────────────────────────
-  let odVue = null;   // { depot, index, img, rot, crop:{x,y,w,h}|null }
+  // ── Le visualiseur : redresser, détourer, corriger la perspective ─────────
+  //
+  // Le détourage n'est PAS un rectangle mais un QUADRILATÈRE à quatre coins.
+  // Une ordonnance photographiée de biais n'est jamais un rectangle à l'écran ;
+  // un cadre rectangulaire obligeait soit à couper dans le document, soit à
+  // garder du comptoir autour. Les quatre coins épousent la feuille, et la
+  // sortie est redressée par une homographie — l'image finale est plate,
+  // comme si elle avait été posée sur une vitre de scanner.
+  //
+  // Le rectangle n'a pas disparu : c'est le cas particulier où les quatre coins
+  // forment un rectangle, et le code s'en aperçoit tout seul.
+  let odVue = null;   // { depot, index, img, rot, quad:[{x,y}x4], apercu }
 
   window.odOuvrirFichier = function (depotId, i) {
     const d = odListe().find(x => x && x.id === depotId); if (!d) return;
     const f = (d.fichiers || [])[i]; if (!f) return;
     if (f.fichMime === 'application/pdf') { window.open('/api/images/' + f.fichId, '_blank', 'noopener'); return; }
-    odVue = { depot: d, index: i, img: null, rot: 0, crop: null };
+    odVue = { depot: d, index: i, img: null, rot: 0, quad: null, apercu: false };
     document.getElementById('od-ov-vue').classList.add('open');
     document.getElementById('od-v-etat').textContent = 'Chargement…';
     const img = new Image();
-    img.onload = function () { odVue.img = img; odRendVue(); };
+    img.onload = function () { odVue.img = img; odVue.quad = null; odRendVue(); };
     img.onerror = function () { document.getElementById('od-v-etat').textContent = 'Image illisible.'; };
     img.src = '/api/images/' + f.fichId;
   };
@@ -116,8 +126,8 @@
     odVue = null;
   };
 
-  // La rotation d'abord, le détourage ensuite : le cadre est toujours exprimé
-  // dans l'image REDRESSÉE, sans quoi tourner ferait sauter le cadre ailleurs.
+  // La rotation d'abord, les coins ensuite : ils sont toujours exprimés dans
+  // l'image REDRESSÉE, sans quoi pivoter les enverrait ailleurs.
   function odCanvasRedresse() {
     const v = odVue; if (!v || !v.img) return null;
     const w = v.img.naturalWidth, h = v.img.naturalHeight;
@@ -130,66 +140,200 @@
     ctx.drawImage(v.img, -w / 2, -h / 2);
     return c;
   }
-  // Le résultat final : redressé, puis coupé si un cadre a été tracé.
-  function odCanvasFinal() {
-    const base = odCanvasRedresse(); if (!base) return null;
-    const cr = odVue.crop;
-    if (!cr || cr.w < 8 || cr.h < 8) return base;
+  function odQuadPlein(base) {
+    return [{ x: 0, y: 0 }, { x: base.width, y: 0 },
+            { x: base.width, y: base.height }, { x: 0, y: base.height }];
+  }
+  function odQuad(base) {
+    if (!odVue.quad) odVue.quad = odQuadPlein(base);
+    return odVue.quad;
+  }
+  // Les quatre coins sont-ils encore ceux de l'image ? Si oui, rien à faire :
+  // pas de rééchantillonnage, donc pas une once de qualité perdue.
+  function odQuadIntact(q, base) {
+    const p = odQuadPlein(base);
+    for (let i = 0; i < 4; i++) {
+      if (Math.abs(q[i].x - p[i].x) > 0.5 || Math.abs(q[i].y - p[i].y) > 0.5) return false;
+    }
+    return true;
+  }
+
+  // ── L'homographie ─────────────────────────────────────────────────────────
+  // On cherche la matrice qui envoie le RECTANGLE de sortie sur le
+  // QUADRILATÈRE de la photo : c'est le sens inverse du redressement, et c'est
+  // celui dont on a besoin, puisqu'on balaie les pixels de la sortie pour aller
+  // chercher leur couleur dans la source.
+  // Huit inconnues, huit équations, un pivot de Gauss. Aucune bibliothèque.
+  function odHomographie(dst, src) {
+    const A = [], B = [];
+    for (let i = 0; i < 4; i++) {
+      const x = dst[i].x, y = dst[i].y, u = src[i].x, v = src[i].y;
+      A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); B.push(u);
+      A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); B.push(v);
+    }
+    for (let c = 0; c < 8; c++) {
+      let p = c;
+      for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+      if (Math.abs(A[p][c]) < 1e-12) return null;          // quadrilatère dégénéré
+      const tA = A[c]; A[c] = A[p]; A[p] = tA;
+      const tB = B[c]; B[c] = B[p]; B[p] = tB;
+      for (let r = 0; r < 8; r++) {
+        if (r === c) continue;
+        const k = A[r][c] / A[c][c];
+        if (!k) continue;
+        for (let j = c; j < 8; j++) A[r][j] -= k * A[c][j];
+        B[r] -= k * B[c];
+      }
+    }
+    const h = [];
+    for (let i = 0; i < 8; i++) h.push(B[i] / A[i][i]);
+    h.push(1);
+    return h;
+  }
+  const odDist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  // Le redressement. Bilinéaire : une ordonnance rééchantillonnée au plus
+  // proche voisin devient illisible sur les petits caractères.
+  function odRedresser(base, q) {
+    const l = Math.round(Math.max(odDist(q[0], q[1]), odDist(q[3], q[2])));
+    const h = Math.round(Math.max(odDist(q[0], q[3]), odDist(q[1], q[2])));
+    if (l < 8 || h < 8) return null;
+    // On borne la sortie : au-delà, on fabrique des pixels sans rien apprendre.
+    const f = Math.min(1, 2400 / Math.max(l, h));
+    const L = Math.max(8, Math.round(l * f)), H = Math.max(8, Math.round(h * f));
+    const M = odHomographie([{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: H }, { x: 0, y: H }], q);
+    if (!M) return null;
+
+    const sc = base.getContext('2d').getImageData(0, 0, base.width, base.height);
+    const sd = sc.data, sw = base.width, sh = base.height;
+    const out = new ImageData(L, H), od = out.data;
+    let k = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < L; x++, k += 4) {
+        const w = M[6] * x + M[7] * y + M[8];
+        const sx = (M[0] * x + M[1] * y + M[2]) / w;
+        const sy = (M[3] * x + M[4] * y + M[5]) / w;
+        if (sx < 0 || sy < 0 || sx > sw - 1 || sy > sh - 1) {
+          od[k] = od[k + 1] = od[k + 2] = 255; od[k + 3] = 255; continue;
+        }
+        const x0 = sx | 0, y0 = sy | 0;
+        const x1 = x0 + 1 < sw ? x0 + 1 : x0, y1 = y0 + 1 < sh ? y0 + 1 : y0;
+        const ax = sx - x0, ay = sy - y0;
+        const i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4;
+        const i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4;
+        for (let c = 0; c < 3; c++) {
+          const haut = sd[i00 + c] + (sd[i10 + c] - sd[i00 + c]) * ax;
+          const bas  = sd[i01 + c] + (sd[i11 + c] - sd[i01 + c]) * ax;
+          od[k + c] = haut + (bas - haut) * ay;
+        }
+        od[k + 3] = 255;
+      }
+    }
     const c = document.createElement('canvas');
-    c.width = Math.round(cr.w); c.height = Math.round(cr.h);
-    c.getContext('2d').drawImage(base, Math.round(cr.x), Math.round(cr.y),
-      c.width, c.height, 0, 0, c.width, c.height);
+    c.width = L; c.height = H;
+    c.getContext('2d').putImageData(out, 0, 0);
     return c;
   }
 
+  // CE QUI SORT. Rien d'autre ne doit jamais être copié ni téléchargé : ni le
+  // canevas d'affichage, ni ses repères.
+  function odCanvasFinal() {
+    const base = odCanvasRedresse(); if (!base) return null;
+    const q = odQuad(base);
+    if (odQuadIntact(q, base)) return base;
+    return odRedresser(base, q) || base;
+  }
+
+  // ── Rendu ─────────────────────────────────────────────────────────────────
+  // DEUX canevas superposés, et c'est délibéré : le cadre et les poignées ne
+  // sont JAMAIS dessinés sur l'image. Quoi qu'il arrive — un clic droit sur la
+  // photo, une capture, un presse-papiers resté sur un essai précédent — ce
+  // qu'on peut prendre de cet écran reste une ordonnance propre.
   function odRendVue() {
     const v = odVue; if (!v || !v.img) return;
-    const base = odCanvasRedresse();
-    const zone = document.getElementById('od-v-zone');
     const cv = document.getElementById('od-v-canvas');
-    const ctx = cv.getContext('2d');
-    // On affiche au plus 1100 px de large : au-delà, on ne gagne rien à l'écran
-    // et on ralentit le tracé du cadre.
-    const f = Math.min(1, 1100 / base.width, (window.innerHeight - 178) / base.height);
-    cv.width = Math.round(base.width * f);
-    cv.height = Math.round(base.height * f);
-    cv.dataset.f = f;
-    ctx.drawImage(base, 0, 0, cv.width, cv.height);
-    if (v.crop && v.crop.w > 8) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(20,32,26,.55)';
-      const x = v.crop.x * f, y = v.crop.y * f, w = v.crop.w * f, h = v.crop.h * f;
-      ctx.fillRect(0, 0, cv.width, y);
-      ctx.fillRect(0, y + h, cv.width, cv.height - y - h);
-      ctx.fillRect(0, y, x, h);
-      ctx.fillRect(x + w, y, cv.width - x - w, h);
-      ctx.strokeStyle = '#7ED9A8'; ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
-      ctx.restore();
+    const rp = document.getElementById('od-v-repere');
+    const ctx = cv.getContext('2d'), rc = rp.getContext('2d');
+
+    // Le mode APERÇU montre exactement ce qui partira dans le presse-papiers.
+    // C'est la réponse à « qu'est-ce que je copie au juste ? » : on le voit.
+    const base = odCanvasRedresse();
+    const q = odQuad(base);
+    const montre = v.apercu ? (odCanvasFinal() || base) : base;
+    const f = Math.min(1, 1040 / montre.width, (window.innerHeight - 200) / montre.height);
+    const L = Math.round(montre.width * f), H = Math.round(montre.height * f);
+    cv.width = L; cv.height = H;
+    rp.width = L; rp.height = H;
+    rp.style.width = L + 'px'; rp.style.height = H + 'px';
+    rp.dataset.f = f;
+    ctx.drawImage(montre, 0, 0, L, H);
+
+    rc.clearRect(0, 0, L, H);
+    if (!v.apercu) {
+      const chemin = () => {
+        rc.beginPath();
+        rc.moveTo(q[0].x * f, q[0].y * f);
+        for (let i = 1; i < 4; i++) rc.lineTo(q[i].x * f, q[i].y * f);
+        rc.closePath();
+      };
+      if (!odQuadIntact(q, base)) {
+        // Assombrir hors du document : le « trou » se fait par pair-impair.
+        rc.save();
+        rc.beginPath();
+        rc.rect(0, 0, L, H);
+        rc.moveTo(q[0].x * f, q[0].y * f);
+        for (let i = 3; i >= 1; i--) rc.lineTo(q[i].x * f, q[i].y * f);
+        rc.closePath();
+        rc.fillStyle = 'rgba(16,26,21,.60)';
+        rc.fill('evenodd');
+        rc.restore();
+      }
+      chemin();
+      rc.strokeStyle = '#7ED9A8'; rc.lineWidth = 2; rc.stroke();
+      for (let i = 0; i < 4; i++) {
+        rc.beginPath();
+        rc.arc(q[i].x * f, q[i].y * f, 10, 0, 6.2832);
+        rc.fillStyle = '#fff'; rc.fill();
+        rc.strokeStyle = '#1D5C3A'; rc.lineWidth = 3; rc.stroke();
+      }
     }
-    const dim = odCanvasFinal();
+
+    const fin = odCanvasFinal();
+    const redresse = !odQuadIntact(q, base);
+    odDerniereTaille = fin.width + ' × ' + fin.height;
     document.getElementById('od-v-etat').textContent =
-      dim.width + ' × ' + dim.height + ' px'
-      + (v.crop && v.crop.w > 8 ? ' · détouré' : '')
+      odDerniereTaille + ' px'
+      + (redresse ? ' · redressé' : '')
       + (v.rot ? ' · pivoté de ' + v.rot + '°' : '');
-    document.getElementById('od-v-tout').style.display = (v.crop && v.crop.w > 8) ? '' : 'none';
-    if (zone) zone.scrollTop = 0;
+    document.getElementById('od-v-tout').style.display = redresse ? '' : 'none';
+    const a = document.getElementById('od-v-apercu');
+    a.textContent = v.apercu ? 'Revenir aux coins' : 'Voir ce qui sera copié';
+    a.classList[v.apercu ? 'add' : 'remove']('od-ok');
   }
+  let odDerniereTaille = '';
 
   window.odPivoter = function (sens) {
     if (!odVue) return;
     odVue.rot = ((odVue.rot + sens * 90) % 360 + 360) % 360;
-    odVue.crop = null;              // le cadre n'a plus de sens après rotation
+    odVue.quad = null; odVue.apercu = false;   // les coins n'ont plus de sens
     odRendVue();
   };
-  window.odToutPrendre = function () { if (odVue) { odVue.crop = null; odRendVue(); } };
+  window.odToutPrendre = function () {
+    if (!odVue) return;
+    odVue.quad = null; odVue.apercu = false; odRendVue();
+  };
+  window.odBasculerApercu = function () {
+    if (!odVue) return;
+    odVue.apercu = !odVue.apercu;
+    odRendVue();
+  };
 
-  // Tracé du cadre : souris et doigt, même code. On mémorise en coordonnées de
-  // l'IMAGE, pas de l'écran — un redimensionnement de fenêtre ne doit pas
-  // déplacer le cadre.
+  // ── Déplacer les coins ────────────────────────────────────────────────────
+  // Souris et doigt, même code. Les coins sont mémorisés en coordonnées de
+  // l'IMAGE : un redimensionnement de fenêtre ne doit pas les déplacer.
   function odBrancherCadre() {
-    const cv = document.getElementById('od-v-canvas'); if (!cv) return;
-    let depart = null;
+    const cv = document.getElementById('od-v-repere'); if (!cv) return;
+    let saisi = -1;
     const pos = (ev) => {
       const r = cv.getBoundingClientRect();
       const t = (ev.touches && ev.touches[0]) || ev;
@@ -197,19 +341,30 @@
       return { x: (t.clientX - r.left) * (cv.width / r.width) / f,
                y: (t.clientY - r.top) * (cv.height / r.height) / f };
     };
-    const debut = (ev) => { if (!odVue || !odVue.img) return; ev.preventDefault(); depart = pos(ev); };
-    const bouge = (ev) => {
-      if (!depart || !odVue) return;
-      ev.preventDefault();
+    const debut = (ev) => {
+      if (!odVue || !odVue.img || odVue.apercu) return;
+      const base = odCanvasRedresse(); const q = odQuad(base);
       const p = pos(ev);
-      odVue.crop = { x: Math.min(depart.x, p.x), y: Math.min(depart.y, p.y),
-                     w: Math.abs(p.x - depart.x), h: Math.abs(p.y - depart.y) };
+      // Le doigt est gros : on accepte large, proportionnellement à l'image.
+      const seuil = Math.max(26, Math.min(base.width, base.height) / 14);
+      let d = seuil, k = -1;
+      for (let i = 0; i < 4; i++) {
+        const dd = odDist(p, q[i]);
+        if (dd < d) { d = dd; k = i; }
+      }
+      if (k < 0) return;
+      ev.preventDefault(); saisi = k;
+    };
+    const bouge = (ev) => {
+      if (saisi < 0 || !odVue) return;
+      ev.preventDefault();
+      const base = odCanvasRedresse(); const q = odQuad(base);
+      const p = pos(ev);
+      q[saisi] = { x: Math.max(0, Math.min(base.width, p.x)),
+                   y: Math.max(0, Math.min(base.height, p.y)) };
       odRendVue();
     };
-    const fin = () => {
-      depart = null;
-      if (odVue && odVue.crop && (odVue.crop.w < 8 || odVue.crop.h < 8)) { odVue.crop = null; odRendVue(); }
-    };
+    const fin = () => { saisi = -1; };
     cv.addEventListener('mousedown', debut);
     window.addEventListener('mousemove', bouge);
     window.addEventListener('mouseup', fin);
@@ -230,7 +385,7 @@
       if (!navigator.clipboard || !window.ClipboardItem) throw new Error('presse-papiers indisponible');
       const png = new Promise(function (ok) { c.toBlob(ok, 'image/png'); });
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
-      b.textContent = '✓ Copié';
+      b.textContent = '✓ Copié · ' + odDerniereTaille;
       b.classList.add('od-ok');
       setTimeout(function () { b.textContent = avant; b.classList.remove('od-ok'); }, 1800);
     } catch (e) {
@@ -538,8 +693,11 @@
   .od-b.od-ok{background:#1D5C3A;border-color:#1D5C3A}
   .od-b:disabled{opacity:.5;cursor:default}
   .od-v-zone{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;width:100%}
-  #od-v-canvas{max-width:100%;cursor:crosshair;border-radius:6px;background:#fff;
-    box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  /* Deux calques : l'image dessous, les rep\u00e8res dessus. Ce qui se copie ne
+     porte jamais de cadre. */
+  .od-v-pile{position:relative;line-height:0}
+  #od-v-canvas{display:block;border-radius:6px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  #od-v-repere{position:absolute;left:0;top:0;cursor:crosshair;touch-action:none}
   .od-v-aide{color:#9fb3a8;font-size:.78rem;margin-top:9px;text-align:center}
 
   /* ── Rattachement ── */
@@ -578,13 +736,14 @@
     +   '<button class="od-b" onclick="odPivoter(-1)" title="Pivoter à gauche">⟲</button>'
     +   '<button class="od-b" onclick="odPivoter(1)" title="Pivoter à droite">⟳</button>'
     +   '<button class="od-b" id="od-v-tout" onclick="odToutPrendre()" style="display:none">Tout prendre</button>'
+    +   '<button class="od-b" id="od-v-apercu" onclick="odBasculerApercu()">Voir ce qui sera copi\u00e9</button>'
     +   '<button class="od-b" id="od-v-garder" onclick="odEnregistrerRecadrage()">Enregistrer le recadrage</button>'
     +   '<button class="od-b" onclick="odTelecharger()">Télécharger</button>'
     +   '<button class="od-b pri" id="od-v-copier" onclick="odCopier()">Copier l’image</button>'
     + '</div>'
-    + '<div class="od-v-zone" id="od-v-zone"><canvas id="od-v-canvas"></canvas></div>'
-    + '<div class="od-v-aide">Glissez sur l’image pour détourer. « Copier l’image » la met dans le presse-papiers : '
-    +   'un simple collage dans le logiciel suffit.</div>'
+    + '<div class="od-v-zone" id="od-v-zone"><div class="od-v-pile">'
+    +   '<canvas id="od-v-canvas"></canvas><canvas id="od-v-repere"></canvas></div></div>'
+    + '<div class="od-v-aide">Déplacez les quatre coins sur ceux de l’ordonnance : elle sera redressée et détourée, même prise de biais. « Voir ce qui sera copié » montre le résultat exact.</div>'
     + '</div>'
 
     + '<div class="overlay" id="od-ov-ratt">'
