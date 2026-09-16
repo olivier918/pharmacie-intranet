@@ -453,6 +453,19 @@ Corollaire général : **tout nouvel état partagé entre requêtes va en base, 
 dans une `Map` de module.** Un cache de lecture à durée courte (le solde SMS,
 `_enVol`) reste acceptable : au pire il est calculé deux fois.
 
+## Un travail à faire n’apparaît que dans UNE liste
+
+Une ordonnance photographiée chez le patient pendant une livraison ouvre un
+dossier « € À facturer » dans les renouvellements
+(`odLivEnregistrer`). À partir de là, la ligne de livraison sort de la liste
+« à facturer » des livraisons : `dAFacturer()` exige
+`!d.ordoRecupereeLe`.
+
+Ce n’est pas de l’esthétique. Deux listes pour le même travail, c’est
+facturé deux fois le jour où deux personnes y vont, et jamais le jour où
+chacune croit que l’autre s’en charge. Quand un module en alimente un autre,
+**celui qui alimente se tait**. `essais/livraison-ordo.js` garde ce point.
+
 ## Vérifier avant de proposer
 
 Il y a désormais des essais, et ils sont la première vérification :
@@ -463,7 +476,8 @@ for f in essais/*.js; do node "$f" || echo "ECHEC $f"; done
 
 Ils extraient les fonctions du code réel (jamais une copie qui divergerait) et
 portent sur ce qui a déjà mordu : dates, fusion, échappement, images,
-raccourcis, préparations, réunion, crédits SMS, accusés. **Toute logique de
+raccourcis, préparations, réunion, crédits SMS, accusés, dépôts,
+ordonnance récupérée en livraison. **Toute logique de
 tri, de date, de fusion ou de droits nouvelle mérite sa suite.**
 
 Il n'y a pas d'étape de compilation. Au minimum, en plus :
