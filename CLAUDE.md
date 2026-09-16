@@ -428,9 +428,45 @@ faux » de « il n'y a aucun code à comparer » envoie chercher au mauvais
 endroit. Quand deux causes opposées produisent le même message, il faut un
 instrument qui les sépare — ici `outils/reposer-un-code-pin.js --verifier`.
 
+---
+
+## Un seul conteneur : trois états vivent en mémoire
+
+Le serveur suppose aujourd'hui **un seul processus**. Trois choses ne sont ni en
+base ni partagées, elles vivent dans la mémoire du conteneur :
+
+| État | Où | Ce qui casse à deux conteneurs |
+|---|---|---|
+| `sonnetteClients` | `server.js` | Le Raspberry poste l'appui sur **un** conteneur ; seuls les navigateurs connectés à celui-là sont prévenus. La moitié de l'équipe environ ne voit pas la sonnette — sans erreur, sans trace |
+| `_echecs` | `identite.js` | La limite d'essais de code PIN devient une limite **par conteneur** : le seuil est de fait doublé |
+| `seaux` | `securite.js` | Même chose pour les freins de débit, dont le garde-fou anti-rafale des SMS |
+
+Les sessions collantes n'y changent rien pour la sonnette : c'est le Raspberry
+qui tape au hasard, pas un navigateur.
+
+**Avant de passer à deux conteneurs** (bascule Scalingo, mise à l'échelle), il
+faut faire transiter ces événements par la base. `LISTEN`/`NOTIFY` de PostgreSQL
+suffit et n'ajoute aucune dépendance : chaque conteneur écoute un canal, l'appui
+déclenche un `NOTIFY`, chacun sert ensuite ses propres clients SSE.
+
+Corollaire général : **tout nouvel état partagé entre requêtes va en base, pas
+dans une `Map` de module.** Un cache de lecture à durée courte (le solde SMS,
+`_enVol`) reste acceptable : au pire il est calculé deux fois.
+
 ## Vérifier avant de proposer
 
-Il n'y a ni test automatisé ni étape de compilation. Au minimum :
+Il y a désormais des essais, et ils sont la première vérification :
+
+```bash
+for f in essais/*.js; do node "$f" || echo "ECHEC $f"; done
+```
+
+Ils extraient les fonctions du code réel (jamais une copie qui divergerait) et
+portent sur ce qui a déjà mordu : dates, fusion, échappement, images,
+raccourcis, préparations, réunion, crédits SMS, accusés. **Toute logique de
+tri, de date, de fusion ou de droits nouvelle mérite sa suite.**
+
+Il n'y a pas d'étape de compilation. Au minimum, en plus :
 
 ```bash
 node --check server.js && node --check auth.js && node --check maintenance.js
