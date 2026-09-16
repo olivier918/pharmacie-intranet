@@ -219,6 +219,8 @@
   .ac-conf.neuve{background:#E8F5E9;border-radius:9px;padding:8px 10px;border-bottom:none;margin-bottom:4px}
   .ac-etat{width:18px;flex:none;text-align:center;color:var(--gray-300);font-weight:800;margin-top:1px}
   .ac-etat.ok{color:#2E7D32}
+  /* « 3/6 » ne tient pas dans les 18 px d'une pastille à un caractère. */
+  .ac-etat.lot{width:auto;min-width:30px;font-size:.72rem;color:#1D5C3A}
   .ac-neuf{background:#E3F2FD;color:#1565C0;border-radius:999px;padding:1px 8px;font-size:.66rem;
     font-weight:800;letter-spacing:.02em;margin-left:7px;vertical-align:1px}
   .ac-inp{border:1px solid var(--gray-200);border-radius:9px;padding:8px 11px;font-size:.85rem;font-family:inherit;background:#fff;color:var(--gray-900)}
@@ -656,6 +658,47 @@
   // les perimes » ne se lisent pas de la meme facon, et la seconde n'a rien a
   // faire dans une liste de choses a faire.
   function acQui(t) { return t ? (t.pour || t.auteur) : null; }
+  // Les groupes sont ceux de la messagerie. En composer une seconde série ici
+  // garantirait deux listes « PDA » qui divergent au premier départ.
+  const acGroupes = () => (typeof groupesMsg !== 'undefined' && Array.isArray(groupesMsg)) ? groupesMsg : [];
+
+  // Replie les tâches d'un même envoi en une seule ligne. Six tâches
+  // identiques confiées au groupe PDA, c'est UNE demande : l'afficher six fois
+  // noierait tout le reste de la liste.
+  function acReplier(l) {
+    const out = [], par = {};
+    (l || []).forEach(function (t) {
+      if (!t) return;
+      if (!t.lot) { out.push({ lot: null, t: t, taches: [t] }); return; }
+      if (!par[t.lot]) { par[t.lot] = { lot: t.lot, t: t, taches: [] }; out.push(par[t.lot]); }
+      par[t.lot].taches.push(t);
+    });
+    return out;
+  }
+  // Une demande de groupe appelle mon attention dès qu'UNE personne a fini
+  // sans que je l'aie vu passer.
+  function acLotNeuf(e) { return e.taches.some(t => t.fait && !t.vuPar); }
+
+  // Fabrique les tâches d'une demande de groupe. Hors du gestionnaire de
+  // clic : c'est la seule partie qui porte une règle, et elle doit pouvoir
+  // être éprouvée sans DOM.
+  //   — une tâche par personne, sans doublon si le groupe en contient ;
+  //   — le même `lot` pour toutes, sinon elles ne se replient plus ;
+  //   — des identifiants libres : ce sont des horodatages, et à six dans la
+  //     même milliseconde on écraserait une tâche existante.
+  function acTachesDeGroupe(g, texte, uid, now, existants) {
+    if (!g || !Array.isArray(g.membres)) return [];
+    const membres = g.membres.filter(function (id, k, l) { return id && l.indexOf(id) === k; });
+    if (!membres.length) return [];
+    const pris = {}; (existants || []).forEach(function (t) { if (t) pris[t.id] = 1; });
+    let suivant = now;
+    return membres.map(function (id) {
+      while (pris[suivant]) suivant++;
+      pris[suivant] = 1;
+      return { id: suivant++, ts: now, pour: id, par: uid, texte: texte,
+        lot: now, lotNom: g.nom || '', fait: false, updatedAt: now };
+    });
+  }
   let acTodoVue = 'mien';
 
   function acMesTodos() {
@@ -690,13 +733,6 @@
     return !!(u && t && !t.fait && !t.vu && t.par && t.par !== acQui(t) && acQui(t) === u.id);
   }
 
-  // Taches confiees, faites, et que je n'ai pas encore vues passer.
-  function acAFeliciter() {
-    const u = acUser(); if (!u) return 0;
-    return acTodos().filter(t => t && t.par === u.id && acQui(t) !== u.id
-      && t.fait && !t.vuPar && !t.classee).length;
-  }
-
   window.acTodoOnglet = function (v) {
     acTodoVue = v;
     // Ouvrir l'onglet vaut prise de connaissance : la pastille rouge s'eteint.
@@ -709,7 +745,8 @@
   function acRendTodos() {
     const el = document.getElementById('ac-todos'); if (!el) return;
     const u = acUser();
-    const mien = acMesTodos(), conf = acConfiees(), neuves = acAFeliciter();
+    const mien = acMesTodos(), conf = acReplier(acConfiees());
+    const neuves = conf.filter(acLotNeuf).length;
     const cpt = document.getElementById('ac-td-n');
     if (cpt) cpt.textContent = mien.length;
     // La pastille de la barre laterale suit la carte : cocher une tache doit la
@@ -746,9 +783,13 @@
       if (acAdmin() && u) {
         const garde = sel.value;
         sel.style.display = '';
+        const grp = acGroupes().filter(g => g && (g.membres || []).length);
         sel.innerHTML = '<option value="' + E(u.id) + '">Pour moi</option>'
           + acStaff().filter(s => s.id !== u.id)
-              .map(s => '<option value="' + E(s.id) + '">Pour ' + E(s.prenom || s.id) + '</option>').join('');
+              .map(s => '<option value="' + E(s.id) + '">Pour ' + E(s.prenom || s.id) + '</option>').join('')
+          + (grp.length ? '<optgroup label="Groupes">' + grp.map(g =>
+              '<option value="g:' + E(g.id) + '">Au groupe ' + E(g.nom || '')
+              + ' (' + g.membres.length + ')</option>').join('') + '</optgroup>' : '');
         if (garde) sel.value = garde;
       } else {
         sel.style.display = 'none';
@@ -764,7 +805,8 @@
       return '<label class="ac-td"><input type="checkbox" onchange="acCocher(' + t.id + ')">'
         + '<span class="ac-td-t">' + E(t.texte || '')
         + (acNeuve(t) ? '<span class="ac-neuf">Nouveau</span>' : '')
-        + (confiee ? '<span class="ac-td-e">demandé par ' + E(acPrenom(t.par)) + '</span>' : '')
+        + (confiee ? '<span class="ac-td-e">demandé par ' + E(acPrenom(t.par))
+            + (t.lotNom ? ' · groupe ' + E(t.lotNom) : '') + '</span>' : '')
         + '</span></label>';
     }).join('');
     // « Nouveau » s'eteint quelques secondes apres avoir ete affiche : le temps
@@ -790,7 +832,8 @@
         + '<span class="ac-td-t" style="text-decoration:line-through;opacity:.7">' + E(t.texte || '')
         + '<span class="ac-td-e" style="text-decoration:none;display:block;opacity:1">'
         + (t.faitAt ? acAge(t.faitAt) : '')
-        + (confiee ? ' · demandé par ' + E(acPrenom(t.par)) : '') + '</span></span>'
+        + (confiee ? ' · demandé par ' + E(acPrenom(t.par)) : '')
+        + (t.lotNom ? ' · groupe ' + E(t.lotNom) : '') + '</span></span>'
         + '<button class="ac-coeur" style="margin-left:auto" onclick="acRouvrir(' + t.id + ')" title="Remettre à faire">↩</button>'
         + '</div>';
     }).join('');
@@ -806,20 +849,43 @@
 
   function acListeConfiees(l) {
     if (!l.length) return '<div class="ac-vide">Vous n’avez rien confié.</div>';
-    return l.map(function (t) {
-      const fini = !!t.fait;
-      const neuve = fini && !t.vuPar;
-      return '<div class="ac-td ac-conf' + (neuve ? ' neuve' : '') + '">'
-        + '<span class="ac-etat' + (fini ? ' ok' : '') + '">' + (fini ? '✓' : '·') + '</span>'
-        + '<span class="ac-td-t">' + E(t.texte || '')
-        + '<span class="ac-td-e">' + (fini
-            ? 'fait par ' + E(acPrenom(acQui(t))) + (t.faitAt ? ' · ' + acAge(t.faitAt) : '')
-            : 'en attente · ' + E(acPrenom(acQui(t)))) + '</span></span>'
-        + (fini
-            ? '<button class="ac-coeur" style="margin-left:auto" onclick="acClasser(' + t.id + ')" title="Retirer de la liste">✕</button>'
-            : '<button class="ac-coeur" style="margin-left:auto" onclick="acAnnulerConfiee(' + t.id + ')" title="Annuler cette demande">✕</button>')
-        + '</div>';
+    return l.map(function (e) {
+      return e.lot ? acLigneLot(e) : acLigneConfiee(e.t);
     }).join('');
+  }
+  function acLigneConfiee(t) {
+    const fini = !!t.fait;
+    const neuve = fini && !t.vuPar;
+    return '<div class="ac-td ac-conf' + (neuve ? ' neuve' : '') + '">'
+      + '<span class="ac-etat' + (fini ? ' ok' : '') + '">' + (fini ? '✓' : '·') + '</span>'
+      + '<span class="ac-td-t">' + E(t.texte || '')
+      + '<span class="ac-td-e">' + (fini
+          ? 'fait par ' + E(acPrenom(acQui(t))) + (t.faitAt ? ' · ' + acAge(t.faitAt) : '')
+          : 'en attente · ' + E(acPrenom(acQui(t)))) + '</span></span>'
+      + (fini
+          ? '<button class="ac-coeur" style="margin-left:auto" onclick="acClasser(' + t.id + ')" title="Retirer de la liste">✕</button>'
+          : '<button class="ac-coeur" style="margin-left:auto" onclick="acAnnulerConfiee(' + t.id + ')" title="Annuler cette demande">✕</button>')
+      + '</div>';
+  }
+  // Une demande de groupe tient sur une ligne, avec son avancement et le nom
+  // de ceux qui n'ont pas encore coché — c'est la seule chose dont on ait
+  // besoin pour relancer.
+  function acLigneLot(e) {
+    const n = e.taches.length;
+    const faits = e.taches.filter(t => t.fait).length;
+    const fini = faits === n;
+    const reste = e.taches.filter(t => !t.fait).map(t => acPrenom(acQui(t)));
+    const qui = reste.length > 3 ? reste.slice(0, 3).join(', ') + ' +' + (reste.length - 3) : reste.join(', ');
+    return '<div class="ac-td ac-conf' + (acLotNeuf(e) ? ' neuve' : '') + '">'
+      + '<span class="ac-etat lot' + (fini ? ' ok' : '') + '">' + (fini ? '✓' : faits + '/' + n) + '</span>'
+      + '<span class="ac-td-t">' + E(e.t.texte || '')
+      + '<span class="ac-td-e">groupe ' + E(e.t.lotNom || '') + ' · '
+      + (fini ? 'faite par tout le monde' : 'reste ' + E(qui))
+      + '</span></span>'
+      + (fini
+          ? '<button class="ac-coeur" style="margin-left:auto" onclick="acClasserLot(' + e.lot + ')" title="Retirer de la liste">✕</button>'
+          : '<button class="ac-coeur" style="margin-left:auto" onclick="acAnnulerLot(' + e.lot + ')" title="Annuler cette demande pour tout le groupe">✕</button>')
+      + '</div>';
   }
 
   // Ouvrir l'onglet vaut prise de connaissance : la pastille rouge s'eteint.
@@ -835,6 +901,30 @@
     });
     return n > 0;
   }
+  // Une demande de groupe se classe et s'annule d'un bloc : la retirer chez
+  // trois personnes sur six laisserait une demande à moitié vivante que
+  // personne ne saurait plus lire.
+  window.acClasserLot = function (lot) {
+    let n = 0;
+    acTodos().forEach(function (t) {
+      if (t && t.lot === lot) { t.classee = true; t.updatedAt = Date.now(); n++; }
+    });
+    if (n) { acSave(true); acRendTodos(); }
+  };
+  window.acAnnulerLot = function (lot) {
+    const l = acTodos().filter(t => t && t.lot === lot);
+    if (!l.length) return;
+    const reste = l.filter(t => !t.fait).length;
+    if (!confirm('Annuler « ' + (l[0].texte || '') + ' » pour tout le groupe '
+      + (l[0].lotNom || '') + ' ?\n\nElle disparaîtra de la liste de '
+      + reste + ' personne' + (reste > 1 ? 's' : '') + '.')) return;
+    l.forEach(function (t) {
+      if (typeof markDeleted === 'function') markDeleted('todoPerso', t.id);
+      const a = acTodos(), i = a.findIndex(x => x.id === t.id);
+      if (i >= 0) a.splice(i, 1);
+    });
+    acSave(true); acRendTodos();
+  };
   window.acClasser = function (id) {
     const t = acTodos().find(x => x.id === id); if (!t) return;
     t.classee = true; t.updatedAt = Date.now();
@@ -856,8 +946,27 @@
     const texte = (i.value || '').trim();
     if (!texte) return;
     const sel = document.getElementById('ac-td-qui');
-    const pour = (acAdmin() && sel && sel.value) ? sel.value : u.id;
+    const choix = (acAdmin() && sel && sel.value) ? sel.value : u.id;
     const now = Date.now();
+
+    // Une tâche adressée à un groupe est DISTRIBUÉE : une tâche par personne,
+    // chacun coche la sienne. « Relire la procédure PDA » n'est pas faite
+    // parce qu'une personne sur six l'a lue. Le lot les relie, pour n'afficher
+    // qu'une ligne et un avancement du côté de celui qui a demandé.
+    if (String(choix).indexOf('g:') === 0) {
+      const g = acGroupes().find(x => x && String(x.id) === String(choix).slice(2));
+      if (!g) { alert('Ce groupe n’existe plus.'); acRendTodos(); return; }
+      const neuves = acTachesDeGroupe(g, texte, u.id, now, acTodos());
+      if (!neuves.length) { alert('Ce groupe ne compte personne.'); return; }
+      neuves.forEach(function (t) { acTodos().unshift(t); });
+      i.value = '';
+      acSave(true); acRendTodos();
+      acToast('Tâche confiée au groupe ' + (g.nom || '') + ' — '
+        + neuves.length + ' personne' + (neuves.length > 1 ? 's' : '') + '.');
+      return;
+    }
+
+    const pour = choix;
     acTodos().unshift({ id: now, ts: now, pour: pour, par: u.id, texte: texte, fait: false, updatedAt: now });
     i.value = '';
     acSave(true); acRendTodos();

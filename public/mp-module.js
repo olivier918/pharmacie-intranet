@@ -110,11 +110,42 @@
   window.mpPrenom = mpPrenom;
   window.mpCouleur = mpCouleur;
 
+  // Retrouve le groupe auquel une conversation est adressée : celui dont les
+  // membres sont EXACTEMENT les destinataires choisis. Si l'on a ajouté ou
+  // retiré quelqu'un après avoir cliqué sur le groupe, ce n'est plus lui — et
+  // étiqueter « PDA » une conversation où quelqu'un d'extérieur lit serait un
+  // mensonge, pas un raccourci.
+  function mpGroupeDe(choisis, uid) {
+    if (!Array.isArray(choisis) || choisis.length < 2) return null;
+    const veut = choisis.slice().sort().join('|');
+    return mpGroupes().find(function (g) {
+      if (!g || !Array.isArray(g.membres)) return false;
+      // Un groupe peut inclure celui qui écrit : il est dans la conversation
+      // de toute façon, sa présence dans la liste ne change rien.
+      const m = g.membres.filter(x => x !== uid);
+      return m.length === choisis.length && m.slice().sort().join('|') === veut;
+    }) || null;
+  }
+  window.mpGroupeDe = mpGroupeDe;
+
   function mpTitre(c) {
     const u = mpUser();
     if (c.titre) return c.titre;
+    // Adressée à un groupe de l'officine : c'est le nom du groupe qui dit de
+    // quoi il s'agit. « Marie, Claire, Julien, Paul, Sophie » n'apprend rien
+    // et déborde dès la quatrième personne.
+    if (c.groupeNom) return c.groupeNom;
     const autres = (c.membres || []).filter(x => x !== (u && u.id));
     if (!autres.length) return 'Moi';
+    // Les conversations d'AVANT cette fonction n'ont pas de nom recopié. On le
+    // retrouve à la lecture plutôt que d'écrire une migration : les postes ne
+    // sont pas tous sur la même version, et une migration écrite se bat avec
+    // elle-même à la fusion (piège n° 7). `groupeNom` à vide, lui, veut dire
+    // « déjà cherché, ce n'est pas un groupe » : on ne recommence pas.
+    if (c.groupeNom === undefined && autres.length > 1) {
+      const g = mpGroupeDe(autres, u && u.id);
+      if (g) return g.nom;
+    }
     return autres.map(mpPrenom).join(', ');
   }
 
@@ -257,14 +288,17 @@
       const c = x.c, n = mpNonLus(c);
       const autres = (c.membres || []).filter(y => y !== (u && u.id));
       const seul = autres.length === 1;
-      const ini = c.titre ? c.titre.slice(0, 2).toUpperCase()
+      const etiq = c.titre || c.groupeNom;
+      const ini = etiq ? etiq.slice(0, 2).toUpperCase()
         : (seul ? autres[0] : (autres.length + 1) + '');
       const fond = seul ? mpCouleur(autres[0]) : '#6b7a72';
       const apercu = x.d
         ? ((x.d.uid === (u && u.id) ? 'Vous : ' : (c.membres.length > 2 ? mpPrenom(x.d.uid) + ' : ' : ''))
            + (x.d.txt ? x.d.txt.replace(/[*_]/g, '') : (x.d.fichier ? '📎 ' + (x.d.fichier.nom || 'fichier') : '')))
         : 'Aucun message';
-      return '<button class="mp-c' + (mpCourante === c.id ? ' sel' : '') + '" onclick="mpOuvrir(' + c.id + ')">'
+      return '<button class="mp-c' + (mpCourante === c.id ? ' sel' : '') + '"'
+        + (autres.length > 1 ? ' title="' + E(autres.map(mpPrenom).join(', ')) + '"' : '')
+        + ' onclick="mpOuvrir(' + c.id + ')">'
         + '<span class="mp-pastille" style="background:' + fond + '">' + E(ini) + '</span>'
         + '<span class="mp-c-txt">'
         + '<span class="mp-c-t">' + E(mpTitre(c))
@@ -607,9 +641,17 @@
       });
       if (deja) { mpFermerNouvelle(); mpOuvrir(deja.id); return; }
     }
+    // Le nom du groupe n'est retenu QUE si l'on n'a pas écrit de titre à la
+    // main et qu'on dépasse deux personnes : à deux, le nom de l'autre reste
+    // plus clair que « PDA ».
+    const grp = (!titre && choisis.length > 1) ? mpGroupeDe(choisis, u.id) : null;
     const now = Date.now();
     const vu = {}; vu[u.id] = now;
-    mpConvos().unshift({ id: now, ts: now, par: u.id, membres: membres, titre: titre, vu: vu, updatedAt: now });
+    // Le nom est recopié, pas seulement référencé : un groupe renommé ou
+    // supprimé ne doit pas réécrire l'en-tête d'une conversation déjà tenue.
+    // C'est ce que promet déjà la suppression d'un groupe.
+    mpConvos().unshift({ id: now, ts: now, par: u.id, membres: membres, titre: titre,
+      groupeId: grp ? grp.id : null, groupeNom: grp ? grp.nom : '', vu: vu, updatedAt: now });
     mpFermerNouvelle();
     mpSave(true);
     mpOuvrir(now);
