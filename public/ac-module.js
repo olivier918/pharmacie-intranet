@@ -559,6 +559,12 @@
       if (r) parts.push('<button class="ac-al" onclick="showSec(\'preparations\')"><span class="ac-pt"></span>'
         + r + ' pr\u00e9paration' + (r > 1 ? 's' : '') + ' en retard</button>');
     }
+    // La prochaine reunion d'equipe. Le module decide lui-meme s'il a quelque
+    // chose a dire : il connait sa date, ses themes, et ses droits d'acces.
+    if (typeof reAlerteAccueil === 'function') {
+      const r = reAlerteAccueil();
+      if (r) parts.push(r);
+    }
     // Le solde SMS quand il est confortable : une pastille verte parmi les
     // autres. Quand il ne l'est plus, c'est le bandeau au-dessus qui parle, et
     // on ne redit pas la meme chose deux fois.

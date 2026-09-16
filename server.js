@@ -350,7 +350,19 @@ function renouvBase() {
 // souvent, et l'application les affiche dans un cadre plutot qu'en image.
 const IMG_TYPES = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
-  'application/pdf': 'pdf'
+  'application/pdf': 'pdf',
+  // Bureautique : une piece jointe de reunion d'equipe est souvent un devis
+  // Excel ou un courrier Word. On les stocke et on les rend, sans les afficher.
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/msword': 'doc',
+  'application/vnd.ms-excel': 'xls'
+};
+// Ce que le navigateur peut afficher dans la page sans danger. Tout le reste
+// part en telechargement force : un fichier servi depuis NOTRE domaine et
+// ouvert dans l'onglet s'executerait avec notre session.
+const IMG_AFFICHABLES = {
+  'image/jpeg': 1, 'image/png': 1, 'image/gif': 1, 'image/webp': 1, 'application/pdf': 1
 };
 const IMG_MAX_OCTETS = 8 * 1024 * 1024;   // une ordonnance scannee peut etre lourde
 
@@ -359,7 +371,7 @@ app.post('/api/images', async (req, res) => {
     if (!db) return res.status(503).json({ ok: false, error: 'Base de donnees requise' });
     const b = req.body || {};
     const mime = String(b.mime || '');
-    if (!IMG_TYPES[mime]) return res.status(400).json({ ok: false, error: 'Type d image non accepte' });
+    if (!IMG_TYPES[mime]) return res.status(400).json({ ok: false, error: 'Type de fichier non accepte' });
     const brut = String(b.data || '');
     if (!/^[A-Za-z0-9+/=]+$/.test(brut) || !brut.length) {
       return res.status(400).json({ ok: false, error: 'Contenu illisible' });
@@ -405,6 +417,12 @@ app.get('/api/images/:id', async (req, res) => {
     // Immuable : le nom EST le contenu. Le navigateur ne redemandera jamais.
     res.set('Cache-Control', 'public, max-age=31536000, immutable');
     res.set('Content-Type', r.rows[0].mime);
+    // Un .docx ou un .xlsx ne s'affiche pas : il se telecharge. Le nom propose
+    // vient de l'appelant (attribut `download` du lien), pas d'ici.
+    if (!IMG_AFFICHABLES[r.rows[0].mime]) {
+      res.set('Content-Disposition', 'attachment');
+      res.set('X-Content-Type-Options', 'nosniff');
+    }
     res.send(clair);
   } catch (err) {
     console.error('Erreur lecture image:', err.message);
@@ -1466,6 +1484,8 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   'demandes',
   // Page d'accueil : taches personnelles, moments d'equipe, agenda partage.
   'todoPerso', 'moments', 'agenda', 'liens',
+  // Reunion d'equipe : themes de l'ordre du jour, et calendrier des seances.
+  'reunionThemes', 'reunions',
   // Messagerie personnelle : les messages sont une collection a part, pour que
   // deux personnes qui ecrivent en meme temps ne s'effacent pas l'une l'autre.
   'convos', 'messages',
@@ -1650,7 +1670,9 @@ function ouSontLesIdentifiants(blob) {
 // Ce qui designe VRAIMENT une image : les champs que l'application affiche
 // comme telle. Liste explicite et assumee — ici, se tromper par exces invente
 // des pertes, alors que pour le balayeur c'est l'inverse.
-const CHAMPS_IMAGE = ['scanId', 'imgId', 'photo', 'sig'];
+// `fichId` : piece jointe d'un theme de reunion d'equipe. Elle est stockee
+// dans app_images comme les scans ; l'oublier ici la ferait balayer.
+const CHAMPS_IMAGE = ['scanId', 'imgId', 'photo', 'sig', 'fichId'];
 function imagesAttendues(blob) {
   const ou = ouSontLesIdentifiants(blob);
   const attendues = new Map();
