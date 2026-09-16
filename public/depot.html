@@ -49,13 +49,21 @@
   .second:hover:not(:disabled){border-color:var(--vert)}
   input[type=file]{display:none}
 
-  .liste{margin-top:16px;display:none}
+  .rendu{margin-top:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .rendu-t{font-size:.82rem;color:var(--gris);font-weight:600}
+  .pastilles{display:flex;gap:6px;margin-left:auto}
+  .pa{font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;padding:7px 12px;
+    border:1px solid var(--trait);background:#fff;color:var(--gris);border-radius:999px}
+  .pa.on{background:#E9F5EE;border-color:var(--vert);color:var(--vert-fonce)}
+  .pa:disabled{opacity:.5;cursor:default}
+  .liste{margin-top:14px;display:none}
   .liste.on{display:block}
   .item{display:flex;align-items:center;gap:11px;border:1px solid var(--trait);
     border-radius:11px;padding:10px 12px;margin-bottom:8px;background:#fafcfb}
-  .item .vig{width:40px;height:40px;border-radius:8px;flex:none;object-fit:cover;
+  .item .vig{width:62px;height:62px;border-radius:8px;flex:none;object-fit:cover;cursor:zoom-in;
     background:#E9F5EE;display:flex;align-items:center;justify-content:center;
-    font-size:.64rem;font-weight:800;color:var(--vert-fonce);letter-spacing:.03em}
+    font-size:.68rem;font-weight:800;color:var(--vert-fonce);letter-spacing:.03em;
+    border:1px solid var(--trait)}
   .item .txt{flex:1;min-width:0}
   .item .nom{font-size:.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .item .poids{font-size:.78rem;color:var(--gris);font-variant-numeric:tabular-nums}
@@ -84,6 +92,14 @@
     font-variant-numeric:tabular-nums;margin:6px 0 12px}
   .consigne{font-size:.95rem;color:var(--encre)}
   .pied{text-align:center;font-size:.8rem;color:var(--gris);margin-top:22px;line-height:1.5}
+  /* Juger un rendu sur une vignette est impossible : l'aperçu s'ouvre en grand
+     d'une simple touche, et se referme de même. */
+  .loupe{position:fixed;inset:0;background:rgba(20,32,26,.92);display:none;
+    align-items:center;justify-content:center;padding:14px;z-index:99;cursor:zoom-out}
+  .loupe.on{display:flex}
+  .loupe img{max-width:100%;max-height:100%;border-radius:8px;background:#fff}
+  .loupe .fermer{position:absolute;top:14px;right:16px;color:#fff;font-size:1.5rem;
+    background:none;border:none;font-family:inherit;cursor:pointer;padding:6px 10px}
   .cache{display:none}
 </style>
 </head>
@@ -105,6 +121,14 @@
     <input type="file" id="f-choisir" accept="image/*,application/pdf" multiple>
     <input type="file" id="f-photo" accept="image/*" capture="environment">
 
+    <div class="rendu cache" id="rendu">
+      <span class="rendu-t">Rendu des photos</span>
+      <div class="pastilles">
+        <button class="pa on" data-m="doc">Document</button>
+        <button class="pa" data-m="fort">Renforcé</button>
+        <button class="pa" data-m="brut">Couleur</button>
+      </div>
+    </div>
     <div class="liste" id="liste"></div>
 
     <button class="gros cache" id="btn-envoyer" style="margin-top:16px">Envoyer</button>
@@ -136,6 +160,8 @@
     <h1 id="clos-t">Dépôt indisponible</h1>
     <p class="sous" id="clos-s"></p>
   </section>
+
+  <div class="loupe" id="loupe"><button class="fermer" aria-label="Fermer">&#10005;</button><img id="loupe-img" alt=""></div>
 
   <p class="pied">
     Vos documents sont transmis à la pharmacie et à personne d’autre.<br>
@@ -175,6 +201,107 @@
     return (n / 1048576).toFixed(1).replace('.', ',') + ' Mo';
   }
 
+  // ── Le filtre « document » ────────────────────────────────────────────────
+  // Trois passes, toutes en O(n), sans aucune bibliothèque :
+  //   1. gris perceptuel ;
+  //   2. estimation du FOND par une moyenne locale (image intégrale), puis
+  //      division — c'est ce qui efface l'ombre de la main et le jaune de
+  //      l'ampoule sans toucher au trait ;
+  //   3. une courbe de contraste.
+  //
+  // Le mode « fort » binarise. Il rend mieux sur une photo bien éclairée, mais
+  // sa panne est SILENCIEUSE : un seuil un peu haut n'atténue pas une posologie
+  // écrite au crayon, il l'efface, et personne ne peut deviner qu'il manquait
+  // quelque chose. C'est pourquoi « document » est le mode par défaut : lui ne
+  // peut que griser, et un gris se voit.
+  function filtreDocument(src, fort) {
+    const w = src.width, h = src.height, d = src.data;
+    const g = new Float32Array(w * h);
+    for (var i = 0, p = 0; i < d.length; i += 4, p++) {
+      g[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    }
+    // Image intégrale : la somme de n'importe quel rectangle en quatre lectures.
+    const S = new Float64Array((w + 1) * (h + 1));
+    for (var y = 0; y < h; y++) {
+      var ligne = 0;
+      for (var x = 0; x < w; x++) {
+        ligne += g[y * w + x];
+        S[(y + 1) * (w + 1) + (x + 1)] = S[y * (w + 1) + (x + 1)] + ligne;
+      }
+    }
+    const r = Math.max(8, Math.round(Math.min(w, h) / 12));
+    const out = new Uint8ClampedArray(d.length);
+    for (var y2 = 0; y2 < h; y2++) {
+      const y0 = Math.max(0, y2 - r), y1 = Math.min(h - 1, y2 + r);
+      for (var x2 = 0; x2 < w; x2++) {
+        const x0 = Math.max(0, x2 - r), x1 = Math.min(w - 1, x2 + r);
+        const n = (x1 - x0 + 1) * (y1 - y0 + 1);
+        const somme = S[(y1 + 1) * (w + 1) + (x1 + 1)] - S[y0 * (w + 1) + (x1 + 1)]
+                    - S[(y1 + 1) * (w + 1) + x0] + S[y0 * (w + 1) + x0];
+        const fond = somme / n;
+        const q = y2 * w + x2;
+        var v = fond > 1 ? (g[q] / fond) * 255 : 255;
+        if (fort) {
+          v = v < 232 ? 0 : 255;
+        } else {
+          v = v <= 140 ? v * 0.55
+            : v >= 250 ? 255
+            : 77 + (v - 140) * ((255 - 77) / (250 - 140));
+        }
+        const k = q * 4;
+        out[k] = out[k + 1] = out[k + 2] = v; out[k + 3] = 255;
+      }
+    }
+    return new ImageData(out, w, h);
+  }
+
+  // Recalcule une photo depuis SON ORIGINAL réduit. On ne garde jamais les
+  // pixels en mémoire — une image de 2000 px pèse 16 Mo en RGBA, six d'un coup
+  // feraient tomber un téléphone. On repart du JPEG, qui fait 50 Ko.
+  function rendreUne(item, mode) {
+    return new Promise(function (ok) {
+      if (item.mime === 'application/pdf' || !item.orig) return ok(item);
+      if (mode === 'brut') {
+        item.data = item.orig; item.apercu = 'data:image/jpeg;base64,' + item.orig;
+        item.octets = Math.round(item.orig.length * 3 / 4);
+        return ok(item);
+      }
+      const img = new Image();
+      img.onload = function () {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        try {
+          ctx.putImageData(filtreDocument(ctx.getImageData(0, 0, c.width, c.height), mode === 'fort'), 0, 0);
+          const u = c.toDataURL('image/jpeg', QUALITE);
+          item.data = u.split(',')[1] || item.orig;
+          item.apercu = u;
+          item.octets = Math.round(item.data.length * 3 / 4);
+        } catch (e) { /* on garde l'original : mieux vaut brut que rien */ }
+        ok(item);
+      };
+      img.onerror = function () { ok(item); };
+      img.src = 'data:image/jpeg;base64,' + item.orig;
+    });
+  }
+
+  var mode = 'doc';
+  async function appliquerMode(m) {
+    mode = m;
+    const pas = document.querySelectorAll('.pa');
+    for (var i = 0; i < pas.length; i++) {
+      pas[i].classList[pas[i].getAttribute('data-m') === m ? 'add' : 'remove']('on');
+      pas[i].disabled = true;
+    }
+    const b = $('btn-envoyer'); const etiquette = b.textContent;
+    b.disabled = true; b.textContent = 'Traitement\u2026';
+    for (var k = 0; k < choisis.length; k++) await rendreUne(choisis[k], m);
+    for (var j = 0; j < pas.length; j++) pas[j].disabled = false;
+    b.disabled = false; b.textContent = etiquette;
+    rendre();
+  }
+
   // ── Réduction dans le navigateur ──────────────────────────────────────────
   // Tout ce qui est image ressort en JPEG : le HEIC d'un iPhone n'arrive donc
   // jamais au serveur, et la liste des types acceptés reste courte.
@@ -196,7 +323,7 @@
           var url2 = c.toDataURL('image/jpeg', QUALITE);
           URL.revokeObjectURL(url);
           var d = url2.split(',')[1] || '';
-          ok({ mime: 'image/jpeg', data: d, octets: Math.round(d.length * 3 / 4), apercu: url2 });
+          ok({ mime: 'image/jpeg', orig: d, data: d, octets: Math.round(d.length * 3 / 4), apercu: url2 });
         } catch (e) { URL.revokeObjectURL(url); ko(e); }
       };
       img.onerror = function () { URL.revokeObjectURL(url); ko(new Error('image illisible')); };
@@ -229,11 +356,21 @@
     // HTML. C'est la règle de la maison, elle vaut aussi sur une page publique.
     var noms = l.querySelectorAll('.nom');
     for (var i = 0; i < noms.length; i++) noms[i].textContent = choisis[i].nom;
+    var vigs = l.querySelectorAll('img.vig');
+    for (var v = 0; v < vigs.length; v++) {
+      vigs[v].onclick = function () {
+        $('loupe-img').src = this.src;
+        $('loupe').classList.add('on');
+      };
+    }
     var otes = l.querySelectorAll('.ote');
     for (var k = 0; k < otes.length; k++) {
       otes[k].onclick = function () { choisis.splice(+this.getAttribute('data-i'), 1); rendre(); };
     }
     l.classList[choisis.length ? 'add' : 'remove']('on');
+    // Les pastilles n'ont de sens que s'il y a une photo : un PDF du m\u00e9decin
+    // ne se filtre pas, et proposer un r\u00e9glage sans effet est une fausse piste.
+    montrer($('rendu'), choisis.some(function (x) { return x.mime !== 'application/pdf'; }));
     montrer($('btn-envoyer'), choisis.length > 0);
     $('btn-envoyer').textContent = choisis.length > 1
       ? 'Envoyer les ' + choisis.length + ' documents' : 'Envoyer';
@@ -258,7 +395,8 @@
         } else {
           var r = await reduire(f);
           if (r.octets > MAX_OCTETS) { erreur('« ' + f.name + ' » est trop lourd.'); continue; }
-          choisis.push({ nom: f.name || 'ordonnance.jpg', mime: r.mime, data: r.data, octets: r.octets, apercu: r.apercu });
+          choisis.push({ nom: f.name || 'ordonnance.jpg', mime: r.mime, orig: r.orig, data: r.data, octets: r.octets, apercu: r.apercu });
+          await rendreUne(choisis[choisis.length - 1], mode);
         }
       } catch (e) {
         erreur('« ' + (f.name || 'ce document') + ' » n’a pas pu être lu. Essayez une capture d’écran.');
@@ -266,6 +404,13 @@
     }
     rendre();
   }
+
+  var pastilles = document.querySelectorAll('.pa');
+  for (var ip = 0; ip < pastilles.length; ip++) {
+    pastilles[ip].onclick = function () { appliquerMode(this.getAttribute('data-m')); };
+  }
+
+  $('loupe').onclick = function () { this.classList.remove('on'); $('loupe-img').src = ''; };
 
   $('btn-choisir').onclick = function () { $('f-choisir').click(); };
   $('btn-photo').onclick = function () { $('f-photo').click(); };
