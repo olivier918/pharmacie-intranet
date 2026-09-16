@@ -1559,6 +1559,10 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   'reunionThemes', 'reunions',
   // Depots d'ordonnances : la boite de reception, purgee a sept jours.
   'depots',
+  // Repertoire des laboratoires (fournisseurs, leurs contacts, et les
+  // orthographes sous lesquelles les litiges les designent). A ne pas
+  // confondre avec `labo` au singulier : le preparatoire sous-traitant.
+  'laboratoires',
   // Messagerie personnelle : les messages sont une collection a part, pour que
   // deux personnes qui ecrivent en meme temps ne s'effacent pas l'une l'autre.
   'convos', 'messages',

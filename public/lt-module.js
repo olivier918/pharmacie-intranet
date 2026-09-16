@@ -175,7 +175,8 @@
     c.innerHTML = `
       <div class="lt-grille">
         <label>Date<input type="date" id="lt-f-date" value="${ltEch(r.date)}"></label>
-        <label>Laboratoire<input id="lt-f-labo" value="${ltEch(r.labo)}"></label>
+        <label>Laboratoire<input id="lt-f-labo" list="lt-labos" autocomplete="off"
+          value="${ltEch(r.labo)}" oninput="ltMajLabo()"></label>
         <label>Téléphone<input id="lt-f-tel" value="${ltEch(r.tel)}"></label>
         <label>N° de facture ou BL<input id="lt-f-facture" value="${ltEch(r.facture)}"></label>
         <label>N° de commande WP<input id="lt-f-cmd" value="${ltEch(r.cmd)}"></label>
@@ -190,6 +191,8 @@
         <label>État<select id="lt-f-etat">${Object.keys(etats).map(k =>
           `<option value="${k}"${r.etat === k ? ' selected' : ''}>${etats[k].lbl}</option>`).join('')}</select></label>
       </div>
+      <datalist id="lt-labos">${ltOptionsLabos()}</datalist>
+      <div class="lt-labo-info" id="lt-labo-info">${ltInfoLabo(r.labo)}</div>
       <label class="lt-plein">Résumé<input id="lt-f-note" value="${ltEch(r.note)}" placeholder="manque 1 colis, avoir attendu…"></label>
       <div class="lt-fil-t">Suivi du dossier</div>
       <div class="lt-fil" id="lt-fil">${ltFil(r)}</div>
@@ -203,6 +206,35 @@
     document.getElementById('lt-det').classList.add('open');
   };
 
+  function ltOptionsLabos() {
+    const l = (typeof laboratoires !== 'undefined' && Array.isArray(laboratoires)) ? laboratoires : [];
+    return l.slice()
+      .sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''), 'fr'))
+      .map(f => '<option value="' + ltEch(f.nom || '') + '"></option>').join('');
+  }
+  // Ce que la ligne sous le champ dit : quelle fiche a été reconnue, et à qui
+  // l'on écrira. Un laboratoire sans fiche n'est pas une erreur — c'est une
+  // fiche à créer, et on le dit sans bloquer la saisie.
+  function ltInfoLabo(nom) {
+    if (!nom || typeof window.lbParNom !== 'function') return '';
+    const f = window.lbParNom(nom);
+    if (!f) return '<span class="lt-labo-non">Aucune fiche à ce nom. '
+      + 'Créez-la dans Back office › Laboratoires pour retrouver ses coordonnées ici.</span>';
+    const c = window.lbContactLitige(f);
+    const mail = window.lbMailLitige(f);
+    return '<span class="lt-labo-oui">' + ltEch(f.nom)
+      + (c && (c.prenom || c.nom) ? ' · ' + ltEch(((c.prenom || '') + ' ' + (c.nom || '')).trim()) : '')
+      + (c && c.fonction ? ' (' + ltEch(c.fonction) + ')' : '')
+      + (mail ? ' · ' + ltEch(mail) : ' · <b>aucune adresse mail</b>')
+      + (c && c.mobile ? ' · ' + ltEch(c.mobile) : '')
+      + '</span>';
+  }
+  window.ltMajLabo = function () {
+    const e = document.getElementById('lt-labo-info'); if (!e) return;
+    const v = (document.getElementById('lt-f-labo') || {}).value || '';
+    e.innerHTML = ltInfoLabo(v.trim());
+  };
+
   function ltFil(r) {
     const f = (r.fil || []).slice().sort((a, b) => a.ts - b.ts);
     if (!f.length) return '<div class="lt-mini">Rien de noté pour l’instant.</div>';
@@ -212,12 +244,22 @@
 
   window.ltFermer = function () { document.getElementById('lt-det').classList.remove('open'); ltOuvert = null; ltRender(); };
 
+  // Le lien vers la fiche, resolu au moment de l'enregistrement. Null quand
+  // aucune fiche ne reconnait le nom : le dossier reste parfaitement valide, il
+  // apparaîtra simplement dans « À rattacher ».
+  function ltIdDuLabo(nom) {
+    if (!nom || typeof window.lbParNom !== 'function') return null;
+    const f = window.lbParNom(nom);
+    return f ? f.id : null;
+  }
+
   function ltLire() {
     const v = id => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
     const chif = !!(document.getElementById('lt-f-chiffrer') || {}).checked;
     const m = parseFloat(v('lt-f-montant').replace(',', '.'));
     return {
       date: v('lt-f-date') || ltAujourdhui(), labo: v('lt-f-labo'), tel: v('lt-f-tel'),
+      laboId: ltIdDuLabo(v('lt-f-labo')),
       facture: v('lt-f-facture'), cmd: v('lt-f-cmd'), type: v('lt-f-type') || undefined,
       etat: v('lt-f-etat'), note: v('lt-f-note'),
       aChiffrer: chif, montant: chif ? null : (isFinite(m) ? Math.round(m * 100) / 100 : null)
@@ -352,6 +394,9 @@
   .lt-l.douteux{box-shadow:inset 3px 0 0 #9a9a95}
   .lt-d{color:#6b7a72;white-space:nowrap}
   .lt-labo{font-weight:600}
+  .lt-labo-info{font-size:.78rem;line-height:1.5;margin:-4px 0 10px}
+  .lt-labo-oui{color:var(--g-dark)}
+  .lt-labo-non{color:#E65100}
   .lt-note{display:block;font-weight:400;font-size:11.5px;color:#888780;margin-top:2px}
   .lt-pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:600;white-space:nowrap}
   .lt-age{color:#6b7a72;white-space:nowrap}
