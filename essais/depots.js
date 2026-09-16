@@ -81,20 +81,12 @@ t('... et son octet est encore référencé par le dossier de location',
   encore.has(MEME));
 t('un octet que plus personne ne référence, lui, peut partir', !encore.has(AUTRE));
 
-// ── Le numéro lu à voix haute ──────────────────────────────────────────────
-console.log('\nLe numéro que le patient lit au pharmacien');
-t('la boîte vide commence à 1', D.numeroLibre({ depots: [] }) === 1);
-t('sans rubrique du tout non plus ça ne casse', D.numeroLibre({}) === 1);
-t('le suivant est pris',
-  D.numeroLibre({ depots: [{ num: 1 }, { num: 2 }] }) === 3);
-// Il doit etre court a dire : on rebouche les trous plutot que de compter
-// indefiniment.
-t('un trou est rebouché plutôt que d’allonger le numéro',
-  D.numeroLibre({ depots: [{ num: 1 }, { num: 3 }] }) === 2);
-t('un dépôt archivé libère son numéro',
-  D.numeroLibre({ depots: [{ num: 1, archiveLe: T }, { num: 2 }] }) === 1);
-t('deux dépôts ouverts n’ont jamais le même numéro',
-  D.numeroLibre({ depots: [{ num: 1 }, { num: 2 }, { num: 3 }] }) === 4);
+// ── La date du jour ────────────────────────────────────────────────────────
+console.log('\nLa date du jour, à Paris');
+// Un serveur en UTC place une ordonnance déposée à 00h30 la veille, et le
+// dossier ouvert apparaît aussitôt en retard.
+t('elle a la forme attendue par le module', /^\d{4}-\d{2}-\d{2}$/.test(D.jourParis()));
+t('... et le numéro D-47 a bien disparu', D.numeroLibre === undefined);
 
 // ── Les types acceptés ─────────────────────────────────────────────────────
 console.log('\nCe que la route publique accepte');
@@ -197,7 +189,7 @@ const corpsOk = (n) => ({ body: { nom: 'DUPONT', prenom: 'Marie',
   // LE test qui manquait.
   t('... et il est VRAIMENT écrit en base', (b.lire().depots || []).length === 1);
   t('... par un appel à ecrireEtat, pas une mutation en mémoire', b.ecritures() === 1);
-  t('le patient reçoit un numéro à lire au pharmacien', r.corps.num === 1);
+  t('aucun numéro n’est rendu : le nom le remplace', r.corps.num === undefined);
   t('le dépôt porte son origine', (b.lire().depots[0] || {}).origine === 'comptoir');
   // Sans le nom, une ordonnance envoyée de chez le patient est inexploitable :
   // il n'y a personne au comptoir pour dire le numéro.
@@ -209,7 +201,7 @@ const corpsOk = (n) => ({ body: { nom: 'DUPONT', prenom: 'Marie',
     !D.rattache(b.lire().depots[0]));
 
   r = await appeler(b.app.routes['POST /api/depot'], corpsOk(2));
-  t('un second dépôt prend le numéro suivant', r.corps.num === 2);
+  t('un second dépôt s’ajoute sans numéro', r.corps.num === undefined);
   t('... et s’ajoute au premier', b.lire().depots.length === 2);
   t('... avec ses deux fichiers', b.lire().depots[1].fichiers.length === 2);
 
@@ -274,7 +266,7 @@ const corpsOk = (n) => ({ body: { nom: 'DUPONT', prenom: 'Marie',
   t('le dépôt par lien est accepté, SANS qu’on redemande le nom',
     r.code === 200 && r.corps.ok === true);
   t('... et écrit', b.ecritures() === 1);
-  t('... sans numéro : il est déjà rattaché, rien à lire au pharmacien', r.corps.num === null);
+  t('... et il est déjà rattaché à son dossier', D.rattache(b.lire().depots[0]));
   t('... le dossier d’origine est conservé', D.rattache(b.lire().depots[0]));
   t('... et le fichier est bien posé', b.lire().depots[0].fichiers.length === 1);
   t('... la rétention repart de l’arrivée', b.lire().depots[0].ts > 1);
@@ -284,6 +276,40 @@ const corpsOk = (n) => ({ body: { nom: 'DUPONT', prenom: 'Marie',
     Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JET }) }));
   t('le même lien ne resservira pas', r.code === 410);
   t('... et le second envoi n’écrase pas le premier', b.ecritures() === 1);
+
+  // ── L'ordonnance récupérée chez un patient ──────────────────────────────
+  // Le lien porte le nom ET la consigne d'ouvrir un dossier. À la réception, le
+  // serveur doit créer le renouvellement LUI-MÊME : attendre qu'un poste ait
+  // PILOT ouvert ferait dépendre la création d'un hasard.
+  console.log('\nL’ordonnance récupérée chez un patient');
+  const JR = D.nouveauJeton();
+  b = await bancDepot({ etat: { depots: [{ id: 5, ts: 1, jeton: JR, nom: 'LEROY',
+    prenom: 'Jean', creerRenouv: true, fichiers: [] }] } });
+  r = await appeler(b.app.routes['POST /api/depot'],
+    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JR }) }));
+  const et = b.lire();
+  t('le dépôt est accepté', r.code === 200);
+  t('un dossier de renouvellement est ouvert', (et.renouvellements || []).length === 1);
+  const rv = (et.renouvellements || [])[0] || {};
+  t('... au nom du patient', rv.nom === 'LEROY' && rv.prenom === 'Jean');
+  t('... marqué « à facturer »', rv.nature === 'facturation' && rv.ponctuel === true);
+  t('... daté du jour, donc visible dans « à préparer »', rv.date === D.jourParis());
+  t('... et ponctuel : aucun cycle ne le fera revenir', rv.cycle === 0);
+  t('le dépôt est rattaché à ce dossier',
+    et.depots[0].lien && et.depots[0].lien.type === 'renouvellement' && et.depots[0].lien.ref === rv.id);
+  // Rattacher, c'est conserver : cette ordonnance ne doit PAS partir à sept jours.
+  t('... donc il échappe à la purge des sept jours',
+    D.aPurger(et.depots, Date.now() + 40 * J).length === 0);
+  t('la consigne est consommée : un second passage ne recréerait pas de dossier',
+    et.depots[0].creerRenouv === false);
+  // L'identifiant doit suivre la numerotation du module, pas un Date.now() qui
+  // ferait sauter le compteur de rnNewId.
+  b = await bancDepot({ etat: { renouvellements: [{ id: 41 }], renouvArchives: [{ id: 57 }],
+    depots: [{ id: 5, ts: 1, jeton: JR, nom: 'X', prenom: 'Y', creerRenouv: true, fichiers: [] }] } });
+  await appeler(b.app.routes['POST /api/depot'],
+    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JR }) }));
+  t('l’identifiant suit la numérotation du module, archives comprises',
+    b.lire().renouvellements[1].id === 58);
 
   b = await bancDepot({ etat: { depots: [] } });
   r = await appeler(b.app.routes['POST /api/depot'],

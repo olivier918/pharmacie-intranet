@@ -31,7 +31,7 @@
   const RN_NATURES = {
     bpm:        { lbl: 'Facturation BPM',            ico: '\uD83D\uDCCB' },
     ordo:       { lbl: 'Ordonnance en attente',      ico: '\uD83D\uDCC4' },
-    facturation:{ lbl: 'Facturation à faire',        ico: '\u20AC' },
+    facturation:{ lbl: 'À facturer',                 ico: '€' },
     controle:   { lbl: 'Contrôle / suivi',           ico: '\u2713' },
     autre:      { lbl: 'Autre échéance',             ico: '\u25CF' }
   };

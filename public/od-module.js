@@ -82,6 +82,19 @@
     if (odRattache(d)) return odNomDossier(d.lien);
     return 'sans nom';
   }
+  // Le nom du dossier n'est repete que s'il DIFFERE de celui du depot : deux
+  // fois le meme nom sur une carte est du bruit, et un nom different est au
+  // contraire une information — le rattachement s'est peut-etre trompe.
+  function odDossierCourt(d) {
+    const dos = odNomDossier(d.lien);
+    const moi = ((d.nom || '') + ' ' + (d.prenom || '')).trim();
+    return (dos && dos !== moi) ? dos + ' \u00b7 conserv\u00e9e' : 'conserv\u00e9e';
+  }
+  function odPrenomDe(id) {
+    const l = (typeof staffDB !== 'undefined' && Array.isArray(staffDB)) ? staffDB : [];
+    const s = l.find(x => x && x.id === id);
+    return s ? (s.prenom || s.id) : 'un collaborateur';
+  }
   function odJour(iso) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
     return m ? m[3] + '/' + m[2] + '/' + m[1] : String(iso || '');
@@ -396,7 +409,10 @@
   window.odTelecharger = function () {
     const c = odCanvasFinal(); if (!c || !odVue) return;
     const d = odVue.depot;
-    const nom = 'ordonnance-D' + (d.num || '') + (odVue.index ? '-' + (odVue.index + 1) : '') + '.jpg';
+    const propre = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+    const nom = 'ordonnance-' + (propre(d.nom + '-' + d.prenom) || 'depot')
+      + (odVue.index ? '-' + (odVue.index + 1) : '') + '.jpg';
     c.toBlob(function (b) {
       if (!b) return;
       const u = URL.createObjectURL(b);
@@ -479,7 +495,7 @@
     d.lien = { type: c.type, ref: c.ref };
     d.rattacheLe = Date.now(); d.rattachePar = (odUser() || {}).id || null;
     d.updatedAt = Date.now();
-    if (typeof logAction === 'function') logAction('Dépôt rattaché', 'D-' + (d.num || ''));
+    if (typeof logAction === 'function') logAction('Dépôt rattaché', '');
     odSave(true); odFermerRattacher(); window.odRender();
   };
   window.odDetacher = function (id) {
@@ -494,12 +510,185 @@
   // n'a plus rien à faire ici. On n'attend pas les sept jours.
   window.odTraite = function (id) {
     const l = odListe(), i = l.findIndex(function (x) { return x && x.id === id; }); if (i < 0) return;
-    if (!confirm('Le dépôt D-' + (l[i].num || '') + ' est saisi dans le logiciel ?\n\n'
+    if (!confirm('L’ordonnance de ' + odIdentite(l[i]) + ' est saisie dans le logiciel ?\n\n'
       + 'Il sera effacé de PILOT immédiatement, avec son image.')) return;
     if (typeof markDeleted === 'function') markDeleted('depots', id);
-    if (typeof logAction === 'function') logAction('Dépôt traité et effacé', 'D-' + (l[i].num || ''));
+    if (typeof logAction === 'function') logAction('Dépôt traité et effacé', '');
     l.splice(i, 1);
     odSave(true); window.odRender();
+  };
+
+  // ── Importer une ordonnance déjà reçue ────────────────────────────────────
+  // Une ordonnance arrivée par mail, ou déjà dans un dossier du poste, n'a
+  // aucune raison d'être privée de l'outil de redressement. On l'importe, elle
+  // rejoint la boîte comme les autres, et elle suit la même règle : sept jours
+  // si personne ne la rattache.
+  let odImpFichiers = [];
+
+  window.odFormImporter = function () {
+    odImpFichiers = [];
+    document.getElementById('od-i-nom').value = '';
+    document.getElementById('od-i-prenom').value = '';
+    document.getElementById('od-i-f').value = '';
+    document.getElementById('od-i-liste').innerHTML = '';
+    document.getElementById('od-ov-imp').classList.add('open');
+    setTimeout(function () { document.getElementById('od-i-nom').focus(); }, 60);
+  };
+  window.odFermerImporter = function () { document.getElementById('od-ov-imp').classList.remove('open'); };
+
+  window.odImpChoisir = function (input) {
+    // `input.files` est une liste VIVANTE et le champ est vidé juste après :
+    // sans cette copie, tout ce qui suit le premier `await` porte sur une liste
+    // devenue vide. (Piège n° 5 du CLAUDE.md.)
+    odImpFichiers = Array.prototype.slice.call(input.files || []).slice(0, 6);
+    input.value = '';
+    document.getElementById('od-i-liste').innerHTML = odImpFichiers.length
+      ? odImpFichiers.map(function (f) {
+          return '<div class="od-i-f">' + E(f.name) + ' <span>' + odPoids(f.size) + '</span></div>';
+        }).join('')
+      : '';
+  };
+  function odPoids(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' o';
+    if (n < 1048576) return Math.round(n / 1024) + ' Ko';
+    return (n / 1048576).toFixed(1).replace('.', ',') + ' Mo';
+  }
+  const OD_IMP_TYPES = {
+    'image/jpeg': 1, 'image/png': 1, 'image/webp': 1, 'image/gif': 1, 'application/pdf': 1
+  };
+  function odLireB64(f) {
+    return new Promise(function (ok, ko) {
+      const r = new FileReader();
+      r.onload = function () {
+        const v = String(r.result || ''), i = v.indexOf(',');
+        i > 0 ? ok(v.slice(i + 1)) : ko(new Error('illisible'));
+      };
+      r.onerror = function () { ko(new Error('illisible')); };
+      r.readAsDataURL(f);
+    });
+  }
+
+  window.odImporter = async function () {
+    const nom = String(document.getElementById('od-i-nom').value || '').trim();
+    const prenom = String(document.getElementById('od-i-prenom').value || '').trim();
+    if (!nom || !prenom) { alert('Le nom et le prénom du patient sont nécessaires.'); return; }
+    if (!odImpFichiers.length) { alert('Choisissez au moins un fichier.'); return; }
+    const b = document.getElementById('od-i-ok');
+    b.disabled = true; b.textContent = 'Import…';
+    try {
+      const poses = [];
+      for (const f of odImpFichiers) {
+        const mime = OD_IMP_TYPES[f.type] ? f.type : (/\.pdf$/i.test(f.name) ? 'application/pdf' : null);
+        if (!mime) { alert('« ' + f.name + ' » n’est ni une image ni un PDF.'); return; }
+        if (f.size > 8 * 1024 * 1024) { alert('« ' + f.name + ' » dépasse 8 Mo.'); return; }
+        const data = await odLireB64(f);
+        const r = await fetch('/api/images', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mime: mime, data: data })
+        });
+        const j = await r.json().catch(function () { return null; });
+        if (!r.ok || !j || !j.ok) { alert('Import refusé : ' + ((j && j.error) || r.status)); return; }
+        poses.push({ fichId: j.id, fichMime: mime, fichNom: String(f.name || '').slice(0, 120), fichTaille: f.size });
+      }
+      const now = Date.now();
+      odListe().push({
+        id: now, ts: now, origine: 'import',
+        nom: nom.toUpperCase(), prenom: prenom, naissance: null,
+        fichiers: poses, recuLe: now, lien: null, archiveLe: null,
+        parQui: (odUser() || {}).id || null, updatedAt: now
+      });
+      if (typeof logAction === 'function') logAction('Ordonnance importée', '');
+      odSave(true); odFermerImporter(); window.odRender();
+    } catch (e) {
+      alert('Import impossible : ' + e.message);
+    } finally { b.disabled = false; b.textContent = 'Importer'; }
+  };
+
+  // ── Le lien « à récupérer chez un patient » ───────────────────────────────
+  // Un préparateur part en livraison, récupère l'ordonnance chez le patient, la
+  // photographie. Le lien porte DÉJÀ le nom : rien à saisir sur le pas de la
+  // porte, et l'ordonnance arrive au bon dossier.
+  //
+  // À la réception, le serveur ouvre tout seul un dossier « Facturation à
+  // faire » dans les renouvellements — l'ordonnance a été rapportée, elle n'est
+  // pas encore facturée, et c'est ce qui reste à faire.
+  window.odFormRecuperer = function () {
+    document.getElementById('od-g-nom').value = '';
+    document.getElementById('od-g-prenom').value = '';
+    document.getElementById('od-g-etape1').style.display = '';
+    document.getElementById('od-g-etape2').style.display = 'none';
+    document.getElementById('od-ov-recup').classList.add('open');
+    setTimeout(function () { document.getElementById('od-g-nom').focus(); }, 60);
+  };
+  window.odFermerRecuperer = function () { document.getElementById('od-ov-recup').classList.remove('open'); };
+
+  // 128 bits, comme les liens de confirmation de renouvellement.
+  function odJeton() {
+    const u = new Uint8Array(16);
+    (window.crypto || {}).getRandomValues
+      ? window.crypto.getRandomValues(u)
+      : u.forEach(function (_, i) { u[i] = Math.floor(Math.random() * 256); });
+    let s = '';
+    for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  window.odCreerLienRecup = function () {
+    const nom = String(document.getElementById('od-g-nom').value || '').trim();
+    const prenom = String(document.getElementById('od-g-prenom').value || '').trim();
+    if (!nom || !prenom) { alert('Le nom et le prénom du patient sont nécessaires.'); return; }
+    const now = Date.now();
+    const jeton = odJeton();
+    odListe().push({
+      id: now, ts: now, origine: 'recuperation',
+      jeton: jeton, nom: nom.toUpperCase(), prenom: prenom,
+      creerRenouv: true,                 // le serveur ouvrira le dossier à la réception
+      fichiers: [], recuLe: null, lien: null, archiveLe: null,
+      parQui: (odUser() || {}).id || null, updatedAt: now
+    });
+    odSave(true);
+    const url = location.origin + '/o/' + jeton;
+    document.getElementById('od-g-url').value = url;
+    document.getElementById('od-g-qui').textContent = nom.toUpperCase() + ' ' + prenom;
+    document.getElementById('od-g-etape1').style.display = 'none';
+    document.getElementById('od-g-etape2').style.display = '';
+    if (typeof logAction === 'function') logAction('Lien de récupération créé', '');
+  };
+
+  window.odCopierLien = async function () {
+    const i = document.getElementById('od-g-url');
+    const b = document.getElementById('od-g-copier');
+    try {
+      await navigator.clipboard.writeText(i.value);
+      b.textContent = '✓ Copié'; b.classList.add('od-ok');
+      setTimeout(function () { b.textContent = 'Copier le lien'; b.classList.remove('od-ok'); }, 1800);
+    } catch (e) {
+      // Repli universel : on sélectionne, l'opérateur fait Ctrl+C.
+      i.focus(); i.select();
+      alert('Copie automatique refusée par le navigateur. Le lien est sélectionné : faites Ctrl+C (ou Cmd+C).');
+    }
+  };
+  window.odOuvrirLien = function () {
+    const u = document.getElementById('od-g-url').value;
+    if (u) window.open(u, '_blank', 'noopener');
+  };
+  window.odSmsLien = function () {
+    const tel = prompt('Numéro de mobile à qui envoyer le lien (celui du préparateur, ou du patient) :');
+    if (tel == null) return;
+    const url = document.getElementById('od-g-url').value;
+    if (typeof openSmsModal === 'function') {
+      openSmsModal({
+        titre: 'Envoyer le lien de récupération',
+        tel: String(tel).trim(),
+        source: 'depot',
+        texte: 'Pour nous transmettre l’ordonnance, ouvrez ce lien : ' + url
+      });
+      odFermerRecuperer();
+      return;
+    }
+    // Sans le module SMS, on ne fait pas semblant.
+    alert('L’envoi de SMS n’est pas disponible ici. Copiez le lien et transmettez-le autrement.');
   };
 
   // ── Rendu de la boîte ─────────────────────────────────────────────────────
@@ -519,16 +708,17 @@
     const urgent = n != null && n <= 2;
     return '<div class="od-c' + (urgent ? ' urgent' : '') + '">'
       + '<div class="od-c-h">'
-      +   '<span class="od-num">D-' + E(String(d.num == null ? '?' : d.num)) + '</span>'
       +   '<span class="od-qui">' + E(odIdentite(d)) + '</span>'
       +   '<span class="od-meta">'
-      +     (d.origine === 'comptoir' ? 'Déposée au comptoir'
-              : 'Envoyée par lien' + (d.prenom ? ' par ' + E(d.prenom) : ''))
+      +     (d.origine === 'comptoir' ? 'Déposée depuis l’affiche'
+              : d.origine === 'import' ? 'Importée par ' + E(odPrenomDe(d.parQui))
+              : d.origine === 'recuperation' ? 'Récupérée chez le patient'
+              : 'Envoyée par lien')
       +     ' · ' + E(odQuand(d.ts))
       +   '</span>'
       +   (dansBoite
           ? '<span class="od-reste' + (urgent ? ' urgent' : '') + '">' + E(odMotRestant(n)) + '</span>'
-          : '<span class="od-lie">' + E(odNomDossier(d.lien)) + ' · conservée</span>')
+          : '<span class="od-lie">' + E(odDossierCourt(d)) + '</span>')
       + '</div>'
       + '<div class="od-c-v">' + odVignettes(d) + '</div>'
       + '<div class="od-c-a">'
@@ -710,6 +900,14 @@
     padding:11px 13px;margin-bottom:7px;cursor:pointer}
   .od-r-item:hover{border-color:#1D5C3A;background:#F7FBF9}
   .od-r-qui{font-weight:700;font-size:.92rem}
+  .od-i-choisir{display:block;margin-top:14px;padding:13px;border:1px dashed #cfdbd3;
+    border-radius:11px;text-align:center;font-size:.88rem;font-weight:600;
+    color:#1D5C3A;cursor:pointer;background:#F7FBF9}
+  .od-i-choisir:hover{border-color:#1D5C3A}
+  .od-i-choisir input{display:none}
+  .od-i-f{font-size:.82rem;padding:7px 10px;border:1px solid #e7ece9;border-radius:8px;
+    margin-top:7px;display:flex;gap:8px}
+  .od-i-f span{margin-left:auto;color:var(--gray-500);font-variant-numeric:tabular-nums}
   .od-r-quoi{margin-left:auto;font-size:.78rem;color:var(--gray-500)}
   @media(max-width:640px){ .od-vig{width:78px;height:102px} }`;
 
@@ -720,8 +918,12 @@
     +   '<svg class="ico"><use href="#ic-ordonnance"></use></svg> Ordonnances déposées'
     +   ' <span id="od-nb" style="color:var(--gray-500);font-weight:600"></span></div>'
     + '<span class="od-grow"></span>'
+    + '<button class="btn bs sm" onclick="odFormImporter()">'
+    +   '<svg class="ico"><use href="#ic-joindre"></use></svg> Importer une ordonnance</button>'
+    + '<button class="btn bp sm" onclick="odFormRecuperer()">'
+    +   '<svg class="ico"><use href="#ic-livraison"></use></svg> À récupérer chez un patient</button>'
     + '<a class="btn bs sm" href="/documents/affiche-depot-ordonnance.pdf" target="_blank" rel="noopener"'
-    +   ' style="text-decoration:none">Affiche à imprimer</a></div>'
+    +   ' style="text-decoration:none">Affiche</a></div>'
     + '<div id="od-boite"></div>'
     + '<div class="od-h" id="od-h-classes" style="display:none">Rattachées à un dossier</div>'
     + '<div id="od-classes" style="display:none"></div>'
@@ -749,6 +951,68 @@
     +   '<canvas id="od-v-canvas"></canvas><canvas id="od-v-repere"></canvas></div></div>'
     + '<div class="od-v-aide" id="od-v-aide"></div>'
     + '</div>'
+
+    + '<div class="overlay" id="od-ov-imp">'
+    + '<div class="mbox" style="max-width:520px">'
+    +   '<div class="mbox-h"><b>Importer une ordonnance</b>'
+    +     '<button class="x" onclick="odFermerImporter()">✕</button></div>'
+    +   '<div class="mbox-b">'
+    +     '<p style="font-size:.82rem;color:var(--gray-500);margin:0 0 14px;line-height:1.55">'
+    +       'Pour une ordonnance re\u00e7ue par mail ou d\u00e9j\u00e0 pr\u00e9sente sur ce poste. Elle rejoint la bo\u00eete '
+    +       'et passe par le m\u00eame outil de redressement.</p>'
+    +     '<div style="display:flex;gap:10px">'
+    +       '<label style="flex:1;font-size:.78rem;font-weight:600;color:var(--gray-500)">Nom'
+    +         '<input class="inp" id="od-i-nom" autocomplete="off"></label>'
+    +       '<label style="flex:1;font-size:.78rem;font-weight:600;color:var(--gray-500)">Pr\u00e9nom'
+    +         '<input class="inp" id="od-i-prenom" autocomplete="off"></label>'
+    +     '</div>'
+    +     '<label class="od-i-choisir">\uD83D\uDCCE Choisir le ou les fichiers'
+    +       '<input type="file" id="od-i-f" accept="image/*,application/pdf" multiple onchange="odImpChoisir(this)">'
+    +     '</label>'
+    +     '<div id="od-i-liste"></div>'
+    +     '<div style="display:flex;gap:10px;margin-top:16px">'
+    +       '<button class="btn bp" id="od-i-ok" onclick="odImporter()">Importer</button>'
+    +       '<button class="btn bs" onclick="odFermerImporter()">Annuler</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div></div>'
+
+    + '<div class="overlay" id="od-ov-recup">'
+    + '<div class="mbox" style="max-width:560px">'
+    +   '<div class="mbox-h"><b>Ordonnance \u00e0 r\u00e9cup\u00e9rer chez un patient</b>'
+    +     '<button class="x" onclick="odFermerRecuperer()">✕</button></div>'
+    +   '<div class="mbox-b">'
+    +     '<div id="od-g-etape1">'
+    +       '<p style="font-size:.82rem;color:var(--gray-500);margin:0 0 14px;line-height:1.55">'
+    +         'Le lien porte d\u00e9j\u00e0 le nom du patient : sur le pas de la porte, il n\u2019y a qu\u2019\u00e0 '
+    +         'photographier. \u00c0 la r\u00e9ception, un dossier <b>\u00ab Facturation \u00e0 faire \u00bb</b> s\u2019ouvre '
+    +         'tout seul dans les renouvellements, onglet \u00ab \u00c0 pr\u00e9parer \u00bb.</p>'
+    +       '<div style="display:flex;gap:10px">'
+    +         '<label style="flex:1;font-size:.78rem;font-weight:600;color:var(--gray-500)">Nom'
+    +           '<input class="inp" id="od-g-nom" autocomplete="off"></label>'
+    +         '<label style="flex:1;font-size:.78rem;font-weight:600;color:var(--gray-500)">Pr\u00e9nom'
+    +           '<input class="inp" id="od-g-prenom" autocomplete="off"></label>'
+    +       '</div>'
+    +       '<div style="display:flex;gap:10px;margin-top:16px">'
+    +         '<button class="btn bp" onclick="odCreerLienRecup()">Cr\u00e9er le lien</button>'
+    +         '<button class="btn bs" onclick="odFermerRecuperer()">Annuler</button>'
+    +       '</div>'
+    +     '</div>'
+    +     '<div id="od-g-etape2" style="display:none">'
+    +       '<p style="font-size:.9rem;margin:0 0 4px">Lien pour <b id="od-g-qui"></b></p>'
+    +       '<p style="font-size:.78rem;color:var(--gray-500);margin:0 0 12px;line-height:1.55">'
+    +         'Il ne sert qu\u2019une fois. Ouvrez-le sur le t\u00e9l\u00e9phone qui part en tourn\u00e9e, '
+    +         'ou envoyez-le par SMS.</p>'
+    +       '<input class="inp" id="od-g-url" readonly onclick="this.select()" style="font-size:.82rem">'
+    +       '<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">'
+    +         '<button class="btn bp" id="od-g-copier" onclick="odCopierLien()">Copier le lien</button>'
+    +         '<button class="btn bs" onclick="odOuvrirLien()">Ouvrir</button>'
+    +         '<button class="btn bs" onclick="odSmsLien()">Envoyer par SMS</button>'
+    +         '<button class="btn bs" onclick="odFermerRecuperer()">Fermer</button>'
+    +       '</div>'
+    +     '</div>'
+    +   '</div>'
+    + '</div></div>'
 
     + '<div class="overlay" id="od-ov-ratt">'
     + '<div class="mbox" style="max-width:520px">'

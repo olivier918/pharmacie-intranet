@@ -30,6 +30,18 @@ const path = require('path');
 // Sept jours : la durée retenue pour un dépôt que personne n'a rattaché.
 // Rattaché à un dossier, il en devient une pièce et suit SA rétention — c'est
 // l'acte de rattacher qui conserve, personne n'a de classification à retenir.
+// La date du jour A PARIS. `new Date()` sur un serveur en UTC place une
+// ordonnance deposee a 00h30 la veille — et le dossier apparait en retard.
+function jourParis() {
+  try {
+    return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+  } catch (e) {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+      + '-' + String(d.getDate()).padStart(2, '0');
+  }
+}
+
 const DEPOT_JOURS = 7;
 const DEPOT_MAX_FICHIERS = 6;
 const DEPOT_MAX_OCTETS = 8 * 1024 * 1024;     // par fichier, après réduction
@@ -65,15 +77,9 @@ function parJeton(etat, jeton) {
 function rattache(d) {
   return !!(d && d.lien && d.lien.type && d.lien.ref != null);
 }
-// Le numéro lu à voix haute. On prend le PLUS PETIT libre parmi les dépôts
-// encore en boîte : court à dire, et jamais deux fois le même sous les yeux du
-// collaborateur. Un compteur stocké aurait été plus simple et plus fragile —
-// une valeur nue dans le bloc se fait écraser par le premier poste en retard.
-function numeroLibre(etat) {
-  const pris = new Set(liste(etat).filter(d => d && !d.archiveLe).map(d => Number(d.num)));
-  for (let n = 1; n < 1000; n++) if (!pris.has(n)) return n;
-  return null;
-}
+// Il y a eu ici un numéro « D-47 » que le patient lisait au pharmacien. Il
+// supposait le patient DEVANT le comptoir ; depuis que le nom est demandé, il
+// ne servait plus qu'à encombrer l'écran. Retiré le 16/09/2026.
 
 // ── Ce qui reste à purger ───────────────────────────────────────────────────
 // Non rattaché, plus vieux que sept jours. Un dépôt rattaché est devenu la
@@ -92,7 +98,7 @@ function imagesDuDepot(d) {
 
 module.exports = {
   DEPOT_JOURS, DEPOT_MAX_FICHIERS, DEPOT_MAX_OCTETS, DEPOT_TYPES,
-  nouveauJeton, jetonValide, liste, parJeton, rattache, numeroLibre,
+  nouveauJeton, jetonValide, liste, parJeton, rattache, jourParis,
   aPurger, imagesDuDepot,
 
   /* ──────────────────────────────────────────────────────────────────────────
@@ -207,13 +213,34 @@ module.exports = {
             dep.recuLe = maintenant;
             dep.ts = maintenant;                 // la rétention part du dépôt
             dep.updatedAt = maintenant;
+            // Ordonnance récupérée chez un patient : elle a été rapportée mais
+            // pas encore facturée. On ouvre le dossier tout de suite, du côté
+            // serveur — attendre qu'un poste ait PILOT ouvert ferait dépendre
+            // la création d'un hasard.
+            if (dep.creerRenouv) {
+              if (!Array.isArray(etat.renouvellements)) etat.renouvellements = [];
+              const rid = etat.renouvellements.concat(
+                Array.isArray(etat.renouvArchives) ? etat.renouvArchives : []
+              ).reduce((m, x) => (x && x.id > m ? x.id : m), 0) + 1;
+              etat.renouvellements.push({
+                id: rid,
+                nom: String(dep.nom || '').toUpperCase(), prenom: String(dep.prenom || ''),
+                date: jourParis(), cycle: 0,
+                // `facturation` existe deja dans le module : badge « € Facturation
+                // a faire ». Pas de nouveau concept a inventer ni a expliquer.
+                ponctuel: true, nature: 'facturation',
+                notes: 'Ordonnance recuperee chez le patient le ' + jourParis() + '.',
+                updatedAt: maintenant
+              });
+              dep.lien = { type: 'renouvellement', ref: rid };   // rattache = conserve
+              dep.creerRenouv = false;
+            }
             await d.ecrireEtat(etat);
-            return { ok: true, num: null };
+            return { ok: true };
           }
 
-          const num = numeroLibre(etat);
           etat.depots.push({
-            id: maintenant, ts: maintenant, num: num,
+            id: maintenant, ts: maintenant,
             origine: 'comptoir', fichiers: poses,
             nom: nom, prenom: prenom, naissance: naissance || null,
             recuLe: maintenant, lien: null, archiveLe: null,
@@ -223,14 +250,14 @@ module.exports = {
           // les octets de l'image restent dans app_images, le patient voit son
           // numero, et il ne reste rien. C'est arrive.
           await d.ecrireEtat(etat);
-          return { ok: true, num: num };
+          return { ok: true };
         });
 
         if (sortie && sortie.perime) {
           return res.status(410).json({ ok: false, error: 'Ce lien n’est plus valable. Merci de contacter la pharmacie.' });
         }
         if (d.tracer) { try { d.tracer('Dépôt d’ordonnance', jeton ? 'lien' : 'comptoir'); } catch (e) {} }
-        res.json({ ok: true, num: (sortie && sortie.num) || null });
+        res.json({ ok: true });
       } catch (err) {
         console.error('Dépôt d’ordonnance :', err.message);
         res.status(500).json({ ok: false, error: 'L’envoi a échoué. Merci de réessayer.' });
