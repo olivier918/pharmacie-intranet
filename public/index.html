@@ -1253,6 +1253,7 @@ tr:hover td{background:#fafffe}
         <button class="btn bs" id="bot5" onclick="boTab('medecins')"><svg class="ico"><use href="#ic-medecin"></use></svg> Médecins</button>
         <button class="btn bs" id="bot3" onclick="boTab('labo')"><svg class="ico"><use href="#ic-realisation"></use></svg> Sous-traitants</button>
         <button class="btn bs" id="bot13" onclick="boTab('preps')"><svg class="ico"><use href="#ic-mortier"></use></svg> Préparations</button>
+        <button class="btn bs" id="bot14" onclick="boTab('depots')"><svg class="ico"><use href="#ic-ordonnance"></use></svg> Ordonnances déposées</button>
         <button class="btn bs" id="bot4" onclick="boTab('compte')"><svg class="ico"><use href="#ic-securite"></use></svg> Compte admin</button>
         <button class="btn bs" id="bot7" onclick="boTab('smstpl')"><svg class="ico"><use href="#ic-messagerie"></use></svg> Modèles SMS</button>
         <button class="btn bs" id="bot6" onclick="boTab('backups')"><svg class="ico"><use href="#ic-archives"></use></svg> Sauvegardes</button>
@@ -1430,6 +1431,36 @@ tr:hover td{background:#fafffe}
             la réinitialisation hebdomadaire du tableur. Ensuite, on ne déclare que les écarts.
           </p>
           <div id="pp-capacite"></div>
+        </div>
+      </div>
+
+      <!-- ORDONNANCES DEPOSEES : l'interrupteur, et l'affiche a imprimer -->
+      <div id="bo-depots" style="display:none">
+        <div class="card">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-ordonnance"></use></svg> Dépôt en ligne des ordonnances</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:1rem">
+            Les patients envoient leur ordonnance depuis <b>pilot.pharmacie-mondeville.fr/o</b>, en scannant
+            le QR code de l'affiche. Elle arrive dans « Ordonnances déposées », avec un numéro que le patient
+            vous annonce. Sans rattachement à un dossier, elle est effacée au bout de sept jours.
+          </p>
+          <div id="od-bo"></div>
+        </div>
+
+        <div class="card">
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-document"></use></svg> L'affiche du comptoir</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:1rem">
+            A4, prête à imprimer. Le QR code mène directement à la page d'envoi — rien à dicter.
+            Le cercle pointillé fait 25 mm : c'est le diamètre d'une étiquette sans contact (NTAG213),
+            si vous en collez une.
+          </p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <a class="btn bp" href="/documents/affiche-depot-ordonnance.pdf" target="_blank" rel="noopener" style="text-decoration:none">
+              <svg class="ico"><use href="#ic-voir"></use></svg> Ouvrir l'affiche</a>
+            <a class="btn bs" href="/documents/affiche-depot-ordonnance.pdf" download="affiche-depot-ordonnance.pdf" style="text-decoration:none">
+              <svg class="ico"><use href="#ic-archives"></use></svg> Télécharger</a>
+            <a class="btn bs" href="/o" target="_blank" rel="noopener" style="text-decoration:none">
+              <svg class="ico"><use href="#ic-connexion"></use></svg> Voir la page patient</a>
+          </div>
         </div>
       </div>
 
@@ -2586,6 +2617,10 @@ let liens = [];
 // seances. Deux collections A IDENTIFIANT, jamais une date simple : une valeur
 // nue envoyee par un poste ecrase celle du serveur (voir re-module.js).
 let reunionThemes = [], reunions = [];
+// Ordonnances deposees par les patients depuis /o. Collection a identifiant :
+// un depot non rattache est efface a sept jours par la purge serveur, un depot
+// rattache a un dossier devient une piece de ce dossier (voir depots.js).
+let depots = [];
 // Messagerie personnelle : conversations adressees (1 a 1 ou groupe) et leurs
 // messages. Les messages forment une collection A PART : dans un fil de
 // discussion, deux personnes ecrivent en meme temps, et une fusion au niveau
@@ -2694,7 +2729,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','reunionThemes','reunions','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2715,6 +2750,7 @@ function _collRef(n){ switch(n){
   case 'todoPerso':return todoPerso; case 'moments':return moments; case 'agenda':return agenda;
   case 'liens':return liens;
   case 'reunionThemes':return reunionThemes; case 'reunions':return reunions;
+  case 'depots':return depots;
   case 'convos':return convos; case 'messages':return messages;
   case 'groupesMsg':return groupesMsg;
   case 'litiges':return litiges; case 'facturesManq':return facturesManq;
@@ -2758,7 +2794,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2852,6 +2888,7 @@ async function loadAll(){
     if(Array.isArray(data.liens))liens=data.liens;
     if(Array.isArray(data.reunionThemes))reunionThemes=data.reunionThemes;
     if(Array.isArray(data.reunions))reunions=data.reunions;
+    if(Array.isArray(data.depots))depots=data.depots;
     if(Array.isArray(data.convos))convos=data.convos;
     if(Array.isArray(data.messages))messages=data.messages;
     if(Array.isArray(data.groupesMsg))groupesMsg=data.groupesMsg;
@@ -2907,6 +2944,7 @@ setInterval(async()=>{
         if(Array.isArray(d.demandes))demandes=d.demandes;
         if(d.reunionThemes){ reunionThemes=d.reunionThemes; if(window.reRender)reRender(); }
         if(d.reunions){ reunions=d.reunions; if(window.reRender)reRender(); }
+        if(d.depots){ depots=d.depots; if(window.odRender)odRender(); }
         if(d.modulesParPoste)modulesParPoste=d.modulesParPoste;
         if(d.sonnetteRpi)sonnetteRpi=d.sonnetteRpi;
         if(Array.isArray(d.todoPerso))todoPerso=d.todoPerso;
@@ -3427,6 +3465,7 @@ const SEC_LABEL = {
   renouvellement:'Renouvellement',
   messagerie:'Cahier de transmission',
   reunion:'Réunion d’équipe',
+  depots:'Ordonnances déposées par les patients',
   preparations:'Préparations officinales',
   bpm:'Bilans Partagés de Médication',
   locations:'Locations de matériel',
@@ -3469,6 +3508,7 @@ function showSec(name,btn){
   if(name==='renouvellement'&&window.rnRender)rnRender();
   if(name==='accueil'&&window.acRender)acRender();
   if(name==='reunion'&&window.reRender)reRender();
+  if(name==='depots'&&window.odRender)odRender();
   if(name==='mp'&&window.mpRender)mpRender();
 }
 
@@ -4625,11 +4665,11 @@ function newBpm(){
 }
 
 // ═══════════ BACKOFFICE ═══════════
-const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10','bot11','bot12','bot13'];
-const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal','bo-modules','bo-acces','bo-preps'];
+const BOT=['bot1','bot2','bot5','bot3','bot7','bot4','bot6','bot9','bot8','bot10','bot11','bot12','bot13','bot14'];
+const BOD=['bo-staff','bo-patients','bo-medecins','bo-labo','bo-smstpl','bo-compte','bo-backups','bo-materiel','bo-sonnette','bo-journal','bo-modules','bo-acces','bo-preps','bo-depots'];
 function boTab(t){
   if((t==='compte'||t==='backups'||t==='journal'||t==='acces') && !isAdmin()){ alert('Accès réservé aux administrateurs.'); t='staff'; }
-  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9,modules:10,acces:11,preps:12};
+  const map={staff:0,patients:1,medecins:2,labo:3,smstpl:4,compte:5,backups:6,materiel:7,sonnette:8,journal:9,modules:10,acces:11,preps:12,depots:13};
   const i=map[t];
   BOT.forEach((b,j)=>{const el=document.getElementById(b);if(el)el.className='btn '+(j===i?'bp':'bs');});
   BOD.forEach((d,j)=>{const el=document.getElementById(d);if(el)el.style.display=j===i?'block':'none';});
@@ -4645,6 +4685,7 @@ function boTab(t){
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
   if(t==='materiel')renderMatTypes();
   if(t==='preps'&&window.ppRendCapacite)ppRendCapacite();
+  if(t==='depots'&&window.odRendBO)odRendBO();
   applyAdminUI();
 }
 
@@ -11918,6 +11959,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="tp-module.js"></script>
 <script src="lt-module.js"></script>
 <script src="re-module.js"></script>
+<script src="od-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>

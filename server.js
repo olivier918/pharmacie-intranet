@@ -474,6 +474,33 @@ app.get('/api/images/:id', async (req, res) => {
   }
 });
 
+// ─── Ouverture du depot en ligne (administrateurs) ─────────────────────────
+// L'interrupteur ne passe PAS par le bloc de donnees. Une valeur nue envoyee
+// par un poste reste ouvert depuis ce matin ecraserait la decision prise a
+// midi : le depot se rouvrirait tout seul, sans que personne ne le voie. Une
+// route dediee ecrit la valeur, et elle seule.
+app.post('/api/depot/ouverture', async (req, res) => {
+  const uid = identite.qui(req);
+  if (!uid) return res.status(401).json({ ok: false, error: 'non_identifie' });
+  if (!(await estAdministrateur(uid))) return res.status(403).json({ ok: false, error: 'interdit' });
+  if (!db) return res.status(503).json({ ok: false, error: 'base_indisponible' });
+  const ouvert = !!(req.body && req.body.ouvert);
+  try {
+    await renouvSerialise(async () => {
+      const etat = await lireEtatBrut();
+      etat.depotOuvert = ouvert;
+      await ecrireEtatBrut(etat);
+    });
+    console.log('  📥 Depot en ligne ' + (ouvert ? 'OUVERT' : 'FERME') + ' par ' + uid);
+    try { traces.noter(db, uid, 'modification', 'autre', null,
+      'Depot en ligne ' + (ouvert ? 'ouvert' : 'ferme')); } catch (e) {}
+    res.json({ ok: true, ouvert: ouvert });
+  } catch (err) {
+    console.error('Ouverture du depot :', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ─── COFFRE : chiffrement au repos des scans (voir coffre.js) ──────────────
 // Trois routes d'administration. Aucune n'est automatique : une operation qui
 // reecrit des ordonnances se declenche a la main, se verifie piece par piece,

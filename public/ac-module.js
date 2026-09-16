@@ -559,6 +559,11 @@
       if (r) parts.push('<button class="ac-al" onclick="showSec(\'preparations\')"><span class="ac-pt"></span>'
         + r + ' pr\u00e9paration' + (r > 1 ? 's' : '') + ' en retard</button>');
     }
+    // Les ordonnances deposees par les patients qui attendent d'etre servies.
+    if (typeof odAlerteAccueil === 'function') {
+      const o = odAlerteAccueil();
+      if (o) parts.push(o);
+    }
     // La prochaine reunion d'equipe. Le module decide lui-meme s'il a quelque
     // chose a dire : il connait sa date, ses themes, et ses droits d'acces.
     if (typeof reAlerteAccueil === 'function') {
