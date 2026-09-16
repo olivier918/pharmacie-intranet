@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Envoyer votre ordonnance</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#1D5C3A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PILOT">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --vert:#348466; --vert-fonce:#1D5C3A;
+    --encre:#1c231f; --gris:#6b7a72; --trait:#e2ebe5; --fond:#f4f7f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fond);color:var(--encre);
+    font-family:'Schibsted Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .page{max-width:520px;margin:0 auto;padding:28px 18px 48px}
+  header{text-align:center;margin-bottom:22px}
+  .officine{font-size:1.05rem;font-weight:700;color:var(--vert-fonce)}
+  .tel{font-size:.92rem;color:var(--gris);margin-top:2px;font-variant-numeric:tabular-nums}
+  .carte{background:#fff;border:1px solid var(--trait);border-radius:16px;padding:22px 20px;
+    box-shadow:0 2px 10px rgba(20,50,35,.05)}
+  h1{font-size:1.22rem;margin:0 0 6px;line-height:1.3}
+  .sous{color:var(--gris);font-size:.95rem;margin:0 0 20px}
+
+  /* Le bouton principal. Grand, parce qu'il est pressé au comptoir, debout,
+     parfois par quelqu'un qui n'a pas ses lunettes. */
+  .gros{display:flex;align-items:center;justify-content:center;gap:11px;width:100%;
+    font:inherit;font-weight:700;font-size:1.05rem;cursor:pointer;
+    background:var(--vert);border:1px solid var(--vert);color:#fff;
+    border-radius:13px;padding:18px 16px;transition:background .15s}
+  .gros:hover:not(:disabled){background:var(--vert-fonce);border-color:var(--vert-fonce)}
+  .gros:disabled{opacity:.55;cursor:not-allowed}
+  .gros .ico,.second .ico{width:21px;height:21px;flex:none}
+  .second{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;
+    font:inherit;font-weight:600;font-size:.95rem;cursor:pointer;margin-top:10px;
+    background:#fff;border:1px solid var(--trait);color:var(--encre);
+    border-radius:12px;padding:14px 16px;transition:border-color .15s}
+  .second:hover:not(:disabled){border-color:var(--vert)}
+  input[type=file]{display:none}
+
+  .liste{margin-top:16px;display:none}
+  .liste.on{display:block}
+  .item{display:flex;align-items:center;gap:11px;border:1px solid var(--trait);
+    border-radius:11px;padding:10px 12px;margin-bottom:8px;background:#fafcfb}
+  .item .vig{width:40px;height:40px;border-radius:8px;flex:none;object-fit:cover;
+    background:#E9F5EE;display:flex;align-items:center;justify-content:center;
+    font-size:.64rem;font-weight:800;color:var(--vert-fonce);letter-spacing:.03em}
+  .item .txt{flex:1;min-width:0}
+  .item .nom{font-size:.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .poids{font-size:.78rem;color:var(--gris);font-variant-numeric:tabular-nums}
+  .item .ote{flex:none;background:none;border:none;color:var(--gris);font-size:1.1rem;
+    cursor:pointer;padding:4px 6px;font-family:inherit}
+  .item .ote:hover{color:#B3261E}
+
+  .aide{margin-top:22px;border-top:1px solid var(--trait);padding-top:16px}
+  .aide summary{font-size:.9rem;font-weight:600;color:var(--vert-fonce);cursor:pointer;
+    list-style:none;display:flex;align-items:center;gap:7px}
+  .aide summary::-webkit-details-marker{display:none}
+  .aide summary::before{content:'?';display:inline-flex;align-items:center;justify-content:center;
+    width:20px;height:20px;border-radius:50%;background:#E9F5EE;font-size:.78rem;flex:none}
+  .aide p{font-size:.88rem;color:var(--gris);margin:12px 0 0}
+  .aide b{color:var(--encre)}
+
+  .msg{margin-top:14px;padding:12px 14px;border-radius:10px;font-size:.9rem;display:none}
+  .msg.on{display:block;background:#FBE9E7;border:1px solid #F3C9C2;color:#8A2B22}
+
+  .fin{text-align:center;padding:8px 0 4px}
+  .fin .rond{width:64px;height:64px;border-radius:50%;background:#E9F5EE;color:var(--vert-fonce);
+    display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 14px}
+  .fin h1{margin-bottom:10px}
+  .numero{display:inline-block;background:var(--vert-fonce);color:#fff;border-radius:12px;
+    padding:12px 22px;font-size:1.75rem;font-weight:800;letter-spacing:.04em;
+    font-variant-numeric:tabular-nums;margin:6px 0 12px}
+  .consigne{font-size:.95rem;color:var(--encre)}
+  .pied{text-align:center;font-size:.8rem;color:var(--gris);margin-top:22px;line-height:1.5}
+  .cache{display:none}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="officine">Pharmacie du Centre</div>
+    <div class="tel">Mondeville &middot; 02 31 52 15 71</div>
+  </header>
+
+  <!-- ÉCRAN 1 : le dépôt -->
+  <section class="carte" id="ec-depot">
+    <h1 id="titre">Envoyer votre ordonnance</h1>
+    <p class="sous" id="sous">Elle nous parviendra directement, sans passer par une messagerie.</p>
+
+    <button class="gros" id="btn-choisir"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M12 11v6"/><path d="M9.2 13.8 12 11l2.8 2.8"/></svg> Choisir mon ordonnance</button>
+    <button class="second" id="btn-photo"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="#348466" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5a2 2 0 0 1 2-2h2l1.4-2h7.2L17 6.5h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.4"/></svg> La prendre en photo</button>
+    <input type="file" id="f-choisir" accept="image/*,application/pdf" multiple>
+    <input type="file" id="f-photo" accept="image/*" capture="environment">
+
+    <div class="liste" id="liste"></div>
+
+    <button class="gros cache" id="btn-envoyer" style="margin-top:16px">Envoyer</button>
+    <div class="msg" id="msg"></div>
+
+    <details class="aide">
+      <summary>Mon ordonnance est dans un mail</summary>
+      <p>Le plus simple : <b>ouvrez l’ordonnance dans votre messagerie et faites
+      une capture d’écran.</b> Elle se retrouve dans vos photos, et il n’y a plus
+      qu’à la choisir ci-dessus.</p>
+      <p>Sinon, depuis la pièce jointe : <b>Partager</b>, puis
+      <b>Enregistrer dans Fichiers</b>. Revenez ensuite sur cette page et
+      choisissez-la dans <b>Fichiers</b>.</p>
+    </details>
+  </section>
+
+  <!-- ÉCRAN 2 : c'est parti -->
+  <section class="carte cache" id="ec-fin">
+    <div class="fin">
+      <div class="rond">&#10003;</div>
+      <h1>Bien reçu</h1>
+      <div id="fin-num"></div>
+      <p class="consigne" id="fin-txt"></p>
+    </div>
+  </section>
+
+  <!-- ÉCRAN 3 : fermé / lien périmé -->
+  <section class="carte cache" id="ec-clos">
+    <h1 id="clos-t">Dépôt indisponible</h1>
+    <p class="sous" id="clos-s"></p>
+  </section>
+
+  <p class="pied">
+    Vos documents sont transmis à la pharmacie et à personne d’autre.<br>
+    Ils sont effacés au bout de sept jours s’ils ne sont rattachés à aucun dossier.
+  </p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Le jeton est dans l'adresse : /o ou /o/<jeton>.
+  var m = location.pathname.match(/^\/o\/([A-Za-z0-9_-]{16,64})$/);
+  var JETON = m ? m[1] : null;
+
+  var MAX_FICHIERS = 6;
+  var MAX_OCTETS = 8 * 1024 * 1024;
+  // 2000 px sur le grand côté : une ordonnance reste parfaitement lisible, et
+  // la photo passe de 4 Mo à environ 400 Ko. C'est la différence entre un envoi
+  // instantané et trente secondes d'attente sur le réseau du comptoir.
+  var COTE_MAX = 2000;
+  var QUALITE = 0.82;
+
+  var choisis = [];   // { nom, mime, octets, data, apercu }
+
+  var $ = function (id) { return document.getElementById(id); };
+  function montrer(el, oui) { el.classList[oui ? 'remove' : 'add']('cache'); }
+  function erreur(t) {
+    var e = $('msg');
+    e.textContent = t || '';
+    e.classList[t ? 'add' : 'remove']('on');
+  }
+  function poids(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' o';
+    if (n < 1048576) return Math.round(n / 1024) + ' Ko';
+    return (n / 1048576).toFixed(1).replace('.', ',') + ' Mo';
+  }
+
+  // ── Réduction dans le navigateur ──────────────────────────────────────────
+  // Tout ce qui est image ressort en JPEG : le HEIC d'un iPhone n'arrive donc
+  // jamais au serveur, et la liste des types acceptés reste courte.
+  function reduire(fichier) {
+    return new Promise(function (ok, ko) {
+      var url = URL.createObjectURL(fichier);
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var l = img.naturalWidth, h = img.naturalHeight;
+          var f = Math.min(1, COTE_MAX / Math.max(l, h));
+          var c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(l * f));
+          c.height = Math.max(1, Math.round(h * f));
+          var ctx = c.getContext('2d');
+          ctx.fillStyle = '#fff';                 // un PNG transparent vire au noir en JPEG
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          var url2 = c.toDataURL('image/jpeg', QUALITE);
+          URL.revokeObjectURL(url);
+          var d = url2.split(',')[1] || '';
+          ok({ mime: 'image/jpeg', data: d, octets: Math.round(d.length * 3 / 4), apercu: url2 });
+        } catch (e) { URL.revokeObjectURL(url); ko(e); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); ko(new Error('image illisible')); };
+      img.src = url;
+    });
+  }
+  function lireTelQuel(fichier) {
+    return new Promise(function (ok, ko) {
+      var r = new FileReader();
+      r.onload = function () {
+        var v = String(r.result || ''), i = v.indexOf(',');
+        i > 0 ? ok(v.slice(i + 1)) : ko(new Error('illisible'));
+      };
+      r.onerror = function () { ko(new Error('illisible')); };
+      r.readAsDataURL(fichier);
+    });
+  }
+
+  function rendre() {
+    var l = $('liste');
+    l.innerHTML = choisis.map(function (f, i) {
+      var vig = f.apercu
+        ? '<img class="vig" src="' + f.apercu + '" alt="">'
+        : '<span class="vig">PDF</span>';
+      return '<div class="item">' + vig
+        + '<div class="txt"><div class="nom"></div><div class="poids">' + poids(f.octets) + '</div></div>'
+        + '<button class="ote" data-i="' + i + '" aria-label="Retirer">&#10005;</button></div>';
+    }).join('');
+    // Le nom du fichier vient du téléphone : on le pose en TEXTE, jamais en
+    // HTML. C'est la règle de la maison, elle vaut aussi sur une page publique.
+    var noms = l.querySelectorAll('.nom');
+    for (var i = 0; i < noms.length; i++) noms[i].textContent = choisis[i].nom;
+    var otes = l.querySelectorAll('.ote');
+    for (var k = 0; k < otes.length; k++) {
+      otes[k].onclick = function () { choisis.splice(+this.getAttribute('data-i'), 1); rendre(); };
+    }
+    l.classList[choisis.length ? 'add' : 'remove']('on');
+    montrer($('btn-envoyer'), choisis.length > 0);
+    $('btn-envoyer').textContent = choisis.length > 1
+      ? 'Envoyer les ' + choisis.length + ' documents' : 'Envoyer';
+  }
+
+  async function ajouter(brut) {
+    erreur('');
+    // `input.files` est une liste VIVANTE : le gestionnaire remet `value` à vide
+    // juste après cet appel, et elle se vide avec lui. Sans cette copie, tout ce
+    // qui suit le premier `await` porte sur une liste devenue vide — on ne
+    // déposait que le premier document. (Piège n° 5 du CLAUDE.md.)
+    var fichiers = Array.prototype.slice.call(brut || []);
+    for (var i = 0; i < fichiers.length; i++) {
+      var f = fichiers[i];
+      if (choisis.length >= MAX_FICHIERS) { erreur('Six documents au maximum.'); break; }
+      var estPdf = (f.type === 'application/pdf') || /\.pdf$/i.test(f.name || '');
+      try {
+        if (estPdf) {
+          if (f.size > MAX_OCTETS) { erreur('« ' + f.name +' » dépasse 8 Mo.'); continue; }
+          var data = await lireTelQuel(f);
+          choisis.push({ nom: f.name || 'ordonnance.pdf', mime: 'application/pdf', data: data, octets: f.size, apercu: null });
+        } else {
+          var r = await reduire(f);
+          if (r.octets > MAX_OCTETS) { erreur('« ' + f.name + ' » est trop lourd.'); continue; }
+          choisis.push({ nom: f.name || 'ordonnance.jpg', mime: r.mime, data: r.data, octets: r.octets, apercu: r.apercu });
+        }
+      } catch (e) {
+        erreur('« ' + (f.name || 'ce document') + ' » n’a pas pu être lu. Essayez une capture d’écran.');
+      }
+    }
+    rendre();
+  }
+
+  $('btn-choisir').onclick = function () { $('f-choisir').click(); };
+  $('btn-photo').onclick = function () { $('f-photo').click(); };
+  $('f-choisir').onchange = function () { ajouter(this.files); this.value = ''; };
+  $('f-photo').onchange = function () { ajouter(this.files); this.value = ''; };
+
+  $('btn-envoyer').onclick = async function () {
+    if (!choisis.length) return;
+    var b = this;
+    b.disabled = true; b.textContent = 'Envoi en cours…'; erreur('');
+    try {
+      var rep = await fetch('/api/depot', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jeton: JETON,
+          fichiers: choisis.map(function (f) { return { mime: f.mime, data: f.data, nom: f.nom }; })
+        })
+      });
+      var j = await rep.json().catch(function () { return null; });
+      if (!rep.ok || !j || !j.ok) {
+        erreur((j && j.error) || 'L’envoi a échoué. Merci de réessayer.');
+        b.disabled = false; rendre(); return;
+      }
+      montrer($('ec-depot'), false);
+      montrer($('ec-fin'), true);
+      if (j.num) {
+        $('fin-num').innerHTML = '<div class="numero">D-' + String(j.num) + '</div>';
+        $('fin-txt').textContent = 'Indiquez ce numéro à votre pharmacien.';
+      } else {
+        $('fin-txt').textContent = 'Votre ordonnance a bien été transmise à la pharmacie. Vous n’avez rien d’autre à faire.';
+      }
+      window.scrollTo(0, 0);
+    } catch (e) {
+      erreur('Connexion impossible. Vérifiez votre réseau et réessayez.');
+      b.disabled = false; rendre();
+    }
+  };
+
+  // ── Au chargement ─────────────────────────────────────────────────────────
+  (function () {
+    var url = JETON ? '/api/depot/etat/' + encodeURIComponent(JETON) : '/api/depot/etat';
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.ok) return;
+        if (!j.ouvert) {
+          montrer($('ec-depot'), false);
+          montrer($('ec-clos'), true);
+          $('clos-s').textContent = 'L’envoi en ligne est momentanément fermé. Merci de vous adresser directement à la pharmacie, au 02 31 52 15 71.';
+          return;
+        }
+        if (JETON && !j.lien) {
+          // Jeton inconnu, expiré ou déjà servi : on ne dit pas lequel des
+          // trois, et on renvoie vers la porte générale.
+          $('sous').textContent = 'Ce lien n’est plus valable, mais vous pouvez tout de même nous envoyer votre ordonnance ici.';
+          JETON = null;
+          return;
+        }
+        if (JETON && j.prenom) {
+          $('titre').textContent = 'Bonjour ' + j.prenom;
+          $('sous').textContent = 'Merci de nous transmettre votre ordonnance. Elle sera rattachée à votre dossier.';
+        }
+      })
+      .catch(function () { /* la page reste utilisable : l'envoi dira la vérité */ });
+  })();
+})();
+</script>
+</body>
+</html>

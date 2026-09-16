@@ -51,6 +51,30 @@ auth.install(app);            // routes /api/login, /api/logout (avant le portai
 // d'en-tete plutot que par le mot de passe d'acces (voir accuses.js).
 accuses.installer(app, { getDb: () => db, lireEtat: lireEtatBrut, ecrireEtat: ecrireEtatBrut });
 
+// Depot d'ordonnance par les patients. Comme les accuses Brevo : un patient n'a
+// pas de session, sa route est donc montee AVANT le portail. Elle a son propre
+// analyseur JSON, bien plus serre que le 50 Mo global (constat #19).
+const depots = require('./depots');
+const freinDepot = securite.limiteur('Depot d ordonnance',
+  [{ fenetreMs: 10 * 60 * 1000, max: 12 }, { fenetreMs: 24 * 3600 * 1000, max: 80 }],
+  (req) => String(req.headers['x-forwarded-for'] || req.ip || '?').split(',')[0].trim());
+async function depotOuvert() {
+  try { const e = await lireEtatBrut(); return e.depotOuvert !== false; }
+  catch (err) { return false; }   // base injoignable : on n'accepte rien
+}
+depots.installer(app, express, {
+  lireEtat: () => lireEtatBrut(),
+  ecrireEtat: (e) => ecrireEtatBrut(e),
+  serialiser: (fn) => renouvSerialise(fn),
+  deposerImage: (mime, octets) => enregistrerImage(mime, octets),
+  ouvert: depotOuvert,
+  frein: freinDepot,
+  // Le journal des acces retrace ce que L'EQUIPE consulte : il exige un uid et
+  // refuse un appel anonyme. Un patient qui depose sa propre ordonnance n'est
+  // pas un acces de collaborateur. On se contente donc d'une ligne de service.
+  tracer: (quoi, ref) => console.log('  \u{1F4E5} ' + quoi + ' (' + ref + ')')
+});
+
 app.use(auth.gate);           // portail : à placer avant le static et les routes /api de données
 console.log(auth.AUTH_DISABLED
   ? '  🔓 Portail d\'accès DÉSACTIVÉ (définir GATE_PASSWORD pour l\'activer)'
@@ -366,6 +390,34 @@ const IMG_AFFICHABLES = {
 };
 const IMG_MAX_OCTETS = 8 * 1024 * 1024;   // une ordonnance scannee peut etre lourde
 
+// Ecrire une image, et rendre son identifiant. Extrait de la route pour que le
+// depot d'ordonnance par un patient (depots.js) passe exactement par le meme
+// chemin : meme condensat, meme deduplication, meme coffre.
+async function enregistrerImage(mime, octets) {
+  if (!db) throw new Error('Base de donnees requise');
+  // L'identifiant est le condensat des octets EN CLAIR, calcule avant le
+  // chiffrement : c'est ce qui preserve la deduplication, et la capacite de
+  // restaurer un scan en reenvoyant les memes octets.
+  const id = crypto.createHash('sha256').update(octets).digest('hex').slice(0, 32);
+  const scelle = coffre.chiffrer(octets);
+  await db.query(
+    'INSERT INTO app_images (id, mime, octets, taille, algo, enveloppe, marque)'
+    + ' VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING',
+    scelle
+      ? [id, mime, scelle.octets, octets.length, scelle.algo, scelle.enveloppe, scelle.marque]
+      : [id, mime, octets, octets.length, null, null, null]
+  );
+  return id;
+}
+// La suppression cible UN identifiant, jamais un balayage. Le balayeur general
+// reste suspendu depuis le 13/09 ; la purge des depots doit pouvoir travailler
+// sans lui, et sans risquer ce qu'il avait emporte.
+async function supprimerImage(id) {
+  if (!db) return false;
+  const r = await db.query('DELETE FROM app_images WHERE id = $1', [String(id || '')]);
+  return r.rowCount > 0;
+}
+
 app.post('/api/images', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ ok: false, error: 'Base de donnees requise' });
@@ -384,15 +436,7 @@ app.post('/api/images', async (req, res) => {
     // L'identifiant est le condensat des octets EN CLAIR, calcule avant le
     // chiffrement : c'est ce qui preserve la deduplication, et la capacite de
     // restaurer un scan en reenvoyant les memes octets.
-    const id = crypto.createHash('sha256').update(octets).digest('hex').slice(0, 32);
-    const scelle = coffre.chiffrer(octets);
-    await db.query(
-      'INSERT INTO app_images (id, mime, octets, taille, algo, enveloppe, marque)'
-      + ' VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING',
-      scelle
-        ? [id, mime, scelle.octets, octets.length, scelle.algo, scelle.enveloppe, scelle.marque]
-        : [id, mime, octets, octets.length, null, null, null]
-    );
+    const id = await enregistrerImage(mime, octets);
     res.json({ ok: true, id: id, url: '/api/images/' + id });
   } catch (err) {
     console.error('Erreur enregistrement image:', err.message);
@@ -1486,6 +1530,8 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   'todoPerso', 'moments', 'agenda', 'liens',
   // Reunion d'equipe : themes de l'ordre du jour, et calendrier des seances.
   'reunionThemes', 'reunions',
+  // Depots d'ordonnances : la boite de reception, purgee a sept jours.
+  'depots',
   // Messagerie personnelle : les messages sont une collection a part, pour que
   // deux personnes qui ecrivent en meme temps ne s'effacent pas l'une l'autre.
   'convos', 'messages',
@@ -1708,6 +1754,27 @@ if (process.env.BALAYAGE_IMAGES === '1') {
 } else {
   console.log('  🧹 Balayage des images SUSPENDU (BALAYAGE_IMAGES non defini)');
 }
+
+// ─── Purge des depots d'ordonnances ────────────────────────────────────────
+// Sept jours, et seulement ce qui n'est rattache a aucun dossier. Contrairement
+// au balayeur general, celle-ci est CIBLEE : elle ne connait que les octets des
+// depots qu'elle vient d'effacer, et ne touche meme pas a ceux-la s'ils sont
+// encore references ailleurs (les images sont dedupliquees par condensat).
+async function purgerDepots() {
+  if (!db) return;
+  try {
+    await depots.purger({
+      lireEtat: () => lireEtatBrut(),
+      ecrireEtat: (e) => ecrireEtatBrut(e),
+      serialiser: (fn) => renouvSerialise(fn),
+      supprimerImage: (id) => supprimerImage(id),
+      imagesReferencees: (blob) => imagesReferencees(blob),
+      marquerSupprime: null
+    });
+  } catch (err) { console.error('Purge des depots :', err.message); }
+}
+setInterval(purgerDepots, 6 * 3600 * 1000);
+setTimeout(purgerDepots, 3 * 60 * 1000);
 
 // ─── Load all data ───
 app.get('/api/data', async (req, res) => {
