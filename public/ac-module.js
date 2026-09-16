@@ -868,17 +868,50 @@
     setTimeout(() => d.remove(), 2600);
   }
 
-  // ── Raccourcis ────────────────────────────────────────────────────────────
+  // ── Raccourcis ──────────────────────────────────────────────
   // Des liens vers des sites externes — Ameli, le portail du grossiste, le
-  // Vidal… — tenus par les administrateurs, communs a toute l'equipe.
+  // Vidal… — PROPRES À CHACUN. Ce que le comptoir ouvre tous les jours n'est
+  // pas ce qu'ouvre le préparateur, ni ce qu'ouvre la titulaire : une liste
+  // commune serait la somme de tous les besoins, donc celle de personne.
+  // Chacun part d'une page vide et construit la sienne.
+  //
+  // Ce n'est pas un secret pour autant. La base est un seul bloc, téléchargé
+  // entier par chaque poste : qui lit la réponse du serveur voit les liens des
+  // autres. Ce sont des adresses de sites publics — on choisit de ne pas les
+  // afficher, pas de les chiffrer.
+  function acMesLiens(l, moi) {
+    if (moi == null || moi === '') return [];
+    return (l || []).filter(r => r && r.qui != null && String(r.qui) === String(moi));
+  }
+  // Les liens d'avant cette mise à jour n'ont pas de propriétaire. Ils ne sont
+  // montrés à personne tant qu'un administrateur ne les a pas repris à son
+  // compte : les effacer en silence, ou les recopier chez les dix-huit, serait
+  // pire que de les laisser en attente.
+  function acLiensOrphelins(l) {
+    return (l || []).filter(r => r && r.qui == null);
+  }
+  // Un lien ne se modifie que par celui à qui il appartient — y compris pour un
+  // administrateur, qui n'a rien à faire dans les raccourcis de ses collègues.
+  function acMonLien(id) {
+    const moi = (acUser() || {}).id;
+    if (moi == null) return null;
+    return acMesLiens(acLiens(), moi).find(x => x.id === id) || null;
+  }
+
   function acRendRaccourcis() {
     const el = document.getElementById('ac-rac'); if (!el) return;
+    const moi = (acUser() || {}).id;
     const add = document.getElementById('ac-rac-add');
-    if (add) add.innerHTML = acAdmin() ? '<button onclick="acFormLien()">+ Ajouter un lien</button>' : '';
-    const l = acLiens().slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    if (add) {
+      const orph = acAdmin() ? acLiensOrphelins(acLiens()).length : 0;
+      add.innerHTML = (moi != null ? '<button onclick="acFormLien()">+ Ajouter un raccourci</button>' : '')
+        + (orph ? '<button style="color:var(--gray-500);margin-left:14px" onclick="acReprendreLiens()">'
+            + 'Reprendre ' + orph + ' raccourci' + (orph > 1 ? 's' : '') + ' d\u2019avant</button>' : '');
+    }
+    const l = acMesLiens(acLiens(), moi).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
     if (!l.length) {
-      el.innerHTML = '<div class="ac-vide" style="grid-column:1/-1">Aucun lien.'
-        + (acAdmin() ? ' Ajoutez les sites que l’équipe ouvre tous les jours.' : '')
+      el.innerHTML = '<div class="ac-vide" style="grid-column:1/-1">Aucun raccourci.'
+        + (moi != null ? ' Ajoutez les sites que vous ouvrez tous les jours : ils n\u2019appara\u00eetront que pour vous.' : '')
         + '</div>';
       return;
     }
@@ -889,13 +922,26 @@
         + '<button style="width:100%">'
         + acIconeLien(r)
         + '<span>' + E(r.lbl || r.url) + '</span>'
-        + (acAdmin()
-            ? '<span class="ac-outil g" onclick="event.preventDefault();event.stopPropagation();acFormIcone(' + r.id + ')" title="Changer l’icône">✎</span>'
-              + '<span class="ac-outil d" onclick="event.preventDefault();event.stopPropagation();acRetirerLien(' + r.id + ')" title="Retirer">✕</span>'
-            : '')
+        + '<span class="ac-outil g" onclick="event.preventDefault();event.stopPropagation();acFormIcone(' + r.id + ')" title="Changer l\u2019ic\u00f4ne">\u270e</span>'
+        + '<span class="ac-outil d" onclick="event.preventDefault();event.stopPropagation();acRetirerLien(' + r.id + ')" title="Retirer">\u2715</span>'
         + '</button></a>';
     }).join('');
   }
+
+  // Reprise unique des liens communs d'avant. Le nom du repreneur est dans la
+  // question : on ne s'attribue pas dix raccourcis par un « OK » distrait.
+  window.acReprendreLiens = function () {
+    const moi = acUser();
+    if (!moi || !acAdmin()) return;
+    const orph = acLiensOrphelins(acLiens());
+    if (!orph.length) { acRendRaccourcis(); return; }
+    if (!confirm('Reprendre ' + orph.length + ' raccourci' + (orph.length > 1 ? 's' : '')
+      + ' au compte de ' + acNom(moi.id) + ' ?\n\n'
+      + 'Ils n\u2019appara\u00eetront plus que chez vous. Chacun des autres repart d\u2019une page vide.')) return;
+    const now = Date.now();
+    orph.forEach(r => { r.qui = moi.id; r.updatedAt = now; });
+    acSave(true); acRendRaccourcis();
+  };
 
   // Trois niveaux, du plus voulu au plus sûr :
   //   1. l'icône déposée par un administrateur, si elle existe ;
@@ -932,22 +978,21 @@
     } catch (e) { return null; }
   }
   window.acFormLien = function () {
-    if (!acAdmin()) return;
+    const moi = acUser(); if (!moi || moi.id == null) return;
     const lbl = prompt('Nom du raccourci (ex. Ameli Pro)'); if (!lbl || !lbl.trim()) return;
     const brut = prompt('Adresse du site (ex. ameli.fr/pharmacien)'); if (!brut) return;
     const url = acUrlSure(brut);
     if (!url) { alert('Adresse invalide. Attendu : une adresse web commençant par http:// ou https://'); return; }
     const ico = (prompt('Un emoji de secours, si le site ne fournit pas d’icône', '🔗') || '🔗').trim().slice(0, 4);
     const now = Date.now();
-    acLiens().push({ id: now, ts: now, lbl: lbl.trim().slice(0, 40), url: url, ico: ico, imgId: null, updatedAt: now });
+    acLiens().push({ id: now, ts: now, qui: moi.id, lbl: lbl.trim().slice(0, 40), url: url, ico: ico, imgId: null, updatedAt: now });
     acSave(true); acRendRaccourcis();
   };
 
   // ── Icône déposée à la main ───────────────────────────────────────────────
   let acLienCourant = null;
   window.acFormIcone = function (id) {
-    if (!acAdmin()) return;
-    const r = acLiens().find(x => x.id === id); if (!r) return;
+    const r = acMonLien(id); if (!r) return;
     acLienCourant = id; acImg = null;
     document.getElementById('ac-ico-nom').textContent = r.lbl || r.url;
     document.getElementById('ac-ico-apercu').innerHTML = r.imgId
@@ -961,12 +1006,12 @@
   };
   window.acFermerIcone = function () { document.getElementById('ac-ov-ico').classList.remove('open'); };
   window.acEffacerIcone = function () {
-    const r = acLiens().find(x => x.id === acLienCourant); if (!r) return;
+    const r = acMonLien(acLienCourant); if (!r) return;
     r.imgId = null; r.updatedAt = Date.now();
     acSave(true); acFermerIcone(); acRendRaccourcis();
   };
   window.acPoserIcone = async function () {
-    const r = acLiens().find(x => x.id === acLienCourant); if (!r) return;
+    const r = acMonLien(acLienCourant); if (!r) return;
     if (!acImg) { alert('Choisissez une image.'); return; }
     const id = await acDeposerImage(); if (!id) return;
     r.imgId = id; r.updatedAt = Date.now();
@@ -975,7 +1020,7 @@
   };
 
   window.acRetirerLien = function (id) {
-    if (!acAdmin()) return;
+    if (!acMonLien(id)) return;
     const l = acLiens(), i = l.findIndex(x => x.id === id); if (i < 0) return;
     if (!confirm('Retirer le raccourci « ' + (l[i].lbl || '') + ' » ?')) return;
     if (typeof markDeleted === 'function') markDeleted('liens', id);

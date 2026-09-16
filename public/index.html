@@ -2579,7 +2579,8 @@ let demandes = [];
 let todoPerso = [];
 let moments = [];
 let agenda = [];
-// Raccourcis de l'accueil : liens vers des sites externes, tenus par les admins.
+// Raccourcis de l'accueil : liens vers des sites externes, propres à chacun
+// (champ `qui`). Ceux d'avant la bascule n'ont pas de `qui` : voir ac-module.js.
 let liens = [];
 // Messagerie personnelle : conversations adressees (1 a 1 ou groupe) et leurs
 // messages. Les messages forment une collection A PART : dans un fil de
