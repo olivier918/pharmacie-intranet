@@ -3991,6 +3991,15 @@ function doStatus(id,ns){
   d.updatedAt=Date.now();
   d.status=ns;
 
+  // Ordonnance a recuperer : l'appareil photo s'ouvre au moment ou le
+  // preparateur marque la livraison faite. Il est chez le patient, dans PILOT,
+  // sur son telephone : le nom, le prenom et la date de naissance sont deja
+  // connus, il n'a rien a saisir. On n'ouvre pas deux fois pour la meme
+  // livraison, ni quand on revient en arriere sur le statut.
+  if(ns==='done' && d.ordo && !d.ordoRecupereeLe && typeof odCapturerLivraison==='function'){
+    setTimeout(()=>odCapturerLivraison(d.id), 260);
+  }
+
   // Animate transition if jumping multiple steps
   if(toIdx>fromIdx+1){
     animateStepperJump(id, fromIdx, toIdx);

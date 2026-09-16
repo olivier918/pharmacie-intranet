@@ -277,40 +277,6 @@ const corpsOk = (n) => ({ body: { nom: 'DUPONT', prenom: 'Marie',
   t('le même lien ne resservira pas', r.code === 410);
   t('... et le second envoi n’écrase pas le premier', b.ecritures() === 1);
 
-  // ── L'ordonnance récupérée chez un patient ──────────────────────────────
-  // Le lien porte le nom ET la consigne d'ouvrir un dossier. À la réception, le
-  // serveur doit créer le renouvellement LUI-MÊME : attendre qu'un poste ait
-  // PILOT ouvert ferait dépendre la création d'un hasard.
-  console.log('\nL’ordonnance récupérée chez un patient');
-  const JR = D.nouveauJeton();
-  b = await bancDepot({ etat: { depots: [{ id: 5, ts: 1, jeton: JR, nom: 'LEROY',
-    prenom: 'Jean', creerRenouv: true, fichiers: [] }] } });
-  r = await appeler(b.app.routes['POST /api/depot'],
-    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JR }) }));
-  const et = b.lire();
-  t('le dépôt est accepté', r.code === 200);
-  t('un dossier de renouvellement est ouvert', (et.renouvellements || []).length === 1);
-  const rv = (et.renouvellements || [])[0] || {};
-  t('... au nom du patient', rv.nom === 'LEROY' && rv.prenom === 'Jean');
-  t('... marqué « à facturer »', rv.nature === 'facturation' && rv.ponctuel === true);
-  t('... daté du jour, donc visible dans « à préparer »', rv.date === D.jourParis());
-  t('... et ponctuel : aucun cycle ne le fera revenir', rv.cycle === 0);
-  t('le dépôt est rattaché à ce dossier',
-    et.depots[0].lien && et.depots[0].lien.type === 'renouvellement' && et.depots[0].lien.ref === rv.id);
-  // Rattacher, c'est conserver : cette ordonnance ne doit PAS partir à sept jours.
-  t('... donc il échappe à la purge des sept jours',
-    D.aPurger(et.depots, Date.now() + 40 * J).length === 0);
-  t('la consigne est consommée : un second passage ne recréerait pas de dossier',
-    et.depots[0].creerRenouv === false);
-  // L'identifiant doit suivre la numerotation du module, pas un Date.now() qui
-  // ferait sauter le compteur de rnNewId.
-  b = await bancDepot({ etat: { renouvellements: [{ id: 41 }], renouvArchives: [{ id: 57 }],
-    depots: [{ id: 5, ts: 1, jeton: JR, nom: 'X', prenom: 'Y', creerRenouv: true, fichiers: [] }] } });
-  await appeler(b.app.routes['POST /api/depot'],
-    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JR }) }));
-  t('l’identifiant suit la numérotation du module, archives comprises',
-    b.lire().renouvellements[1].id === 58);
-
   b = await bancDepot({ etat: { depots: [] } });
   r = await appeler(b.app.routes['POST /api/depot'],
     Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: D.nouveauJeton() }) }));

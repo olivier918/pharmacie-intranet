@@ -213,28 +213,6 @@ module.exports = {
             dep.recuLe = maintenant;
             dep.ts = maintenant;                 // la rétention part du dépôt
             dep.updatedAt = maintenant;
-            // Ordonnance récupérée chez un patient : elle a été rapportée mais
-            // pas encore facturée. On ouvre le dossier tout de suite, du côté
-            // serveur — attendre qu'un poste ait PILOT ouvert ferait dépendre
-            // la création d'un hasard.
-            if (dep.creerRenouv) {
-              if (!Array.isArray(etat.renouvellements)) etat.renouvellements = [];
-              const rid = etat.renouvellements.concat(
-                Array.isArray(etat.renouvArchives) ? etat.renouvArchives : []
-              ).reduce((m, x) => (x && x.id > m ? x.id : m), 0) + 1;
-              etat.renouvellements.push({
-                id: rid,
-                nom: String(dep.nom || '').toUpperCase(), prenom: String(dep.prenom || ''),
-                date: jourParis(), cycle: 0,
-                // `facturation` existe deja dans le module : badge « € Facturation
-                // a faire ». Pas de nouveau concept a inventer ni a expliquer.
-                ponctuel: true, nature: 'facturation',
-                notes: 'Ordonnance recuperee chez le patient le ' + jourParis() + '.',
-                updatedAt: maintenant
-              });
-              dep.lien = { type: 'renouvellement', ref: rid };   // rattache = conserve
-              dep.creerRenouv = false;
-            }
             await d.ecrireEtat(etat);
             return { ok: true };
           }
