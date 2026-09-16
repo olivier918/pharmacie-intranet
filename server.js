@@ -1745,7 +1745,10 @@ function ouSontLesIdentifiants(blob) {
 // des pertes, alors que pour le balayeur c'est l'inverse.
 // `fichId` : piece jointe d'un theme de reunion d'equipe. Elle est stockee
 // dans app_images comme les scans ; l'oublier ici la ferait balayer.
-const CHAMPS_IMAGE = ['scanId', 'imgId', 'photo', 'sig', 'fichId'];
+// `preuveId` : la photo de depot d'une livraison groupee (EHPAD). UNE photo
+// est referencee par les douze livraisons du groupe : l'absence de cet octet
+// est donc une perte reelle, et elle doit se voir.
+const CHAMPS_IMAGE = ['scanId', 'imgId', 'photo', 'sig', 'fichId', 'preuveId'];
 function imagesAttendues(blob) {
   const ou = ouSontLesIdentifiants(blob);
   const attendues = new Map();

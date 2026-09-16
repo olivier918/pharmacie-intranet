@@ -380,7 +380,12 @@ tr:hover td{background:#fafffe}
    d'abord le jour, puis les tournees qui le composent. */
 .dgrp-h{background:var(--g-pale);color:var(--g-dark);font-weight:800;font-size:.76rem;text-transform:uppercase;letter-spacing:.9px;padding:6px 14px;display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--g-border)}
 .dgrp-h .ico{width:15px;height:15px}
-.dgrp-n{margin-left:auto;background:var(--g-mid);color:#fff;border-radius:10px;padding:1px 8px;font-size:.7rem;font-weight:700;letter-spacing:0;text-transform:none}
+.dgrp-photo{margin-left:10px;border:1px solid var(--g-mid);background:#fff;color:var(--g-dark);border-radius:20px;padding:2px 10px;font:inherit;font-size:.7rem;font-weight:700;letter-spacing:0;text-transform:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .dgrp-photo .ico{width:15px;height:15px}
+  .dgrp-preuve{margin-left:10px;font-size:.7rem;font-weight:600;letter-spacing:0;text-transform:none;color:var(--g-dark);display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+  .dgrp-preuve .ico{width:15px;height:15px}
+  .dgrp-preuve button{border:none;background:none;padding:0;font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;color:inherit;opacity:.78}
+  .dgrp-n{margin-left:auto;background:var(--g-mid);color:#fff;border-radius:10px;padding:1px 8px;font-size:.7rem;font-weight:700;letter-spacing:0;text-transform:none}
 .dgrp-sep{border-top:3px solid var(--g-border)}
 @media print{.dgrp-h{background:#eee;color:#000;border-bottom:1px solid #000}.dgrp-sep{border-top:2px solid #000}.dgrp-n{background:#000}}
 .confirm-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
@@ -3688,6 +3693,186 @@ function annulerFacture(id){
   delete d.factureAt; delete d.factureBy; d.updatedAt=Date.now();
   renderD();
 }
+// ── La preuve de dépôt sur un point de livraison groupée ───────────────
+// A l'EHPAD, les douze patients sont livrés d'un coup, au même endroit, à la
+// même personne. UNE photo du dépôt vaut donc pour les douze — et elle est
+// attachée à CHACUNE des livraisons, pas à une entité « tournée » à part :
+// une contestation porte toujours sur un patient, elle doit se régler depuis
+// sa fiche.
+//
+// Les points de livraison groupée, à compléter si un nouveau apparaît.
+// « Domicile » n'en est pas un : douze livraisons à domicile sont douze portes
+// différentes, et une photo unique n'y prouverait rien. Les lieux de retrait
+// non plus : c'est le patient qui vient.
+const LIEUX_POINT_UNIQUE=['EHPAD','IDE MDS'];
+function dPointUnique(lieu){ return LIEUX_POINT_UNIQUE.indexOf(String(lieu||'').trim())>=0; }
+
+// Le groupe, c'est toutes les livraisons de ce lieu ce jour-là.
+function dGroupeLieu(lieu,date){
+  const l=String(lieu||'').trim();
+  return deliveries.filter(d=>d && d.date===date && String(d.lieu||'').trim()===l);
+}
+function dPreuveDu(items){
+  const a=(items||[]).find(d=>d && d.preuveId);
+  return a ? {id:a.preuveId,at:a.preuveAt,par:a.preuvePar,lot:a.preuveLot} : null;
+}
+
+// Pose la preuve sur chaque livraison du groupe et passe en « livré » celles
+// qui ne le sont pas encore. L'état d'avant est gardé SUR CHAQUE LIGNE : douze
+// dossiers changés d'un seul geste doivent pouvoir être rendus d'un seul
+// geste, sinon la moindre erreur se répare à la main douze fois.
+function dPoserPreuve(items,id,uid,quand,lot,estampille){
+  let livrees=0;
+  (items||[]).forEach(function(d){
+    if(!d) return;
+    d.preuveId=id; d.preuveAt=quand; d.preuvePar=uid; d.preuveLot=lot;
+    if(d.status!=='done'){
+      d.preuveAvant=d.status;
+      if(!d.prepAt){ d.prepBy=uid; d.prepAt=estampille; }
+      d.livrBy=uid; d.livrAt=estampille;
+      d.status='done';
+      livrees++;
+    } else {
+      // Déjà livrée avant la photo : l'annulation ne doit pas la faire reculer.
+      d.preuveAvant=null;
+    }
+    d.updatedAt=Date.now();
+  });
+  return livrees;
+}
+// Rend exactement ce que la photo avait changé, et rien d'autre. Les mêmes
+// remises à zéro que doStatus quand on revient en arrière sur un statut.
+function dRetirerPreuve(items,lot){
+  let rendues=0;
+  (items||[]).forEach(function(d){
+    if(!d || d.preuveLot!==lot) return;
+    if(d.preuveAvant){
+      d.status=d.preuveAvant;
+      if(d.preuveAvant!=='done'){ d.livrBy=null; d.livrAt=null; }
+      if(d.preuveAvant==='wait'){ d.prepBy=null; d.prepAt=null; }
+      rendues++;
+    }
+    d.preuveId=null; d.preuveAt=null; d.preuvePar=null; d.preuveLot=null; d.preuveAvant=null;
+    d.updatedAt=Date.now();
+  });
+  return rendues;
+}
+
+function dPreuveHeure(ts){
+  if(!ts) return '';
+  try{ return new Date(ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
+  catch(e){ return ''; }
+}
+// Ce que porte le bandeau du lieu : le bouton tant qu'il n'y a rien, l'état
+// et de quoi le défaire une fois la photo prise.
+function dBandeauPreuve(lieu,items){
+  if(!dPointUnique(lieu) || !items || !items.length) return '';
+  const p=dPreuveDu(items);
+  if(p){
+    return '<span class="dgrp-preuve">'+ico('valider')+' Déposé'
+      + (p.at?' à '+dPreuveHeure(p.at):'')
+      + (p.par?' par '+staffName(p.par):'')
+      + ' <button onclick="dVoirPreuve(\''+p.id+'\')">voir la photo</button>'
+      + (p.lot?' <button onclick="dAnnulerPreuve('+p.lot+')">annuler</button>':'')
+      + '</span>';
+  }
+  // Le gestionnaire ne reçoit pas le lieu ni la date en clair : il reçoit
+  // l'identifiant d'une livraison du groupe et va les lire lui-même.
+  return '<button class="dgrp-photo" onclick="dPreuvePrendre('+items[0].id+')">'
+    + ico('photo')+' Photo de dépôt</button>';
+}
+
+window.dVoirPreuve=function(id){
+  if(!estIdImage(id)) return;
+  window.open('/api/images/'+id,'_blank','noopener');
+};
+
+// L'appareil photo. Le champ est créé et retiré à la volée : un champ fichier
+// qui traîne dans la page garde la photo précédente en mémoire.
+window.dPreuvePrendre=function(refId){
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  const ref=deliveries.find(d=>d && d.id===refId); if(!ref) return;
+  const lieu=ref.lieu, date=ref.date;
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.capture='environment'; inp.style.display='none';
+  document.body.appendChild(inp);
+  inp.addEventListener('change',function(){
+    // Le fichier est sorti de la liste TOUT DE SUITE : `input.files` est une
+    // liste vivante, elle se vide avec le champ qu'on retire juste après.
+    const f=(inp.files||[])[0];
+    inp.remove();
+    if(f) dPreuveTraiter(lieu,date,f);
+  });
+  inp.click();
+};
+
+function dPhotoReduite(f,max){
+  return new Promise(function(res,rej){
+    const url=URL.createObjectURL(f);
+    const img=new Image();
+    img.onload=function(){
+      try{
+        const k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
+        const cv=document.createElement('canvas');
+        cv.width=Math.max(1,Math.round(img.naturalWidth*k));
+        cv.height=Math.max(1,Math.round(img.naturalHeight*k));
+        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+        res(cv.toDataURL('image/jpeg',0.82));
+      }catch(e){ rej(e); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror=function(){ URL.revokeObjectURL(url); rej(new Error('illisible')); };
+    img.src=url;
+  });
+}
+
+async function dPreuveTraiter(lieu,date,f){
+  if(!/^image\//.test(f.type||'')){ alert('Choisissez une photo.'); return; }
+  if(f.size>16*1024*1024){ alert('Photo trop lourde : 16 Mo maximum.'); return; }
+  let url;
+  try{ url=await dPhotoReduite(f,1600); }
+  catch(e){ alert('Photo illisible. Réessayez.'); return; }
+  const id=await imgTeleverser(url);
+  // imgTeleverser rend la data-URL d'origine quand le dépôt échoue. L'écrire
+  // dans le fichier de données y remettrait le mégaoctet qu'on en a précisément
+  // sorti, et il repartirait vers chaque poste toutes les huit secondes. On
+  // préfère ne rien enregistrer et le dire.
+  if(!estIdImage(id)){
+    alert('La photo n’a pas pu être enregistrée. Rien n’a été modifié — réessayez.');
+    return;
+  }
+  const items=dGroupeLieu(lieu,date);
+  if(!items.length){ alert('Plus aucune livraison sur ce lieu pour ce jour.'); return; }
+  const lot=Date.now();
+  const n=dPoserPreuve(items,id,currentUser.id,lot,lot,nowStamp());
+  if(typeof logAction==='function') logAction('Preuve de dépôt '+lieu,items.length+' livraisons');
+  saveNow();
+  renderD();
+  dToastPreuve('Photo enregistrée · '+items.length+' livraison'+(items.length>1?'s':'')
+    + (n?' · '+n+' passée'+(n>1?'s':'')+' en livré'+(n>1?'es':'e'):''));
+}
+
+window.dAnnulerPreuve=function(lot){
+  const items=deliveries.filter(d=>d && d.preuveLot===lot);
+  if(!items.length) return;
+  const aRendre=items.filter(d=>d.preuveAvant).length;
+  if(!confirm('Retirer la photo de dépôt ?\n\nElle sera retirée de '+items.length+' livraison'
+    +(items.length>1?'s':'')+(aRendre?', et '+aRendre+' repassera'+(aRendre>1?'ont':'')+' dans leur état précédent':'')+'.')) return;
+  dRetirerPreuve(items,lot);
+  if(typeof logAction==='function') logAction('Preuve de dépôt retirée',items.length+' livraisons');
+  saveNow(); renderD();
+};
+
+function dToastPreuve(m){
+  const el=document.createElement('div');
+  el.textContent=m;
+  el.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);'
+    +'background:#1D5C3A;color:#fff;padding:11px 20px;border-radius:10px;font-size:.88rem;'
+    +'z-index:99999;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:90vw;text-align:center';
+  document.body.appendChild(el);
+  setTimeout(function(){ el.remove(); },3600);
+}
+
 // Ordre des lieux : celui de la tournee, pas l'alphabetique. Un lieu inconnu
 // (ancienne saisie, valeur libre) passe en fin de liste plutot que d'etre perdu.
 const LIEUX_ORDRE=['Domicile','EHPAD','IDE MDS','IDE 9','Pharmacie'];
@@ -3707,13 +3892,17 @@ function grouperParLieu(rows){
   });
 }
 // Rend les cartes d'une journee, separees par lieu. Un seul lieu present (ou
-// filtre actif sur un lieu) : pas de bandeau, il n'apprendrait rien.
+// filtre actif sur un lieu) : pas de bandeau, il n'apprendrait rien — SAUF sur
+// un point de livraison groupee, ou il porte la preuve de depot. Filtrer sur
+// « EHPAD » est justement ce qu'on fait avant de partir : le bandeau doit
+// survivre au filtre.
 function listeParLieu(rows){
   const g=grouperParLieu(rows);
-  if(g.length<=1) return rows.slice().sort(parNomPatient).map(d=>dCard(d)).join('');
+  if(g.length<=1 && !(g.length===1 && dPointUnique(g[0][0])))
+    return rows.slice().sort(parNomPatient).map(d=>dCard(d)).join('');
   return g.map(([lieu,items],i)=>
     `<div${i?' class="dgrp-sep"':''}>
-      <div class="dgrp-h">${ico('lieu')} ${lieu}<span class="dgrp-n">${items.length}</span></div>
+      <div class="dgrp-h">${ico('lieu')} ${lieu}${dBandeauPreuve(lieu,items)}<span class="dgrp-n">${items.length}</span></div>
       ${items.map(d=>dCard(d)).join('')}
     </div>`).join('');
 }
@@ -3906,6 +4095,7 @@ function dCard(d){
       ${d.prepNotes?`<div class="dc-row2"><span class="dc-prep-inline">${ico('realisation')} ${d.prepNotes}</span></div>`:''}
       ${d.notes?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${d.notes}</span></div>`:''}
       ${dAFacturer(d)?`<div class="dc-row2"><span class="badge" style="background:#FFF3E0;color:#BF360C;border:1px solid #FFCC80;font-weight:700;padding:3px 9px">${ico('alerte')} Facturation à finaliser — ordonnance récupérée à la livraison</span></div>`:''}
+      ${d.preuveId?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('photo')} Dépôt photographié${d.preuveAt?' à '+dPreuveHeure(d.preuveAt):''}${d.preuvePar?' par '+staffName(d.preuvePar):''} <span onclick="dVoirPreuve('${d.preuveId}')" style="cursor:pointer;text-decoration:underline">voir la photo</span></span></div>`:''}
       ${d.factureAt?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('valider')} Facturé le ${new Date(d.factureAt).toLocaleDateString('fr-FR')} par ${staffName(d.factureBy)} <span onclick="annulerFacture(${d.id})" style="cursor:pointer;color:var(--gray-500);text-decoration:underline;margin-left:6px" title="Remettre en attente">annuler</span></span></div>`:''}
       <div class="dc-row2 no-print" style="margin-top:1px">
         <span class="dc-track">${saisiePar?`Saisie : ${saisiePar}${saisieQuand} · `:''}Préparé : ${prep} · Livré : ${livr}${d.smsAt?` · SMS envoyé le ${new Date(d.smsAt).toLocaleDateString('fr-FR')} par ${staffName(d.smsBy)}${smsMention(d.smsId)}`:''}</span>
