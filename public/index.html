@@ -199,7 +199,14 @@ main{grid-area:main;padding:1.2rem;min-width:0}
 .dc-row1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dc-name{font-weight:700;font-size:.92rem;white-space:nowrap}
 .dc-lieu{font-size:.75rem;color:var(--gray-500);white-space:nowrap}
-.dc-row2{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.dmat{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}
+  .dmat-t{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500);margin-right:4px}
+  .dmat.ok .dmat-t{color:#2E7D32}
+  .dmat-l{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--gray-200);border-radius:20px;padding:2px 10px 2px 7px;font-size:.76rem;cursor:pointer;background:#fff}
+  .dmat-l.on{background:var(--g-pale);border-color:var(--g-mid);color:var(--g-dark);font-weight:600}
+  .dmat-l input{margin:0}
+  .dmat-l .s{color:var(--gray-500);font-weight:400;margin-left:3px}
+  .dc-row2{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
 .dc-notes-inline{font-size:.76rem;color:var(--gray-700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
 .dc-prep-inline{font-size:.76rem;color:#8A6D00;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
 .fg label .hint{font-weight:500;color:var(--gray-400);text-transform:none;letter-spacing:0}
@@ -834,6 +841,30 @@ tr:hover td{background:#fafffe}
           <div class="cbrow">
             <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-oui" value="oui"> <span id="lc-caut-oui-lbl">Oui</span></label>
             <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-non" value="non" checked> Non</label>
+          </div>
+        </div>
+
+        <!-- La livraison du matériel -->
+        <div style="margin-top:.9rem;border-top:1px solid var(--gray-200);padding-top:.9rem">
+          <label class="cbl" style="font-weight:600"><input type="checkbox" id="lc-liv" onchange="lcMajLiv()"> Programmer la livraison du matériel</label>
+          <div id="lc-liv-bloc" style="display:none;margin-top:.8rem">
+            <div class="fgrid">
+              <div class="fg"><label>Date de livraison</label><input type="date" id="lc-liv-date"></div>
+              <div class="fg"><label>Ajouter du matériel</label>
+                <select id="lc-liv-plus" onchange="lcLivAjouter()"></select>
+              </div>
+            </div>
+            <div class="fg" style="margin-top:.7rem"><label>À emporter</label>
+              <div id="lc-liv-mat" style="font-size:.85rem;line-height:1.7"></div>
+            </div>
+            <div class="cbrow" style="margin-top:.7rem">
+              <label class="cbl"><input type="checkbox" id="lc-liv-cheque"> Récupérer le chèque de caution</label>
+              <label class="cbl"><input type="checkbox" id="lc-liv-ordo"> Récupérer l'ordonnance</label>
+            </div>
+            <div style="font-size:.74rem;color:var(--gray-500);margin-top:.6rem;line-height:1.5">
+              La livraison apparaîtra dans le journal à la date choisie, avec la liste à cocher au chargement.
+              Les numéros de série seront demandés une fois la livraison faite.
+            </div>
           </div>
         </div>
 
@@ -2563,6 +2594,19 @@ tr:hover td{background:#fafffe}
 </div>
 
 <!-- Signature collaborateur (réutilisable) -->
+<!-- N° de série relevés après la livraison -->
+<div class="overlay" id="dser-modal">
+  <div class="mbox" style="max-width:480px">
+    <div class="mbox-h"><b id="dser-titre">N° de série</b>
+      <button class="x" onclick="closeModal('dser-modal')">✕</button></div>
+    <div class="mbox-b" id="dser-corps"></div>
+    <div class="mbox-f">
+      <button class="btn bp" onclick="dSerieEnregistrer()">Enregistrer</button>
+      <button class="btn bs" onclick="closeModal('dser-modal')">Plus tard</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="sig-modal">
   <div class="mbox" style="max-width:460px">
     <h3><svg class="ico"><use href="#ic-modifier"></use></svg> Signature — <span id="sig-name"></span></h3>
@@ -3717,6 +3761,92 @@ function dTermine(d){ return dRetrait(d) ? (d.status==='prep'||d.status==='done'
 // facturer deux fois ou ne facturer jamais.
 function dAFacturer(d){ return !!(d && d.ordo && dTermine(d) && !d.factureAt && !d.ordoRecupereeLe); }
 
+// ── Le chargement du camion ──────────────────────────────────────
+// Une liste à cocher, pas une note : un lit livré sans sa potence est un
+// second aller-retour, et c'est exactement ce qu'une case à cocher évite.
+function dMat(d){ return (d && Array.isArray(d.mat)) ? d.mat : []; }
+function dCharges(d){ return dMat(d).filter(function(m){ return m && m.charge; }).length; }
+function dToutCharge(d){ const l=dMat(d); return l.length>0 && dCharges(d)===l.length; }
+
+// Le gestionnaire ne reçoit que deux indices : la livraison et la ligne.
+function dCocher(id,i){
+  const d=deliveries.find(x=>x.id===id); if(!d) return;
+  const m=dMat(d)[i]; if(!m) return;
+  if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
+  m.charge=!m.charge;
+  m.chargePar=m.charge?currentUser.id:null;
+  d.updatedAt=Date.now();
+  renderD();
+}
+function dBlocMat(d){
+  const l=dMat(d); if(!l.length) return '';
+  const n=dCharges(d), tout=dToutCharge(d);
+  return '<div class="dc-row2 dmat'+(tout?' ok':'')+'">'
+    + '<span class="dmat-t">'+ico('livraison')+' Chargement '+n+'/'+l.length+'</span>'
+    + l.map(function(m,i){
+        return '<label class="dmat-l'+(m.charge?' on':'')+'">'
+          + '<input type="checkbox"'+(m.charge?' checked':'')+' onchange="dCocher('+d.id+','+i+')">'
+          + hEsc(m.lbl||'')
+          + (m.serie?'<span class="s">n° '+hEsc(m.serie)+'</span>':'')
+          + '</label>';
+      }).join('')
+    + '</div>';
+}
+
+// ── Les numéros de série, relevés une fois la livraison faite ─────────────
+// Même principe que l'ordonnance à récupérer : c'est chez le patient, l'appareil
+// déballé, qu'on lit l'étiquette — pas au retour, de mémoire. Le numéro de
+// l'appareil du contrat remonte dans le dossier de location : le contrat de
+// facturation se complète tout seul.
+function dSeriesAttendues(d){
+  return dMat(d).map(function(m,i){ return {m:m,i:i}; })
+    .filter(function(x){ return x.m && x.m.avecSerie && !x.m.serie; });
+}
+function dSerieAFaire(d){ return !!(d && dTermine(d) && dSeriesAttendues(d).length); }
+
+window.dSerieOuvrir=function(id){
+  const d=deliveries.find(x=>x.id===id); if(!d) return;
+  const l=dSeriesAttendues(d);
+  if(!l.length) return;
+  const c=document.getElementById('dser-corps');
+  document.getElementById('dser-titre').textContent='N° de série — '+(d.nom||'')+' '+(d.prenom||'');
+  c.innerHTML='<div style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:.9rem">'
+    + 'Relevez l’étiquette sur l’appareil. Le numéro de l’appareil du contrat remonte '
+    + 'dans le dossier de location.</div>'
+    + l.map(function(x){
+        return '<div class="fg" style="margin-bottom:.6rem"><label>'+hEsc(x.m.lbl||'')
+          + (x.m.principal?' <span style="font-weight:400;color:var(--gray-500)">(appareil du contrat)</span>':'')
+          + '</label><input type="text" id="dser-'+x.i+'" placeholder="Numéro de série" autocomplete="off"></div>';
+      }).join('');
+  c.dataset.liv=String(id);
+  openModal('dser-modal');
+  setTimeout(function(){ const e=document.getElementById('dser-'+l[0].i); if(e) e.focus(); },80);
+};
+window.dSerieEnregistrer=function(){
+  const c=document.getElementById('dser-corps');
+  const id=parseInt(c.dataset.liv,10);
+  const d=deliveries.find(x=>x.id===id); if(!d) return;
+  let n=0, principal='';
+  dMat(d).forEach(function(m,i){
+    const e=document.getElementById('dser-'+i); if(!e) return;
+    const v=e.value.trim(); if(!v) return;
+    m.serie=v; n++;
+    if(m.principal) principal=v;
+  });
+  // Un relevé vide n'est pas un relevé : on ne referme pas en faisant croire
+  // que c'est fait.
+  if(!n){ alert('Indiquez au moins un numéro, ou fermez cette fenêtre pour le faire plus tard.'); return; }
+  d.serieFaite=Date.now(); d.updatedAt=Date.now();
+  // Le contrat se complète : c'est tout l'intérêt du lien.
+  if(principal && d.locationId){
+    const l=locations.find(x=>x.id===d.locationId);
+    if(l && !l.num){ l.num=principal; l.updatedAt=Date.now(); locAddComment(l,'N° de série relevé à la livraison : '+principal, true); }
+  }
+  if(typeof logAction==='function') logAction('N° de série relevés', (d.nom||'')+' — '+n);
+  closeModal('dser-modal');
+  saveNow(); renderD(); renderLocs();
+};
+
 // Le bouton appareil photo, posé sur la ligne elle-même. Le préparateur est
 // sur le pas de la porte : il ne doit avoir ni à changer le statut d'abord,
 // ni à ouvrir la fiche. Une fois la photo prise, la ligne porte la trace et
@@ -4152,6 +4282,9 @@ function dCard(d){
       </div>
       ${d.prepNotes?`<div class="dc-row2"><span class="dc-prep-inline">${ico('realisation')} ${d.prepNotes}</span></div>`:''}
       ${d.notes?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${d.notes}</span></div>`:''}
+      ${dBlocMat(d)}
+      ${d.cautionCheque&&!d.chequeRecupereLe?`<div class="dc-row2"><span class="badge" style="background:#EDE7F6;color:#4527A0;border:1px solid #B39DDB;font-weight:700;padding:3px 9px">${ico('euro')} Chèque de caution à récupérer</span></div>`:''}
+      ${dSerieAFaire(d)?`<div class="dc-row2"><span class="badge no-print" style="background:#E3F2FD;color:#0D47A1;border:1px solid #90CAF9;font-weight:700;padding:3px 9px;cursor:pointer" onclick="dSerieOuvrir(${d.id})">${ico('modifier')} N° de série à relever</span></div>`:''}
       ${dAFacturer(d)?`<div class="dc-row2"><span class="badge" style="background:#FFF3E0;color:#BF360C;border:1px solid #FFCC80;font-weight:700;padding:3px 9px">${ico('alerte')} Facturation à finaliser — ordonnance récupérée à la livraison</span></div>`:''}
       ${d.preuveId?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('photo')} Dépôt photographié${d.preuveAt?' à '+dPreuveHeure(d.preuveAt):''}${d.preuvePar?' par '+staffName(d.preuvePar):''} <span onclick="dVoirPreuve('${d.preuveId}')" style="cursor:pointer;text-decoration:underline">voir la photo</span></span></div>`:''}
       ${d.factureAt?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('valider')} Facturé le ${new Date(d.factureAt).toLocaleDateString('fr-FR')} par ${staffName(d.factureBy)} <span onclick="annulerFacture(${d.id})" style="cursor:pointer;color:var(--gray-500);text-decoration:underline;margin-left:6px" title="Remettre en attente">annuler</span></span></div>`:''}
@@ -4271,6 +4404,13 @@ function doStatus(id,ns){
   // livraison, ni quand on revient en arriere sur le statut.
   if(ns==='done' && d.ordo && !d.ordoRecupereeLe && typeof odCapturerLivraison==='function'){
     setTimeout(()=>odCapturerLivraison(d.id), 260);
+  }
+
+  // Les numéros de série : c'est chez le patient, l'appareil déballé, qu'on lit
+  // l'étiquette. On attend que l'appareil photo de l'ordonnance soit refermé
+  // pour ne pas empiler deux fenêtres l'une sur l'autre.
+  if(ns==='done' && dSeriesAttendues(d).length){
+    setTimeout(()=>{ if(!document.querySelector('.overlay.open')) dSerieOuvrir(d.id); }, d.ordo?1400:400);
   }
 
   // Animate transition if jumping multiple steps
@@ -5840,6 +5980,12 @@ function toggleLocForm(){
     // Un dossier neuf part sur la provenance habituelle : la choisir cinquante
     // fois de suite, c'est le choix qu'on finit par oublier de faire.
     ensureLocProv(); fillLocProvSelect(locProvDefaut());
+    lcLivSup=[];
+    const lv=document.getElementById('lc-liv'); if(lv) lv.checked=false;
+    const lb=document.getElementById('lc-liv-bloc'); if(lb) lb.style.display='none';
+    ['lc-liv-cheque','lc-liv-ordo'].forEach(function(i){
+      const e=document.getElementById(i); if(e){ e.checked=false; delete e.dataset.touche; }
+    });
     document.getElementById('lc-caut-non').checked=true;
     updateLocSub();
     c.scrollIntoView({behavior:'smooth',block:'start'});
@@ -5847,6 +5993,7 @@ function toggleLocForm(){
 }
 
 function updateLocSub(){
+  setTimeout(function(){ try{ if((document.getElementById('lc-liv')||{}).checked) lcRendLivMat(); }catch(e){} },0);
   const t=document.getElementById('lc-type').value;
   // Montant de caution du type choisi (géré au Back Office).
   const cm=(LOC_TYPES[t]&&LOC_TYPES[t].caution!=null)?LOC_TYPES[t].caution:200;
@@ -5862,6 +6009,111 @@ function updateLocSub(){
     return '<label class="cbl"><input type="checkbox" id="lc-opt-'+o[0]+'"> '+o[1]+'</label>';
   }).join('');
   box.style.display='block';
+}
+
+// Cree la ligne de livraison a partir du dossier. Rend null si rien n'a ete
+// demande - le dossier reste valide, c'est la livraison qui est optionnelle.
+function lcCreerLivraison(dossier){
+  const on=(document.getElementById('lc-liv')||{}).checked;
+  if(!on||!dossier) return null;
+  const mat=lcLivMateriel();
+  if(!mat.length){ alert('Choisissez un type d\'appareil avant de programmer la livraison.'); return null; }
+  const date=(document.getElementById('lc-liv-date')||{}).value||lcAujourdhui();
+  const now=Date.now();
+  deliveries.unshift({
+    id:now,
+    nom:dossier.nom, prenom:dossier.prenom,
+    // L'adresse vit dans l'annuaire patient, pas sur le dossier : c'est la
+    // seule a jour, et une livraison partie a l'ancienne adresse revient.
+    adresse:(locPatient(dossier)||{}).adresse||dossier.adresse||'',
+    commune:(locPatient(dossier)||{}).commune||dossier.commune||'',
+    tel:locTel(dossier)||'',
+    lieu:'Domicile', date:date, montant:0,
+    frigo:false, cold:false, promis:false,
+    // `ordo` est le champ qui existe deja : c'est lui qui ouvre l'appareil
+    // photo a la livraison. On ne cree pas un second drapeau pour la meme chose.
+    ordo:!!(document.getElementById('lc-liv-ordo')||{}).checked,
+    cautionCheque:!!(document.getElementById('lc-liv-cheque')||{}).checked,
+    locationId:dossier.id,
+    mat:mat,
+    notes:'Location — '+ (locTypeLabel(dossier.type)||'matériel'),
+    prepNotes:'',
+    status:'wait', prepBy:null, livrBy:null,
+    createdBy:currentUser?.id||null, createdAt:nowStamp(), updatedAt:now
+  });
+  if(typeof logAction==='function') logAction('Livraison de matériel programmée', dossier.nom+' — '+date);
+  return now;
+}
+
+// ── La livraison du matériel loué ───────────────────────────────────
+// Un contrat de location dit ce qu'on facture. Il ne dit pas ce qu'il faut
+// monter dans le camion : un lit médicalisé, c'est aussi un matelas, des
+// barrières et une potence, et un lit livré sans sa potence est un second
+// aller-retour.
+//
+// La liste est donc DERIVEE du dossier - type d'appareil et accessoires coches
+// - et non ressaisie : ce qui est facture et ce qui part dans le camion ne
+// doivent jamais pouvoir diverger.
+let lcLivSup = [];   // le materiel ajoute a la main, en plus du dossier
+
+window.lcMajLiv = function(){
+  const on=document.getElementById('lc-liv').checked;
+  const b=document.getElementById('lc-liv-bloc'); if(b) b.style.display=on?'':'none';
+  if(!on) return;
+  const d=document.getElementById('lc-liv-date');
+  if(d && !d.value) d.value=document.getElementById('lc-date-debut').value||lcAujourdhui();
+  // La caution et l'ordonnance sont deja des faits du dossier : on les propose
+  // coches plutot que de les faire ressaisir.
+  const c=document.getElementById('lc-liv-cheque');
+  if(c && !c.dataset.touche) c.checked=document.getElementById('lc-caut-oui').checked;
+  lcRemplirPlus(); lcRendLivMat();
+};
+function lcAujourdhui(){
+  const n=new Date();
+  return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+}
+function lcRemplirPlus(){
+  const sel=document.getElementById('lc-liv-plus'); if(!sel) return;
+  ensureLocTypes();
+  sel.innerHTML='<option value="">— ajouter —</option>'
+    +locTypesDB.slice().sort(function(a,b){ return String(a.lbl||'').localeCompare(String(b.lbl||''),'fr'); })
+      .map(function(t){ return '<option value="'+hEsc(t.id)+'">'+hEsc(t.lbl||t.id)+'</option>'; }).join('');
+}
+window.lcLivAjouter = function(){
+  const sel=document.getElementById('lc-liv-plus'); if(!sel||!sel.value) return;
+  const t=LOC_TYPES[sel.value];
+  if(t && !lcLivSup.some(function(x){ return x.k===sel.value; })){
+    lcLivSup.push({k:sel.value, lbl:t.lbl||sel.value});
+  }
+  sel.value=''; lcRendLivMat();
+};
+window.lcLivRetirer = function(i){ lcLivSup.splice(i,1); lcRendLivMat(); };
+
+// La liste telle qu'elle partira : l'appareil du contrat, ses accessoires
+// coches, puis ce qu'on a ajoute. `avecSerie` distingue un APPAREIL, qui porte
+// un numero suivi, d'un ACCESSOIRE, qui n'en a pas.
+function lcLivMateriel(){
+  const t=document.getElementById('lc-type').value;
+  const T=LOC_TYPES[t];
+  const out=[];
+  if(T) out.push({k:t, lbl:T.lbl||t, principal:true, avecSerie:true, charge:false, serie:''});
+  const coches=getLocOpts();
+  ((T&&T.opts)||[]).forEach(function(o){
+    if(coches[o[0]]) out.push({k:t+':'+o[0], lbl:o[1], avecSerie:false, charge:false});
+  });
+  lcLivSup.forEach(function(x){ out.push({k:x.k, lbl:x.lbl, avecSerie:true, charge:false, serie:''}); });
+  return out;
+}
+function lcRendLivMat(){
+  const z=document.getElementById('lc-liv-mat'); if(!z) return;
+  const l=lcLivMateriel();
+  if(!l.length){ z.innerHTML='<span style="color:var(--gray-500)">Choisissez un type d\'appareil.</span>'; return; }
+  z.innerHTML=l.map(function(m,i){
+    const sup=lcLivSup.findIndex(function(x){ return x.k===m.k; });
+    return '<div>• '+hEsc(m.lbl)+(m.principal?' <span style="color:var(--gray-500)">(appareil du contrat)</span>':'')
+      +(sup>=0?' <span onclick="lcLivRetirer('+sup+')" style="cursor:pointer;color:var(--red);text-decoration:underline">retirer</span>':'')
+      +'</div>';
+  }).join('');
 }
 
 function getLocOpts(){
@@ -5915,15 +6167,21 @@ function saveLoc(){
   const scanFile=document.getElementById('lc-scan').files[0];
   const commit=(scanData)=>{
     if(scanFile){ obj.scan=scanFile.name; obj.scanType=scanFile.type; obj.scanData=scanData||null; }
+    let dossier=null;
     if(locEditId){
       const l=locations.find(x=>x.id===locEditId);
-      if(l){ delete obj.status; Object.assign(l,obj); l.updatedAt=Date.now(); }   // ne pas réinitialiser le statut en modifiant
+      if(l){ delete obj.status; Object.assign(l,obj); l.updatedAt=Date.now(); dossier=l; }   // ne pas réinitialiser le statut en modifiant
     } else {
-      locations.unshift({id:Date.now(),...obj,updatedAt:Date.now()});
+      dossier={id:Date.now(),...obj,updatedAt:Date.now()};
+      locations.unshift(dossier);
     }
+    // La livraison se cree APRES le dossier : elle porte son identifiant, et
+    // c'est ce lien qui fera remonter le numero de serie dans le contrat.
+    const nLiv=lcCreerLivraison(dossier);
     toggleLocForm();
     lcResetScan();
     renderLocs();
+    if(nLiv) renderD();
   };
   if(scanFile){
     const rd=new FileReader();
