@@ -5130,6 +5130,37 @@ function upsertPatient(p){
   return neuf;
 }
 
+// ── Intervertir un nom et un prénom mal saisis ────────────────────────
+// « DUPONT Jean » saisi « JEAN Dupont » arrive souvent, surtout pour les
+// médecins dont le nom est lu sur une ordonnance. Le geste tient en un bouton,
+// et il est son propre retour en arrière : cliquer deux fois remet tout en
+// place. C'est pour cela qu'il ne demande pas de confirmation.
+//
+// La convention de la maison est tenue au passage — nom en capitales, prénom
+// capitalisé — sinon la correction en introduirait une autre.
+function capPrenom(s){
+  return String(s==null?'':s).trim().toLowerCase()
+    .replace(/(^|[\s'’-])([a-zà-öø-ÿ])/g, function(_,a,b){ return a+b.toUpperCase(); });
+}
+// Rend null quand l'un des deux manque : intervertir viderait alors un champ,
+// et une fiche sans nom ne se retrouve plus.
+function nomInverse(nom, prenom){
+  const n=String(prenom==null?'':prenom).trim();
+  const p=String(nom==null?'':nom).trim();
+  if(!n||!p) return null;
+  return { nom:n.toUpperCase(), prenom:capPrenom(p) };
+}
+
+// L'identifiant d'un médecin porte son nom. Deux fiches qui finiraient par
+// porter le même identifiant seraient fusionnées en silence par le serveur :
+// on s'assure qu'il est libre.
+function medNouvelId(nom){
+  const base='md:'+(nom||'');
+  let id=base, n=2;
+  while(medecins.some(function(x){ return x&&x.id===id; })) id=base+'#'+(n++);
+  return id;
+}
+
 function upsertMedecin(m){
   const ex=medecins.find(x=>x.nom===m.nom);
   if(ex){
@@ -5139,7 +5170,7 @@ function upsertMedecin(m){
     if(m.tel)ex.tel=m.tel;
     if(m.adresse)ex.adresse=m.adresse;
   } else {
-    medecins.push({id:'md:'+(m.nom||''),nom:m.nom,prenom:m.prenom||'',spec:m.spec||'',cabinet:m.cabinet||'',tel:m.tel||'',adresse:m.adresse||''});
+    medecins.push({id:medNouvelId(m.nom),nom:m.nom,prenom:m.prenom||'',spec:m.spec||'',cabinet:m.cabinet||'',tel:m.tel||'',adresse:m.adresse||''});
   }
 }
 
@@ -5222,12 +5253,31 @@ function renderMedecins(){
       <td>${m.spec||'—'}</td><td>${m.cabinet||'—'}</td>
       <td>${m.tel||'—'}</td><td>${m.adresse||'—'}</td>
       <td style="white-space:nowrap">
+        <button class="btn bs btn-ico" onclick="swapMedecin(${idx})" title="Intervertir le nom et le prénom">⇄</button>
         <button class="btn bs btn-ico" onclick="editMedecin(${idx})" title="Modifier">${ico('modifier')}</button>
         <button class="btn bd btn-ico" onclick="deleteMedecin(${idx})" title="Supprimer">${ico('corbeille')}</button>
       </td>
     </tr>`).join('')||`<tr><td colspan="${MED_COLS.length+1}" style="text-align:center;color:var(--gray-500);padding:1.4rem">Aucun médecin${q?' ne correspond à la recherche':''}.</td></tr>`}</tbody></table>`;
 }
-function deleteMedecin(i){if(confirm('Supprimer ce médecin ?')){medecins.splice(i,1);renderMedecins();}}
+function swapMedecin(i){
+  const m=medecins[i]; if(!m) return;
+  const inv=nomInverse(m.nom,m.prenom);
+  if(!inv){ alert('Cette fiche n’a pas de prénom : il n’y a rien à intervertir.'); return; }
+  const avant=(m.nom||'')+' '+(m.prenom||'');
+  m.nom=inv.nom; m.prenom=inv.prenom; m.updatedAt=Date.now();
+  if(typeof logAction==='function') logAction('Nom et prénom intervertis (médecin)', avant+' → '+m.nom+' '+m.prenom);
+  saveNow(); renderMedecins();
+}
+// Sans markDeleted, la suppression ne se propageait pas : le médecin revenait
+// à la resynchronisation suivante, et personne ne comprenait pourquoi.
+function deleteMedecin(i){
+  const m=medecins[i]; if(!m) return;
+  if(!confirm('Supprimer ce médecin ?')) return;
+  if(typeof markDeleted==='function') markDeleted('medecins', m.id);
+  medecins.splice(i,1);
+  if(typeof logAction==='function') logAction('Médecin supprimé', (m.nom||'')+' '+(m.prenom||''));
+  saveNow(); renderMedecins();
+}
 
 // L'annuaire en tableau a laisse la place au maitre-detail de pt-module.js :
 // deux listes des memes personnes, c'etait une de trop. Cette fonction reste

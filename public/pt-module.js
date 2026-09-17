@@ -393,7 +393,8 @@
       + (fusionDe && fusionDe !== p.id
           ? '<button class="btn bp sm" onclick="ptFusionner()">Fusionner ici</button>'
             + '<button class="btn bs sm" onclick="ptFusionAnnuler()">Annuler</button>'
-          : '<button class="btn bs sm" onclick="ptFusionDepuis()">Fusionner cette fiche…</button>')
+          : '<button class="btn bs sm" onclick="ptIntervertir()" title="Nom et prénom saisis à l’envers">⇄ Intervertir</button>'
+            + '<button class="btn bs sm" onclick="ptFusionDepuis()">Fusionner cette fiche…</button>')
       + '</span></div>'
       + '<div class="pt-coord">' + coord.map(c => '<div><label>' + c[0] + '</label>'
           + (c[1] ? E(c[1]) : '<span style="color:var(--gray-400)">—</span>') + '</div>').join('') + '</div>'
@@ -491,6 +492,40 @@
   };
 
   window.ptFusionDepuis = function () { fusionDe = choisi; window.ptRender(); };
+
+  // « JEAN Dupont » pour « DUPONT Jean ». Le geste est son propre retour en
+  // arrière : deux clics remettent tout en place, d'où l'absence de
+  // confirmation.
+  //
+  // L'ANCIEN NOM PART EN ALIAS, et ce n'est pas un ornement : l'historique est
+  // rapproché PAR LE NOM. Sans l'alias, les livraisons et les locations saisies
+  // sous l'ancienne orthographe quitteraient la fiche à l'instant même de la
+  // correction, et partiraient dans « À rattacher ». C'est le même
+  // raisonnement que pour la fusion.
+  window.ptIntervertir = function () {
+    const p = (typeof patients !== 'undefined' ? patients : []).find(x => x && x.id === choisi);
+    if (!p) return;
+    const inv = (typeof nomInverse === 'function') ? nomInverse(p.nom, p.prenom) : null;
+    if (!inv) { alert('Cette fiche n’a pas de prénom : il n’y a rien à intervertir.'); return; }
+    const ancien = { nom: p.nom, prenom: p.prenom };
+    const clefNeuve = window.ptClef(inv.nom, inv.prenom);
+    p.alias = p.alias || [];
+    if (window.ptClef(ancien.nom, ancien.prenom) !== clefNeuve
+        && !p.alias.some(a => window.ptClef(a.nom, a.prenom) === window.ptClef(ancien.nom, ancien.prenom))) {
+      p.alias.push(ancien);
+    }
+    // Un alias devenu identique au nouveau nom n'apprend plus rien.
+    p.alias = p.alias.filter(a => a && window.ptClef(a.nom, a.prenom) !== clefNeuve);
+    p.nom = inv.nom; p.prenom = inv.prenom;
+    p.updatedAt = Date.now();
+    if (typeof logAction === 'function') {
+      logAction('Nom et prénom intervertis (patient)',
+        ancien.nom + ' ' + ancien.prenom + ' → ' + p.nom + ' ' + p.prenom);
+    }
+    if (typeof tracer === 'function') tracer('modification', 'patient', p.id, 'Nom et prénom intervertis');
+    if (typeof saveNow === 'function') saveNow();
+    window.ptRender();
+  };
   window.ptFusionAnnuler = function () { fusionDe = null; window.ptRender(); };
   window.ptFusionner = function () {
     if (typeof isAdmin === 'function' && !isAdmin()) { alert('Réservé aux administrateurs.'); return; }
