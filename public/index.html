@@ -148,6 +148,19 @@ main{grid-area:main;padding:1.2rem;min-width:0}
 
 /* ── CARDS / FORMS ── */
 .card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:1.2rem;margin-bottom:1rem}
+
+/* Un pave de saisie qui s'ouvre doit se voir. Ouvert au milieu d'une liste
+   de cartes toutes pareilles, il s'y fondait : meme fond, meme ombre, et le
+   regard ne savait pas ou il commencait. L'ombre le souleve au-dessus de la
+   liste ; le lisere vert s'allume une seconde a l'ouverture puis s'eteint. */
+.form-vue{box-shadow:0 12px 32px rgba(29,92,58,.19),0 3px 10px rgba(0,0,0,.08);
+  border:1px solid var(--g-border);position:relative;z-index:1}
+.form-vue.form-neuf{animation:formArrive 1s ease-out}
+@keyframes formArrive{
+  0%  {box-shadow:0 0 0 4px rgba(46,125,84,.34),0 12px 32px rgba(29,92,58,.19)}
+  100%{box-shadow:0 0 0 0 rgba(46,125,84,0),0 12px 32px rgba(29,92,58,.19),0 3px 10px rgba(0,0,0,.08)}
+}
+@media(prefers-reduced-motion:reduce){.form-vue.form-neuf{animation:none}}
 .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid var(--gray-200);flex-wrap:gap}
 .ct{font-weight:600;font-size:.95rem;color:var(--gray-700)}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.9rem}
@@ -4485,6 +4498,36 @@ function askDelete(id){
   openModal('confirm-modal');
 }
 
+// ── Ouvrir un pave de saisie et le POSER SOUS LES YEUX ──────────────────────
+// `scrollIntoView({block:'start'})` aligne le haut du pave sur le haut de la
+// FENETRE — c'est-a-dire derriere l'en-tete collant de 64 px : le titre du
+// formulaire et sa croix de fermeture disparaissaient dessous, et on ouvrait
+// un pave dont on ne voyait ni le nom ni le debut.
+//
+// Et quand le pave tient tout entier dans l'ecran, le coller en haut n'est
+// pas la bonne place non plus : on le pose au milieu de la hauteur restante,
+// ou il se lit d'un seul regard. Trop haut pour l'ecran, on montre au moins
+// son debut, titre compris.
+const FORM_ENTETE = 64 + 12;   // la barre du haut, plus une marge pour respirer
+function formEnVue(el){
+  if(!el) return;
+  el.classList.add('form-vue','form-neuf');
+  setTimeout(function(){ el.classList.remove('form-neuf'); }, 1100);
+  // Mesurer a l'image suivante, pas tout de suite : le pave vient d'etre
+  // affiche et ses champs conditionnels (accessoires, materiel a emporter) ne
+  // sont pas encore poses. Une hauteur mesuree trop tot n'est plus la bonne.
+  requestAnimationFrame(function(){
+    const r = el.getBoundingClientRect();
+    const dispo = window.innerHeight - FORM_ENTETE - 12;
+    const haut  = (window.pageYOffset || document.documentElement.scrollTop || 0) + r.top;
+    const marge = (r.height < dispo) ? Math.round((dispo - r.height) / 2) : 0;
+    const cible = Math.max(0, haut - FORM_ENTETE - marge);
+    try{ window.scrollTo({top:cible, behavior:'smooth'}); }
+    catch(e){ window.scrollTo(0, cible); }
+  });
+}
+window.formEnVue = formEnVue;
+
 function openDForm(id){
   const form=document.getElementById('dform');
   if(id){
@@ -4523,7 +4566,7 @@ function openDForm(id){
     delete form.dataset.editId;
   }
   form.style.display='block';
-  form.scrollIntoView({behavior:'smooth',block:'start'});
+  formEnVue(form);
 }
 function closeDForm(){document.getElementById('dform').style.display='none'}
 function saveD(){
@@ -5988,7 +6031,7 @@ function toggleLocForm(){
     });
     document.getElementById('lc-caut-non').checked=true;
     updateLocSub();
-    c.scrollIntoView({behavior:'smooth',block:'start'});
+    formEnVue(c);
   }
 }
 
@@ -7630,7 +7673,7 @@ function editLoc(id){
   });
   const sc=document.getElementById('lc-scan-name');
   if(sc) sc.textContent=l.scan||'Aucun fichier';
-  document.getElementById('loc-form-card').scrollIntoView({behavior:'smooth',block:'start'});
+  formEnVue(document.getElementById('loc-form-card'));
 }
 
 function genContrat(){
@@ -12572,6 +12615,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="lb-module.js"></script>
 <script src="rx-module.js"></script>
 <script src="md-module.js"></script>
+<script src="kb-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>

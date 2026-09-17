@@ -309,6 +309,48 @@ Pas de version locale — c'est ainsi que cinq variantes divergentes sont nées.
 C'est ce garde-fou qui a trouvé les trois dernières, invisibles à la recherche
 d'un motif d'échappement puisqu'elles n'en avaient aucun.
 
+## Le clavier des listes de suggestion : une couche, pas quinze
+
+`public/kb-module.js` donne les flèches, Entrée, Tab, Échap et F4 à **toutes**
+les listes de suggestion du dépôt, sans qu'aucune ne le sache. Il ne connaît
+aucune fonction de remplissage : il déclenche sur la ligne surlignée le geste
+qu'elle attendait déjà de la souris.
+
+**Ce qu'une nouvelle autocomplétion doit respecter pour en hériter** — c'est le
+contrat, et il est déjà celui des quinze existantes :
+
+1. La boîte porte `class="ac-drop"` (ou `rn-drop`, ou `kb-liste`), ou un
+   identifiant finissant par `sugg`, `-ac` ou `-drop`.
+2. Les lignes choisissables sont les **enfants directs** de la boîte et portent
+   leur `onmousedown` (ou `onclick`). Une ligne sans gestionnaire — « Aucun
+   patient connu à ce nom » — est du texte : le clavier la saute, comme l'œil.
+3. La boîte est à **quatre ancêtres au plus** du champ, et cet ancêtre commun ne
+   contient **qu'un seul champ de saisie**. C'est cette seconde condition qui
+   empêche une flèche bas tapée dans le champ téléphone de piloter la liste des
+   patients restée ouverte deux cases plus haut : dans le doute, le module
+   préfère un clavier inerte à un clavier qui remplit la mauvaise case.
+
+**Aucune ligne n'est présélectionnée**, jamais. Ces champs acceptent aussi un
+nom *inconnu* — c'est ainsi qu'une fiche se crée. Surligner d'office la première
+proposition rattacherait au premier homonyme venu le patient qu'on était en
+train de créer, sur une simple touche Entrée.
+
+`node essais/clavier.js` exécute le vrai module contre un DOM de poche : les
+deux formes d'imbrication du dépôt, le voisin qui ne doit rien piloter, Entrée
+sans surlignage qui laisse valider la saisie, et les touches qu'il ne doit
+**pas** détourner (case à cocher, champ date, Ctrl+flèche).
+
+## Un pavé qui s'ouvre doit se voir
+
+`formEnVue(el)` (index.html) remplace `scrollIntoView({block:'start'})` pour les
+formulaires : celui-ci alignait le haut du pavé sur le haut de la *fenêtre*,
+c'est-à-dire **derrière l'en-tête collant de 64 px** — on ouvrait un pavé dont
+le titre et la croix de fermeture étaient cachés. `formEnVue` mesure à l'image
+suivante (les champs conditionnels ne sont pas encore posés), pose le pavé sous
+l'en-tête et le centre dans la hauteur restante s'il y tient. Il ajoute
+`.form-vue` : une ombre qui le soulève au-dessus de la liste de cartes où il se
+fondait, et un liseré vert qui s'allume une seconde puis s'éteint.
+
 ## Deux questions opposées sur le même ensemble
 
 `imagesReferencees()` et `imagesAttendues()` parcourent le même blob et ne
