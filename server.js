@@ -1563,6 +1563,9 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   // orthographes sous lesquelles les litiges les designent). A ne pas
   // confondre avec `labo` au singulier : le preparatoire sous-traitant.
   'laboratoires',
+  // Reactions aux messages : une par personne et par message, avec son propre
+  // id, pour que deux reactions simultanees survivent toutes les deux.
+  'reactions',
   // Messagerie personnelle : les messages sont une collection a part, pour que
   // deux personnes qui ecrivent en meme temps ne s'effacent pas l'une l'autre.
   'convos', 'messages',

@@ -352,7 +352,9 @@
             ? '<img class="mp-m-img" src="/api/images/' + E(f.id) + '" onclick="window.open(\'/api/images/' + E(f.id) + '\')">'
             : '<a class="mp-m-f" href="/api/images/' + E(f.id) + '" target="_blank" rel="noopener">📎 ' + E(f.nom || 'Fichier') + '</a>')
           : '')
-        + '<div class="mp-m-q">' + mpHeure(m.ts) + '</div></div>';
+        + '<div class="mp-m-q">' + mpHeure(m.ts) + '</div>'
+        + (window.rxBarre ? window.rxBarre('msg', m.id) : '')
+        + '</div>';
     }).join('');
     z.scrollTop = z.scrollHeight;
     mpMarquerLu(c);

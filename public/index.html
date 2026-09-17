@@ -2646,6 +2646,13 @@ let depots = [];
 // Ici : les fournisseurs a qui l'on ecrit en cas de litige, avec leurs
 // contacts et les orthographes sous lesquelles les dossiers les designent.
 let laboratoires = [];
+// Reactions aux messages (cahier de transmission et messagerie). Collection A
+// PART, et non un champ sur le message : la fusion serveur remplace un
+// enregistrement entier par le plus recemment modifie, donc deux personnes qui
+// reagissent au meme message dans la meme fenetre de huit secondes
+// s'ecraseraient. Or c'est le cas NORMAL ici. Meme raisonnement que `messages`
+// separe de `convos`.
+let reactions = [];
 // Messagerie personnelle : conversations adressees (1 a 1 ou groupe) et leurs
 // messages. Les messages forment une collection A PART : dans un fil de
 // discussion, deux personnes ecrivent en meme temps, et une fusion au niveau
@@ -2754,7 +2761,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2777,6 +2784,7 @@ function _collRef(n){ switch(n){
   case 'reunionThemes':return reunionThemes; case 'reunions':return reunions;
   case 'depots':return depots;
   case 'laboratoires':return laboratoires;
+  case 'reactions':return reactions;
   case 'convos':return convos; case 'messages':return messages;
   case 'groupesMsg':return groupesMsg;
   case 'litiges':return litiges; case 'facturesManq':return facturesManq;
@@ -2820,7 +2828,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2916,6 +2924,7 @@ async function loadAll(){
     if(Array.isArray(data.reunions))reunions=data.reunions;
     if(Array.isArray(data.depots))depots=data.depots;
     if(Array.isArray(data.laboratoires))laboratoires=data.laboratoires;
+    if(Array.isArray(data.reactions))reactions=data.reactions;
     if(Array.isArray(data.convos))convos=data.convos;
     if(Array.isArray(data.messages))messages=data.messages;
     if(Array.isArray(data.groupesMsg))groupesMsg=data.groupesMsg;
@@ -2973,6 +2982,9 @@ setInterval(async()=>{
         if(d.reunions){ reunions=d.reunions; if(window.reRender)reRender(); }
         if(d.depots){ depots=d.depots; if(window.odRender)odRender(); }
         if(d.laboratoires){ laboratoires=d.laboratoires; if(window.lbRendBO)lbRendBO(); }
+        // Les barres de reaction se redessinent seules : reconstruire la
+        // conversation la ferait sauter en haut de l'ecran en pleine lecture.
+        if(d.reactions){ reactions=d.reactions; if(window.rxRafraichir)rxRafraichir(); }
         if(d.modulesParPoste)modulesParPoste=d.modulesParPoste;
         if(d.sonnetteRpi)sonnetteRpi=d.sonnetteRpi;
         if(Array.isArray(d.todoPerso))todoPerso=d.todoPerso;
@@ -4568,8 +4580,11 @@ function openThread(id){
   const msgs=document.getElementById('chat-msgs');
   msgs.innerHTML=t.msgs.map(m=>{
     const isMe=m.from===currentUser?.id;
+    // Les messages d'un dossier n'ont pas d'identifiant a eux : la reference
+    // d'une reaction est donc « dossier-horodatage », unique dans le fil.
     return `<div><div class="msg ${isMe?'msg-out':'msg-in'}">${m.text}</div>
-      <div class="msg-m" style="text-align:${isMe?'right':'left'};padding:0 4px">${m.from} · ${m.date} ${m.time}</div></div>`;
+      <div class="msg-m" style="text-align:${isMe?'right':'left'};padding:0 4px">${m.from} · ${m.date} ${m.time}</div>
+      <div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};padding:0 4px">${window.rxBarre?rxBarre('th',t.id+'-'+(m.ts||0)):''}</div></div>`;
   }).join('')||'<div style="text-align:center;color:var(--gray-500);font-size:.83rem;margin-top:1rem">Aucun message</div>';
   msgs.scrollTop=99999;
   renderThreads();
@@ -12209,6 +12224,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="re-module.js"></script>
 <script src="od-module.js"></script>
 <script src="lb-module.js"></script>
+<script src="rx-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>
