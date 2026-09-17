@@ -849,7 +849,8 @@ app.post('/api/dev/issue', async (req, res) => {
 const TEMP_DEPS = {
   sms: (o) => sendSmsViaBrevo(Object.assign({}, o, { to: toMsisdnFR(o.to) || o.to })),
   numero: toMsisdnFR,
-  estAdmin: (req) => estAdministrateur(identite.qui(req))
+  estAdmin: (req) => estAdministrateur(identite.qui(req)),
+  qui: identite.qui
 };
 temperatures.routes(app, () => db, TEMP_DEPS);
 

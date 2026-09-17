@@ -193,6 +193,35 @@ est en veille ne sait rien dire le jour où on le rallume.
 
 ---
 
+## Le relevé quotidien signé
+
+C'est la trace de la surveillance **humaine** — ce qu'un inspecteur demande, et
+ce qui manque au site Testo, qui ne sait dire que ce que les sondes ont mesuré,
+jamais que quelqu'un a regardé.
+
+**À l'ouverture de session du premier pharmacien de la journée**, la courbe
+depuis la **dernière validation** s'affiche, et il faut signer pour continuer.
+Depuis la dernière validation, pas depuis vingt-quatre heures : après un
+week-end, c'est le week-end entier qu'on relit, sans quoi le dimanche ne serait
+jamais relu par personne.
+
+**Un dépassement non commenté n'est pas un relevé.** Signer une période où un
+frigo est monté à 11 °C sans écrire un mot, c'est signer qu'on n'a rien vu. Le
+commentaire est donc exigé — par l'écran *et* par le serveur, parce qu'une
+règle qui ne tient que dans le navigateur ne tient pas.
+
+Qui est pharmacien : le champ `poste` de la fiche collaborateur, qui doit
+commencer par « Pharmacien ». **Si personne n'a ce poste renseigné, la fenêtre
+ne s'ouvre jamais** — et personne ne s'en apercevra.
+
+> **Ce qui ne doit pas arriver : bloquer quelqu'un à 8 h 30 parce que le serveur
+> a hoqueté.** Si les données ne viennent pas, la fenêtre ne s'ouvre pas du
+> tout. Un relevé manqué se rattrape ; un comptoir bloqué, non.
+
+Le second pharmacien du jour n'est pas sollicité : une signature par jour
+suffit. Table `app_temp_releves` — qui, quand, sur quelle période, combien de
+dépassements, et le commentaire.
+
 ## Les routes
 
 | Route | Ce qu'elle fait |
@@ -202,6 +231,8 @@ est en veille ne sait rien dire le jour où on le rallume.
 | `GET /api/temp/reglages` | Réglages d'alerte + épisodes ouverts |
 | `POST /api/temp/reglages` | Armement et plage — **administrateurs seulement** |
 | `POST /api/temp/astreintes` | Remplace la liste des astreintes — **administrateurs seulement** |
+| `GET /api/temp/releve` | Dernier relevé signé + dépassements depuis |
+| `POST /api/temp/releve` | Signe le relevé — refuse un dépassement non commenté |
 | `POST /api/temp/alerte-test` | Force une évaluation — **administrateurs seulement** |
 | `POST /api/temp/diag` | Force un tirage et raconte chaque étape. **C'est la route qu'on regarde le jour où plus rien n'arrive.** Ne renvoie jamais d'identifiant. |
 
@@ -228,7 +259,6 @@ côté** : c'est précisément pour cela qu'on ne l'a pas débranché.
 
 | Reste | Pourquoi ça compte |
 |---|---|
-| **Le relevé quotidien signé** | « J'ai vérifié », daté et signé, et un commentaire obligatoire sur chaque dépassement. C'est la trace de la surveillance *humaine* — ce qu'un inspecteur demande, et ce qui manque au site Testo. |
 | **Le rapport PDF sur une plage** | La pièce à sortir en inspection : courbes, minima, maxima, durée hors seuils. |
 | **La rétention** | 13 mois de brut, puis condensé quotidien (mini, maxi, moyenne, durée hors seuils) sur 5 ans. Rien ne presse — c'est le genre de chose qu'on oublie jusqu'à ce que la table pèse. |
 | **Renseigner les astreintes** | Côté organisation, pas côté code : Écran Températures, en bas. |

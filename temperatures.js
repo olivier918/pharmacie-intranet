@@ -314,6 +314,23 @@ async function creerTable(db) {
   `);
   await db.query('CREATE INDEX IF NOT EXISTS app_temp_episodes_ouverts ON app_temp_episodes (point) WHERE clos_le IS NULL');
 
+  // Le releve quotidien signe. C'est la trace de la surveillance HUMAINE -
+  // celle qu'un inspecteur demande, et celle qui manque au site Testo, qui ne
+  // sait dire que ce que les sondes ont mesure, jamais que quelqu'un a regarde.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_temp_releves (
+      id            BIGSERIAL PRIMARY KEY,
+      le            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      par           TEXT NOT NULL,
+      nom           TEXT NOT NULL DEFAULT '',
+      debut         TIMESTAMPTZ,
+      fin           TIMESTAMPTZ NOT NULL,
+      depassements  INTEGER NOT NULL DEFAULT 0,
+      commentaire   TEXT NOT NULL DEFAULT ''
+    )
+  `);
+  await db.query('CREATE INDEX IF NOT EXISTS app_temp_releves_le ON app_temp_releves (le DESC)');
+
   // La trace des tirages : c'est elle qui distingue « le frigo va bien » de
   // « on ne sait plus rien du frigo ».
   await db.query(`
@@ -557,6 +574,49 @@ function routes(app, getDb, deps) {
         await db.query('INSERT INTO app_temp_astreintes (nom, tel, actif) VALUES ($1,$2,$3)', [l.nom, l.tel, l.actif]);
       }
       res.json({ ok: true, reglages: await lireReglages(db) });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ── Le releve quotidien signe ─────────────────────────────────────
+  // Ce que l'ecran a besoin de savoir : la derniere signature, et ce qui s'est
+  // passe depuis. La periode part de la DERNIERE VALIDATION, pas d'il y a
+  // vingt-quatre heures : apres un week-end, c'est le week-end entier qu'il
+  // faut regarder, sans quoi le dimanche ne serait jamais relu par personne.
+  app.get('/api/temp/releve', async (req, res) => {
+    try {
+      const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+      const d = await db.query('SELECT le, par, nom, commentaire, depassements FROM app_temp_releves ORDER BY le DESC LIMIT 1');
+      const dernier = d.rows[0] || null;
+      const reg = await lireReglages(db);
+      const depuis = dernier ? new Date(dernier.le) : new Date(Date.now() - 24 * 3600 * 1000);
+      const dep = await db.query(
+        'SELECT point, ts, valeur FROM app_temperatures WHERE ts > $1 AND (valeur < $2 OR valeur > $3) ORDER BY ts',
+        [depuis.toISOString(), reg.vmin, reg.vmax]);
+      res.json({ ok: true, dernier: dernier, depuis: depuis.toISOString(),
+                 plage: { min: reg.vmin, max: reg.vmax },
+                 depassements: dep.rows });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/temp/releve', async (req, res) => {
+    try {
+      const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+      const uid = (deps && typeof deps.qui === 'function') ? deps.qui(req) : null;
+      if (!uid) return res.status(401).json({ ok: false, error: 'session inconnue' });
+      const b = req.body || {};
+      const commentaire = String(b.commentaire || '').trim().slice(0, 1000);
+      const depassements = Math.max(0, parseInt(b.depassements, 10) || 0);
+      // UN DEPASSEMENT NON COMMENTE N'EST PAS UN RELEVE. Signer une periode ou
+      // un frigo est monte a 11 C sans ecrire un mot, c'est signer qu'on n'a
+      // rien vu - et c'est exactement ce qu'on cherche a rendre impossible.
+      if (depassements > 0 && commentaire.length < 3) {
+        return res.status(400).json({ ok: false,
+          error: 'Un depassement doit etre commente : ce qui s\'est passe, et ce qui a ete fait.' });
+      }
+      await db.query(
+        'INSERT INTO app_temp_releves (par, nom, debut, fin, depassements, commentaire) VALUES ($1,$2,$3,$4,$5,$6)',
+        [uid, String(b.nom || '').slice(0, 60), b.debut || null, new Date(), depassements, commentaire]);
+      res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 

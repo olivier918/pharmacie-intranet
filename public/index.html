@@ -3455,6 +3455,11 @@ async function checkPin(){
     // pas sur les livraisons. Si le module n'a pas pu s'installer, la section
     // active posee dans le HTML prend le relais — personne ne reste devant du vide.
     if(typeof acOuvrir==='function') acOuvrir();
+    // Le releve quotidien des temperatures : il s'ouvre pour le premier
+    // pharmacien de la journee, et il faut le signer pour continuer. Le module
+    // decide lui-meme s'il y a lieu - et s'abstient si les donnees ne viennent
+    // pas : un releve manque se rattrape, un comptoir bloque a 8 h 30, non.
+    if(typeof tpReleveDemander==='function') setTimeout(function(){ tpReleveDemander(s); }, 1400);
     // Les confettis attendent que l'ecran soit pose : lances dans la meme
     // pile que le rendu, on les verrait sauter.
     if(estMonAnniversaire(s) && !anniversaireDejaFete(s.id)){

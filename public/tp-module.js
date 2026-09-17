@@ -90,6 +90,23 @@
   .tp-al-ok{color:#1D5C3A}
   .tp-al-ep{border:1px solid #ddd9cc;border-radius:9px;padding:8px 12px;margin-top:8px;font-size:13.5px;background:#fff6f5}
   .tp-al-muet{font-size:13px;color:#b3261e;font-weight:600;margin-top:8px}
+  .tp-rv{position:fixed;inset:0;background:rgba(20,22,20,.62);z-index:99990;display:none;
+         align-items:center;justify-content:center;padding:16px}
+  .tp-rv.on{display:flex}
+  .tp-rv-b{background:#fff;border-radius:16px;max-width:860px;width:100%;max-height:92vh;overflow:auto;
+           box-shadow:0 18px 60px rgba(0,0,0,.3)}
+  .tp-rv-h{padding:16px 20px 10px}
+  .tp-rv-h b{font-size:17px}
+  .tp-rv-h p{margin:6px 0 0;font-size:13.5px;color:#5b5a53;line-height:1.55}
+  .tp-rv-c{padding:0 20px}
+  .tp-rv-d{margin:12px 20px;border:1px solid #f0c8c4;background:#fff6f5;border-radius:11px;padding:10px 14px;font-size:13.5px;line-height:1.6}
+  .tp-rv-d b{color:#b3261e}
+  .tp-rv-f{padding:12px 20px 18px;border-top:1px solid #eeebe1;margin-top:12px}
+  .tp-rv-f textarea{width:100%;border:1px solid #ddd9cc;border-radius:9px;padding:9px 11px;font:inherit;font-size:14px;resize:vertical}
+  .tp-rv-f label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#888780;margin-bottom:4px}
+  .tp-rv-act{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  .tp-rv-sig{font-size:13px;color:#5b5a53;flex:1}
+  .tp-rv-ko{color:#b3261e;font-size:13px;margin-top:8px}
   @media(max-width:700px){.tp-wrap{padding:14px}.tp-legende{gap:12px}}
   `;
 
@@ -308,6 +325,198 @@
 
   // ── Pilotage ──────────────────────────────────────────────────────────────
   let tpEnCours = false;
+  // ── Le relevé quotidien signé ───────────────────────────────────
+  // Le matin, à l'ouverture de session du premier pharmacien : la courbe depuis
+  // la DERNIERE VALIDATION s'affiche, et il faut signer pour continuer. Après
+  // un week-end, c'est le week-end entier qu'on relit — sans quoi le dimanche
+  // ne serait jamais relu par personne.
+  //
+  // CE QUI NE DOIT PAS ARRIVER : bloquer quelqu'un à 8 h 30 parce que le
+  // serveur a hoqueté. Si les données ne viennent pas, la fenêtre ne s'ouvre
+  // pas du tout. Un relevé manqué se rattrape ; un comptoir bloqué, non.
+  let tpRel = null;
+
+  function tpEstPharmacien(u) {
+    if (!u) return false;
+    const p = String(u.poste || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return p.indexOf('pharmacien') === 0;
+  }
+  function tpMemeJour(a, b) {
+    const f = d => new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(d);
+    return f(a) === f(b);
+  }
+
+  window.tpReleveDemander = async function (u) {
+    try {
+      if (!tpEstPharmacien(u)) return;
+      const r = await fetch('/api/temp/releve', { cache: 'no-store' });
+      const j = await r.json();
+      if (!j || !j.ok) return;
+      // Déjà signé aujourd'hui : on ne redemande pas au deuxième pharmacien.
+      if (j.dernier && tpMemeJour(new Date(j.dernier.le), new Date())) return;
+      tpRel = j;
+      await tpReleveOuvrir(u);
+    } catch (e) { /* le comptoir passe avant le relevé */ }
+  };
+
+  async function tpReleveOuvrir(u) {
+    let ov = document.getElementById('tp-releve');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'tp-releve'; ov.className = 'tp-rv';
+      document.body.appendChild(ov);
+    }
+    const depuis = new Date(tpRel.depuis);
+    const dep = tpRel.depassements || [];
+    const parPoint = {};
+    dep.forEach(function (d) { (parPoint[d.point] = parPoint[d.point] || []).push(d); });
+
+    // La courbe de la période, dessinée avec le même moteur que l'écran.
+    let mesures = [];
+    try {
+      const rm = await fetch('/api/temp/mesures?debut=' + encodeURIComponent(tpRel.depuis)
+        + '&fin=' + encodeURIComponent(new Date().toISOString()), { cache: 'no-store' });
+      const jm = await rm.json();
+      mesures = (jm && jm.mesures) || [];
+    } catch (e) { mesures = []; }
+    if (!mesures.length) return;   // rien à relire : on ne bloque personne
+
+    ov.innerHTML = '<div class="tp-rv-b">'
+      + '<div class="tp-rv-h"><b>Relévé des températures à valider</b>'
+      + '<p>Période du <b>' + tpDateCourte(depuis) + ' à ' + tpHeure(depuis) + '</b> à maintenant'
+      + (tpRel.dernier ? ' · dernier relévé signé par ' + tpEch(tpRel.dernier.nom || tpRel.dernier.par) : ' · premier relévé')
+      + '.<br>Regardez les courbes, puis signez. Cette fenêtre ne se ferme qu’une fois le relévé validé.</p></div>'
+      + '<div class="tp-rv-c"><div id="tp-rv-graphe"></div></div>'
+      + (dep.length
+          ? '<div class="tp-rv-d"><b>' + dep.length + ' relévé' + (dep.length > 1 ? 's' : '')
+            + ' hors plage (' + tpRel.plage.min + '–' + tpRel.plage.max + ' °C)</b><br>'
+            + Object.keys(parPoint).map(function (p) {
+                const l = parPoint[p];
+                const mini = Math.min.apply(null, l.map(function (x) { return Number(x.valeur); }));
+                const maxi = Math.max.apply(null, l.map(function (x) { return Number(x.valeur); }));
+                const d1 = new Date(l[0].ts);
+                return '<b>' + tpEch(p) + '</b> · ' + l.length + ' relévé' + (l.length > 1 ? 's' : '')
+                  + ', de ' + tpDeg(mini) + ' à ' + tpDeg(maxi) + ' °C, à partir du '
+                  + tpDateCourte(d1) + ' à ' + tpHeure(d1);
+              }).join('<br>')
+            + '</div>'
+          : '')
+      + '<div class="tp-rv-f">'
+      + '<label>' + (dep.length ? 'Commentaire — obligatoire : ce qui s’est passé, et ce qui a été fait' : 'Commentaire (facultatif)') + '</label>'
+      + '<textarea id="tp-rv-com" rows="3" placeholder="'
+      + (dep.length ? 'Porte du frigo 2 restée entrouverte, refermée à 9 h 10, produits contrôlés…' : 'Rien à signaler.')
+      + '"></textarea>'
+      + '<div class="tp-rv-act">'
+      + '<span class="tp-rv-sig">Signé par <b>' + tpEch(((u.prenom || '') + ' ' + (u.nom || '')).trim()) + '</b></span>'
+      + '<button class="tp-onglet" onclick="tpReleveValider()">J’ai vérifié — valider le relévé</button>'
+      + '</div><div class="tp-rv-ko" id="tp-rv-ko"></div></div></div>';
+    ov.classList.add('on');
+    tpRelUser = u; tpRelDep = dep.length;
+
+    // Le graphe de la période, avec la même réduction min/max que l'écran : une
+    // moyenne effacerait le dépassement de vingt minutes, c'est-à-dire
+    // exactement ce que le pharmacien doit voir.
+    try { tpDessinerDans('tp-rv-graphe', mesures); } catch (e) {}
+  }
+  let tpRelUser = null, tpRelDep = 0;
+
+  // Un graphe SIMPLE et sans interaction, pour la fenêtre de validation. On ne
+  // réutilise pas celui de l'écran : ses poignées de survol sont accrochées à
+  // des identifiants uniques, et deux graphes portant les mêmes identifiants se
+  // voleraient le curseur. Ici on veut lire, pas explorer.
+  //
+  // Même réduction min/max que l'écran : une moyenne effacerait le dépassement
+  // de vingt minutes, c'est-à-dire exactement ce que le pharmacien doit voir.
+  function tpDessinerDans(idHote, mesures) {
+    const hote = document.getElementById(idHote); if (!hote) return;
+    const par = new Map();
+    for (const m of mesures) {
+      if (!par.has(m.point)) par.set(m.point, []);
+      par.get(m.point).push({ t: new Date(m.ts).getTime(), v: Number(m.valeur) });
+    }
+    const noms = Array.from(par.keys()).sort();
+    if (!noms.length) { hote.innerHTML = ''; return; }
+    const series = noms.map(function (n, i) {
+      return { nom: n, couleur: TP_COULEURS[i % TP_COULEURS.length],
+               pts: tpReduire(par.get(n).sort(function (a, b) { return a.t - b.t; }), 900) };
+    });
+    let T0 = Infinity, T1 = -Infinity, vmin = TP_MIN, vmax = TP_MAX;
+    series.forEach(function (s) {
+      s.pts.forEach(function (p) {
+        if (p.t < T0) T0 = p.t; if (p.t > T1) T1 = p.t;
+        if (p.v < vmin) vmin = p.v; if (p.v > vmax) vmax = p.v;
+      });
+    });
+    if (!(T1 > T0)) T1 = T0 + 1;
+    vmin = Math.floor(vmin - 1); vmax = Math.ceil(vmax + 1);
+
+    const L = 1000, H = 260, mg = { g: 40, d: 70, h: 12, b: 26 };
+    const x0 = mg.g, x1 = L - mg.d, y0 = mg.h, y1 = H - mg.b;
+    const X = function (t) { return x0 + (t - T0) / (T1 - T0) * (x1 - x0); };
+    const Y = function (v) { return y1 - (v - vmin) / (vmax - vmin) * (y1 - y0); };
+
+    let svg = '<svg viewBox="0 0 ' + L + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:230px;display:block">';
+    // La bande de conformité : on lit d'un coup d'oeil « dedans / dehors ».
+    svg += '<rect x="' + x0 + '" y="' + Y(TP_MAX) + '" width="' + (x1 - x0)
+        + '" height="' + (Y(TP_MIN) - Y(TP_MAX)) + '" fill="#E8F5E9"/>';
+    [TP_MIN, TP_MAX].forEach(function (v) {
+      svg += '<line x1="' + x0 + '" y1="' + Y(v) + '" x2="' + x1 + '" y2="' + Y(v)
+          + '" stroke="#A5D6A7" stroke-width="1"/>'
+          + '<text x="' + (x0 - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end" font-size="11" fill="#888780">' + v + '°</text>';
+    });
+    series.forEach(function (s) {
+      const d = s.pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p.t).toFixed(1) + ' ' + Y(p.v).toFixed(1); }).join(' ');
+      svg += '<path d="' + d + '" fill="none" stroke="' + s.couleur + '" stroke-width="1.6" stroke-linejoin="round"/>';
+    });
+    // Les etiquettes au bout des courbes, ecartees quand elles se chevauchent.
+    // Deux armoires a la meme temperature ecrivaient leurs deux noms l'un sur
+    // l'autre : illisibles tous les deux, ce qui est pire qu'un seul.
+    const et = series.map(function (s) {
+      const der = s.pts[s.pts.length - 1];
+      return der ? { y: Y(der.v), nom: s.nom, couleur: s.couleur } : null;
+    }).filter(Boolean).sort(function (a, b) { return a.y - b.y; });
+    for (let i = 1; i < et.length; i++) {
+      if (et[i].y - et[i - 1].y < 13) et[i].y = et[i - 1].y + 13;
+    }
+    et.forEach(function (e) {
+      svg += '<text x="' + (x1 + 6) + '" y="' + (e.y + 4).toFixed(1) + '" font-size="11" fill="'
+        + e.couleur + '">' + tpEch(e.nom) + '</text>';
+    });
+    const d0 = new Date(T0), d1 = new Date(T1);
+    svg += '<text x="' + x0 + '" y="' + (H - 8) + '" font-size="11" fill="#888780">'
+        + tpDateCourte(d0) + ' ' + tpHeure(d0) + '</text>'
+        + '<text x="' + x1 + '" y="' + (H - 8) + '" text-anchor="end" font-size="11" fill="#888780">'
+        + tpDateCourte(d1) + ' ' + tpHeure(d1) + '</text></svg>';
+    hote.innerHTML = svg;
+  }
+
+  window.tpReleveValider = async function () {
+    const c = document.getElementById('tp-rv-com');
+    const ko = document.getElementById('tp-rv-ko');
+    const com = c ? c.value.trim() : '';
+    if (tpRelDep > 0 && com.length < 3) {
+      if (ko) ko.textContent = 'Un dépassement doit être commenté : signer sans rien écrire, '
+        + 'c’est signer qu’on n’a rien vu.';
+      if (c) c.focus();
+      return;
+    }
+    try {
+      const r = await fetch('/api/temp/releve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commentaire: com, depassements: tpRelDep,
+          debut: tpRel && tpRel.depuis,
+          nom: ((tpRelUser && tpRelUser.prenom) || '') + ' ' + ((tpRelUser && tpRelUser.nom) || '')
+        })
+      });
+      const j = await r.json();
+      if (!j.ok) { if (ko) ko.textContent = j.error || 'Validation refusée.'; return; }
+      const ov = document.getElementById('tp-releve');
+      if (ov) { ov.classList.remove('on'); ov.innerHTML = ''; }
+      if (typeof logAction === 'function') logAction('Relévé des températures validé', com.slice(0, 120));
+    } catch (e) { if (ko) ko.textContent = 'Validation impossible : ' + e.message; }
+  };
+
   // ── Les alertes ───────────────────────────────────────────────
   // L'ecran dit toujours si le dispositif est arme ou non. Un ecran de
   // surveillance qui ne dit pas qu'il ne surveille rien est pire que pas
