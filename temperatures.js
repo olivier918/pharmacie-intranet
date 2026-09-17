@@ -270,6 +270,33 @@ async function creerTable(db) {
   `);
   await db.query('INSERT INTO app_temp_reglages (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
 
+  // Les astreintes. UNE TABLE, pas deux colonnes : l'equipe compte dix-huit
+  // personnes et les tours changent. Deux numeros en dur, c'etait decider a la
+  // place d'Olivier combien de gens peuvent etre prevenus.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_temp_astreintes (
+      id     BIGSERIAL PRIMARY KEY,
+      nom    TEXT NOT NULL DEFAULT '',
+      tel    TEXT NOT NULL,
+      actif  BOOLEAN NOT NULL DEFAULT true,
+      maj    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  // La reprise des deux anciens numeros, UNE SEULE FOIS. Sans ce drapeau, un
+  // redemarrage ressusciterait une astreinte qu'on vient de retirer - et
+  // quelqu'un recevrait des SMS de frigo a 3 h du matin sans comprendre.
+  await db.query('ALTER TABLE app_temp_reglages ADD COLUMN IF NOT EXISTS repris BOOLEAN NOT NULL DEFAULT false');
+  const av = await db.query('SELECT tel1, tel2, repris FROM app_temp_reglages WHERE id = 1');
+  const g = av.rows[0];
+  if (g && !g.repris) {
+    for (const [n, t] of [['Astreinte 1', g.tel1], ['Astreinte 2', g.tel2]]) {
+      if (t && String(t).trim()) {
+        await db.query('INSERT INTO app_temp_astreintes (nom, tel) VALUES ($1, $2)', [n, String(t).trim()]);
+      }
+    }
+    await db.query('UPDATE app_temp_reglages SET repris = true WHERE id = 1');
+  }
+
   // Les episodes d'alerte. EN BASE, pas en memoire : un redemarrage - et il y
   // en a a chaque deploiement - ne doit ni renvoyer une alerte deja envoyee,
   // ni oublier qu'un frigo est en defaut depuis deux heures.
@@ -340,11 +367,13 @@ async function tirage(db) {
 const POINT_ROBOT = '(robot)';
 
 async function lireReglages(db) {
-  const r = await db.query('SELECT actif, tel1, tel2, vmin, vmax FROM app_temp_reglages WHERE id = 1');
+  const r = await db.query('SELECT actif, vmin, vmax FROM app_temp_reglages WHERE id = 1');
   const g = r.rows[0] || {};
-  return { actif: !!g.actif, tel1: g.tel1 || '', tel2: g.tel2 || '',
+  const a = await db.query('SELECT id, nom, tel, actif FROM app_temp_astreintes ORDER BY id');
+  return { actif: !!g.actif,
            vmin: g.vmin == null ? AL.PLAGE_DEFAUT.min : Number(g.vmin),
-           vmax: g.vmax == null ? AL.PLAGE_DEFAUT.max : Number(g.vmax) };
+           vmax: g.vmax == null ? AL.PLAGE_DEFAUT.max : Number(g.vmax),
+           astreintes: a.rows.map(x => ({ id: x.id, nom: x.nom || '', tel: x.tel, actif: !!x.actif })) };
 }
 
 async function episodeOuvert(db, point) {
@@ -368,7 +397,7 @@ async function envoyer(deps, tels, txt) {
 async function evaluerAlertes(db, deps) {
   if (!db) return { actif: false, decisions: [] };
   const reg = await lireReglages(db);
-  const tels = AL.destinataires(reg, deps && deps.numero);
+  const tels = AL.destinataires(reg.astreintes, deps && deps.numero);
   const maintenant = new Date();
   const requis = AL.relevesRequis(maintenant);
   const plage = { min: reg.vmin, max: reg.vmax };
@@ -475,32 +504,58 @@ function routes(app, getDb, deps) {
       }
       const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
       const b = req.body || {};
-      // Un numero refuse est rendu tel quel a l'ecran plutot qu'avale en
-      // silence : croire qu'on a pose une astreinte et n'avoir rien pose est
-      // exactement le defaut qu'on cherche a eviter ici.
-      const num = (v) => {
-        const t = String(v == null ? '' : v).trim();
-        if (!t) return { ok: true, val: '' };
-        const n = (deps && typeof deps.numero === 'function') ? deps.numero(t) : t;
-        return n ? { ok: true, val: t } : { ok: false, val: t };
-      };
-      const n1 = num(b.tel1), n2 = num(b.tel2);
-      if (!n1.ok || !n2.ok) {
-        return res.status(400).json({ ok: false,
-          error: 'Numero de mobile non reconnu : ' + (!n1.ok ? n1.val : n2.val) });
-      }
       const vmin = Number(b.vmin), vmax = Number(b.vmax);
       if (!isFinite(vmin) || !isFinite(vmax) || vmin >= vmax) {
         return res.status(400).json({ ok: false, error: 'Plage invalide : le minimum doit etre sous le maximum.' });
       }
       const actif = !!b.actif;
-      if (actif && !n1.val && !n2.val) {
-        return res.status(400).json({ ok: false,
-          error: 'Armer les alertes sans aucun numero reviendrait a ne prevenir personne.' });
+      if (actif) {
+        const a = await db.query('SELECT tel FROM app_temp_astreintes WHERE actif = true');
+        const joignables = AL.destinataires(
+          a.rows.map(x => ({ tel: x.tel, actif: true })), deps && deps.numero);
+        if (!joignables.length) {
+          return res.status(400).json({ ok: false,
+            error: 'Armer les alertes sans aucune astreinte joignable reviendrait a ne prevenir personne.' });
+        }
       }
-      await db.query(
-        'UPDATE app_temp_reglages SET actif=$1, tel1=$2, tel2=$3, vmin=$4, vmax=$5, maj=NOW() WHERE id=1',
-        [actif, n1.val, n2.val, vmin, vmax]);
+      await db.query('UPDATE app_temp_reglages SET actif=$1, vmin=$2, vmax=$3, maj=NOW() WHERE id=1',
+        [actif, vmin, vmax]);
+      res.json({ ok: true, reglages: await lireReglages(db) });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // La liste des astreintes. On remplace L'ENSEMBLE plutot que de modifier
+  // ligne par ligne : l'ecran envoie ce qu'il montre, et il n'existe aucun etat
+  // intermediaire ou la base contiendrait une liste que personne n'a voulue.
+  app.post('/api/temp/astreintes', async (req, res) => {
+    try {
+      if (deps && typeof deps.estAdmin === 'function' && !(await deps.estAdmin(req))) {
+        return res.status(403).json({ ok: false, error: 'reserve aux administrateurs' });
+      }
+      const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+      const brut = Array.isArray((req.body || {}).astreintes) ? req.body.astreintes : [];
+      if (brut.length > 20) return res.status(400).json({ ok: false, error: 'Vingt astreintes suffisent.' });
+
+      // Un numero refuse est RENDU A L'ECRAN, jamais avale en silence : croire
+      // qu'on a pose une astreinte et n'avoir rien pose est exactement le
+      // defaut que ce dispositif existe pour eviter.
+      const lignes = [];
+      for (const a of brut) {
+        const tel = String((a && a.tel) || '').trim();
+        if (!tel) continue;
+        const n = (deps && typeof deps.numero === 'function') ? deps.numero(tel) : tel;
+        if (!n) return res.status(400).json({ ok: false, error: 'Numero de mobile non reconnu : ' + tel });
+        lignes.push({ nom: String((a && a.nom) || '').trim().slice(0, 40), tel: tel, actif: a.actif !== false });
+      }
+      // Armer sans personne de joignable n'a pas de sens : on eteint plutot que
+      // de laisser croire que quelqu'un sera prevenu.
+      const reste = AL.destinataires(lignes, deps && deps.numero);
+      if (!reste.length) await db.query('UPDATE app_temp_reglages SET actif = false WHERE id = 1');
+
+      await db.query('DELETE FROM app_temp_astreintes');
+      for (const l of lignes) {
+        await db.query('INSERT INTO app_temp_astreintes (nom, tel, actif) VALUES ($1,$2,$3)', [l.nom, l.tel, l.actif]);
+      }
       res.json({ ok: true, reglages: await lireReglages(db) });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });

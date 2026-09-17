@@ -158,13 +158,17 @@ function fmt(v) {
   return (typeof v === 'number') ? String(Math.round(v * 10) / 10).replace(',', '.') : '?';
 }
 
-// Les destinataires réellement joignables. Une astreinte à une seule personne
-// est un point unique de défaillance — mais un numéro manquant ne doit pas
-// empêcher l'autre d'être prévenu.
-function destinataires(reglages, valider) {
+// Les destinataires réellement joignables, à partir de la liste d'astreintes.
+// Une astreinte à une seule personne est un point unique de défaillance — mais
+// un numéro invalide ne doit pas empêcher les autres d'être prévenus. Les
+// lignes décochées sont ignorées : on met quelqu'un en pause sans effacer son
+// numéro, et on le remet d'une case à cocher.
+function destinataires(astreintes, valider) {
   const ok = typeof valider === 'function' ? valider : (x => x || null);
-  return [reglages && reglages.tel1, reglages && reglages.tel2]
-    .map(ok).filter(Boolean)
+  return (Array.isArray(astreintes) ? astreintes : [])
+    .filter(a => a && a.actif !== false)
+    .map(a => ok(a.tel))
+    .filter(Boolean)
     .filter((n, i, l) => l.indexOf(n) === i);
 }
 

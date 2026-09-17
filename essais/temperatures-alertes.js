@@ -130,17 +130,21 @@ t('le retour à la normale est explicite', /retour dans la plage/.test(txtFin));
 t('aucun texte ne porte de donnée de santé — un nom d’armoire et des degrés',
   [txtHaut, txtBas, txtPanne, txtFin].every(x => x.length <= 160));
 
-console.log('\nLes destinataires');
+console.log('\nLes astreintes');
 const num = n => /^0[67]\d{8}$/.test(String(n).replace(/\s/g, '')) ? String(n).replace(/\s/g, '') : null;
-t('les deux numéros sont retenus',
-  AL.destinataires({ tel1: '0612345678', tel2: '0698765432' }, num).length === 2);
-t('un numéro manquant n’empêche pas l’autre d’être prévenu',
-  AL.destinataires({ tel1: '0612345678', tel2: '' }, num).length === 1);
+const A = (tel, actif, nom) => ({ nom: nom || '', tel: tel, actif: actif !== false });
+t('toute la liste est prévenue, pas seulement deux',
+  AL.destinataires([A('0612345678'), A('0698765432'), A('0611111111'), A('0622222222')], num).length === 4);
+t('une ligne décochée est mise en pause, sans perdre son numéro',
+  AL.destinataires([A('0612345678'), A('0698765432', false)], num).length === 1);
+t('un numéro invalide n’empêche pas les autres d’être prévenus',
+  AL.destinataires([A('n’importe quoi'), A('0612345678')], num).length === 1);
 t('un fixe est écarté — un SMS sur un fixe ne prévient personne',
-  AL.destinataires({ tel1: '0231841200', tel2: '0612345678' }, num).length === 1);
+  AL.destinataires([A('0231841200'), A('0612345678')], num).length === 1);
 t('le même numéro deux fois ne fait pas deux SMS',
-  AL.destinataires({ tel1: '0612345678', tel2: '0612345678' }, num).length === 1);
-t('aucun numéro : personne, et on le saura', AL.destinataires({}, num).length === 0);
+  AL.destinataires([A('0612345678', true, 'Olivier'), A('0612345678', true, 'Portable 2')], num).length === 1);
+t('une liste vide : personne, et on le saura', AL.destinataires([], num).length === 0);
+t('une liste absente ne casse rien', AL.destinataires(null, num).length === 0);
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

@@ -160,18 +160,30 @@ alerte à 3 h du matin n'a pas besoin de cédilles.
 
 **Aucune donnée de santé n'y figure** : un nom d'armoire et un nombre de degrés.
 
-### Les destinataires
+### Les astreintes
 
-Deux numéros, réglés dans l'écran Températures (réservé aux administrateurs).
-Un numéro manquant n'empêche pas l'autre d'être prévenu ; un fixe est écarté —
-un SMS sur un fixe ne prévient personne ; le même numéro deux fois ne fait pas
-deux SMS.
+Une **liste**, pas deux cases : l'équipe compte dix-huit personnes et les tours
+changent. Chaque ligne porte un nom, un mobile et une case « prévenu ».
+Réglée dans l'écran Températures, réservé aux administrateurs. Table
+`app_temp_astreintes` ; les deux anciens numéros ont été repris une fois, sous
+le drapeau `repris` — sans lui, un redémarrage ressusciterait une astreinte
+qu'on vient de retirer.
 
-**Armer sans aucun numéro est refusé** : ce serait croire qu'on surveille.
+- **Décocher** une ligne met la personne en pause sans effacer son numéro.
+- Un **fixe** est écarté : un SMS sur un fixe ne prévient personne.
+- Un numéro **invalide** est refusé à l'enregistrement et rendu à l'écran,
+  jamais avalé en silence — croire qu'on a posé une astreinte et n'avoir rien
+  posé est exactement le défaut que ce dispositif existe pour éviter.
+- Le **même numéro deux fois** ne fait pas deux SMS.
+- La liste est **remplacée en entier** à l'enregistrement : il n'existe aucun
+  état intermédiaire où la base contiendrait une liste que personne n'a voulue.
 
-> Une astreinte à une seule personne reste un point unique de défaillance : la
-> nuit, si ce téléphone est en silencieux, l'alerte n'existe pas. Le second
-> numéro est le seul point encore ouvert côté organisation.
+**Armer sans aucune astreinte joignable est refusé** : ce serait croire qu'on
+surveille. Et retirer la dernière astreinte désarme, plutôt que de laisser
+l'écran afficher « armé » sur un dispositif qui ne préviendrait personne.
+
+> Une seule astreinte reste un point unique de défaillance : la nuit, si ce
+> téléphone est en silencieux, l'alerte n'existe pas.
 
 ### Éteint ≠ aveugle
 
@@ -188,7 +200,8 @@ est en veille ne sait rien dire le jour où on le rallume.
 | `GET /api/temp/etat` | Dernières valeurs par point + résultat du dernier tirage |
 | `GET /api/temp/mesures?debut=&fin=` | Les mesures d'une plage |
 | `GET /api/temp/reglages` | Réglages d'alerte + épisodes ouverts |
-| `POST /api/temp/reglages` | Modifie les réglages — **administrateurs seulement** |
+| `POST /api/temp/reglages` | Armement et plage — **administrateurs seulement** |
+| `POST /api/temp/astreintes` | Remplace la liste des astreintes — **administrateurs seulement** |
 | `POST /api/temp/alerte-test` | Force une évaluation — **administrateurs seulement** |
 | `POST /api/temp/diag` | Force un tirage et raconte chaque étape. **C'est la route qu'on regarde le jour où plus rien n'arrive.** Ne renvoie jamais d'identifiant. |
 
@@ -218,7 +231,7 @@ côté** : c'est précisément pour cela qu'on ne l'a pas débranché.
 | **Le relevé quotidien signé** | « J'ai vérifié », daté et signé, et un commentaire obligatoire sur chaque dépassement. C'est la trace de la surveillance *humaine* — ce qu'un inspecteur demande, et ce qui manque au site Testo. |
 | **Le rapport PDF sur une plage** | La pièce à sortir en inspection : courbes, minima, maxima, durée hors seuils. |
 | **La rétention** | 13 mois de brut, puis condensé quotidien (mini, maxi, moyenne, durée hors seuils) sur 5 ans. Rien ne presse — c'est le genre de chose qu'on oublie jusqu'à ce que la table pèse. |
-| **Le second numéro d'astreinte** | Côté organisation, pas côté code. |
+| **Renseigner les astreintes** | Côté organisation, pas côté code : Écran Températures, en bas. |
 
 **Deux réglages à faire chez Testo, hors développement** : les quatre points
 partagent le profil « Frigo 1 » (mêmes seuils pour les vaccins et le PDA), et le
@@ -228,7 +241,7 @@ groupe de notification ne contient qu'une seule adresse.
 
 ## Les essais
 
-`essais/temperatures-alertes.js` — 56 vérifications sur le moteur de décision :
+`essais/temperatures-alertes.js` — 58 vérifications sur le moteur de décision :
 le régime selon l'heure de Paris **y compris au changement d'heure**, les seuils
 haut *et* bas, le comptage des relevés consécutifs, la donnée périmée qui n'est
 jamais « bonne », l'anti-répétition, la panne du robot, et le texte des SMS

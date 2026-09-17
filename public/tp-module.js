@@ -339,7 +339,7 @@
       h += '<div class="tp-al-muet">⚠ Les alertes sont éteintes. Les dépassements sont enregistrés, '
         + 'mais <b>aucun SMS ne partira</b>.</div>';
     } else {
-      const n = [r.tel1, r.tel2].filter(Boolean).length;
+      const n = (r.astreintes || []).filter(function (a) { return a.actif; }).length;
       h += '<div class="tp-al-ok" style="font-size:13px">✓ Armées — ' + n + ' destinataire'
         + (n > 1 ? 's' : '') + ', plage ' + r.vmin + '–' + r.vmax + ' °C. '
         + 'Trois relévés en journée, le premier la nuit et le dimanche.</div>';
@@ -357,9 +357,10 @@
     }
 
     if (tpAdmin()) {
-      h += '<div class="tp-al-g" style="margin-top:14px">'
-        + '<div><label>Astreinte 1</label><input type="text" id="tp-tel1" value="' + tpEch(r.tel1) + '" placeholder="06 …"></div>'
-        + '<div><label>Astreinte 2</label><input type="text" id="tp-tel2" value="' + tpEch(r.tel2) + '" placeholder="06 …"></div>'
+      h += '<div class="tp-al-t" style="margin-top:16px">Qui est prévenu</div>'
+        + '<div id="tp-astreintes">' + tpRendreAstreintes(r.astreintes || []) + '</div>'
+        + '<button class="tp-onglet" onclick="tpAstreinteAjouter()" style="margin-top:6px">+ Ajouter une astreinte</button>'
+        + '<div class="tp-al-g" style="margin-top:16px">'
         + '<div><label>Mini °C</label><input type="number" step="0.5" id="tp-vmin" value="' + r.vmin + '"></div>'
         + '<div><label>Maxi °C</label><input type="number" step="0.5" id="tp-vmax" value="' + r.vmax + '"></div>'
         + '<label class="tp-al-cb"><input type="checkbox" id="tp-actif"' + (r.actif ? ' checked' : '') + '> Armer</label>'
@@ -367,11 +368,46 @@
         + '<button class="tp-onglet" onclick="tpTesterAlertes()" style="margin-bottom:6px">Évaluer maintenant</button>'
         + '</div>'
         + '<div class="tp-al-msg" id="tp-al-msg"></div>'
-        + '<div class="tp-al-msg" style="color:#888780">Une astreinte à une seule personne est un point unique '
-        + 'de défaillance : la nuit, si ce téléphone est en silencieux, l’alerte n’existe pas.</div>';
+        + '<div class="tp-al-msg" style="color:#888780">Une seule astreinte est un point unique de '
+        + 'défaillance : la nuit, si ce téléphone est en silencieux, l’alerte n’existe pas. '
+        + 'Décocher une ligne met la personne en pause sans effacer son numéro.</div>';
     }
     z.innerHTML = h;
   }
+
+  // La liste vit dans `tpAst` tant qu'on n'a pas enregistré : ajouter une
+  // ligne redessine tout, et ce qui a été tapé ailleurs doit survivre.
+  let tpAst = [];
+  function tpRendreAstreintes(l) {
+    tpAst = (l || []).map(function (a) { return { nom: a.nom || '', tel: a.tel || '', actif: a.actif !== false }; });
+    return tpAstHtml();
+  }
+  function tpAstHtml() {
+    if (!tpAst.length) {
+      return '<div class="tp-al-muet">Personne n’est d’astreinte. Les alertes ne peuvent pas être armées.</div>';
+    }
+    return tpAst.map(function (a, i) {
+      return '<div class="tp-al-g" style="margin-bottom:4px">'
+        + '<div><label>Nom</label><input type="text" value="' + tpEch(a.nom) + '" placeholder="Olivier…" '
+        + 'oninput="tpAstMaj(' + i + ',\'nom\',this.value)"></div>'
+        + '<div><label>Mobile</label><input type="text" value="' + tpEch(a.tel) + '" placeholder="06 …" '
+        + 'oninput="tpAstMaj(' + i + ',\'tel\',this.value)"></div>'
+        + '<label class="tp-al-cb"><input type="checkbox"' + (a.actif ? ' checked' : '')
+        + ' onchange="tpAstMaj(' + i + ',\'actif\',this.checked)"> prévenu</label>'
+        + '<button class="tp-onglet" onclick="tpAstreinteRetirer(' + i + ')" '
+        + 'style="margin-bottom:6px" title="Retirer">✕</button>'
+        + '</div>';
+    }).join('');
+  }
+  window.tpAstMaj = function (i, champ, val) { if (tpAst[i]) tpAst[i][champ] = val; };
+  window.tpAstreinteAjouter = function () {
+    tpAst.push({ nom: '', tel: '', actif: true });
+    const z = document.getElementById('tp-astreintes'); if (z) z.innerHTML = tpAstHtml();
+  };
+  window.tpAstreinteRetirer = function (i) {
+    tpAst.splice(i, 1);
+    const z = document.getElementById('tp-astreintes'); if (z) z.innerHTML = tpAstHtml();
+  };
 
   function tpMsg(txt, ko) {
     const m = document.getElementById('tp-al-msg'); if (!m) return;
@@ -382,16 +418,30 @@
   window.tpEnregistrerAlertes = async function () {
     const v = function (id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
     try {
+      // Les astreintes D'ABORD : armer se vérifie contre la liste enregistrée,
+      // pas contre celle qui est encore à l'écran.
+      const ra = await fetch('/api/temp/astreintes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ astreintes: tpAst })
+      });
+      const ja = await ra.json();
+      if (!ja.ok) { tpMsg(ja.error || 'Astreintes refus\u00e9es.', true); return; }
+
       const r = await fetch('/api/temp/reglages', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           actif: !!(document.getElementById('tp-actif') || {}).checked,
-          tel1: v('tp-tel1'), tel2: v('tp-tel2'),
           vmin: parseFloat(v('tp-vmin')), vmax: parseFloat(v('tp-vmax'))
         })
       });
       const j = await r.json();
-      if (!j.ok) { tpMsg(j.error || 'Enregistrement refus\u00e9.', true); return; }
+      if (!j.ok) {
+        // Les astreintes sont enregistrées, l'armement non : on le dit, et on
+        // réaffiche l'état réel plutôt que celui qu'on espérait.
+        tpReg = ja.reglages; tpRendreAlertes();
+        tpMsg('Astreintes enregistr\u00e9es, mais : ' + (j.error || 'armement refus\u00e9'), true);
+        return;
+      }
       tpReg = j.reglages; tpRendreAlertes();
       tpMsg('Enregistr\u00e9.', false);
     } catch (e) { tpMsg('Enregistrement impossible : ' + e.message, true); }
