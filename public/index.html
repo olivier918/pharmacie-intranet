@@ -1676,25 +1676,15 @@ tr:hover td{background:#fafffe}
 
       <!-- MÉDECINS -->
       <div id="bo-medecins" style="display:none">
-        <div class="card" style="margin-bottom:1rem">
-          <div class="ch"><span class="ct">Ajouter un médecin</span></div>
-          <div class="fgrid">
-            <div class="fg"><label>Nom</label><input type="text" id="bm-nom" placeholder="NOM"></div>
-            <div class="fg"><label>Prénom</label><input type="text" id="bm-prenom" placeholder="Prénom"></div>
-            <div class="fg"><label>Spécialité</label><input type="text" id="bm-spec" placeholder="Généraliste, Cardiologue…"></div>
-            <div class="fg"><label>Cabinet / Structure</label><input type="text" id="bm-cabinet" placeholder="Maison de santé…"></div>
-            <div class="fg"><label>Téléphone</label><input type="tel" id="bm-tel" placeholder="02 31 …"></div>
-            <div class="fg"><label>Adresse</label><input type="text" id="bm-adresse" placeholder="Adresse du cabinet"></div>
-          </div>
-          <button class="btn bp" style="margin-top:.9rem" id="bm-submit-btn" onclick="addMedecin()">+ Ajouter</button>
-          <button class="btn bs" style="margin-top:.9rem;display:none" id="bm-cancel-btn" onclick="cancelEditMedecin()">Annuler</button>
-        </div>
         <div class="card">
-          <div class="ch">
-            <span class="ct">Annuaire médecins</span>
-            <input type="text" id="med-q" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.82rem" oninput="renderMedecins()">
-          </div>
-          <div class="twrap" id="med-table"></div>
+          <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-medecin"></use></svg> Annuaire des médecins</span></div>
+          <p style="font-size:.82rem;color:var(--gray-500);line-height:1.55;margin-bottom:1rem">
+            Les prescripteurs sont écrits en texte libre dans les locations, les préparations,
+            les bilans partagés et le cahier de transmission. L'onglet <b>À rattacher</b> montre
+            les écritures qu'aucune fiche ne reconnaît avec certitude — y compris celles que
+            deux homonymes se disputent.
+          </p>
+          <div id="md-bo"></div>
         </div>
       </div>
 
@@ -5174,63 +5164,8 @@ function upsertMedecin(m){
   }
 }
 
-let medEditIdx=null;
-
-function addMedecin(){
-  const nom=document.getElementById('bm-nom').value.trim().toUpperCase();
-  const prenom=document.getElementById('bm-prenom').value.trim();
-  if(!nom){alert('Nom requis.');return}
-  const data={nom,prenom,spec:document.getElementById('bm-spec').value,cabinet:document.getElementById('bm-cabinet').value,tel:document.getElementById('bm-tel').value,adresse:document.getElementById('bm-adresse').value};
-  if(medEditIdx!==null){
-    Object.assign(medecins[medEditIdx],data);
-    medEditIdx=null;
-    document.getElementById('bm-submit-btn').textContent='+ Ajouter';
-    document.getElementById('bm-cancel-btn').style.display='none';
-  } else {
-    upsertMedecin(data);
-  }
-  ['bm-nom','bm-prenom','bm-spec','bm-cabinet','bm-tel','bm-adresse'].forEach(i=>document.getElementById(i).value='');
-  renderMedecins();
-}
-
-function editMedecin(i){
-  const m=medecins[i];if(!m)return;
-  medEditIdx=i;
-  document.getElementById('bm-nom').value=m.nom||'';
-  document.getElementById('bm-prenom').value=m.prenom||'';
-  document.getElementById('bm-spec').value=m.spec||'';
-  document.getElementById('bm-cabinet').value=m.cabinet||'';
-  document.getElementById('bm-tel').value=m.tel||'';
-  document.getElementById('bm-adresse').value=m.adresse||'';
-  document.getElementById('bm-submit-btn').textContent='✓ Enregistrer les modifications';
-  document.getElementById('bm-cancel-btn').style.display='';
-  document.getElementById('bm-nom').focus();
-  document.getElementById('bm-nom').scrollIntoView({behavior:'smooth',block:'center'});
-}
-
-function cancelEditMedecin(){
-  medEditIdx=null;
-  ['bm-nom','bm-prenom','bm-spec','bm-cabinet','bm-tel','bm-adresse'].forEach(i=>document.getElementById(i).value='');
-  document.getElementById('bm-submit-btn').textContent='+ Ajouter';
-  document.getElementById('bm-cancel-btn').style.display='none';
-}
-
-// ─── Tri des tables du Back Office (patients / médecins) ───
-// Les en-têtes sont cliquables : 1er clic = A→Z, 2e clic = Z→A. Valeurs vides toujours en fin.
-let patSort={k:'nom',d:1}, medSort={k:'nom',d:1};
+let patSort={k:'nom',d:1};
 const PAT_COLS=[{k:'nom',l:'Nom'},{k:'prenom',l:'Prénom'},{k:'dob',l:'DDN'},{k:'adresse',l:'Adresse'},{k:'commune',l:'Commune'},{k:'tel',l:'Téléphone'},{k:'mail',l:'E-mail'}];
-const MED_COLS=[{k:'nom',l:'Nom'},{k:'prenom',l:'Prénom'},{k:'spec',l:'Spécialité'},{k:'cabinet',l:'Cabinet'},{k:'tel',l:'Téléphone'},{k:'adresse',l:'Adresse'}];
-
-function boSortCmp(a,b,k,d){
-  const va=(a&&a[k])||'', vb=(b&&b[k])||'';
-  if(!va&&!vb) return 0;
-  if(!va) return 1;   // sans valeur : rejeté en fin de liste, quel que soit le sens du tri
-  if(!vb) return -1;
-  const c = (k==='dob')
-    ? String(va).localeCompare(String(vb))                                          // ISO : ordre chronologique
-    : String(va).localeCompare(String(vb),'fr',{sensitivity:'base',numeric:true});  // accents et casse ignorés
-  return c*d;
-}
 function boSortHead(cols,sort,fn){
   return cols.map(c=>{
     const on=sort.k===c.k, arrow=on?(sort.d>0?'▲':'▼'):'↕';
@@ -5238,47 +5173,12 @@ function boSortHead(cols,sort,fn){
   }).join('')+'<th></th>';
 }
 function sortPatients(k){ if(patSort.k===k) patSort.d=-patSort.d; else { patSort.k=k; patSort.d=1; } renderPatients(); }
-function sortMedecins(k){ if(medSort.k===k) medSort.d=-medSort.d; else { medSort.k=k; medSort.d=1; } renderMedecins(); }
-
+// L'annuaire en tableau a laisse la place au module md-module.js : fiches,
+// rattachement des ecritures libres et doublons. Cette fonction reste le point
+// d'entree de tous ses appelants.
 function renderMedecins(){
-  const q=(document.getElementById('med-q')?.value||'').toLowerCase();
-  // On garde l'index réel dans `medecins` : la ligne affichée peut être filtrée et triée.
-  const f=medecins.map((m,idx)=>({m,idx}))
-    .filter(o=>(o.m.nom+' '+o.m.prenom+' '+(o.m.spec||'')).toLowerCase().includes(q))
-    .sort((x,y)=>boSortCmp(x.m,y.m,medSort.k,medSort.d));
-  document.getElementById('med-table').innerHTML=`<table>
-    <thead><tr>${boSortHead(MED_COLS,medSort,'sortMedecins')}</tr></thead>
-    <tbody>${f.map(({m,idx})=>`<tr>
-      <td><strong>${m.nom}</strong></td><td>${m.prenom}</td>
-      <td>${m.spec||'—'}</td><td>${m.cabinet||'—'}</td>
-      <td>${m.tel||'—'}</td><td>${m.adresse||'—'}</td>
-      <td style="white-space:nowrap">
-        <button class="btn bs btn-ico" onclick="swapMedecin(${idx})" title="Intervertir le nom et le prénom">⇄</button>
-        <button class="btn bs btn-ico" onclick="editMedecin(${idx})" title="Modifier">${ico('modifier')}</button>
-        <button class="btn bd btn-ico" onclick="deleteMedecin(${idx})" title="Supprimer">${ico('corbeille')}</button>
-      </td>
-    </tr>`).join('')||`<tr><td colspan="${MED_COLS.length+1}" style="text-align:center;color:var(--gray-500);padding:1.4rem">Aucun médecin${q?' ne correspond à la recherche':''}.</td></tr>`}</tbody></table>`;
+  if(typeof mdRender==='function') return mdRender();
 }
-function swapMedecin(i){
-  const m=medecins[i]; if(!m) return;
-  const inv=nomInverse(m.nom,m.prenom);
-  if(!inv){ alert('Cette fiche n’a pas de prénom : il n’y a rien à intervertir.'); return; }
-  const avant=(m.nom||'')+' '+(m.prenom||'');
-  m.nom=inv.nom; m.prenom=inv.prenom; m.updatedAt=Date.now();
-  if(typeof logAction==='function') logAction('Nom et prénom intervertis (médecin)', avant+' → '+m.nom+' '+m.prenom);
-  saveNow(); renderMedecins();
-}
-// Sans markDeleted, la suppression ne se propageait pas : le médecin revenait
-// à la resynchronisation suivante, et personne ne comprenait pourquoi.
-function deleteMedecin(i){
-  const m=medecins[i]; if(!m) return;
-  if(!confirm('Supprimer ce médecin ?')) return;
-  if(typeof markDeleted==='function') markDeleted('medecins', m.id);
-  medecins.splice(i,1);
-  if(typeof logAction==='function') logAction('Médecin supprimé', (m.nom||'')+' '+(m.prenom||''));
-  saveNow(); renderMedecins();
-}
-
 // L'annuaire en tableau a laisse la place au maitre-detail de pt-module.js :
 // deux listes des memes personnes, c'etait une de trop. Cette fonction reste
 // le point d'entree de tous ses appelants.
@@ -12401,6 +12301,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="od-module.js"></script>
 <script src="lb-module.js"></script>
 <script src="rx-module.js"></script>
+<script src="md-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>
