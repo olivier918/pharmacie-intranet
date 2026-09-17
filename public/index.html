@@ -803,6 +803,10 @@ tr:hover td{background:#fafffe}
             <select id="lc-type" onchange="updateLocSub()"></select>
           </div>
           <div class="fg"><label>N° d'appareil</label><input type="text" id="lc-num" placeholder="Numéro de série"></div>
+          <div class="fg"><label>Provenance du matériel</label>
+            <select id="lc-prov"></select>
+            <div style="font-size:.72rem;color:var(--gray-500);margin-top:3px">À qui appartient l'appareil — et où il repart.</div>
+          </div>
         </div>
 
         <!-- Ordonnance scan -->
@@ -1272,6 +1276,20 @@ tr:hover td{background:#fafffe}
 
       <!-- MATÉRIEL EN LOCATION -->
       <div id="bo-materiel" style="display:none">
+        <div class="card" style="margin-bottom:1rem">
+          <div class="ch"><span class="ct">Provenance du matériel</span></div>
+          <p style="color:var(--gray-600);font-size:.82rem;margin:.2rem 0 .9rem;line-height:1.5">
+            À qui appartient l'appareil loué — et où il repart. Choisie à la création
+            de chaque dossier de location. La provenance cochée <b>par défaut</b> est
+            celle qui sera proposée d'emblée sur un nouveau dossier.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:.9rem">
+            <div class="fg" style="flex:1;min-width:220px;margin:0"><label>Nouvelle provenance</label>
+              <input type="text" id="prov-lbl" placeholder="Ex. Oxypharm" onkeydown="if(event.key==='Enter')saveProv()"></div>
+            <button class="btn bp" onclick="saveProv()">+ Ajouter</button>
+          </div>
+          <div id="prov-list"></div>
+        </div>
         <div class="card" style="margin-bottom:1rem">
           <div class="ch"><span class="ct" id="mat-form-title">Ajouter un matériel</span></div>
           <div class="fgrid">
@@ -2784,6 +2802,7 @@ function _collRef(n){ switch(n){
   case 'reunionThemes':return reunionThemes; case 'reunions':return reunions;
   case 'depots':return depots;
   case 'laboratoires':return laboratoires;
+  case 'locProvenances':return locProvDB;
   case 'reactions':return reactions;
   case 'convos':return convos; case 'messages':return messages;
   case 'groupesMsg':return groupesMsg;
@@ -2828,7 +2847,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2884,6 +2903,7 @@ async function loadAll(){
     if(data.bpmList)bpmList=data.bpmList;
     if(data.locations)locations=data.locations;
     if(Array.isArray(data.locTypes)&&data.locTypes.length){ locTypesDB=data.locTypes; rebuildLocTypes(); }
+    if(Array.isArray(data.locProvenances)&&data.locProvenances.length) locProvDB=data.locProvenances;
     if(data.caisse)caisse=data.caisse;
     if(data.credits)credits=data.credits;
     if(data.labo)labo=data.labo;
@@ -2949,6 +2969,7 @@ setInterval(async()=>{
         if(d.bpmList)bpmList=d.bpmList;
         if(d.locations)locations=d.locations;
         if(Array.isArray(d.locTypes)&&d.locTypes.length){ locTypesDB=d.locTypes; rebuildLocTypes(); }
+        if(Array.isArray(d.locProvenances)&&d.locProvenances.length) locProvDB=d.locProvenances;
         if(d.caisse)caisse=d.caisse;
         if(d.credits)credits=d.credits;
         if(d.patients)patients=d.patients;
@@ -4945,7 +4966,7 @@ function boTab(t){
   if(t==='sonnette' && typeof rpiFill==='function') rpiFill();
   if(t==='modules')renderModulesUI();
   if(t==='sonnette' && typeof sonRenderBO==='function')sonRenderBO();
-  if(t==='materiel')renderMatTypes();
+  if(t==='materiel'){renderMatTypes();renderProvs();}
   if(t==='preps'&&window.ppRendCapacite)ppRendCapacite();
   if(t==='depots'&&window.odRendBO)odRendBO();
   if(t==='labos'&&window.lbRendBO)lbRendBO();
@@ -5854,6 +5875,9 @@ function toggleLocForm(){
     ['lc-date-presc','lc-date-debut'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('lc-duree').value='';
     document.getElementById('lc-type').value='';
+    // Un dossier neuf part sur la provenance habituelle : la choisir cinquante
+    // fois de suite, c'est le choix qu'on finit par oublier de faire.
+    ensureLocProv(); fillLocProvSelect(locProvDefaut());
     document.getElementById('lc-caut-non').checked=true;
     updateLocSub();
     c.scrollIntoView({behavior:'smooth',block:'start'});
@@ -5905,6 +5929,7 @@ function saveLoc(){
     duree:parseInt(document.getElementById('lc-duree').value)||0,
     type:document.getElementById('lc-type').value,
     num:document.getElementById('lc-num').value,
+    provenance:(document.getElementById('lc-prov')||{}).value||'',
     opts:getLocOpts(),
     caution:document.getElementById('lc-caut-oui').checked,
     status:'nouveau'   // dossier débuté, pas encore saisi dans le logiciel de facturation
@@ -5952,6 +5977,16 @@ function saveLoc(){
 // tableau, filtre). Le catalogue historique sert d'amorçage au premier
 // démarrage, et tout type rencontré dans un dossier existant est repris.
 let locTypesDB=[];
+// D'ou vient le materiel loue : Bluestone, le stock de la pharmacie, Oxypharm.
+// Ce n'est pas un texte libre — sinon « oxypharm », « Oxypharm » et « OXYPHARM »
+// feraient trois provenances et aucun comptage ne serait juste. La liste se
+// tient au Back Office, onglet Materiel, comme le catalogue.
+let locProvDB=[];
+const LOC_PROV_DEFAUT=[
+  {id:'bluestone', lbl:'Bluestone Medical', defaut:true},
+  {id:'pharmacie', lbl:'Pharmacie (parc propre)'},
+  {id:'oxypharm',  lbl:'Oxypharm'}
+];
 let LOC_TYPES={};
 const LOC_TYPES_DEFAUT=[
   {id:'fauteuil',   lbl:'Fauteuil roulant',    caution:200, opts:[['rjG','Relève jambe gauche'],['rjD','Relève jambe droite'],['rpG','Repose jambe gauche'],['rpD','Repose jambe droit']]},
@@ -5988,6 +6023,47 @@ function ensureLocTypes(){
   rebuildLocTypes();
   return neuf;
 }
+// ── D'ou vient le materiel ────────────────────────────────────────────────
+// Meme doctrine que le catalogue : amorcage au premier demarrage, et toute
+// provenance rencontree dans un dossier existant entre dans la liste, pour
+// qu'aucun dossier ne devienne orphelin de sa propre provenance.
+function ensureLocProv(){
+  let neuf=false;
+  if(!Array.isArray(locProvDB)) locProvDB=[];
+  if(!locProvDB.length){
+    locProvDB=LOC_PROV_DEFAUT.map(function(p){ return Object.assign({},p,{updatedAt:Date.now()}); });
+    neuf=true;
+  }
+  const ids=new Set(locProvDB.map(function(p){ return p.id; }));
+  locations.forEach(function(l){
+    if(l&&l.provenance&&!ids.has(l.provenance)){
+      locProvDB.push({id:l.provenance, lbl:l.provenance, updatedAt:Date.now()});
+      ids.add(l.provenance); neuf=true;
+    }
+  });
+  return neuf;
+}
+function locProvLabel(id){
+  if(!id) return '';
+  const p=locProvDB.find(function(x){ return x&&x.id===id; });
+  return p?(p.lbl||p.id):id;
+}
+// Celle qui est marquee par defaut, s'il y en a une : la plupart des dossiers
+// viennent du meme endroit, et un choix repete cinquante fois est un choix
+// qu'on finit par oublier de faire.
+function locProvDefaut(){
+  const p=locProvDB.find(function(x){ return x&&x.defaut; });
+  return p?p.id:'';
+}
+function fillLocProvSelect(sel){
+  const el=document.getElementById('lc-prov'); if(!el) return;
+  const garde=(sel!==undefined&&sel!==null)?sel:el.value;
+  el.innerHTML='<option value="">— non précisée —</option>'
+    +locProvDB.slice().sort(function(a,b){ return String(a.lbl||'').localeCompare(String(b.lbl||''),'fr'); })
+      .map(function(p){ return '<option value="'+hEsc(p.id)+'">'+hEsc(p.lbl||p.id)+'</option>'; }).join('');
+  el.value=garde||'';
+}
+
 // ── Back Office > Matériel : création / modification du catalogue ──
 let matEditId=null;
 function matSlug(s){
@@ -6011,6 +6087,53 @@ function renderMatTypes(){
       +'</div></div>';
   }).join('')||'<div style="color:var(--gray-500);font-size:.85rem">Aucun matériel.</div>';
 }
+// ── Back Office > Matériel : la liste des provenances ──
+function renderProvs(){
+  ensureLocProv();
+  const host=document.getElementById('prov-list'); if(!host) return;
+  host.innerHTML=locProvDB.slice()
+    .sort(function(a,b){ return String(a.lbl||'').localeCompare(String(b.lbl||''),'fr'); })
+    .map(function(p){
+      const nUse=locations.filter(function(l){ return l.provenance===p.id; }).length;
+      return '<div style="border:1px solid var(--gray-200);border-radius:9px;padding:.6rem .95rem;margin-bottom:7px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
+        +'<div style="flex:1;min-width:200px"><strong>'+ctlEsc(p.lbl||p.id)+'</strong>'
+        +(p.defaut?' <span class="badge" style="background:var(--g-pale);color:var(--g-dark);padding:1px 8px;font-size:.68rem">par d\u00e9faut</span>':'')
+        +'<div style="font-size:.74rem;color:var(--gray-500);margin-top:2px">'+nUse+' dossier(s)</div></div>'
+        +'<div style="display:flex;gap:5px;align-items:center">'
+        +(p.defaut?'':'<button class="btn bs sm" onclick="provDefaut(\''+p.id+'\')" title="Proposer celle-ci sur un nouveau dossier">Par d\u00e9faut</button>')
+        +'<button class="btn bd btn-ico" onclick="delProv(\''+p.id+'\')" title="Supprimer">'+ico('corbeille')+'</button>'
+        +'</div></div>';
+    }).join('')||'<div style="color:var(--gray-500);font-size:.85rem">Aucune provenance.</div>';
+}
+window.saveProv=function(){
+  const lbl=document.getElementById('prov-lbl').value.trim();
+  if(!lbl){ alert('Donnez un nom \u00e0 la provenance.'); return; }
+  ensureLocProv();
+  const id=matSlug(lbl);
+  if(!id){ alert('Ce nom ne donne aucun identifiant utilisable.'); return; }
+  if(locProvDB.some(function(p){ return p.id===id; })){ alert('\u00ab '+lbl+' \u00bb existe d\u00e9j\u00e0.'); return; }
+  locProvDB.push({id:id, lbl:lbl, defaut:!locProvDB.length, updatedAt:Date.now()});
+  document.getElementById('prov-lbl').value='';
+  if(typeof logAction==='function') logAction('Provenance de mat\u00e9riel ajout\u00e9e', lbl);
+  saveNow(); renderProvs(); fillLocProvSelect();
+};
+// Une seule par défaut : deux cases cochées ne diraient plus laquelle proposer.
+window.provDefaut=function(id){
+  locProvDB.forEach(function(p){ if(p){ p.defaut=(p.id===id); p.updatedAt=Date.now(); } });
+  saveNow(); renderProvs();
+};
+window.delProv=function(id){
+  const p=locProvDB.find(function(x){ return x.id===id; }); if(!p) return;
+  const nUse=locations.filter(function(l){ return l.provenance===id; }).length;
+  if(!confirm('Supprimer \u00ab '+(p.lbl||id)+' \u00bb ?'
+    +(nUse?'\n\n'+nUse+' dossier(s) la portent : ils la garderont, et elle reviendra dans la liste au prochain affichage.':''))) return;
+  if(typeof markDeleted==='function') markDeleted('locProvenances', id);
+  const i=locProvDB.findIndex(function(x){ return x.id===id; });
+  if(i>=0) locProvDB.splice(i,1);
+  if(typeof logAction==='function') logAction('Provenance de mat\u00e9riel supprim\u00e9e', p.lbl||id);
+  saveNow(); renderProvs(); fillLocProvSelect();
+};
+
 function saveMatType(){
   const lbl=document.getElementById('mat-lbl').value.trim();
   if(!lbl){alert('Le nom du matériel est obligatoire.');return}
@@ -6644,7 +6767,9 @@ function locTh(col,txt,extra){
 
 function renderLocs(){
   ensureLocTypes();
+  ensureLocProv();
   fillLocTypeSelect();
+  fillLocProvSelect();
   locStatusInit();
   locMigrerStatuts();
   const mf=(document.getElementById('loc-med-filter')?.value||'');
@@ -6700,7 +6825,7 @@ function renderLocs(){
   else f=f.filter(l=>locStatusSel.has(l.status));   // filtre par cases à cocher
   if(locTypeFiltreActif()) f=f.filter(l=>locTypeSel.has(l.type)||!LOC_TYPES[l.type]);
   if(mf)f=f.filter(l=>l.prescripteur===mf);
-  if(q)f=f.filter(l=>(l.nom+' '+l.prenom+' '+(l.prescripteur||'')+' '+locTypeLabel(l.type)+' '+(l.num||'')).toLowerCase().includes(q));
+  if(q)f=f.filter(l=>(l.nom+' '+l.prenom+' '+(l.prescripteur||'')+' '+locTypeLabel(l.type)+' '+(l.num||'')+' '+locProvLabel(l.provenance)).toLowerCase().includes(q));
   f.sort(locCompare);
 
   document.getElementById('loc-table').innerHTML=`<table>
@@ -6720,7 +6845,7 @@ function renderLocs(){
       return `<tr>
       <td><strong>${l.nom}</strong> ${l.prenom}${locTel(l)?`<div style="font-size:.7rem;color:var(--gray-500);white-space:nowrap">${ico('telephone')} ${locTel(l)}</div>`:''}</td>
       <td style="white-space:nowrap">${l.prescripteur?ico('medecin')+' '+l.prescripteur:'<span style="color:var(--gray-500)">—</span>'}</td>
-      <td>${locTypeLabel(l.type)}${locOptsStr(l)!=='—'?`<div style="font-size:.7rem;color:var(--gray-500)">${locOptsStr(l)}</div>`:''}</td>
+      <td>${locTypeLabel(l.type)}${locOptsStr(l)!=='—'?`<div style="font-size:.7rem;color:var(--gray-500)">${locOptsStr(l)}</div>`:''}${l.provenance?`<div style="font-size:.7rem;color:var(--gray-500);margin-top:2px">${ico('retour')} ${hEsc(locProvLabel(l.provenance))}</div>`:''}</td>
       <td style="white-space:nowrap">${l.num||'—'}</td>
       <td style="white-space:nowrap">${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'}</td>
       <td style="white-space:nowrap;${finStyle}">${locDateFin(l)}${renBadge}</td>
@@ -7276,6 +7401,7 @@ function editLoc(id){
   lcMajFin();
   document.getElementById('lc-type').value=l.type||'';
   document.getElementById('lc-num').value=l.num||'';
+  fillLocProvSelect(l.provenance||'');
   document.getElementById(l.caution?'lc-caut-oui':'lc-caut-non').checked=true;
   updateLocSub();
   ((LOC_TYPES[l.type]&&LOC_TYPES[l.type].opts)||[]).forEach(function(o){
