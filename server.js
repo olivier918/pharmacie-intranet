@@ -843,7 +843,15 @@ app.post('/api/dev/issue', async (req, res) => {
 });
 
 // ─── Suivi des armoires refrigerees (voir temperatures.js) ───
-temperatures.routes(app, () => db);
+// Ce que le robot emprunte au serveur : l'envoi de SMS, la validation d'un
+// numero francais, et la notion d'administrateur. Rien de tout cela ne lui
+// appartient, et rien de tout cela ne doit y etre recopie.
+const TEMP_DEPS = {
+  sms: (o) => sendSmsViaBrevo(Object.assign({}, o, { to: toMsisdnFR(o.to) || o.to })),
+  numero: toMsisdnFR,
+  estAdmin: (req) => estAdministrateur(identite.qui(req))
+};
+temperatures.routes(app, () => db, TEMP_DEPS);
 
 // ─── Identite des operateurs (voir identite.js) ───
 // Lecture et ecriture de l'etat, partagees avec le module : elles suivent le
@@ -2077,7 +2085,7 @@ async function start() {
       setInterval(() => { accuses.elaguer(db).catch(() => {}); }, 24 * 60 * 60 * 1000);
     }
   } catch (e) { console.error('  ⛔ Accuses de remise SMS indisponibles :', e.message); }
-  await temperatures.demarrer(db);
+  await temperatures.demarrer(db, TEMP_DEPS);
   if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {

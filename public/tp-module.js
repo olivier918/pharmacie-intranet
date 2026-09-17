@@ -79,6 +79,17 @@
   .tp-bulle .l{display:flex;gap:8px;justify-content:space-between}
   .tp-bulle .l i{font-style:normal;opacity:.75}
   .tp-vide{text-align:center;color:#888780;padding:44px 10px;font-size:14px}
+  .tp-al-t{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#5b5a53;margin-bottom:10px}
+  .tp-al-g{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px}
+  .tp-al-g label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#888780;margin-bottom:3px}
+  .tp-al-g input[type=text],.tp-al-g input[type=number]{border:1px solid #ddd9cc;border-radius:8px;padding:7px 10px;font:inherit;font-size:14px;width:150px}
+  .tp-al-g input[type=number]{width:78px}
+  .tp-al-cb{display:inline-flex;align-items:center;gap:6px;font-size:14px;padding-bottom:8px}
+  .tp-al-msg{font-size:13px;margin-top:8px;line-height:1.5}
+  .tp-al-ko{color:#b3261e}
+  .tp-al-ok{color:#1D5C3A}
+  .tp-al-ep{border:1px solid #ddd9cc;border-radius:9px;padding:8px 12px;margin-top:8px;font-size:13.5px;background:#fff6f5}
+  .tp-al-muet{font-size:13px;color:#b3261e;font-weight:600;margin-top:8px}
   @media(max-width:700px){.tp-wrap{padding:14px}.tp-legende{gap:12px}}
   `;
 
@@ -99,6 +110,7 @@
       <div class="tp-bulle" id="tp-bulle"></div>
       <div class="tp-info" id="tp-info"></div>
     </div>
+    <div class="tp-carte" id="tp-alertes" style="margin-top:18px"></div>
   </div>`;
 
   // ── Outils ────────────────────────────────────────────────────────────────
@@ -296,9 +308,117 @@
 
   // ── Pilotage ──────────────────────────────────────────────────────────────
   let tpEnCours = false;
+  // ── Les alertes ───────────────────────────────────────────────
+  // L'ecran dit toujours si le dispositif est arme ou non. Un ecran de
+  // surveillance qui ne dit pas qu'il ne surveille rien est pire que pas
+  // d'ecran du tout — c'est le principe de tout ce module.
+  let tpReg = null, tpEpisodes = [];
+
+  async function tpChargerAlertes() {
+    const r = await fetch('/api/temp/reglages', { cache: 'no-store' });
+    const j = await r.json();
+    if (!j || !j.ok) throw new Error((j && j.error) || 'reglages indisponibles');
+    tpReg = j.reglages; tpEpisodes = j.episodes || [];
+  }
+
+  function tpEch(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  function tpAdmin() { return typeof isAdmin === 'function' ? isAdmin() : false; }
+
+  function tpRendreAlertes() {
+    const z = document.getElementById('tp-alertes'); if (!z) return;
+    if (!tpReg) { z.innerHTML = ''; return; }
+    const r = tpReg;
+    const enCours = tpEpisodes.filter(function (e) { return e; });
+    let h = '<div class="tp-al-t">Alertes</div>';
+
+    if (!r.actif) {
+      h += '<div class="tp-al-muet">⚠ Les alertes sont éteintes. Les dépassements sont enregistrés, '
+        + 'mais <b>aucun SMS ne partira</b>.</div>';
+    } else {
+      const n = [r.tel1, r.tel2].filter(Boolean).length;
+      h += '<div class="tp-al-ok" style="font-size:13px">✓ Armées — ' + n + ' destinataire'
+        + (n > 1 ? 's' : '') + ', plage ' + r.vmin + '–' + r.vmax + ' °C. '
+        + 'Trois relévés en journée, le premier la nuit et le dimanche.</div>';
+    }
+
+    if (enCours.length) {
+      h += enCours.map(function (e) {
+        const d = new Date(e.ouvert_le);
+        return '<div class="tp-al-ep"><b>' + tpEch(e.point) + '</b> — '
+          + (e.motif === 'panne' ? 'plus aucun relévé' : 'hors plage')
+          + (e.valeur != null ? ' (' + tpDeg(Number(e.valeur)) + ' °C)' : '')
+          + ' depuis le ' + tpDateCourte(d) + ' à ' + tpHeure(d)
+          + ' · ' + (e.envois || 0) + ' SMS envoyé(s)</div>';
+      }).join('');
+    }
+
+    if (tpAdmin()) {
+      h += '<div class="tp-al-g" style="margin-top:14px">'
+        + '<div><label>Astreinte 1</label><input type="text" id="tp-tel1" value="' + tpEch(r.tel1) + '" placeholder="06 …"></div>'
+        + '<div><label>Astreinte 2</label><input type="text" id="tp-tel2" value="' + tpEch(r.tel2) + '" placeholder="06 …"></div>'
+        + '<div><label>Mini °C</label><input type="number" step="0.5" id="tp-vmin" value="' + r.vmin + '"></div>'
+        + '<div><label>Maxi °C</label><input type="number" step="0.5" id="tp-vmax" value="' + r.vmax + '"></div>'
+        + '<label class="tp-al-cb"><input type="checkbox" id="tp-actif"' + (r.actif ? ' checked' : '') + '> Armer</label>'
+        + '<button class="tp-onglet" onclick="tpEnregistrerAlertes()" style="margin-bottom:6px">Enregistrer</button>'
+        + '<button class="tp-onglet" onclick="tpTesterAlertes()" style="margin-bottom:6px">Évaluer maintenant</button>'
+        + '</div>'
+        + '<div class="tp-al-msg" id="tp-al-msg"></div>'
+        + '<div class="tp-al-msg" style="color:#888780">Une astreinte à une seule personne est un point unique '
+        + 'de défaillance : la nuit, si ce téléphone est en silencieux, l’alerte n’existe pas.</div>';
+    }
+    z.innerHTML = h;
+  }
+
+  function tpMsg(txt, ko) {
+    const m = document.getElementById('tp-al-msg'); if (!m) return;
+    m.className = 'tp-al-msg ' + (ko ? 'tp-al-ko' : 'tp-al-ok');
+    m.textContent = txt;
+  }
+
+  window.tpEnregistrerAlertes = async function () {
+    const v = function (id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
+    try {
+      const r = await fetch('/api/temp/reglages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actif: !!(document.getElementById('tp-actif') || {}).checked,
+          tel1: v('tp-tel1'), tel2: v('tp-tel2'),
+          vmin: parseFloat(v('tp-vmin')), vmax: parseFloat(v('tp-vmax'))
+        })
+      });
+      const j = await r.json();
+      if (!j.ok) { tpMsg(j.error || 'Enregistrement refus\u00e9.', true); return; }
+      tpReg = j.reglages; tpRendreAlertes();
+      tpMsg('Enregistr\u00e9.', false);
+    } catch (e) { tpMsg('Enregistrement impossible : ' + e.message, true); }
+  };
+
+  window.tpTesterAlertes = async function () {
+    try {
+      const r = await fetch('/api/temp/alerte-test', { method: 'POST' });
+      const j = await r.json();
+      if (!j.ok) { tpMsg(j.error || '\u00c9valuation refus\u00e9e.', true); return; }
+      const d = (j.resultat && j.resultat.decisions) || [];
+      const agit = d.filter(function (x) { return x.action !== 'rien'; });
+      await tpChargerAlertes(); tpRendreAlertes();
+      tpMsg(agit.length
+        ? agit.map(function (x) { return x.point + ' : ' + x.action + ' (' + x.motif + ')'; }).join(' \u00b7 ')
+        : '\u00c9valuation faite \u2014 rien \u00e0 signaler sur ' + d.length + ' point(s).', false);
+    } catch (e) { tpMsg('\u00c9valuation impossible : ' + e.message, true); }
+  };
+
   async function tpRafraichir() {
     if (tpEnCours) return; tpEnCours = true;
-    try { await tpCharger(); tpRendreBandeau(); tpRendreTuiles(); tpRendreGraphe(); }
+    try {
+      await tpCharger(); tpRendreBandeau(); tpRendreTuiles(); tpRendreGraphe();
+      // Les alertes ne doivent pas faire tomber l'ecran : si leur lecture
+      // echoue, les courbes restent lisibles et le panneau se tait.
+      try { await tpChargerAlertes(); tpRendreAlertes(); } catch (e) {}
+    }
     catch (e) {
       const z = document.getElementById('tp-zone');
       if (z) z.innerHTML = '<div class="tp-vide">Relevés indisponibles : ' + (e.message || e) + '</div>';

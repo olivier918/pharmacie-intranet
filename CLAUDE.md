@@ -517,6 +517,29 @@ facturé deux fois le jour où deux personnes y vont, et jamais le jour où
 chacune croit que l’autre s’en charge. Quand un module en alimente un autre,
 **celui qui alimente se tait**. `essais/livraison-ordo.js` garde ce point.
 
+## Armoires réfrigérées : le manuel est à part
+
+`temperatures.js` (le robot), `temp-alertes.js` (la décision) et
+`public/tp-module.js` (l'écran) ont leur propre manuel : **`TEMPERATURES.md`**,
+à la racine. Le lire avant d'y toucher — il y a trois choses qu'on ne devine
+pas, et chacune a déjà coûté :
+
+1. **L'API de Testo n'est pas garantie** : c'est celle de son interface web,
+   pas l'API publique. D'où le principe qui commande tout le reste — *l'absence
+   de données est elle-même une alerte*. Une mesure de plus de 45 minutes n'est
+   plus une valeur, c'est un silence : tuile grise, tiret, SMS.
+2. **Le point de mesure est porté par le GROUPE, pas par la mesure.** Une
+   lecture qui cherche un identifiant « quelque part au-dessus » confond les
+   quatre armoires en une seule — sans erreur, sans rien : la clé primaire
+   écrase 20 relevés sur 28 en silence.
+3. **Les mesures ne vont pas dans le blob** : 384 par jour, ~140 000 par an.
+   Elles ont leurs tables, et les réglages d'alerte aussi — le robot tourne
+   côté serveur, il ne doit pas lire un fichier que chaque poste télécharge
+   toutes les huit secondes.
+
+Et une règle d'écriture : **un SMS d'alerte s'écrit sans accents**. Un seul
+caractère hors GSM-7 fait tomber la limite de 160 à 70 caractères.
+
 ## Vérifier avant de proposer
 
 Il y a désormais des essais, et ils sont la première vérification :
@@ -530,7 +553,8 @@ portent sur ce qui a déjà mordu : dates, fusion, échappement, images,
 raccourcis, préparations, réunion, crédits SMS, accusés, dépôts,
 ordonnance récupérée en livraison, preuve de dépôt groupé, groupes de
 destinataires, répertoire des laboratoires, réactions, provenance du matériel,
-inversion nom/prénom, annuaire des médecins, accès aux collections. **Toute logique de
+inversion nom/prénom, annuaire des médecins, accès aux collections,
+alertes de température. **Toute logique de
 tri, de date, de fusion ou de droits nouvelle mérite sa suite.**
 
 Il n'y a pas d'étape de compilation. Au minimum, en plus :

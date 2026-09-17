@@ -25,6 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const https = require('https');
+const AL = require('./temp-alertes');
 
 const AUTH_HOTE  = 'login.food.saveris.net';
 const AUTH_CHEMIN = '/oauth/token';
@@ -251,6 +252,41 @@ async function creerTable(db) {
   // defaut connu ; les vraies mesures reviendront d'elles-memes au prochain
   // tirage, qui redemande toujours deux heures.
   await db.query("DELETE FROM app_temperatures WHERE point = 'inconnu'");
+  // Les reglages de l'alerte. UNE SEULE LIGNE, et une table a part plutot que
+  // le blob : le robot tourne cote serveur, il ne doit pas avoir a lire un
+  // fichier de donnees relu par chaque poste toutes les huit secondes. Meme
+  // choix que l'interrupteur d'ouverture des depots.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_temp_reglages (
+      id     INTEGER PRIMARY KEY DEFAULT 1,
+      actif  BOOLEAN NOT NULL DEFAULT false,
+      tel1   TEXT,
+      tel2   TEXT,
+      vmin   REAL NOT NULL DEFAULT 2,
+      vmax   REAL NOT NULL DEFAULT 8,
+      maj    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT app_temp_reglages_unique CHECK (id = 1)
+    )
+  `);
+  await db.query('INSERT INTO app_temp_reglages (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
+
+  // Les episodes d'alerte. EN BASE, pas en memoire : un redemarrage - et il y
+  // en a a chaque deploiement - ne doit ni renvoyer une alerte deja envoyee,
+  // ni oublier qu'un frigo est en defaut depuis deux heures.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_temp_episodes (
+      id               BIGSERIAL PRIMARY KEY,
+      point            TEXT NOT NULL,
+      motif            TEXT NOT NULL,
+      ouvert_le        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      dernier_envoi_le TIMESTAMPTZ,
+      clos_le          TIMESTAMPTZ,
+      valeur           REAL,
+      envois           INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  await db.query('CREATE INDEX IF NOT EXISTS app_temp_episodes_ouverts ON app_temp_episodes (point) WHERE clos_le IS NULL');
+
   // La trace des tirages : c'est elle qui distingue « le frigo va bien » de
   // « on ne sait plus rien du frigo ».
   await db.query(`
@@ -297,24 +333,190 @@ async function tirage(db) {
   }
 }
 
+// ─── Les alertes ───
+// Le robot enregistre ; ceci signale. Les deux sont volontairement separes :
+// un defaut du signalement ne doit jamais empecher l'enregistrement, et un
+// tirage en echec doit au contraire DECLENCHER le signalement.
+const POINT_ROBOT = '(robot)';
+
+async function lireReglages(db) {
+  const r = await db.query('SELECT actif, tel1, tel2, vmin, vmax FROM app_temp_reglages WHERE id = 1');
+  const g = r.rows[0] || {};
+  return { actif: !!g.actif, tel1: g.tel1 || '', tel2: g.tel2 || '',
+           vmin: g.vmin == null ? AL.PLAGE_DEFAUT.min : Number(g.vmin),
+           vmax: g.vmax == null ? AL.PLAGE_DEFAUT.max : Number(g.vmax) };
+}
+
+async function episodeOuvert(db, point) {
+  const r = await db.query(
+    'SELECT * FROM app_temp_episodes WHERE point = $1 AND clos_le IS NULL ORDER BY id DESC LIMIT 1', [point]);
+  return r.rows[0] || null;
+}
+
+// Envoie, et ne laisse JAMAIS un echec d'envoi interrompre la surveillance des
+// autres points. Un numero injoignable ne doit pas rendre le dispositif muet.
+async function envoyer(deps, tels, txt) {
+  if (!deps || typeof deps.sms !== 'function' || !tels.length) return 0;
+  let n = 0;
+  for (const t of tels) {
+    try { await deps.sms({ to: t, text: txt, tag: 'temp-alerte' }); n++; }
+    catch (e) { console.error('  \ud83c\udf21\ufe0f  SMS alerte refuse :', e.message); }
+  }
+  return n;
+}
+
+async function evaluerAlertes(db, deps) {
+  if (!db) return { actif: false, decisions: [] };
+  const reg = await lireReglages(db);
+  const tels = AL.destinataires(reg, deps && deps.numero);
+  const maintenant = new Date();
+  const requis = AL.relevesRequis(maintenant);
+  const plage = { min: reg.vmin, max: reg.vmax };
+  const decisions = [];
+
+  // On agit meme alertes eteintes : l'episode est trace, l'ecran le montre.
+  // Seul l'ENVOI est conditionne. Un dispositif qui n'enregistre rien quand il
+  // est en veille ne sait rien dire le jour ou on le rallume.
+  const agir = async (point, dec, txt) => {
+    decisions.push({ point: point, action: dec.action, motif: dec.motif, valeur: dec.valeur });
+    if (dec.action === 'rien') return;
+    const envoye = (reg.actif && dec.action !== 'rien') ? await envoyer(deps, tels, txt) : 0;
+    if (dec.action === 'ouvrir') {
+      await db.query('UPDATE app_temp_episodes SET clos_le = NOW() WHERE point = $1 AND clos_le IS NULL', [point]);
+      await db.query(
+        'INSERT INTO app_temp_episodes (point, motif, valeur, dernier_envoi_le, envois) VALUES ($1,$2,$3,$4,$5)',
+        [point, dec.motif, dec.valeur == null ? null : dec.valeur, envoye ? new Date() : null, envoye]);
+    } else if (dec.action === 'rappeler') {
+      await db.query(
+        'UPDATE app_temp_episodes SET dernier_envoi_le = $2, envois = envois + $3, valeur = $4 WHERE point = $1 AND clos_le IS NULL',
+        [point, envoye ? new Date() : null, envoye ? 1 : 0, dec.valeur == null ? null : dec.valeur]);
+    } else if (dec.action === 'clore') {
+      await db.query('UPDATE app_temp_episodes SET clos_le = NOW() WHERE point = $1 AND clos_le IS NULL', [point]);
+    }
+  };
+
+  // 1. LE ROBOT D'ABORD. Si plus rien n'arrive, les quatre armoires sont
+  //    muettes pour UNE seule cause : envoyer quatre SMS pour une panne unique
+  //    est la meilleure facon de faire ignorer le cinquieme.
+  const d = await db.query('SELECT MAX(ts) AS dernier FROM app_temperatures');
+  const dernier = d.rows[0] && d.rows[0].dernier;
+  const age = dernier ? (+maintenant - +new Date(dernier)) : null;
+  const enPanne = (dernier == null) || age > AL.PANNE_MS;
+
+  const epRobot = await episodeOuvert(db, POINT_ROBOT);
+  const etatRobot = enPanne
+    ? { etat: 'muet', valeur: null, age: age }
+    : { etat: 'ok', valeur: null };
+  const decRobot = AL.decider(etatRobot, epRobot, maintenant, 1);
+  await agir(POINT_ROBOT, decRobot, AL.texte('Surveillance temperatures', decRobot, plage));
+
+  if (enPanne) return { actif: reg.actif, panne: true, decisions: decisions, destinataires: tels.length };
+
+  // 2. PUIS CHAQUE ARMOIRE.
+  const pts = (await db.query(
+    "SELECT DISTINCT point FROM app_temperatures WHERE ts > NOW() - INTERVAL '24 hours' ORDER BY point")).rows;
+  for (const row of pts) {
+    const point = row.point;
+    const m = await db.query(
+      'SELECT ts, valeur FROM app_temperatures WHERE point = $1 ORDER BY ts DESC LIMIT 8', [point]);
+    const etat = AL.etatPoint(m.rows, plage, maintenant);
+    const ep = await episodeOuvert(db, point);
+    const dec = AL.decider(etat, ep, maintenant, requis);
+    await agir(point, dec, AL.texte(point, dec, plage));
+  }
+  return { actif: reg.actif, panne: false, decisions: decisions, destinataires: tels.length };
+}
+
 let _minuterie = null;
 
-async function demarrer(db) {
+// Un tirage PUIS l'evaluation, toujours dans cet ordre et toujours les deux :
+// un tirage en echec est justement le cas ou l'alerte de panne doit partir.
+async function cycle(db, deps) {
+  try { await tirage(db); } catch (e) { /* tirage() trace deja son echec */ }
+  try { await evaluerAlertes(db, deps); }
+  catch (e) { console.error('  🌡️  Evaluation des alertes en echec :', e.message); }
+}
+
+async function demarrer(db, deps) {
   if (!db) return;
   await creerTable(db);
   if (!configure()) {
     console.log('  🌡️  Suivi des temperatures inactif (SAVERIS_USER / SAVERIS_PASS absents)');
     return;
   }
-  console.log('  🌡️  Suivi des temperatures actif — tirage toutes les 15 minutes');
-  await tirage(db);
+  const reg = await lireReglages(db).catch(() => ({ actif: false }));
+  console.log('  🌡️  Suivi des temperatures actif — tirage toutes les 15 minutes'
+    + (reg.actif ? ' — alertes ARMEES' : ' — alertes eteintes (Back office > Temperatures)'));
+  await cycle(db, deps);
   if (_minuterie) clearInterval(_minuterie);
-  _minuterie = setInterval(() => { tirage(db).catch(() => {}); }, PERIODE_MS);
+  _minuterie = setInterval(() => { cycle(db, deps).catch(() => {}); }, PERIODE_MS);
 }
 
 // ─── Les routes ───
 // Le portail (auth.js) protege deja tout /api/ : rien de plus a faire ici.
-function routes(app, getDb) {
+function routes(app, getDb, deps) {
+  // Les reglages de l'alerte. Lecture ouverte a l'application, ecriture
+  // reservee aux administrateurs : un numero d'astreinte n'est pas un reglage
+  // d'ecran.
+  app.get('/api/temp/reglages', async (req, res) => {
+    try {
+      const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+      const r = await lireReglages(db);
+      const ep = await db.query(
+        'SELECT point, motif, ouvert_le, valeur, envois FROM app_temp_episodes WHERE clos_le IS NULL ORDER BY ouvert_le');
+      res.json({ ok: true, reglages: r, episodes: ep.rows });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/temp/reglages', async (req, res) => {
+    try {
+      if (deps && typeof deps.estAdmin === 'function' && !(await deps.estAdmin(req))) {
+        return res.status(403).json({ ok: false, error: 'reserve aux administrateurs' });
+      }
+      const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+      const b = req.body || {};
+      // Un numero refuse est rendu tel quel a l'ecran plutot qu'avale en
+      // silence : croire qu'on a pose une astreinte et n'avoir rien pose est
+      // exactement le defaut qu'on cherche a eviter ici.
+      const num = (v) => {
+        const t = String(v == null ? '' : v).trim();
+        if (!t) return { ok: true, val: '' };
+        const n = (deps && typeof deps.numero === 'function') ? deps.numero(t) : t;
+        return n ? { ok: true, val: t } : { ok: false, val: t };
+      };
+      const n1 = num(b.tel1), n2 = num(b.tel2);
+      if (!n1.ok || !n2.ok) {
+        return res.status(400).json({ ok: false,
+          error: 'Numero de mobile non reconnu : ' + (!n1.ok ? n1.val : n2.val) });
+      }
+      const vmin = Number(b.vmin), vmax = Number(b.vmax);
+      if (!isFinite(vmin) || !isFinite(vmax) || vmin >= vmax) {
+        return res.status(400).json({ ok: false, error: 'Plage invalide : le minimum doit etre sous le maximum.' });
+      }
+      const actif = !!b.actif;
+      if (actif && !n1.val && !n2.val) {
+        return res.status(400).json({ ok: false,
+          error: 'Armer les alertes sans aucun numero reviendrait a ne prevenir personne.' });
+      }
+      await db.query(
+        'UPDATE app_temp_reglages SET actif=$1, tel1=$2, tel2=$3, vmin=$4, vmax=$5, maj=NOW() WHERE id=1',
+        [actif, n1.val, n2.val, vmin, vmax]);
+      res.json({ ok: true, reglages: await lireReglages(db) });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // Force une evaluation. Sert a l'essai en conditions reelles : on baisse un
+  // seuil, on appelle, on verifie que le telephone sonne.
+  app.post('/api/temp/alerte-test', async (req, res) => {
+    try {
+      if (deps && typeof deps.estAdmin === 'function' && !(await deps.estAdmin(req))) {
+        return res.status(403).json({ ok: false, error: 'reserve aux administrateurs' });
+      }
+      const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+      res.json({ ok: true, resultat: await evaluerAlertes(db, deps) });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
   // Etat du dispositif — c'est ce que l'ecran interroge pour savoir s'il doit
   // afficher des valeurs ou dire que les donnees sont vieilles.
   app.get('/api/temp/etat', async (req, res) => {
@@ -381,4 +583,5 @@ function routes(app, getDb) {
   });
 }
 
-module.exports = { demarrer, routes, tirage, creerTable, configure, normaliser, lireGroupes };
+module.exports = { demarrer, routes, tirage, creerTable, configure, normaliser, lireGroupes,
+                   evaluerAlertes, lireReglages, cycle, POINT_ROBOT };

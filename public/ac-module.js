@@ -101,6 +101,17 @@
   .ac-n{margin-left:auto;background:var(--gray-100);color:var(--gray-700);border-radius:10px;padding:1px 9px;font-size:.72rem;letter-spacing:0;font-weight:700}
   .ac-b{padding:14px 16px}
   .ac-vide{padding:1.3rem 1rem;text-align:center;color:var(--gray-500);font-size:.83rem}
+  .ac-temp-l{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}
+  .ac-temp-t{border:1px solid var(--gray-200);border-radius:10px;padding:7px 10px;display:flex;flex-direction:column;gap:1px}
+  .ac-temp-t .n{font-size:.72rem;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ac-temp-t .v{font-size:1.15rem;font-weight:800;color:var(--g-dark)}
+  .ac-temp-t .q{font-size:.68rem;color:var(--gray-500)}
+  .ac-temp-t.hors{border-color:#E65100;background:#FFF3E0}
+  .ac-temp-t.hors .v{color:#BF360C}
+  .ac-temp-t.muet{background:var(--gray-100)}
+  .ac-temp-t.muet .v,.ac-temp-t.muet .q{color:var(--gray-500)}
+  .ac-temp-al{margin-top:9px;font-size:.8rem;font-weight:700;color:#BF360C;line-height:1.5}
+  .ac-temp-off{margin-top:9px;font-size:.76rem;color:#B45309}
   .ac-lien{padding:9px 16px;border-top:1px solid var(--gray-200);background:var(--gray-100);text-align:center}
   .ac-lien button{background:none;border:none;color:var(--g-dark);font-weight:700;font-size:.82rem;cursor:pointer;font-family:inherit}
   .ac-anniv{background:linear-gradient(135deg,#FCE4EC 0%,#F8BBD0 100%);border-color:#F48FB1}
@@ -289,6 +300,13 @@
     </div>
   </div>
 
+  <div class="ac-card" id="ac-carte-temp" style="display:none">
+    <div class="ac-h"><svg class="ico"><use href="#ic-frigo"></use></svg> Armoires réfrigérées
+      <span class="ac-lien" style="margin-left:auto;padding:0;border:0"><button onclick="showSec('temperatures'); if(window.tpRafraichir) tpRafraichir();">Voir les courbes</button></span>
+    </div>
+    <div class="ac-b"><div id="ac-temp"></div></div>
+  </div>
+
   <div class="ac-card">
     <div class="ac-h"><svg class="ico"><use href="#ic-calendrier"></use></svg> Rendez-vous à venir</div>
     <div class="ac-b">
@@ -299,6 +317,77 @@
   </div>`;
 
   // ── Rendu ─────────────────────────────────────────────────────────────────
+  // ── Les armoires réfrigérées sur l'accueil ───────────────────────────
+  // Il fallait ouvrir le module Températures pour savoir dans quel état sont
+  // les vaccins. Une surveillance qu'il faut aller chercher n'est pas une
+  // surveillance.
+  //
+  // La carte ne dit JAMAIS « tout va bien » sur une donnée périmée : au-delà
+  // de 45 minutes sans relévé, la valeur disparaît et c'est le silence qui
+  // s'affiche. Un rond vert sur une mesure d'il y a six heures est plus
+  // dangereux que pas de carte du tout.
+  const AC_TEMP_PERIME = 45 * 60 * 1000;
+  let acTempQuand = 0;
+
+  async function acChargerTemp(force) {
+    const carte = document.getElementById('ac-carte-temp'); if (!carte) return;
+    const maintenant = Date.now();
+    // Une lecture toutes les cinq minutes suffit : les sondes envoient tous les
+    // quarts d'heure, et l'accueil se redessine à chaque synchronisation.
+    if (!force && acTempQuand && (maintenant - acTempQuand) < 5 * 60000) return;
+    acTempQuand = maintenant;
+    try {
+      const [re, rr] = await Promise.all([
+        fetch('/api/temp/etat', { cache: 'no-store' }).then(r => r.json()),
+        fetch('/api/temp/reglages', { cache: 'no-store' }).then(r => r.json()).catch(() => null)
+      ]);
+      acRendTemp(re, rr);
+    } catch (e) {
+      // Le serveur ne répond pas : on n'affiche rien plutôt qu'un état inventié.
+      carte.style.display = 'none';
+    }
+  }
+
+  function acRendTemp(etat, reg) {
+    const carte = document.getElementById('ac-carte-temp');
+    const z = document.getElementById('ac-temp');
+    if (!carte || !z) return;
+    if (!etat || !etat.ok || !etat.configure) { carte.style.display = 'none'; return; }
+    const pts = (etat.points || []).slice().sort((a, b) => String(a.point).localeCompare(String(b.point), 'fr'));
+    if (!pts.length) { carte.style.display = 'none'; return; }
+    carte.style.display = '';
+
+    const min = (reg && reg.reglages && reg.reglages.vmin != null) ? Number(reg.reglages.vmin) : 2;
+    const max = (reg && reg.reglages && reg.reglages.vmax != null) ? Number(reg.reglages.vmax) : 8;
+    const maintenant = Date.now();
+    const episodes = (reg && reg.episodes) || [];
+    const armees = !!(reg && reg.reglages && reg.reglages.actif);
+
+    let h = '<div class="ac-temp-l">' + pts.map(function (p) {
+      const t = new Date(p.derniere).getTime();
+      const vieux = (maintenant - t) > AC_TEMP_PERIME;
+      const v = Number(p.valeur);
+      const hors = !vieux && (v < min || v > max);
+      return '<div class="ac-temp-t' + (vieux ? ' muet' : (hors ? ' hors' : '')) + '">'
+        + '<span class="n">' + E(p.point) + '</span>'
+        + '<span class="v">' + (vieux ? '—' : (Math.round(v * 10) / 10).toString().replace('.', ',') + '°') + '</span>'
+        + '<span class="q">' + (vieux ? 'silence' : new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })) + '</span>'
+        + '</div>';
+    }).join('') + '</div>';
+
+    if (episodes.length) {
+      h += '<div class="ac-temp-al">' + episodes.map(function (e) {
+        return E(e.point) + ' · ' + (e.motif === 'panne' ? 'plus aucun relévé' : 'hors plage')
+          + ' depuis ' + acAge(new Date(e.ouvert_le).getTime());
+      }).join('<br>') + '</div>';
+    }
+    if (!armees) {
+      h += '<div class="ac-temp-off">Alertes éteintes : un dépassement la nuit ne préviendra personne.</div>';
+    }
+    z.innerHTML = h;
+  }
+  window.acChargerTemp = acChargerTemp;
+
   window.acRender = function () {
     if (!document.getElementById('sec-accueil')) return;
     const u = acUser();
@@ -308,6 +397,7 @@
     const d = document.getElementById('ac-date');
     if (d) d.textContent = n.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     acRendEntete();
+    acChargerTemp();
     acRendMoments();
     acRendSms();
     acRendAlertes();
