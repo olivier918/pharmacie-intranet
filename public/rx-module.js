@@ -82,7 +82,10 @@
   // après un clic, ou toutes après une resynchronisation, sans reconstruire la
   // conversation (ce qui la ferait sauter en haut de l'écran).
   window.rxBarre = function (c, r) {
-    return '<div class="rx" data-rx="' + c + '|' + rxRef(r) + '">' + rxContenu(c, r) + '</div>';
+    const u = rxUser();
+    const pleine = rxGroupes(c, r, u && u.id).length > 0;
+    return '<div class="rx' + (pleine ? ' pleine' : '') + '" data-rx="' + c + '|' + rxRef(r) + '">'
+      + rxContenu(c, r) + '</div>';
   };
   function rxContenu(c, r) {
     const u = rxUser();
@@ -99,7 +102,7 @@
       + '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/>'
       + '<circle cx="9" cy="10" r="1.1" fill="currentColor"/><circle cx="15" cy="10" r="1.1" fill="currentColor"/>'
       + '<path d="M8.5 14.2a4.2 4.2 0 0 0 7 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
-      + '</svg></button>';
+      + '</svg><span class="t">Réagir</span></button>';
   }
   function rxEch(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
@@ -168,7 +171,10 @@
     const v = String(boite.getAttribute('data-rx') || '');
     const i = v.indexOf('|');
     if (i < 0) return;
-    boite.innerHTML = rxContenu(v.slice(0, i), v.slice(i + 1));
+    const c = v.slice(0, i), r = v.slice(i + 1);
+    const u = rxUser();
+    boite.classList.toggle('pleine', rxGroupes(c, r, u && u.id).length > 0);
+    boite.innerHTML = rxContenu(c, r);
   }
   // Après une resynchronisation : les barres à l'écran se remettent à jour
   // sans reconstruire la conversation, qui sauterait en haut de l'écran.
@@ -231,12 +237,18 @@
   .rx-p span{font-family:inherit;font-size:.7rem;font-weight:700;color:var(--gray-500)}
   .rx-p.moi{background:var(--g-pale);border-color:var(--g-mid)}
   .rx-p.moi span{color:var(--g-dark)}
-  .rx-plus{border:none;background:none;color:var(--gray-300);cursor:pointer;padding:1px 3px;display:inline-flex;
-           align-items:center;opacity:0;transition:opacity .12s,color .12s}
-  .rx-plus:hover,.rx-plus:focus{color:var(--gray-500)}
-  .rx:hover .rx-plus,.rx:focus-within .rx-plus{opacity:1}
-  /* Sur un ecran tactile il n'y a pas de survol : le bouton reste visible. */
-  @media(hover:none){.rx-plus{opacity:1}}
+  /* Le bouton reste VISIBLE. Cache jusqu'au survol, il n'etait decouvert par
+     personne — et sur un ecran tactile il n'y a pas de survol du tout. Il est
+     discret (gris clair, petit) mais present, et il se colore au contact. */
+  .rx-plus{border:1px solid var(--gray-200);background:#fff;color:var(--gray-500);cursor:pointer;
+           border-radius:20px;padding:2px 8px;display:inline-flex;align-items:center;gap:4px;
+           font-size:.7rem;font-weight:600;line-height:1.5;transition:background .12s,color .12s,border-color .12s}
+  .rx-plus .t{letter-spacing:.2px}
+  .rx-plus:hover,.rx-plus:focus{background:var(--g-pale);border-color:var(--g-mid);color:var(--g-dark)}
+  /* Une fois que quelqu'un a reagi, les pastilles portent le sens : le bouton
+     se reduit a son icone pour ne pas encombrer la ligne. */
+  .rx.pleine .rx-plus .t{display:none}
+  .rx.pleine .rx-plus{padding:2px 6px}
   .rx-pop{position:fixed;z-index:99998;background:#fff;border:1px solid var(--gray-200);border-radius:22px;
           box-shadow:0 8px 26px rgba(0,0,0,.18);padding:4px 6px;display:flex;gap:2px}
   .rx-pop button{border:none;background:none;font-size:1.32rem;line-height:1;padding:5px 6px;border-radius:50%;
