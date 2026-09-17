@@ -1064,7 +1064,7 @@
   const OD_SECTION =
     '<div class="od-wrap">'
     + '<div class="od-bar"><div class="od-title">'
-    +   '<svg class="ico"><use href="#ic-ordonnance"></use></svg> Ordonnances déposées'
+    +   '<svg class="ico"><use href="#ic-boite-reception"></use></svg> Boîte de réception'
     +   ' <span id="od-nb" style="color:var(--gray-500);font-weight:600"></span></div>'
     + '<span class="od-grow"></span>'
     + '<button class="btn bs sm" onclick="odFormImporter()">'
@@ -1171,8 +1171,8 @@
       b.className = 'sb-item';
       b.setAttribute('data-sec', 'depots');
       b.setAttribute('onclick', "showSec('depots',this)");
-      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-ordonnance"></use></svg>'
-        + '<span class="sb-label">Ordonnances déposées</span>';
+      b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-boite-reception"></use></svg>'
+        + '<span class="sb-label">Boîte de réception</span>';
       navRef.insertAdjacentElement('afterend', b);
     }
 
