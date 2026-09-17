@@ -2798,6 +2798,13 @@ function _collRef(n){ switch(n){
   case 'groupesMsg':return groupesMsg;
   case 'litiges':return litiges; case 'facturesManq':return facturesManq;
   case 'smsProg':return smsProg; } return null; }
+// LE POINT D'ACCES DES MODULES AUX COLLECTIONS. Elles sont declarees avec
+// `let` au premier niveau d'un <script> : elles vivent dans la portee lexicale
+// globale, visibles par `typeof maCollection`, mais ELLES NE SONT PAS des
+// proprietes de `window`. Un module qui lit `window['deliveries']` recoit
+// `undefined` et se croit devant une liste vide — sans la moindre erreur.
+// C'est ce qui a vide les fiches patients de tout leur historique.
+window._collRef = _collRef;
 function _idsOf(a){ return new Set(Array.isArray(a)?a.filter(r=>r&&r.id!=null).map(r=>r.id):[]); }
 let _idSnap={};
 // patients/medecins n'ont pas d'id stocké : on leur assigne un id DÉTERMINISTE par clé naturelle

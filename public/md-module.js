@@ -124,7 +124,15 @@
   // ── Où les prescripteurs sont écrits ──────────────────────────────────────
   // Ajouter une source, c'est ajouter une ligne ici — pas toucher au reste.
   function mdSources() {
-    const tab = n => (typeof window[n] !== 'undefined' && Array.isArray(window[n])) ? window[n] : [];
+    // Par le resolveur de la page : les collections sont declarees avec `let`
+    // et ne sont pas des proprietes de `window`.
+    const tab = function (n) {
+      if (typeof window._collRef === 'function') {
+        const v = window._collRef(n);
+        if (Array.isArray(v)) return v;
+      }
+      return Array.isArray(window[n]) ? window[n] : [];
+    };
     const out = [];
     tab('locations').forEach(l => { if (l && l.prescripteur) out.push({ texte: l.prescripteur, ou: 'location' }); });
     tab('preps').forEach(p => { if (p && p.med) out.push({ texte: p.med, ou: 'préparation' }); });

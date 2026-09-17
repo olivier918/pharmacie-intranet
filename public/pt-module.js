@@ -160,8 +160,20 @@
     return { nom: parts[0], prenom: parts.slice(1).join(' ') };
   }
 
+  // Les collections sont declarees avec `let` dans index.html : elles NE SONT
+  // PAS des proprietes de `window`. Lire `window[nom]` rendait `undefined`
+  // pour chacune, donc une liste vide, donc une fiche patient sans le moindre
+  // evenement — et sans la moindre erreur pour le signaler. On passe par le
+  // resolveur de la page, qui les tient toutes.
   function ptColl(nom) {
-    try { const v = window[nom]; return Array.isArray(v) ? v : []; } catch (e) { return []; }
+    try {
+      if (typeof window._collRef === 'function') {
+        const v = window._collRef(nom);
+        if (Array.isArray(v)) return v;
+      }
+      const w = window[nom];
+      return Array.isArray(w) ? w : [];
+    } catch (e) { return []; }
   }
 
   // ── L'agrégation ─────────────────────────────────────────────────────────

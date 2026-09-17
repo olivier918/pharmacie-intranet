@@ -37,7 +37,7 @@ dépannages · `fc-` formulaires · `dm-` boîte à idées · `pl-` planning.
 
 ---
 
-## Les sept pièges de ce dépôt
+## Les huit pièges de ce dépôt
 
 Chacun a déjà causé une perte de données en production. Les lire avant d'écrire
 une ligne.
@@ -113,6 +113,31 @@ Les postes ne sont pas tous sur la même version. Une migration écrite est
 rejouée par chaque ancien poste et se bat avec elle-même à la fusion. **Traduire
 à la lecture** : voir `DM_LEGACY` / `dmEtat()` dans `dm-module.js`, et
 `credRelEtape()` dans `index.html`.
+
+### 8. Une collection n'est PAS sur `window`
+
+Les collections sont déclarées avec `let` au premier niveau d'un `<script>`.
+Elles vivent dans la **portée lexicale globale** — `typeof deliveries` répond
+bien `object`, et un autre `<script>` les voit par leur nom nu — mais **ce ne
+sont pas des propriétés de `window`**.
+
+```js
+typeof deliveries   // "object"
+window.deliveries   // undefined        ← et personne ne le signale
+```
+
+Un module qui lit `window['deliveries']` reçoit `undefined`, se croit devant
+une liste vide, et **n'a aucune erreur à montrer**. C'est ce qui a vidé les
+fiches patients de tout leur historique : les neuf sources d'événements
+rendaient zéro, la fiche s'affichait normalement, et rien ne disait qu'il
+manquait quelque chose.
+
+**Règle** : un module lit une collection par `window._collRef('<nom>')`, le
+résolveur exposé par `index.html`, ou par son nom nu. Jamais par `window`.
+`essais/acces-collections.js` garde la règle sur le code source lui-même.
+
+(`pl-core.js` fait exception : il est le noyau de `planning.html`, une autre
+page, où c'est lui qui crée les globales avec `window.x = …`.)
 
 ---
 
@@ -504,7 +529,8 @@ Ils extraient les fonctions du code réel (jamais une copie qui divergerait) et
 portent sur ce qui a déjà mordu : dates, fusion, échappement, images,
 raccourcis, préparations, réunion, crédits SMS, accusés, dépôts,
 ordonnance récupérée en livraison, preuve de dépôt groupé, groupes de
-destinataires, répertoire des laboratoires, réactions. **Toute logique de
+destinataires, répertoire des laboratoires, réactions, provenance du matériel,
+inversion nom/prénom, annuaire des médecins, accès aux collections. **Toute logique de
 tri, de date, de fusion ou de droits nouvelle mérite sa suite.**
 
 Il n'y a pas d'étape de compilation. Au minimum, en plus :
