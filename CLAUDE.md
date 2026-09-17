@@ -453,6 +453,32 @@ Corollaire général : **tout nouvel état partagé entre requêtes va en base, 
 dans une `Map` de module.** Un cache de lecture à durée courte (le solde SMS,
 `_enVol`) reste acceptable : au pire il est calculé deux fois.
 
+## Plusieurs personnes sur le même enregistrement : une collection à part
+
+`mergeById` remplace un enregistrement **entier** par le plus récemment
+modifié. Tant qu'une seule personne à la fois touche un enregistrement, tout va
+bien. Dès que plusieurs y écrivent en même temps, le dernier qui enregistre
+efface les autres, **sans message et sans trace**.
+
+La question à se poser pour tout nouveau champ : *est-il normal que deux
+personnes y touchent dans la même fenêtre de huit secondes ?*
+
+| Cas | Réponse |
+|---|---|
+| Les messages d'une conversation | Collection `messages`, à part de `convos` |
+| Les réactions à un message | Collection `reactions`, une par personne, avec son id |
+| Les tâches d'une demande de groupe | Une tâche par personne, reliées par un `lot` |
+| Le statut d'une livraison | Sur la livraison : une seule personne la traite |
+
+Un enregistrement par personne, c'est ce qui rend deux gestes simultanés
+compatibles. Le coût est une collection de plus à déclarer (piège n° 4) ;
+le coût de l'autre choix est une donnée perdue que personne ne voit passer.
+
+⚠️ `c.vu[uid]` (accusés de lecture de la messagerie) n'a **pas** été traité
+ainsi : deux lectures simultanées peuvent encore s'écraser. La conséquence —
+une pastille de non-lu qui reste allumée — a été jugée supportable. À revoir
+si elle devient gênante.
+
 ## Un travail à faire n’apparaît que dans UNE liste
 
 Une ordonnance photographiée chez le patient pendant une livraison ouvre un
@@ -477,7 +503,8 @@ for f in essais/*.js; do node "$f" || echo "ECHEC $f"; done
 Ils extraient les fonctions du code réel (jamais une copie qui divergerait) et
 portent sur ce qui a déjà mordu : dates, fusion, échappement, images,
 raccourcis, préparations, réunion, crédits SMS, accusés, dépôts,
-ordonnance récupérée en livraison. **Toute logique de
+ordonnance récupérée en livraison, preuve de dépôt groupé, groupes de
+destinataires, répertoire des laboratoires, réactions. **Toute logique de
 tri, de date, de fusion ou de droits nouvelle mérite sa suite.**
 
 Il n'y a pas d'étape de compilation. Au minimum, en plus :
