@@ -664,6 +664,7 @@ tr:hover td{background:#fafffe}
           </div>
           <div class="fg"><label>Montant à régler (€)</label><input type="number" id="d-montant" placeholder="0.00" step="0.01" min="0"></div>
           <div class="fg"><label>Date</label><input type="date" id="d-date"></div>
+          <div class="fg"><label>Heure <span style="font-weight:400;color:var(--gray-500)">(facultatif)</span></label><input type="time" id="d-heure"></div>
         </div>
         <div style="margin-top:.9rem">
           <div class="fg" style="margin-bottom:.6rem"><label>Options</label></div>
@@ -859,8 +860,9 @@ tr:hover td{background:#fafffe}
         <div style="margin-top:.9rem">
           <div class="fg" style="margin-bottom:.6rem"><label id="lc-caut-lbl">Caution</label></div>
           <div class="cbrow">
-            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-oui" value="oui"> <span id="lc-caut-oui-lbl">Oui</span></label>
-            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-non" value="non" checked> Non</label>
+            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-oui" value="oui" onchange="lcMajLiv()"> <span id="lc-caut-oui-lbl">Oui — reçue</span></label>
+            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-att" value="attente" onchange="lcMajLiv()"> <span id="lc-caut-att-lbl">En attente</span></label>
+            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-non" value="non" checked onchange="lcMajLiv()"> Non</label>
           </div>
         </div>
 
@@ -870,16 +872,26 @@ tr:hover td{background:#fafffe}
           <div id="lc-liv-bloc" style="display:none;margin-top:.8rem">
             <div class="fgrid">
               <div class="fg"><label>Date de livraison</label><input type="date" id="lc-liv-date"></div>
+              <div class="fg"><label>Heure <span style="font-weight:400;color:var(--gray-500)">(facultatif)</span></label>
+                <input type="time" id="lc-liv-heure"></div>
               <div class="fg"><label>Ajouter du matériel</label>
                 <select id="lc-liv-plus" onchange="lcLivAjouter()"></select>
+              </div>
+            </div>
+            <div class="fgrid" style="margin-top:.7rem">
+              <div class="fg" style="grid-column:1/-1"><label>Adresse de livraison</label>
+                <input type="text" id="lc-liv-adresse" placeholder="Reprise de la fiche patient" oninput="this.dataset.touche=1">
+                <div style="font-size:.72rem;color:var(--gray-500);margin-top:3px">
+                  Reprise de la fiche patient. À corriger si le matériel est livré ailleurs —
+                  chez un proche, en EHPAD, dans une résidence.</div>
               </div>
             </div>
             <div class="fg" style="margin-top:.7rem"><label>À emporter</label>
               <div id="lc-liv-mat" style="font-size:.85rem;line-height:1.7"></div>
             </div>
             <div class="cbrow" style="margin-top:.7rem">
-              <label class="cbl"><input type="checkbox" id="lc-liv-cheque"> Récupérer le chèque de caution</label>
-              <label class="cbl"><input type="checkbox" id="lc-liv-ordo"> Récupérer l'ordonnance</label>
+              <label class="cbl"><input type="checkbox" id="lc-liv-cheque" onchange="this.dataset.touche=1"> Récupérer le chèque de caution</label>
+              <label class="cbl"><input type="checkbox" id="lc-liv-ordo" onchange="this.dataset.touche=1"> Récupérer l'ordonnance</label>
             </div>
             <div style="font-size:.74rem;color:var(--gray-500);margin-top:.6rem;line-height:1.5">
               La livraison apparaîtra dans le journal à la date choisie, avec la liste à cocher au chargement.
@@ -4312,7 +4324,7 @@ function dCard(d){
     <div class="dc-left">
       <div class="dc-row1">
         <span class="dc-name">${d.nom} ${d.prenom}</span>
-        <span class="dc-lieu">${ico('lieu')} ${d.lieu}${d.adresse?' · '+d.adresse:''}</span>
+        <span class="dc-lieu">${ico('lieu')} ${d.lieu}${d.adresse?' · '+d.adresse:''}${d.heure?' · '+ico('heure')+' '+d.heure:''}</span>
         ${icons}
       </div>
       ${d.prepNotes?`<div class="dc-row2"><span class="dc-prep-inline">${ico('mortier')} ${d.prepNotes}</span></div>`:''}
@@ -4565,6 +4577,7 @@ function openDForm(id){
     document.getElementById('d-lieu').value=d.lieu;
     document.getElementById('d-montant').value=d.montant||'';
     document.getElementById('d-date').value=d.date;
+    document.getElementById('d-heure').value=d.heure||'';
     document.getElementById('d-frigo').checked=d.frigo;
     document.getElementById('d-promis').checked=d.promis;
     document.getElementById('d-ordo').checked=d.ordo;
@@ -4580,6 +4593,7 @@ function openDForm(id){
     document.getElementById('d-tel').value='';
     document.getElementById('d-montant').value='';
     document.getElementById('d-date').value=document.getElementById('dv-date').value;
+    document.getElementById('d-heure').value='';
     document.getElementById('d-frigo').checked=false;
     document.getElementById('d-promis').checked=false;
     document.getElementById('d-ordo').checked=false;
@@ -4604,6 +4618,7 @@ function saveD(){
     lieu:document.getElementById('d-lieu').value,
     montant:parseFloat(document.getElementById('d-montant').value)||0,
     date:document.getElementById('d-date').value,
+    heure:document.getElementById('d-heure').value||'',
     frigo:document.getElementById('d-frigo').checked,
     promis:document.getElementById('d-promis').checked,
     ordo:document.getElementById('d-ordo').checked,
@@ -5065,11 +5080,10 @@ function savePrep(){
   if(st){ st.style.display='block'; st.style.color='#2E7D32';
     st.textContent='✅ Demande enregistrée'+(quand?' — prévue '+quand:'')+'.';
     setTimeout(function(){ st.style.display='none'; },4000); }
-  // SANS CECI, LA DEMANDE NE PARTAIT JAMAIS AU SERVEUR. Elle ne vivait qu'en
-  // memoire, et la resynchronisation des huit secondes remplace `preps` par la
-  // copie serveur : la demande disparaissait. Elle ne survivait que si une
-  // autre action de l'application declenchait un enregistrement entre-temps —
-  // ce qui arrive souvent, et masquait la faute.
+  // Sans attendre. renderPreps() enregistre deja — les fonctions de rendu sont
+  // enveloppees pour cela en bas de ce fichier — mais apres 600 ms de debounce.
+  // Une demande prise au comptoir est deliberee et rare : ces 600 ms sont une
+  // fenetre ou un rechargement (deploiement, onglet ferme) l'emporterait.
   saveNow();
   renderPreps();
 }
@@ -6164,6 +6178,9 @@ function toggleLocForm(){
     ['lc-liv-cheque','lc-liv-ordo'].forEach(function(i){
       const e=document.getElementById(i); if(e){ e.checked=false; delete e.dataset.touche; }
     });
+    ['lc-liv-heure','lc-liv-adresse'].forEach(function(i){
+      const e=document.getElementById(i); if(e){ e.value=''; delete e.dataset.touche; }
+    });
     document.getElementById('lc-caut-non').checked=true;
     updateLocSub();
     formEnVue(c);
@@ -6176,7 +6193,8 @@ function updateLocSub(){
   // Montant de caution du type choisi (géré au Back Office).
   const cm=(LOC_TYPES[t]&&LOC_TYPES[t].caution!=null)?LOC_TYPES[t].caution:200;
   const cl=document.getElementById('lc-caut-lbl'); if(cl) cl.textContent='Caution de '+cm+' €';
-  const co=document.getElementById('lc-caut-oui-lbl'); if(co) co.textContent='Oui — '+cm+' €';
+  const co=document.getElementById('lc-caut-oui-lbl'); if(co) co.textContent='Oui — reçue ('+cm+' €)';
+  const ca=document.getElementById('lc-caut-att-lbl'); if(ca) ca.textContent='En attente — '+cm+' €';
   const box=document.getElementById('lc-sub-dyn'), row=document.getElementById('lc-sub-row');
   if(!box||!row) return;
   const opts=(LOC_TYPES[t]&&LOC_TYPES[t].opts)||[];
@@ -6197,16 +6215,19 @@ function lcCreerLivraison(dossier){
   const mat=lcLivMateriel();
   if(!mat.length){ alert('Choisissez un type d\'appareil avant de programmer la livraison.'); return null; }
   const date=(document.getElementById('lc-liv-date')||{}).value||lcAujourdhui();
+  const heure=(document.getElementById('lc-liv-heure')||{}).value||'';
+  // L'adresse vient de l'annuaire patient — la seule a jour — mais elle se
+  // corrige ici : un lit se livre souvent ailleurs que chez le patient, chez
+  // un proche ou dans une residence, sans que sa fiche change pour autant.
+  const adrSaisie=String((document.getElementById('lc-liv-adresse')||{}).value||'').trim();
   const now=Date.now();
   deliveries.unshift({
     id:now,
     nom:dossier.nom, prenom:dossier.prenom,
-    // L'adresse vit dans l'annuaire patient, pas sur le dossier : c'est la
-    // seule a jour, et une livraison partie a l'ancienne adresse revient.
-    adresse:(locPatient(dossier)||{}).adresse||dossier.adresse||'',
-    commune:(locPatient(dossier)||{}).commune||dossier.commune||'',
+    adresse:adrSaisie||(locPatient(dossier)||{}).adresse||dossier.adresse||'',
+    commune:adrSaisie?'':((locPatient(dossier)||{}).commune||dossier.commune||''),
     tel:locTel(dossier)||'',
-    lieu:'Domicile', date:date, montant:0,
+    lieu:'Domicile', date:date, heure:heure, montant:0,
     frigo:false, cold:false, promis:false,
     // `ordo` est le champ qui existe deja : c'est lui qui ouvre l'appareil
     // photo a la livraison. On ne cree pas un second drapeau pour la meme chose.
@@ -6242,26 +6263,82 @@ window.lcMajLiv = function(){
   if(d && !d.value) d.value=document.getElementById('lc-date-debut').value||lcAujourdhui();
   // La caution et l'ordonnance sont deja des faits du dossier : on les propose
   // coches plutot que de les faire ressaisir.
+  // On coche « recuperer le cheque » quand la caution est EN ATTENTE : c'est
+  // exactement ce qu'il reste a faire. Caution deja recue, il n'y a rien a
+  // prendre — cocher enverrait le livreur reclamer un cheque deja encaisse.
   const c=document.getElementById('lc-liv-cheque');
-  if(c && !c.dataset.touche) c.checked=document.getElementById('lc-caut-oui').checked;
+  if(c && !c.dataset.touche) c.checked=(lcCautionChoisie()==='attente');
+  const ad=document.getElementById('lc-liv-adresse');
+  if(ad && !ad.dataset.touche){
+    const n=(document.getElementById('lc-nom')||{}).value||'';
+    const pr=(document.getElementById('lc-prenom')||{}).value||'';
+    const fiche=patients.find(function(x){
+      return x && (x.nom||'').toUpperCase()===n.trim().toUpperCase()
+          && (x.prenom||'').toLowerCase()===pr.trim().toLowerCase(); });
+    ad.value=[(fiche&&fiche.adresse)||'', (fiche&&fiche.commune)||''].filter(Boolean).join(' · ');
+  }
   lcRemplirPlus(); lcRendLivMat();
 };
+// ── La caution : trois états, pas deux ──────────────────────────────────────
+// « Oui » disait qu'une caution etait DUE ; il ne disait pas si le cheque etait
+// dans le tiroir. Au retour du materiel, personne ne savait s'il fallait rendre
+// un cheque ou en reclamer un. Le troisieme etat separe les deux questions.
+//
+// LECTURE AU LIEU DE MIGRATION : les dossiers deja ouverts n'ont pas de
+// `cautionEtat`. On le deduit de `caution` a la lecture, on ne reecrit pas le
+// bloc — c'est la regle du depot pour toute reprise de donnees.
+function locCautionEtat(l){
+  if(!l) return 'non';
+  if(l.cautionEtat==='oui'||l.cautionEtat==='attente'||l.cautionEtat==='non') return l.cautionEtat;
+  return l.caution ? 'oui' : 'non';
+}
+function lcCautionChoisie(){
+  if((document.getElementById('lc-caut-oui')||{}).checked) return 'oui';
+  if((document.getElementById('lc-caut-att')||{}).checked) return 'attente';
+  return 'non';
+}
 function lcAujourdhui(){
   const n=new Date();
   return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+}
+// Ce qu'on emporte AVEC l'appareil sans que ce soit loue : un matelas, une
+// table de lit, une chaise garde-robe, un deambulateur. Ces objets ne sont pas
+// au catalogue du back office parce qu'ils ne font pas de contrat a eux seuls
+// et ne portent pas de caution — ils n'ont rien a y faire. Ils ne manquaient
+// qu'a un endroit : la liste de ce qu'il faut charger dans la voiture.
+const LIV_A_EMPORTER=[
+  {k:'liv:matelas',      lbl:'Matelas'},
+  {k:'liv:tablelit',     lbl:'Table de lit'},
+  {k:'liv:chaisegarde',  lbl:'Chaise garde-robe'},
+  {k:'liv:deambulateur', lbl:'Déambulateur'},
+  {k:'liv:piedserum',    lbl:'Pied à sérum'}
+];
+function livEmporterLbl(k){
+  const x=LIV_A_EMPORTER.find(function(e){ return e.k===k; });
+  return x?x.lbl:null;
 }
 function lcRemplirPlus(){
   const sel=document.getElementById('lc-liv-plus'); if(!sel) return;
   ensureLocTypes();
   sel.innerHTML='<option value="">— ajouter —</option>'
+    +'<optgroup label="Matériel loué">'
     +locTypesDB.slice().sort(function(a,b){ return String(a.lbl||'').localeCompare(String(b.lbl||''),'fr'); })
-      .map(function(t){ return '<option value="'+hEsc(t.id)+'">'+hEsc(t.lbl||t.id)+'</option>'; }).join('');
+      .map(function(t){ return '<option value="'+hEsc(t.id)+'">'+hEsc(t.lbl||t.id)+'</option>'; }).join('')
+    +'</optgroup>'
+    +'<optgroup label="À emporter, non facturé">'
+    +LIV_A_EMPORTER.map(function(e){ return '<option value="'+hEsc(e.k)+'">'+hEsc(e.lbl)+'</option>'; }).join('')
+    +'</optgroup>';
 }
 window.lcLivAjouter = function(){
   const sel=document.getElementById('lc-liv-plus'); if(!sel||!sel.value) return;
-  const t=LOC_TYPES[sel.value];
-  if(t && !lcLivSup.some(function(x){ return x.k===sel.value; })){
-    lcLivSup.push({k:sel.value, lbl:t.lbl||sel.value});
+  const k=sel.value;
+  const deja=lcLivSup.some(function(x){ return x.k===k; });
+  const emp=livEmporterLbl(k);
+  if(!deja){
+    // `serie:false` pour ce qui n'est pas un appareil : on releve le numero
+    // d'un lit, pas celui d'un matelas.
+    if(emp) lcLivSup.push({k:k, lbl:emp, serie:false});
+    else { const t=LOC_TYPES[k]; if(t) lcLivSup.push({k:k, lbl:t.lbl||k, serie:true}); }
   }
   sel.value=''; lcRendLivMat();
 };
@@ -6279,7 +6356,11 @@ function lcLivMateriel(){
   ((T&&T.opts)||[]).forEach(function(o){
     if(coches[o[0]]) out.push({k:t+':'+o[0], lbl:o[1], avecSerie:false, charge:false});
   });
-  lcLivSup.forEach(function(x){ out.push({k:x.k, lbl:x.lbl, avecSerie:true, charge:false, serie:''}); });
+  lcLivSup.forEach(function(x){
+    const ap=(x.serie!==false);   // un appareil porte un numero, un matelas non
+    out.push(ap ? {k:x.k, lbl:x.lbl, avecSerie:true, charge:false, serie:''}
+                : {k:x.k, lbl:x.lbl, avecSerie:false, charge:false});
+  });
   return out;
 }
 function lcRendLivMat(){
@@ -6323,7 +6404,11 @@ function saveLoc(){
     num:document.getElementById('lc-num').value,
     provenance:(document.getElementById('lc-prov')||{}).value||'',
     opts:getLocOpts(),
-    caution:document.getElementById('lc-caut-oui').checked,
+    // `caution` reste le booleen « une caution est due » : le contrat PDF, les
+    // retours et les anciens dossiers s'appuient dessus. `cautionEtat` dit en
+    // plus si le cheque est dans le tiroir ou toujours attendu.
+    caution:(lcCautionChoisie()!=='non'),
+    cautionEtat:lcCautionChoisie(),
     status:'nouveau'   // dossier débuté, pas encore saisi dans le logiciel de facturation
   };
   // Date de fin : on ne stocke un écart que si elle diffère du calcul —
@@ -6729,7 +6814,9 @@ function openRetour(id){
   document.getElementById('ret-notes').value='';
   document.getElementById('ret-complet-oui').checked=true;
   document.getElementById('ret-caut-oui').checked=true;
-  document.getElementById('ret-caution-wrap').style.display=l.caution?'block':'none';
+  // Une caution restee EN ATTENTE n'a jamais ete encaissee : demander si on la
+  // rend n'a aucun sens, et la question laisserait croire qu'un cheque existe.
+  document.getElementById('ret-caution-wrap').style.display=(locCautionEtat(l)==='oui')?'block':'none';
   const rcl=document.getElementById('ret-caut-lbl'); if(rcl) rcl.textContent='Caution de '+locCautionMontant(l)+' € restituée ?';
   document.getElementById('retour-info').innerHTML=
     `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}<br>
@@ -6750,7 +6837,11 @@ function openRetour(id){
               +'<input type="checkbox" class="ret-item" id="ret-item-'+o[0]+'" checked onchange="retMajComplet()"> '+o[1]+'</label>';
           }).join('')
         : '<div style="margin-top:.2rem;color:var(--gray-500)">Aucun accessoire enregistré à la sortie.</div>')
-    +(l.caution?'<div style="margin-top:.45rem;color:#E65100;font-weight:600">Caution de '+locCautionMontant(l)+' € encaissée à la sortie.</div>':'');
+    +(locCautionEtat(l)==='oui'
+        ? '<div style="margin-top:.45rem;color:#E65100;font-weight:600">Caution de '+locCautionMontant(l)+' € encaissée à la sortie.</div>'
+        : (locCautionEtat(l)==='attente'
+            ? '<div style="margin-top:.45rem;color:#E65100;font-weight:600">Caution de '+locCautionMontant(l)+' € JAMAIS REÇUE — rien à restituer.</div>'
+            : ''));
   openModal('retour-modal');
 }
 // Synchronise « matériel complet ? » avec le pointage : tout coché → Oui, sinon Non.
@@ -6776,7 +6867,7 @@ function saveRetour(){
     if(c&&!c.checked) manquants.push(o[1]);
   });
   l.retourManquants=manquants;
-  l.cautionRendue=l.caution?document.getElementById('ret-caut-oui').checked:null;
+  l.cautionRendue=(locCautionEtat(l)==='oui')?document.getElementById('ret-caut-oui').checked:null;
   l.retourBy=currentUser?.id||null;
   l.updatedAt=Date.now();
   // Trace automatique dans l'historique du dossier.
@@ -7247,7 +7338,9 @@ function renderLocs(){
       <td style="white-space:nowrap">${l.num||'—'}</td>
       <td style="white-space:nowrap">${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'}</td>
       <td style="white-space:nowrap;${finStyle}">${locDateFin(l)}${renBadge}</td>
-      <td style="text-align:center">${l.caution?ico('valider')+' '+locCautionMontant(l)+'€':'—'}</td>
+      <td style="text-align:center">${locCautionEtat(l)==='attente'
+        ? `<span class="badge" style="background:#FFF3E0;color:#E65100;border:1px solid #FFB74D;font-weight:700;padding:2px 8px;white-space:nowrap">${ico('heure')} ${locCautionMontant(l)}€ en attente</span>`
+        : (l.caution?ico('valider')+' '+locCautionMontant(l)+'€':'—')}</td>
       <td><span class="badge" style="${locStatColor(l.status)};padding:3px 9px">${l.status}</span>${alertLine}${sentLine}${retourLine}</td>
       <td class="no-print">
         <div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -7800,7 +7893,7 @@ function editLoc(id){
   document.getElementById('lc-type').value=l.type||'';
   document.getElementById('lc-num').value=l.num||'';
   fillLocProvSelect(l.provenance||'');
-  document.getElementById(l.caution?'lc-caut-oui':'lc-caut-non').checked=true;
+  document.getElementById({oui:'lc-caut-oui',attente:'lc-caut-att',non:'lc-caut-non'}[locCautionEtat(l)]).checked=true;
   updateLocSub();
   ((LOC_TYPES[l.type]&&LOC_TYPES[l.type].opts)||[]).forEach(function(o){
     const el=document.getElementById('lc-opt-'+o[0]);

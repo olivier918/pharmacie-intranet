@@ -78,5 +78,63 @@ t('une livraison sans matériel ne réclame jamais rien',
 t('une livraison ordinaire non plus', dSerieAFaire({ id: 3, status: 'done' }) === false);
 t('rien du tout ne casse rien', dSerieAFaire(null) === false);
 
+// ── La caution : trois etats, pas deux ──────────────────────────────────────
+// « Oui » disait qu'une caution etait DUE, pas que le cheque etait dans le
+// tiroir. Au retour, personne ne savait s'il fallait rendre un cheque ou en
+// reclamer un.
+eval(bloc('locCautionEtat'));
+
+console.log('\nLa caution — reçue, en attente, ou pas de caution');
+t('un dossier neuf porte son état', locCautionEtat({ cautionEtat: 'attente' }) === 'attente');
+t('« oui » se lit tel quel', locCautionEtat({ cautionEtat: 'oui' }) === 'oui');
+t('« non » aussi', locCautionEtat({ cautionEtat: 'non' }) === 'non');
+// LECTURE AU LIEU DE MIGRATION : les dossiers ouverts avant ce changement
+// n'ont pas de cautionEtat, et on ne reecrit pas le bloc pour le leur poser.
+t('un ancien dossier avec caution se lit « reçue »', locCautionEtat({ caution: true }) === 'oui');
+t('un ancien dossier sans caution se lit « non »', locCautionEtat({ caution: false }) === 'non');
+t('un ancien dossier muet se lit « non »', locCautionEtat({}) === 'non');
+t('rien du tout ne casse rien', locCautionEtat(null) === 'non');
+t('une valeur inconnue retombe sur le booléen',
+  locCautionEtat({ cautionEtat: 'peut-être', caution: true }) === 'oui');
+
+// ── Ce qu'on emporte sans le facturer ───────────────────────────────────────
+const mE = /const LIV_A_EMPORTER=\[[\s\S]*?\n\];/.exec(src);
+if (!mE) throw new Error('LIV_A_EMPORTER introuvable');
+eval(mE[0].replace('const', 'var'));
+eval(bloc('livEmporterLbl'));
+
+console.log('\nLe matériel à emporter, non facturé');
+t('le matelas y est', livEmporterLbl('liv:matelas') === 'Matelas');
+t('la table de lit aussi', livEmporterLbl('liv:tablelit') === 'Table de lit');
+t('la chaise garde-robe aussi', livEmporterLbl('liv:chaisegarde') === 'Chaise garde-robe');
+t('le déambulateur, demandé dès le premier jour, est là',
+  livEmporterLbl('liv:deambulateur') === 'Déambulateur');
+t('un identifiant du catalogue loué n’en fait pas partie', livEmporterLbl('lit') === null);
+t('leurs identifiants sont préfixés, donc jamais confondus avec un type loué',
+  LIV_A_EMPORTER.every(e => /^liv:/.test(e.k)));
+t('aucun doublon dans la liste',
+  new Set(LIV_A_EMPORTER.map(e => e.k)).size === LIV_A_EMPORTER.length);
+
+// On ne releve pas le numero de serie d'un matelas : la regle est portee par
+// `serie:false` a l'ajout, et relue par lcLivMateriel.
+console.log('\nQui porte un numéro de série');
+function sup(l) {   // la boucle de lcLivMateriel, telle qu'elle est ecrite
+  const out = [];
+  l.forEach(function (x) {
+    const ap = (x.serie !== false);
+    out.push(ap ? { k: x.k, lbl: x.lbl, avecSerie: true, charge: false, serie: '' }
+                : { k: x.k, lbl: x.lbl, avecSerie: false, charge: false });
+  });
+  return out;
+}
+t('un appareil ajouté réclame son numéro',
+  sup([{ k: 'fauteuil', lbl: 'Fauteuil', serie: true }])[0].avecSerie === true);
+t('un matelas, non',
+  sup([{ k: 'liv:matelas', lbl: 'Matelas', serie: false }])[0].avecSerie === false);
+t('... et il n’a pas de case « serie » qui trainerait vide',
+  sup([{ k: 'liv:matelas', lbl: 'Matelas', serie: false }])[0].serie === undefined);
+t('un ajout d’avant ce changement, sans drapeau, reste un appareil',
+  sup([{ k: 'lit', lbl: 'Lit' }])[0].avecSerie === true);
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
