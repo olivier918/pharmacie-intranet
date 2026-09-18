@@ -622,6 +622,43 @@ function routes(app, getDb, deps) {
 
   // Force une evaluation. Sert a l'essai en conditions reelles : on baisse un
   // seuil, on appelle, on verifie que le telephone sonne.
+  // L'archive des releves signes. C'est la piece qu'un inspecteur demande : qui
+  // a verifie, quand, sur quelle periode, et ce qu'il a ecrit sur les
+  // depassements. Elle se LIT — aucune route ne permet de corriger un releve
+  // deja signe, et c'est volontaire : une trace qu'on peut reecrire ne prouve
+  // plus rien.
+  app.get('/api/temp/releves', async (req, res) => {
+    try {
+      const db = getDb(); if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+      const limite = Math.min(Math.max(parseInt(req.query.limite, 10) || 60, 1), 400);
+      const cond = [], args = [];
+      if (req.query.debut) {
+        const d = new Date(req.query.debut);
+        if (isNaN(d)) return res.status(400).json({ ok: false, error: 'plage invalide' });
+        args.push(d.toISOString()); cond.push('le >= $' + args.length);
+      }
+      if (req.query.fin) {
+        const f = new Date(req.query.fin);
+        if (isNaN(f)) return res.status(400).json({ ok: false, error: 'plage invalide' });
+        args.push(f.toISOString()); cond.push('le <= $' + args.length);
+      }
+      args.push(limite);
+      const q = await db.query(
+        'SELECT id, le, par, nom, debut, fin, depassements, commentaire FROM app_temp_releves'
+        + (cond.length ? ' WHERE ' + cond.join(' AND ') : '')
+        + ' ORDER BY le DESC LIMIT $' + args.length, args);
+      const n = await db.query('SELECT COUNT(*)::int AS n FROM app_temp_releves');
+      // Jusqu'ou les mesures brutes remontent encore. Au-dela, un releve garde
+      // sa signature et son commentaire, mais sa courbe n'est plus
+      // redessinable : l'ecran doit le dire plutot que d'afficher un cadre vide.
+      const p = await db.query('SELECT MIN(ts) AS plus_ancienne FROM app_temperatures');
+      res.json({
+        ok: true, releves: q.rows, total: (n.rows[0] && n.rows[0].n) || 0,
+        mesuresDepuis: (p.rows[0] && p.rows[0].plus_ancienne) || null
+      });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
   app.post('/api/temp/alerte-test', async (req, res) => {
     try {
       if (deps && typeof deps.estAdmin === 'function' && !(await deps.estAdmin(req))) {

@@ -222,6 +222,26 @@ Le second pharmacien du jour n'est pas sollicité : une signature par jour
 suffit. Table `app_temp_releves` — qui, quand, sur quelle période, combien de
 dépassements, et le commentaire.
 
+### L'archive, en bas de l'écran Températures
+
+Signer ne sert à rien si personne ne peut relire. La carte **« Relevés
+signés »** liste les validations : date, qui, période couverte, dépassements et
+commentaire. Un clic rouvre le relevé.
+
+**On ne stocke aucune image de la courbe.** Rouvrir un relevé **redessine** la
+période depuis `app_temperatures`, avec le même moteur que la fenêtre de
+validation — donc ce qui s'affiche est la donnée, pas une capture qu'on aurait
+pu retoucher entre-temps.
+
+La contrepartie est assumée, et l'écran la dit : **le jour où les mesures brutes
+seront purgées, la signature et le commentaire resteront, la courbe non.** C'est
+le lien à garder en tête quand la rétention sera écrite — et la raison pour
+laquelle un rapport PDF archivé reste nécessaire.
+
+**Rien ne se corrige.** Il n'existe aucune route pour modifier un relevé signé,
+et c'est volontaire : une trace qu'on peut réécrire ne prouve plus rien. Une
+erreur se rattrape dans le commentaire du relevé suivant.
+
 ## Les routes
 
 | Route | Ce qu'elle fait |
@@ -233,6 +253,7 @@ dépassements, et le commentaire.
 | `POST /api/temp/astreintes` | Remplace la liste des astreintes — **administrateurs seulement** |
 | `GET /api/temp/releve` | Dernier relevé signé + dépassements depuis |
 | `POST /api/temp/releve` | Signe le relevé — refuse un dépassement non commenté |
+| `GET /api/temp/releves?debut=&fin=&limite=` | L'archive des relevés signés. **Lecture seule — rien ne les modifie.** |
 | `POST /api/temp/alerte-test` | Force une évaluation — **administrateurs seulement** |
 | `POST /api/temp/diag` | Force un tirage et raconte chaque étape. **C'est la route qu'on regarde le jour où plus rien n'arrive.** Ne renvoie jamais d'identifiant. |
 
@@ -259,7 +280,7 @@ côté** : c'est précisément pour cela qu'on ne l'a pas débranché.
 
 | Reste | Pourquoi ça compte |
 |---|---|
-| **Le rapport PDF sur une plage** | La pièce à sortir en inspection : courbes, minima, maxima, durée hors seuils. |
+| **Le rapport PDF sur une plage** | La pièce à sortir en inspection : courbes, minima, maxima, durée hors seuils, et les relevés signés de la période. C'est aussi ce qui survivra à la purge des mesures brutes. |
 | **La rétention** | 13 mois de brut, puis condensé quotidien (mini, maxi, moyenne, durée hors seuils) sur 5 ans. Rien ne presse — c'est le genre de chose qu'on oublie jusqu'à ce que la table pèse. |
 | **Renseigner les astreintes** | Côté organisation, pas côté code : Écran Températures, en bas. |
 

@@ -107,6 +107,23 @@
   .tp-rv-act{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
   .tp-rv-sig{font-size:13px;color:#5b5a53;flex:1}
   .tp-rv-ko{color:#b3261e;font-size:13px;margin-top:8px}
+  .tp-ar-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .tp-ar-h .tp-al-t{margin:0;flex:1}
+  .tp-ar-r{display:block;width:100%;text-align:left;border:1px solid #e6e4dc;border-radius:10px;
+    padding:10px 13px;margin-bottom:8px;background:#fff;cursor:pointer;font:inherit;color:inherit}
+  .tp-ar-r:hover{border-color:#1D5C3A;background:#f6faf7}
+  .tp-ar-r .l1{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:14px}
+  .tp-ar-r .l1 b{color:#1a1a1a}
+  .tp-ar-r .qui{color:#5b5a53}
+  .tp-ar-r .l2{font-size:12.5px;color:#888780;margin-top:2px}
+  .tp-ar-r .com{font-size:13px;color:#4a4a45;margin-top:5px;font-style:italic;
+    overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .tp-ar-b{display:inline-block;border-radius:20px;padding:1px 9px;font-size:11.5px;font-weight:700}
+  .tp-ar-b.ras{background:#E8F5E9;color:#1D5C3A}
+  .tp-ar-b.dep{background:#fff6f5;color:#b3261e;border:1px solid #f0c8c4}
+  .tp-ar-vide{color:#888780;font-size:13.5px;padding:8px 0 12px;line-height:1.55}
+  .tp-ar-note{font-size:12px;color:#888780;margin-top:6px}
+  @media print{.tp-ar-r{break-inside:avoid;border-color:#ccc}.tp-ar-r .com{-webkit-line-clamp:unset;display:block}}
   @media(max-width:700px){.tp-wrap{padding:14px}.tp-legende{gap:12px}}
   `;
 
@@ -128,6 +145,7 @@
       <div class="tp-info" id="tp-info"></div>
     </div>
     <div class="tp-carte" id="tp-alertes" style="margin-top:18px"></div>
+    <div class="tp-carte" id="tp-archives" style="margin-top:18px"></div>
   </div>`;
 
   // ── Outils ────────────────────────────────────────────────────────────────
@@ -450,7 +468,7 @@
     if (!(T1 > T0)) T1 = T0 + 1;
     vmin = Math.floor(vmin - 1); vmax = Math.ceil(vmax + 1);
 
-    const L = 1000, H = 260, mg = { g: 40, d: 70, h: 12, b: 26 };
+    const L = 1000, H = 260, mg = { g: 40, d: 96, h: 12, b: 26 };
     const x0 = mg.g, x1 = L - mg.d, y0 = mg.h, y1 = H - mg.b;
     const X = function (t) { return x0 + (t - T0) / (T1 - T0) * (x1 - x0); };
     const Y = function (v) { return y1 - (v - vmin) / (vmax - vmin) * (y1 - y0); };
@@ -670,6 +688,130 @@
     } catch (e) { tpMsg('\u00c9valuation impossible : ' + e.message, true); }
   };
 
+  // ── L'archive des relevés signés ──────────────────────────────────────────
+  // Signer un relevé ne sert à rien si personne ne peut le relire : la trace
+  // existait en base depuis le premier jour, mais aucun écran ne la montrait.
+  // Le jour où un inspecteur la demande, il faut pouvoir l'ouvrir, pas écrire
+  // une requête SQL.
+  //
+  // ON NE STOCKE PAS D'IMAGE DE LA COURBE. Rouvrir un relevé redessine la
+  // période depuis les mesures brutes, avec le même moteur que la fenêtre de
+  // validation — donc ce qui s'affiche est la donnée, pas une capture qu'on
+  // pourrait avoir retouchée. La contrepartie est honnête et l'écran la dit :
+  // le jour où les mesures brutes seront purgées, la signature et le
+  // commentaire resteront, la courbe non.
+  let tpArchives = [], tpArTotal = 0, tpArDepuis = null, tpArLimite = 60;
+
+  async function tpChargerArchives() {
+    const r = await fetch('/api/temp/releves?limite=' + tpArLimite, { cache: 'no-store' });
+    const j = await r.json();
+    if (!j || !j.ok) throw new Error((j && j.error) || 'archives indisponibles');
+    tpArchives = j.releves || [];
+    tpArTotal = j.total || tpArchives.length;
+    tpArDepuis = j.mesuresDepuis ? new Date(j.mesuresDepuis) : null;
+  }
+
+  function tpRendreArchives() {
+    const z = document.getElementById('tp-archives'); if (!z) return;
+    let h = '<div class="tp-ar-h"><div class="tp-al-t">Relevés signés</div>';
+    if (tpArchives.length) {
+      h += '<button class="tp-onglet no-print" onclick="window.print()">Imprimer</button>';
+      if (tpArchives.length < tpArTotal)
+        h += '<button class="tp-onglet no-print" onclick="tpArchivesTout()">Tout l’historique ('
+          + tpArTotal + ')</button>';
+    }
+    h += '</div>';
+
+    if (!tpArchives.length) {
+      h += '<div class="tp-ar-vide">Aucun relevé signé pour l’instant. '
+        + 'Le premier pharmacien qui se connecte le matin se voit présenter la courbe '
+        + 'depuis la dernière validation, et doit la signer pour continuer.</div>';
+      z.innerHTML = h; return;
+    }
+
+    h += tpArchives.map(function (a, i) {
+      const le = new Date(a.le);
+      const d1 = a.debut ? new Date(a.debut) : null;
+      const d2 = new Date(a.fin || a.le);
+      const n = Number(a.depassements) || 0;
+      return '<button class="tp-ar-r" onclick="tpArchiveOuvrir(' + i + ')">'
+        + '<div class="l1"><b>' + tpDateCourte(le) + ' à ' + tpHeure(le) + '</b>'
+        + '<span class="qui">' + tpEch(a.nom || a.par) + '</span>'
+        + '<span class="tp-ar-b ' + (n ? 'dep' : 'ras') + '">'
+        + (n ? n + ' dépassement' + (n > 1 ? 's' : '') : 'Rien à signaler') + '</span></div>'
+        + '<div class="l2">' + (d1
+            ? 'Période du ' + tpDateCourte(d1) + ' ' + tpHeure(d1) + ' au ' + tpDateCourte(d2) + ' ' + tpHeure(d2)
+            : 'Premier relevé, jusqu’au ' + tpDateCourte(d2) + ' ' + tpHeure(d2)) + '</div>'
+        + (a.commentaire ? '<div class="com">« ' + tpEch(a.commentaire) + ' »</div>' : '')
+        + '</button>';
+    }).join('');
+
+    if (tpArDepuis) h += '<div class="tp-ar-note">Les courbes sont redessinées depuis les mesures '
+      + 'conservées, qui remontent au ' + tpDateCourte(tpArDepuis) + '. Au-delà, un relevé garde sa '
+      + 'signature et son commentaire, mais plus sa courbe.</div>';
+    z.innerHTML = h;
+  }
+
+  window.tpArchivesTout = async function () {
+    tpArLimite = 400;
+    try { await tpChargerArchives(); tpRendreArchives(); } catch (e) {}
+  };
+
+  // Une fenêtre de RELECTURE : elle se ferme, elle ne demande rien, et elle
+  // n'offre aucun moyen de modifier ce qui a été signé.
+  window.tpArchiveOuvrir = async function (i) {
+    const a = tpArchives[i]; if (!a) return;
+    let ov = document.getElementById('tp-archive');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'tp-archive'; ov.className = 'tp-rv';
+      ov.addEventListener('click', function (e) { if (e.target === ov) tpArchiveFermer(); });
+      document.body.appendChild(ov);
+    }
+    const le = new Date(a.le);
+    const d2 = new Date(a.fin || a.le);
+    const d1 = a.debut ? new Date(a.debut) : new Date(d2.getTime() - 24 * 3600e3);
+    const n = Number(a.depassements) || 0;
+
+    ov.innerHTML = '<div class="tp-rv-b">'
+      + '<div class="tp-rv-h"><b>Relevé signé le ' + tpDateCourte(le) + ' à ' + tpHeure(le) + '</b>'
+      + '<p>Par <b>' + tpEch(a.nom || a.par) + '</b> · période du ' + tpDateCourte(d1) + ' à ' + tpHeure(d1)
+      + ' au ' + tpDateCourte(d2) + ' à ' + tpHeure(d2) + '.</p></div>'
+      + '<div class="tp-rv-c"><div id="tp-ar-graphe"><div class="tp-vide">Lecture des mesures…</div></div></div>'
+      + (n ? '<div class="tp-rv-d"><b>' + n + ' relevé' + (n > 1 ? 's' : '') + ' hors plage</b></div>' : '')
+      + '<div class="tp-rv-f"><label>Commentaire du pharmacien</label>'
+      + '<div style="font-size:14px;line-height:1.6;color:#1a1a1a">'
+      + (a.commentaire ? tpEch(a.commentaire) : '<i style="color:#888780">Aucun commentaire.</i>')
+      + '</div><div class="tp-rv-act"><span class="tp-rv-sig">Ce relevé ne peut pas être modifié.</span>'
+      + '<button class="tp-onglet" onclick="tpArchiveFermer()">Fermer</button></div></div></div>';
+    ov.classList.add('on');
+    document.addEventListener('keydown', tpArchiveEchap, true);
+
+    try {
+      const rm = await fetch('/api/temp/mesures?debut=' + encodeURIComponent(d1.toISOString())
+        + '&fin=' + encodeURIComponent(d2.toISOString()), { cache: 'no-store' });
+      const jm = await rm.json();
+      const mes = (jm && jm.mesures) || [];
+      const hote = document.getElementById('tp-ar-graphe'); if (!hote) return;
+      if (!mes.length) {
+        hote.innerHTML = '<div class="tp-vide">Les mesures de cette période ne sont plus conservées. '
+          + 'La signature et le commentaire ci-dessous restent, la courbe non.</div>';
+        return;
+      }
+      hote.innerHTML = '';
+      tpDessinerDans('tp-ar-graphe', mes);
+    } catch (e) {
+      const hote = document.getElementById('tp-ar-graphe');
+      if (hote) hote.innerHTML = '<div class="tp-vide">Courbe indisponible : ' + tpEch(e.message) + '</div>';
+    }
+  };
+  window.tpArchiveFermer = function () {
+    const ov = document.getElementById('tp-archive');
+    if (ov) { ov.classList.remove('on'); ov.innerHTML = ''; }
+    document.removeEventListener('keydown', tpArchiveEchap, true);
+  };
+  function tpArchiveEchap(e) { if (e.key === 'Escape') tpArchiveFermer(); }
+
   async function tpRafraichir() {
     if (tpEnCours) return; tpEnCours = true;
     try {
@@ -677,6 +819,7 @@
       // Les alertes ne doivent pas faire tomber l'ecran : si leur lecture
       // echoue, les courbes restent lisibles et le panneau se tait.
       try { await tpChargerAlertes(); tpRendreAlertes(); } catch (e) {}
+      try { await tpChargerArchives(); tpRendreArchives(); } catch (e) {}
     }
     catch (e) {
       const z = document.getElementById('tp-zone');
