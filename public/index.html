@@ -10614,7 +10614,21 @@ const SMS_TPL_DEFAULT=[
   // {prenom} est remplace a l'application du modele. Le NOM DU VACCIN n'apparait
   // jamais : un SMS s'affiche sur un ecran verrouille, que n'importe qui peut
   // lire. « Rappel de vaccination » est anodin ; « rappel HPV » ne l'est pas.
-  {id:'tpl:vaccin',  lbl:'Rappel de vaccination', text:"Bonjour {prenom}, il est temps de faire votre rappel de vaccination. Nous vous accueillons sans rendez-vous. Pharmacie du Centre - 02 31 52 15 71"}
+  {id:'tpl:vaccin',  lbl:'Rappel de vaccination', text:"Bonjour {prenom}, il est temps de faire votre rappel de vaccination. Nous vous accueillons sans rendez-vous. Pharmacie du Centre - 02 31 52 15 71"},
+  // Le lien de depot (/o). Il remplace la boite mail de l'officine, qui etait
+  // hors cadre : la donnee y transitait chez un tiers non certifie.
+  //
+  // LE TEXTE NE DIT PAS CE QU'IL Y A DANS LE DOCUMENT. « Vos documents »,
+  // et rien de plus : nommer un compte rendu ou un examen dans un SMS, c'est
+  // a la fois l'ecrire sur un ecran verrouille que n'importe qui peut lire, et
+  // INVITER le patient a nous envoyer des pieces qu'on ne lui a pas demandees.
+  // Le modele « ordonnance » ne nomme qu'un document qu'on reclame deja.
+  //
+  // Le lien est nu, sans https:// : les telephones le rendent cliquable, et
+  // huit caracteres de plus feraient basculer certains envois a deux credits.
+  {id:'tpl:depot',   lbl:'Envoyer un document (lien)', text:"Bonjour, vous pouvez nous transmettre vos documents en photo ici : pilot.pharmacie-mondeville.fr/o Pharmacie du Centre - 02 31 52 15 71"},
+  {id:'tpl:depordo', lbl:'Ordonnance a envoyer (lien)', text:"Bonjour, la Pharmacie du Centre a besoin de votre ordonnance. Envoyez-la en photo ici : pilot.pharmacie-mondeville.fr/o 02 31 52 15 71"},
+  {id:'tpl:depmut',  lbl:'Carte de mutuelle (lien)', text:"Bonjour, merci de nous envoyer votre carte de mutuelle en photo ici : pilot.pharmacie-mondeville.fr/o Pharmacie du Centre - 02 31 52 15 71"}
 ];
 
 // Modèles fournis d'origine ; remplacés par ceux de la base dès la première lecture serveur.
