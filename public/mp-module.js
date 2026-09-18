@@ -173,6 +173,27 @@
   .mp-m-qui{font-size:.71rem;font-weight:800;margin-bottom:3px}
   .mp-m-txt{font-size:.88rem;line-height:1.45;white-space:pre-wrap;word-break:break-word}
   .mp-m-q{font-size:.68rem;color:var(--gray-500);text-align:right;margin-top:3px}
+  .mp-m-ed{font-style:italic}
+  .mp-m{position:relative}
+  /* A COTE de la bulle, jamais dessus : pose au-dessus, la pastille recouvrait
+     la premiere ligne du message — on masquait le texte qu'on vient corriger. */
+  .mp-m-act{position:absolute;top:50%;transform:translateY(-50%);display:flex;gap:2px;background:#fff;
+    border:1px solid var(--gray-200);border-radius:20px;padding:2px;box-shadow:0 2px 8px rgba(0,0,0,.10);
+    opacity:0;transition:opacity .12s;left:calc(100% + 6px)}
+  .mp-m.moi .mp-m-act{left:auto;right:calc(100% + 6px)}
+  .mp-m:hover .mp-m-act,.mp-m:focus-within .mp-m-act{opacity:1}
+  /* Sur un ecran tactile il n'y a pas de survol : les boutons restent la. */
+  @media(hover:none){.mp-m-act{opacity:1}}
+  .mp-m-act button{border:none;background:none;color:var(--gray-500);cursor:pointer;
+    padding:4px 6px;border-radius:50%;display:inline-flex;align-items:center}
+  .mp-m-act button:hover{background:var(--gray-100);color:var(--g-dark)}
+  /* En modification, la bulle s'elargit : une zone de saisie a la largeur du
+     texte d'origine ne laisse pas la place de le reecrire. */
+  .mp-m.edit{max-width:92%;width:420px}
+  .mp-m-ed-z{display:flex;flex-direction:column;gap:6px}
+  .mp-m-ed-z textarea{font:inherit;font-size:.88rem;border:1px solid var(--g-border);border-radius:9px;
+    padding:7px 9px;resize:vertical;min-height:58px;width:100%;box-sizing:border-box}
+  .mp-m-ed-a{display:flex;gap:6px;justify-content:flex-end}
   .mp-m-f{display:flex;align-items:center;gap:8px;margin-top:6px;padding:7px 10px;background:var(--gray-100);border-radius:9px;font-size:.79rem;text-decoration:none;color:var(--g-dark);font-weight:600}
   .mp-m-f:hover{background:var(--gray-200)}
   .mp-m-img{max-width:100%;border-radius:9px;margin-top:6px;display:block;cursor:pointer}
@@ -344,21 +365,130 @@
       const moi = m.uid === (u && u.id);
       const f = m.fichier;
       const estImg = f && /^image\//.test(f.type || '');
-      return sep + '<div class="mp-m' + (moi ? ' moi' : '') + '">'
+      return sep + '<div class="mp-m' + (moi ? ' moi' : '') + (m.id === mpEdite ? ' edit' : '') + '">'
         + (!moi && c.membres.length > 2
             ? '<div class="mp-m-qui" style="color:' + mpCouleur(m.uid) + '">' + E(mpPrenom(m.uid)) + '</div>' : '')
-        + (m.txt ? '<div class="mp-m-txt">' + mpFormat(m.txt) + '</div>' : '')
+        + (m.id === mpEdite
+            ? '<div class="mp-m-ed-z"><textarea id="mp-ed-txt" onkeydown="mpToucheEdit(event)">'
+              + E(m.txt || '') + '</textarea><div class="mp-m-ed-a">'
+              + '<button class="btn bs sm" onclick="mpAnnulerEdit()">Annuler</button>'
+              + '<button class="btn bp sm" onclick="mpEnregistrerEdit()">Enregistrer</button></div></div>'
+            : (m.txt ? '<div class="mp-m-txt">' + mpFormat(m.txt) + '</div>' : ''))
         + (f ? (estImg
             ? '<img class="mp-m-img" src="/api/images/' + E(f.id) + '" onclick="window.open(\'/api/images/' + E(f.id) + '\')">'
             : '<a class="mp-m-f" href="/api/images/' + E(f.id) + '" target="_blank" rel="noopener">📎 ' + E(f.nom || 'Fichier') + '</a>')
           : '')
-        + '<div class="mp-m-q">' + mpHeure(m.ts) + '</div>'
+        + '<div class="mp-m-q">'
+        +   (m.editeLe ? '<span class="mp-m-ed" title="Ce message a été modifié">modifié</span> · ' : '')
+        +   mpHeure(m.ts) + '</div>'
+        + (mpPeutToucher(m) && m.id !== mpEdite
+            ? '<div class="mp-m-act no-print">'
+              + '<button title="Modifier" onclick="mpModifier(' + m.id + ')">'
+              +   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"'
+              +   ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+              +   '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'
+              + '<button title="Supprimer" onclick="mpSupprimer(' + m.id + ')">'
+              +   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"'
+              +   ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+              +   '<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6.5 7l1 13h9l1-13"/></svg></button>'
+              + '</div>'
+            : '')
         + (window.rxBarre ? window.rxBarre('msg', m.id) : '')
         + '</div>';
     }).join('');
     z.scrollTop = z.scrollHeight;
     mpMarquerLu(c);
   }
+
+  // ── Modifier, supprimer ───────────────────────────────────────────────────
+  //
+  // QUI. L'auteur du message, et un administrateur. Un administrateur parce
+  // qu'il faut pouvoir retirer une betise le jour ou son auteur est en conge,
+  // et que quelqu'un doit repondre de ce qui traine dans l'outil.
+  //
+  // SUPPRIMER EFFACE POUR DE BON — c'est le choix retenu, contre l'usage des
+  // messageries qui laissent « message supprime ». La contrepartie est reelle
+  // et il faut la connaitre : un fil relu plus tard peut devenir incomprehensible
+  // sans que rien ne dise qu'il manque quelque chose. En echange, ce qui est
+  // efface l'est vraiment, chez tout le monde.
+  //
+  // LA PIERRE TOMBALE EST OBLIGATOIRE. Sans elle, un poste en retard d'une
+  // resynchronisation renverrait le message a la fusion suivante, et il
+  // reapparaitrait. Les reactions posees dessus partent avec lui : orphelines,
+  // elles se rattacheraient a un identifiant qui n'existe plus.
+  function mpPeutToucher(m) {
+    const u = mpUser();
+    if (!u || !m) return false;
+    return m.uid === u.id || mpAdmin();
+  }
+  window.mpPeutToucher = mpPeutToucher;
+
+  // Les reactions d'UN message de la messagerie. Le canal compte autant que
+  // l'identifiant : le cahier de transmission pose les siennes sous 'th', et un
+  // identifiant numerique peut exister des deux cotes. Filtrer sur le seul
+  // identifiant effacerait les reactions d'un message du cahier.
+  function mpRxDuMessage(l, id) {
+    return (l || []).filter(function (r) {
+      return r && r.c === 'msg' && String(r.r) === String(id);
+    });
+  }
+  window.mpRxDuMessage = mpRxDuMessage;
+
+  let mpEdite = null;
+  window.mpModifier = function (id) {
+    const m = mpMsgs().find(x => x && x.id === id);
+    if (!m || !mpPeutToucher(m)) return;
+    if (!m.txt) { alert('Un message qui ne porte qu’une pièce jointe ne se modifie pas — supprimez-le et renvoyez-la.'); return; }
+    mpEdite = id;
+    mpRendFil();
+    const t = document.getElementById('mp-ed-txt');
+    if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  };
+  window.mpAnnulerEdit = function () { mpEdite = null; mpRendFil(); };
+  window.mpEnregistrerEdit = function () {
+    const m = mpMsgs().find(x => x && x.id === mpEdite);
+    const t = document.getElementById('mp-ed-txt');
+    if (!m || !t || !mpPeutToucher(m)) { mpEdite = null; mpRendFil(); return; }
+    const v = String(t.value || '').trim();
+    if (!v) { alert('Un message vide se supprime, il ne s’enregistre pas.'); return; }
+    if (v !== m.txt) {
+      m.txt = v.slice(0, 4000);
+      m.editeLe = Date.now();
+      m.editePar = (mpUser() || {}).id || null;
+      m.updatedAt = Date.now();
+      if (typeof logAction === 'function') logAction('Message modifié (messagerie)', '');
+      mpSave(true);
+    }
+    mpEdite = null;
+    mpRendFil();
+  };
+  // Entree enregistre, Maj+Entree passe a la ligne : le meme geste que la
+  // zone d'ecriture juste en dessous.
+  window.mpToucheEdit = function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); window.mpEnregistrerEdit(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); window.mpAnnulerEdit(); }
+  };
+
+  window.mpSupprimer = function (id) {
+    const l = mpMsgs();
+    const i = l.findIndex(x => x && x.id === id);
+    if (i < 0 || !mpPeutToucher(l[i])) return;
+    if (!confirm('Supprimer ce message ?\n\nIl disparaîtra pour tout le monde, définitivement.')) return;
+    if (typeof markDeleted === 'function') markDeleted('messages', id);
+    l.splice(i, 1);
+    // Les reactions posees dessus n'ont plus de cible.
+    if (typeof reactions !== 'undefined' && Array.isArray(reactions)) {
+      mpRxDuMessage(reactions, id).forEach(function (r) {
+        if (typeof markDeleted === 'function') markDeleted('reactions', r.id);
+        const k = reactions.indexOf(r);
+        if (k >= 0) reactions.splice(k, 1);
+      });
+    }
+    if (mpEdite === id) mpEdite = null;
+    if (typeof logAction === 'function') logAction('Message supprimé (messagerie)', '');
+    mpSave(true);
+    mpRender();
+  };
 
   // Marquer lu SANS toucher a updatedAt : la conversation elle-meme n'a pas
   // change, et deux personnes qui lisent en meme temps s'ecraseraient l'une
