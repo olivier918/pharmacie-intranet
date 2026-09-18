@@ -282,13 +282,46 @@ const corpsOk = (n) => ({ body: { nom: 'DUPONT', prenom: 'Marie',
     Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: D.nouveauJeton() }) }));
   t('un jeton inconnu est refusé', r.code === 410 && b.ecritures() === 0);
 
+  // ── La demande nominative : « cible » n'est pas « lien » ────────────────
+  // Une demande envoyée et jamais utilisée ne doit pas vivre éternellement :
+  // tant que rien n'est arrivé, elle reste un dépôt sans suite, donc purgeable.
+  console.log('\nLe lien nominatif : demandé, puis reçu');
+  const JET2 = D.nouveauJeton();
+  const DEM = { id: 21, ts: T - 9 * J, jeton: JET2, prenom: 'Paul', nom: 'DURAND',
+                motif: 'mutuelle', cible: { type: 'location', ref: 77 },
+                lien: null, recuLe: null, fichiers: [] };
+  t('une demande en attente n’est PAS rattachée', !D.rattache(DEM));
+  t('... donc une demande oubliée finit par être effacée',
+    D.aPurger([DEM], T, 7).length === 1);
+
+  b = await bancDepot({ etat: { depots: [Object.assign({}, DEM, { ts: 1 })] } });
+  r = await appeler(b.app.routes['POST /api/depot'],
+    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JET2 }) }));
+  const recu = b.lire().depots[0];
+  t('le dépôt par lien nominatif est accepté', r.code === 200 && r.corps.ok === true);
+  t('... et c’est LÀ que la cible devient le rattachement',
+    D.rattache(recu) && recu.lien.type === 'location' && String(recu.lien.ref) === '77');
+  t('... la date de rattachement est posée', !!recu.rattacheLe);
+  t('... et il n’est plus purgeable', D.aPurger([recu], Date.now() + 40 * J, 7).length === 0);
+
+  // Un rattachement déjà fait à la main ne doit pas être écrasé par la cible.
+  const JET3 = D.nouveauJeton();
+  b = await bancDepot({ etat: { depots: [{ id: 22, ts: 1, jeton: JET3, prenom: 'Ana',
+    cible: { type: 'location', ref: 1 }, lien: { type: 'renouvellement', ref: 9 }, fichiers: [] }] } });
+  r = await appeler(b.app.routes['POST /api/depot'],
+    Object.assign(corpsOk(1), { body: Object.assign(corpsOk(1).body, { jeton: JET3 }) }));
+  t('un rattachement déjà posé n’est pas écrasé par la cible',
+    b.lire().depots[0].lien.type === 'renouvellement' && b.lire().depots[0].lien.ref === 9);
+
   // ── L'état que la page publique a le droit de lire ──────────────────────
   console.log('\nCe que la page publique a le droit de savoir');
   b = await bancDepot({ etat: attendu });
   r = await appeler(b.app.routes['GET /api/depot/etat/:jeton'], { params: { jeton: JET }, headers: {} });
-  t('un jeton connu donne le prénom, et rien d’autre',
+  t('un jeton connu donne le prénom et le motif, et rien d’autre',
     r.corps && r.corps.lien === true && r.corps.prenom === 'Marie'
-    && Object.keys(r.corps).sort().join() === 'lien,ok,ouvert,prenom');
+    && Object.keys(r.corps).sort().join() === 'lien,motif,ok,ouvert,prenom');
+  t('... le motif est celui qu’on a demandé, jamais une donnée de santé',
+    r.corps.motif === 'document');
   r = await appeler(b.app.routes['GET /api/depot/etat/:jeton'],
     { params: { jeton: D.nouveauJeton() }, headers: {} });
   t('un jeton inconnu ne dit NI pourquoi, NI de qui il s’agit',

@@ -8,9 +8,24 @@
      /o                 l'affiche du comptoir. Dépôt anonyme, rendu au patient
                         sous la forme d'un numéro court (« D-47 ») qu'il lit au
                         pharmacien. Aucune donnée identifiante ne transite.
-     /o/<jeton>         le lien envoyé par SMS depuis un dossier de location ou
-                        un renouvellement. Le jeton PORTE le dossier : le dépôt
-                        arrive déjà rattaché, sans numéro à lire.
+     /o/<jeton>         le lien nominatif envoyé par SMS depuis la boîte de
+                        réception (« Demander un document »), un dossier de
+                        location, un renouvellement ou une fiche patient. Le
+                        jeton PORTE le dossier : le dépôt arrive au nom du
+                        patient et déjà rattaché, sans rien à saisir.
+
+   LE DOSSIER VISÉ EST DANS `cible`, PAS DANS `lien`. Tant que le patient n'a
+   rien envoyé, la demande doit rester un dépôt sans suite — donc purgeable au
+   bout de sept jours comme les autres. Un lien envoyé et jamais utilisé ne
+   vivrait jamais autrement. C'est le dépôt lui-même qui recopie `cible` dans
+   `lien`, au moment où il y a enfin quelque chose à conserver.
+
+   CE N'EST PAS UN SERVICE D'ORDONNANCES, c'est un service de DOCUMENTS :
+   ordonnance, carte de mutuelle, attestation. La page, les SMS et l'écran le
+   disent ainsi, et aucun texte adressé au patient ne nomme jamais autre chose
+   que ce qu'on lui a demandé — nommer un examen dans un SMS, c'est l'écrire
+   sur un écran verrouillé, et l'inviter à envoyer ce qu'on ne lui a pas
+   demandé.
 
    Ces routes sont montées AVANT le portail, comme les accusés Brevo : un
    patient n'a pas de session et ne peut pas franchir la porte. Elles ont leur
@@ -144,7 +159,11 @@ module.exports = {
       if (!dep || dep.recuLe || (dep.expireLe && Date.now() > dep.expireLe)) {
         return res.json({ ok: true, ouvert, lien: false });
       }
-      res.json({ ok: true, ouvert, lien: true, prenom: String(dep.prenom || '') });
+      // `motif` est ce que LA PHARMACIE a demande (document, ordonnance, carte
+      // de mutuelle) : la page le redit pour qu'elle ne contredise pas le SMS.
+      // Ce n'est pas une donnee de sante, et rien d'autre ne sort d'ici.
+      res.json({ ok: true, ouvert, lien: true, prenom: String(dep.prenom || ''),
+                 motif: String(dep.motif || 'document') });
     });
 
     // Le dépôt lui-même.
@@ -212,6 +231,15 @@ module.exports = {
             dep.fichiers = poses;
             dep.recuLe = maintenant;
             dep.ts = maintenant;                 // la rétention part du dépôt
+            // Le lien envoye au patient PORTAIT deja son dossier, range dans
+            // `cible`. On ne le recopie dans `lien` qu'ICI, au moment ou il y a
+            // vraiment quelque chose a conserver : avant, la demande doit
+            // rester purgeable comme n'importe quel depot sans suite — un lien
+            // envoye et jamais utilise ne doit pas vivre eternellement.
+            if (dep.cible && dep.cible.type && dep.cible.ref != null && !dep.lien) {
+              dep.lien = { type: dep.cible.type, ref: dep.cible.ref };
+              dep.rattacheLe = maintenant;
+            }
             dep.updatedAt = maintenant;
             await d.ecrireEtat(etat);
             return { ok: true };

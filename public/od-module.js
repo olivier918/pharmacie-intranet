@@ -29,6 +29,7 @@
   const odListe = () => (typeof depots !== 'undefined' && Array.isArray(depots)) ? depots : [];
   const odLocs = () => (typeof locations !== 'undefined' && Array.isArray(locations)) ? locations : [];
   const odRenouv = () => (typeof renouvellements !== 'undefined' && Array.isArray(renouvellements)) ? renouvellements : [];
+  const odPatients = () => (typeof patients !== 'undefined' && Array.isArray(patients)) ? patients : [];
   const odSave = (now) => {
     try {
       if (now && typeof saveNow === 'function') saveNow();
@@ -101,6 +102,12 @@
   }
   function odNomDossier(lien) {
     if (!lien) return '';
+    // Un document demande a quelqu'un qui n'a ni location ni renouvellement en
+    // cours — une carte de mutuelle, par exemple — vise la fiche patient.
+    if (lien.type === 'patient') {
+      const p = odPatients().find(x => x && String(x.id) === String(lien.ref));
+      return p ? ((p.nom || '') + ' ' + (p.prenom || '')).trim() : 'fiche introuvable';
+    }
     if (lien.type === 'location') {
       const l = odLocs().find(x => x && String(x.id) === String(lien.ref));
       return l ? ((l.nom || '') + ' ' + (l.prenom || '')).trim() : 'dossier introuvable';
@@ -318,10 +325,10 @@
     // La consigne dit TOUJOURS quel geste vient ensuite. C'est ce qui remplace
     // un mode d'emploi.
     document.getElementById('od-v-aide').textContent = n === 0
-      ? 'Cliquez le coin ' + OD_COINS[0] + ' de l’ordonnance — ou copiez l’image telle quelle.'
+      ? 'Cliquez le coin ' + OD_COINS[0] + ' du document — ou copiez l’image telle quelle.'
       : n < 4
         ? 'Cliquez maintenant le coin ' + OD_COINS[n] + '.'
-        : 'Les quatre coins sont posés. « Recadrer » redresse l’ordonnance ; un coin mal placé se rattrape en le déplaçant.';
+        : 'Les quatre coins sont posés. « Recadrer » redresse le document ; un coin mal placé se rattrape en le déplaçant.';
     const b = document.getElementById('od-v-recadrer');
     b.style.display = n === 4 ? '' : 'none';
     document.getElementById('od-v-defaire').style.display = (n > 0 && n < 4) ? '' : 'none';
@@ -411,7 +418,7 @@
     const d = odVue.depot;
     const propre = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
-    const nom = 'ordonnance-' + (propre(d.nom + '-' + d.prenom) || 'depot')
+    const nom = 'document-' + (propre(d.nom + '-' + d.prenom) || 'depot')
       + (odVue.index ? '-' + (odVue.index + 1) : '') + '.jpg';
     c.toBlob(function (b) {
       if (!b) return;
@@ -505,12 +512,211 @@
     odSave(true); window.odRender();
   };
 
+  // ── Demander un document à un patient ─────────────────────────────────────
+  //
+  // L'affiche du comptoir suppose le patient DEVANT le comptoir. Au téléphone,
+  // il fallait lui dicter une adresse — ou le renvoyer vers la boîte mail de
+  // l'officine, qui est précisément ce que ce module remplace.
+  //
+  // Le lien envoyé ici PORTE le dossier : le dépôt arrive nominatif et déjà
+  // rattaché, sans rien à saisir ni numéro à lire. Le mécanisme existait dans
+  // depots.js depuis le premier jour (`/o/<jeton>`) ; rien ne l'appelait.
+  //
+  // LA CIBLE N'EST PAS LE RATTACHEMENT. Le dossier visé est rangé dans `cible`,
+  // pas dans `lien` : tant que rien n'est arrivé, la demande doit rester
+  // purgeable comme n'importe quel dépôt sans suite. C'est le serveur qui
+  // recopie `cible` dans `lien` au moment du dépôt — donc au moment où il y a
+  // vraiment quelque chose à conserver.
+  const OD_MOTIFS = {
+    document:   { lbl: 'Un document',           txt: 'vous pouvez nous transmettre vos documents en photo ici' },
+    ordonnance: { lbl: 'Une ordonnance',        txt: 'merci de nous envoyer votre ordonnance en photo ici' },
+    mutuelle:   { lbl: 'Une carte de mutuelle', txt: 'merci de nous envoyer votre carte de mutuelle en photo ici' }
+  };
+
+  // 128 bits, en base64url : 22 caractères, la forme qu'attend jetonValide().
+  function odJetonNeuf() {
+    const a = new Uint8Array(16);
+    (window.crypto || window.msCrypto).getRandomValues(a);
+    let b = '';
+    for (let i = 0; i < a.length; i++) b += String.fromCharCode(a[i]);
+    return btoa(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  // Même adresse que les liens de renouvellement : un sous-domaine dédié
+  // inspire plus confiance dans un SMS que le nom du back-office.
+  function odBaseLien() {
+    const b = window.APP_CONFIG && window.APP_CONFIG.renouvBase;
+    return (typeof b === 'string' && /^https?:\/\//i.test(b)) ? b.replace(/\/+$/, '') : location.origin;
+  }
+  // Un seul caractère accentué ferait basculer tout le message en Unicode,
+  // donc de 160 à 70 caractères par segment.
+  function odAscii(t) {
+    return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^A-Za-z0-9 '\-]/g, '').trim();
+  }
+  function odDemandes(l) {
+    const n = Date.now();
+    return (l || []).filter(d => d && d.jeton && !d.recuLe && !(d.expireLe && n > d.expireLe))
+      .slice().sort((a, b) => (b.demandeLe || 0) - (a.demandeLe || 0));
+  }
+  function odMemeCible(a, b) {
+    if (!a || !b) return false;
+    return a.type === b.type && String(a.ref) === String(b.ref);
+  }
+  function odDemandeOuverte(cible) {
+    if (!cible) return null;
+    return odDemandes(odListe()).find(d => odMemeCible(d.cible, cible)) || null;
+  }
+  // LE TEXTE NE DIT PAS CE QU'IL Y A DANS LE DOCUMENT au-delà de ce qu'on a
+  // demandé. Nommer un examen dans un SMS, c'est l'écrire sur un écran
+  // verrouillé — et inviter le patient à envoyer ce qu'on ne lui a pas demandé.
+  function odTexteSms(motif, prenom, lien) {
+    const m = OD_MOTIFS[motif] || OD_MOTIFS.document;
+    const sig = ' Pharmacie du Centre';
+    const p = odAscii(prenom);
+    const avec = 'Bonjour ' + p + ', ' + m.txt + ' : ' + lien + sig;
+    // Le lien pèse déjà 62 caractères. Si le prénom fait déborder le segment,
+    // on le laisse tomber plutôt que de payer un crédit de plus : le patient
+    // reconnaît l'expéditeur, affiché en tête du SMS.
+    return (p && avec.length <= 160) ? avec : ('Bonjour, ' + m.txt + ' : ' + lien + sig);
+  }
+
+  // ctx : {nom, prenom, tel, naissance, cible:{type,ref}, motif}
+  window.odDemander = function (ctx) {
+    ctx = ctx || {};
+    if (typeof window.openSmsModal !== 'function') { odToast('Module SMS indisponible.'); return; }
+    const tel = String(ctx.tel || '').trim();
+    if (!tel) { odToast('Pas de numéro de mobile sur ce dossier.'); return; }
+    const motif = OD_MOTIFS[ctx.motif] ? ctx.motif : 'document';
+    const now = Date.now();
+    const l = odListe();
+
+    // On RÉUTILISE la demande en cours plutôt que d'en ouvrir une seconde : le
+    // patient a peut-être gardé le premier SMS, et deux liens vivants pour la
+    // même chose feraient deux dépôts à rattacher.
+    let d = odDemandeOuverte(ctx.cible);
+    if (!d) {
+      let id = now; const pris = {}; l.forEach(function (x) { if (x) pris[x.id] = 1; });
+      while (pris[id]) id++;
+      d = {
+        id: id, ts: now, origine: 'demande', jeton: odJetonNeuf(),
+        nom: String(ctx.nom || '').slice(0, 60), prenom: String(ctx.prenom || '').slice(0, 60),
+        naissance: ctx.naissance || null, tel: tel,
+        cible: ctx.cible || null, motif: motif,
+        demandeLe: now, demandePar: (odUser() || {}).id || null, envois: 0,
+        expireLe: now + OD_JOURS * 86400000,
+        fichiers: [], recuLe: null, lien: null, archiveLe: null, updatedAt: now
+      };
+      l.push(d);
+    } else {
+      d.motif = motif; d.tel = tel; d.updatedAt = now;
+    }
+    // LE JETON EST ENREGISTRÉ TOUT DE SUITE. S'il n'existait qu'en mémoire
+    // jusqu'à l'envoi, la resynchronisation (toutes les 8 s) l'effacerait et le
+    // lien du SMS ouvrirait sur « lien non valable ».
+    odSave(true);
+
+    const lien = odBaseLien() + '/o/' + d.jeton;
+    const ordre = [motif].concat(Object.keys(OD_MOTIFS).filter(function (k) { return k !== motif; }));
+    const tpls = ordre.map(function (k) {
+      return { lbl: OD_MOTIFS[k].lbl, text: odTexteSms(k, d.prenom, lien) };
+    });
+    const ou = d.cible ? odNomDossier(d.cible) : '';
+
+    window.openSmsModal({
+      titre: 'Demander un document au patient',
+      tel: tel, nom: d.nom, prenom: d.prenom, source: 'depot', tag: 'demande',
+      info: '<strong>' + E(((d.nom || '') + ' ' + (d.prenom || '')).trim() || ou) + '</strong>'
+        + '<div style="font-size:.78rem;color:var(--gray-500);margin-top:4px">'
+        + 'Le lien est nominatif : ce que le patient enverra arrivera à son nom, '
+        + 'déjà rattaché' + (ou ? ' à son dossier' : '') + '. Il reste valable sept jours.</div>',
+      templates: tpls, text: tpls[0].text,
+      onSent: function (r) {
+        d.envois = (d.envois || 0) + 1;
+        d.demandeLe = Date.now();
+        d.smsId = (r && r.id) || null;
+        d.updatedAt = Date.now();
+        if (typeof logAction === 'function') logAction('Document demandé au patient', '');
+        odToast('Lien envoyé à ' + (d.prenom || d.nom || 'ce patient') + '.');
+        odSave(true); window.odRender();
+      }
+    });
+  };
+
+  window.odRelancer = function (id) {
+    const d = odListe().find(function (x) { return x && x.id === id; }); if (!d) return;
+    window.odDemander({ nom: d.nom, prenom: d.prenom, tel: d.tel, naissance: d.naissance,
+                        cible: d.cible, motif: d.motif });
+  };
+  window.odAnnulerDemande = function (id) {
+    const l = odListe(), i = l.findIndex(function (x) { return x && x.id === id; }); if (i < 0) return;
+    if (!confirm('Annuler cette demande ?\n\nLe lien déjà envoyé au patient cessera de fonctionner.')) return;
+    if (typeof markDeleted === 'function') markDeleted('depots', id);
+    l.splice(i, 1);
+    odSave(true); window.odRender();
+  };
+
+  // ── Choisir à qui demander ────────────────────────────────────────────────
+  let odDemCand = [];
+  window.odFormDemander = function () {
+    const q = document.getElementById('od-d-q'); if (q) q.value = '';
+    odRendDemander();
+    document.getElementById('od-ov-dem').classList.add('open');
+  };
+  window.odFermerDemander = function () { document.getElementById('od-ov-dem').classList.remove('open'); };
+
+  window.odRendDemander = function () {
+    const q = String((document.getElementById('od-d-q') || {}).value || '').trim().toLowerCase();
+    const cand = [];
+    // Les dossiers d'abord : c'est là que le rattachement automatique a le plus
+    // de valeur. La fiche patient ensuite, pour tout le reste.
+    odLocs().forEach(function (l) {
+      if (!l || l.id == null) return;
+      cand.push({ type: 'location', ref: l.id, tel: l.tel || '', nom: l.nom || '', prenom: l.prenom || '',
+                  quoi: 'Location' + (l.num ? ' n° ' + l.num : '') });
+    });
+    odRenouv().forEach(function (r) {
+      if (!r || r.id == null) return;
+      cand.push({ type: 'renouvellement', ref: r.id, tel: r.tel || '', nom: r.nom || '', prenom: r.prenom || '',
+                  quoi: 'Renouvellement' });
+    });
+    odPatients().forEach(function (p) {
+      if (!p || p.id == null) return;
+      cand.push({ type: 'patient', ref: p.id, tel: p.tel || '', nom: p.nom || '', prenom: p.prenom || '',
+                  quoi: 'Fiche patient' });
+    });
+    const l = cand.filter(function (c) {
+      if (!c.tel) return false;                       // sans mobile, rien à envoyer
+      const qui = (c.nom + ' ' + c.prenom).toLowerCase();
+      return q.length >= 2 && qui.indexOf(q) >= 0;
+    }).slice(0, 40);
+    odDemCand = l;                                    // un gestionnaire ne reçoit qu'un indice
+    const el = document.getElementById('od-d-liste');
+    if (!el) return;
+    el.innerHTML = q.length < 2
+      ? '<div class="od-vide">Tapez les premières lettres d’un nom.</div>'
+      : (l.length
+          ? l.map(function (c, i) {
+              return '<button class="od-r-item" onclick="odDemanderA(' + i + ')">'
+                + '<span class="od-r-qui">' + E(((c.nom || '') + ' ' + (c.prenom || '')).trim() || '(sans nom)') + '</span>'
+                + '<span class="od-r-quoi">' + E(c.quoi) + '</span></button>';
+            }).join('')
+          : '<div class="od-vide">Aucun dossier avec un mobile à ce nom.</div>');
+  };
+  window.odDemanderA = function (i) {
+    const c = odDemCand[i]; if (!c) return;
+    const m = document.getElementById('od-d-motif');
+    window.odFermerDemander();
+    window.odDemander({ nom: c.nom, prenom: c.prenom, tel: c.tel,
+                        cible: { type: c.type, ref: c.ref },
+                        motif: (m && m.value) || 'document' });
+  };
+
   // ── Traité / supprimé ─────────────────────────────────────────────────────
   // « Traité » est la marche normale : l'ordonnance est saisie dans le LGO, elle
   // n'a plus rien à faire ici. On n'attend pas les sept jours.
   window.odTraite = function (id) {
     const l = odListe(), i = l.findIndex(function (x) { return x && x.id === id; }); if (i < 0) return;
-    if (!confirm('L’ordonnance de ' + odIdentite(l[i]) + ' est saisie dans le logiciel ?\n\n'
+    if (!confirm('Le document de ' + odIdentite(l[i]) + ' est traité ?\n\n'
       + 'Il sera effacé de PILOT immédiatement, avec son image.')) return;
     if (typeof markDeleted === 'function') markDeleted('depots', id);
     if (typeof logAction === 'function') logAction('Dépôt traité et effacé', '');
@@ -598,7 +804,7 @@
         fichiers: poses, recuLe: now, lien: null, archiveLe: null,
         parQui: (odUser() || {}).id || null, updatedAt: now
       });
-      if (typeof logAction === 'function') logAction('Ordonnance importée', '');
+      if (typeof logAction === 'function') logAction('Document importé', '');
       odSave(true); odFermerImporter(); window.odRender();
     } catch (e) {
       alert('Import impossible : ' + e.message);
@@ -874,9 +1080,35 @@
     if (el) {
       el.innerHTML = boite.length
         ? boite.map(function (d) { return odCarte(d, true); }).join('')
-        : '<div class="od-vide">Aucune ordonnance en attente.<br>'
-          + '<span class="od-vide-s">Celles que les patients envoient depuis l’affiche arrivent ici.</span></div>';
+        : '<div class="od-vide">Aucun document en attente.<br>'
+          + '<span class="od-vide-s">Ce que les patients envoient depuis l’affiche, ou depuis le lien qu’on leur a adressé, arrive ici.</span></div>';
     }
+    // Les demandes parties, dont rien n'est encore revenu. Sans cette liste,
+    // une demande envoyée mardi et oubliée ne se rappelle à personne : le
+    // patient ne dira jamais qu'il n'a pas cliqué.
+    const dem = odDemandes(odListe());
+    const hd = document.getElementById('od-h-dem');
+    if (hd) hd.style.display = dem.length ? '' : 'none';
+    const ed = document.getElementById('od-dem');
+    if (ed) {
+      ed.style.display = dem.length ? '' : 'none';
+      ed.innerHTML = dem.map(function (d) {
+        const m = OD_MOTIFS[d.motif] || OD_MOTIFS.document;
+        const ou = d.cible ? odNomDossier(d.cible) : '';
+        const qui = ((d.nom || '') + ' ' + (d.prenom || '')).trim() || ou || '(sans nom)';
+        const rest = Math.max(0, Math.ceil(((d.expireLe || 0) - Date.now()) / 86400000));
+        return '<div class="od-dem">'
+          + '<div class="od-dem-t"><b>' + E(qui) + '</b> · ' + E(m.lbl.toLowerCase()) + '</div>'
+          + '<div class="od-dem-s">Demandé ' + odQuand(d.demandeLe) + ' par ' + E(odPrenomDe(d.demandePar))
+          + (d.envois > 1 ? ' · relancé ' + (d.envois - 1) + ' fois' : '')
+          + ' · lien valable encore ' + rest + ' jour' + (rest > 1 ? 's' : '') + '</div>'
+          + '<div class="od-dem-a">'
+          + '<button class="btn bs sm" onclick="odRelancer(' + d.id + ')">Relancer</button>'
+          + '<button class="btn bs sm" onclick="odAnnulerDemande(' + d.id + ')">Annuler</button>'
+          + '</div></div>';
+      }).join('');
+    }
+
     const hc = document.getElementById('od-h-classes');
     if (hc) hc.style.display = classes.length ? '' : 'none';
     const ec = document.getElementById('od-classes');
@@ -902,7 +1134,7 @@
     const n = odEnBoite(odListe()).length;
     if (!n) return '';
     return '<button class="ac-al" onclick="showSec(\'depots\')"><span class="ac-pt"></span>'
-      + n + ' ordonnance' + (n > 1 ? 's' : '') + ' déposée' + (n > 1 ? 's' : '') + ' à traiter</button>';
+      + n + ' document' + (n > 1 ? 's' : '') + ' déposé' + (n > 1 ? 's' : '') + ' à traiter</button>';
   };
 
   // ── Back office : l'interrupteur ──────────────────────────────────────────
@@ -925,7 +1157,7 @@
       '<div class="od-bo-l">'
       + '<span class="od-pt' + (odOuvert ? ' on' : '') + '"></span>'
       + '<span class="od-bo-t">' + (odOuvert
-          ? 'Le d\u00e9p\u00f4t est <b>ouvert</b> : les patients peuvent envoyer leur ordonnance.'
+          ? 'Le d\u00e9p\u00f4t est <b>ouvert</b> : les patients peuvent nous envoyer leurs documents.'
           : 'Le d\u00e9p\u00f4t est <b>ferm\u00e9</b> : la page affiche un message d\u2019indisponibilit\u00e9.') + '</span>'
       + (odAdmin()
           ? '<button class="btn ' + (odOuvert ? 'bs' : 'bp') + ' sm" id="od-bo-b" onclick="odBasculerOuverture()">'
@@ -1058,6 +1290,12 @@
   .od-l-p button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;
     border:none;background:#C62828;color:#fff;font-size:.72rem;cursor:pointer;font-family:inherit}
   .od-r-quoi{margin-left:auto;font-size:.78rem;color:var(--gray-500)}
+  .od-dem{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--gray-200);
+    border-radius:10px;padding:9px 13px;margin-bottom:7px;background:#fff}
+  .od-dem-t{font-size:.9rem}
+  .od-dem-s{font-size:.76rem;color:var(--gray-500)}
+  .od-dem-a{margin-left:auto;display:flex;gap:6px}
+  @media(max-width:640px){.od-dem-a{margin-left:0;width:100%}}
   @media(max-width:640px){ .od-vig{width:78px;height:102px} }`;
 
   // ── Gabarit ───────────────────────────────────────────────────────────────
@@ -1067,11 +1305,15 @@
     +   '<svg class="ico"><use href="#ic-boite-reception"></use></svg> Boîte de réception'
     +   ' <span id="od-nb" style="color:var(--gray-500);font-weight:600"></span></div>'
     + '<span class="od-grow"></span>'
+    + '<button class="btn bp sm" onclick="odFormDemander()">'
+    +   '<svg class="ico"><use href="#ic-envoyer"></use></svg> Demander un document</button>'
     + '<button class="btn bs sm" onclick="odFormImporter()">'
-    +   '<svg class="ico"><use href="#ic-joindre"></use></svg> Importer une ordonnance</button>'
+    +   '<svg class="ico"><use href="#ic-joindre"></use></svg> Importer un document</button>'
     + '<a class="btn bs sm" href="/documents/affiche-depot-ordonnance.pdf" target="_blank" rel="noopener"'
     +   ' style="text-decoration:none">Affiche</a></div>'
     + '<div id="od-boite"></div>'
+    + '<div class="od-h" id="od-h-dem" style="display:none">Demandés au patient, en attente</div>'
+    + '<div id="od-dem" style="display:none"></div>'
     + '<div class="od-h" id="od-h-classes" style="display:none">Rattachées à un dossier</div>'
     + '<div id="od-classes" style="display:none"></div>'
     + '</div>';
@@ -1079,7 +1321,7 @@
   const OD_MODALES =
     '<div class="od-ov" id="od-ov-vue">'
     + '<div class="od-v-tete">'
-    +   '<span class="od-v-t">Ordonnance déposée</span>'
+    +   '<span class="od-v-t">Document déposé</span>'
     +   '<span class="od-v-etat" id="od-v-etat"></span>'
     +   '<span class="od-v-sp"></span>'
     +   '<button class="od-b" onclick="odFermerVue()">Fermer</button>'
@@ -1101,11 +1343,11 @@
 
     + '<div class="overlay" id="od-ov-imp">'
     + '<div class="mbox" style="max-width:520px">'
-    +   '<div class="mbox-h"><b>Importer une ordonnance</b>'
+    +   '<div class="mbox-h"><b>Importer un document</b>'
     +     '<button class="x" onclick="odFermerImporter()">✕</button></div>'
     +   '<div class="mbox-b">'
     +     '<p style="font-size:.82rem;color:var(--gray-500);margin:0 0 14px;line-height:1.55">'
-    +       'Pour une ordonnance re\u00e7ue par mail ou d\u00e9j\u00e0 pr\u00e9sente sur ce poste. Elle rejoint la bo\u00eete '
+    +       'Pour un document re\u00e7u par mail ou d\u00e9j\u00e0 pr\u00e9sent sur ce poste. Il rejoint la bo\u00eete '
     +       'et passe par le m\u00eame outil de redressement.</p>'
     +     '<div style="display:flex;gap:10px">'
     +       '<label style="flex:1;font-size:.78rem;font-weight:600;color:var(--gray-500)">Nom'
@@ -1144,6 +1386,26 @@
     +   '</div>'
     + '</div></div>'
 
+    + '<div class="overlay" id="od-ov-dem">'
+    + '<div class="mbox" style="max-width:520px">'
+    +   '<div class="mbox-h"><b>Demander un document</b>'
+    +     '<button class="x" onclick="odFermerDemander()">✕</button></div>'
+    +   '<div class="mbox-b">'
+    +     '<label class="lbl" for="od-d-motif">Ce qu’on demande</label>'
+    +     '<select class="inp" id="od-d-motif" style="margin-bottom:10px">'
+    +       '<option value="document">Un document</option>'
+    +       '<option value="ordonnance">Une ordonnance</option>'
+    +       '<option value="mutuelle">Une carte de mutuelle</option>'
+    +     '</select>'
+    +     '<input class="inp" id="od-d-q" placeholder="Nom du patient…" oninput="odRendDemander()" autocomplete="off">'
+    +     '<div class="od-r-liste" id="od-d-liste"></div>'
+    +     '<div style="font-size:.78rem;color:var(--gray-500);margin-top:10px">'
+    +       'Le lien envoyé est <b>nominatif</b> : ce que le patient enverra arrivera à son nom et '
+    +       'déjà rattaché à son dossier. Il reste valable sept jours. '
+    +       'Seuls les dossiers portant un mobile apparaissent ici.</div>'
+    +   '</div>'
+    + '</div></div>'
+
     + '<div class="overlay" id="od-ov-ratt">'
     + '<div class="mbox" style="max-width:520px">'
     +   '<div class="mbox-h"><b>Rattacher à un dossier</b>'
@@ -1152,8 +1414,8 @@
     +     '<input class="inp" id="od-r-q" placeholder="Nom du patient…" oninput="odRendRattacher()" autocomplete="off">'
     +     '<div class="od-r-liste" id="od-r-liste"></div>'
     +     '<div style="font-size:.78rem;color:var(--gray-500);margin-top:10px">'
-    +       'Une ordonnance rattachée à un dossier est <b>conservée</b> et suit la rétention de ce dossier. '
-    +       'Sans rattachement, elle est effacée sept jours après son arrivée.</div>'
+    +       'Un document rattaché à un dossier est <b>conservé</b> et suit la rétention de ce dossier. '
+    +       'Sans rattachement, il est effacé sept jours après son arrivée.</div>'
     +   '</div>'
     + '</div></div>';
 
