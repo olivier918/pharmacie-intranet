@@ -527,10 +527,13 @@
   // purgeable comme n'importe quel dépôt sans suite. C'est le serveur qui
   // recopie `cible` dans `lien` au moment du dépôt — donc au moment où il y a
   // vraiment quelque chose à conserver.
+  // `court` est l'etiquette du bouton : « Une carte de mutuelle » sur deux
+  // lignes dans une pastille de 160 px se lit moins bien que « Carte de
+  // mutuelle » sur une seule.
   const OD_MOTIFS = {
-    document:   { lbl: 'Un document',           txt: 'vous pouvez nous transmettre vos documents en photo ici' },
-    ordonnance: { lbl: 'Une ordonnance',        txt: 'merci de nous envoyer votre ordonnance en photo ici' },
-    mutuelle:   { lbl: 'Une carte de mutuelle', txt: 'merci de nous envoyer votre carte de mutuelle en photo ici' }
+    document:   { lbl: 'Un document',           court: 'Document',          txt: 'vous pouvez nous transmettre vos documents en photo ici' },
+    ordonnance: { lbl: 'Une ordonnance',        court: 'Ordonnance',        txt: 'merci de nous envoyer votre ordonnance en photo ici' },
+    mutuelle:   { lbl: 'Une carte de mutuelle', court: 'Carte de mutuelle', txt: 'merci de nous envoyer votre carte de mutuelle en photo ici' }
   };
 
   // 128 bits, en base64url : 22 caractères, la forme qu'attend jetonValide().
@@ -656,11 +659,45 @@
   };
 
   // ── Choisir à qui demander ────────────────────────────────────────────────
-  let odDemCand = [];
+  //
+  // Trois boutons plutôt qu'un menu déroulant : au comptoir, un menu, c'est
+  // deux gestes et une liste qui masque l'écran pendant qu'on la lit. Trois
+  // choix se prennent d'un coup d'œil, et se touchent du doigt.
+  const OD_MOT_ICO = {
+    document:   '<path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>',
+    ordonnance: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 3.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.3H9z"/><path d="M8.5 10h7"/><path d="M8.5 13.5h5"/>',
+    mutuelle:   '<rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 10h19"/><path d="M6 14.5h4"/>'
+  };
+  const OD_MOT_CLES = Object.keys(OD_MOTIFS);
+  let odDemCand = [], odDemMotif = 'document';
+
+  function odRendMotifs() {
+    const z = document.getElementById('od-d-motifs'); if (!z) return;
+    z.innerHTML = OD_MOT_CLES.map(function (k, i) {
+      return '<button type="button" class="' + (k === odDemMotif ? 'on' : '') + '"'
+        + ' onclick="odMotif(' + i + ')">'
+        + '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
+        + ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        + OD_MOT_ICO[k] + '</svg>' + E(OD_MOTIFS[k].court || OD_MOTIFS[k].lbl) + '</button>';
+    }).join('');
+  }
+  // Un gestionnaire ne reçoit qu'un indice, jamais une chaîne saisie.
+  window.odMotif = function (i) {
+    const k = OD_MOT_CLES[i]; if (!k) return;
+    odDemMotif = k;
+    odRendMotifs();
+    const q = document.getElementById('od-d-q'); if (q) q.focus();
+  };
+
   window.odFormDemander = function () {
+    odDemMotif = 'document';
+    odRendMotifs();
     const q = document.getElementById('od-d-q'); if (q) q.value = '';
     odRendDemander();
     document.getElementById('od-ov-dem').classList.add('open');
+    // Le curseur dans le champ tout de suite : on ouvre cette fenêtre pour
+    // taper un nom, jamais pour la regarder.
+    setTimeout(function () { if (q) q.focus(); }, 60);
   };
   window.odFermerDemander = function () { document.getElementById('od-ov-dem').classList.remove('open'); };
 
@@ -696,19 +733,30 @@
       ? '<div class="od-vide">Tapez les premières lettres d’un nom.</div>'
       : (l.length
           ? l.map(function (c, i) {
+              // Une demande déjà partie se voit ici : sans cela on en enverrait
+              // une deuxième sans savoir que la première attend.
+              const deja = odDemandeOuverte({ type: c.type, ref: c.ref });
               return '<button class="od-r-item" onclick="odDemanderA(' + i + ')">'
-                + '<span class="od-r-qui">' + E(((c.nom || '') + ' ' + (c.prenom || '')).trim() || '(sans nom)') + '</span>'
-                + '<span class="od-r-quoi">' + E(c.quoi) + '</span></button>';
+                + '<span>'
+                +   '<span class="od-r-qui">' + E(((c.nom || '') + ' ' + (c.prenom || '')).trim() || '(sans nom)') + '</span>'
+                +   '<br><span class="od-d-tel">' + E(odTel(c.tel)) + '</span>'
+                +   (deja ? ' <span class="od-d-deja">· déjà demandé</span>' : '')
+                + '</span>'
+                + '<span class="od-d-bad ' + (c.type === 'location' ? 'loc' : c.type === 'renouvellement' ? 'ren' : 'pat') + '">'
+                + E(c.quoi) + '</span></button>';
             }).join('')
           : '<div class="od-vide">Aucun dossier avec un mobile à ce nom.</div>');
   };
+  // 0601020304 se lit mal d'un coup d'œil ; 06 01 02 03 04 se vérifie.
+  function odTel(t) {
+    const n = String(t || '').replace(/\D/g, '');
+    return n.length === 10 ? n.replace(/(\d\d)(?=\d)/g, '$1 ') : String(t || '');
+  }
   window.odDemanderA = function (i) {
     const c = odDemCand[i]; if (!c) return;
-    const m = document.getElementById('od-d-motif');
     window.odFermerDemander();
     window.odDemander({ nom: c.nom, prenom: c.prenom, tel: c.tel,
-                        cible: { type: c.type, ref: c.ref },
-                        motif: (m && m.value) || 'document' });
+                        cible: { type: c.type, ref: c.ref }, motif: odDemMotif });
   };
 
   // ── Traité / supprimé ─────────────────────────────────────────────────────
@@ -1259,7 +1307,35 @@
   .od-v-aide{color:#9fb3a8;font-size:.78rem;margin-top:9px;text-align:center}
 
   /* ── Rattachement ── */
-  .od-r-liste{max-height:48vh;overflow:auto;margin-top:12px}
+  .od-d-lbl{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--gray-500);margin-bottom:8px}
+  .od-seg{display:flex;gap:8px;flex-wrap:wrap}
+  .od-seg button{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:8px;
+    white-space:nowrap;font:inherit;font-size:.88rem;font-weight:600;color:var(--gray-700);background:#fff;
+    border:1.5px solid #e7ece9;border-radius:11px;padding:13px 12px;cursor:pointer;
+    transition:border-color .12s,background .12s,color .12s}
+  .od-seg button:hover{border-color:#9ccbb2;background:#F7FBF9}
+  .od-seg button.on{border-color:#1D5C3A;background:#1D5C3A;color:#fff}
+  .od-seg svg{flex:0 0 auto}
+  /* Sur un telephone, trois etiquettes cote a cote sortent de l'ecran : on les
+     empile, et le doigt vise une bande pleine largeur. */
+  @media(max-width:560px){
+    .od-seg{flex-direction:column}
+    .od-seg button{justify-content:flex-start;padding:12px 14px}
+  }
+  .od-d-ch{display:flex;align-items:center;gap:9px;border:1.5px solid #e7ece9;border-radius:11px;
+    padding:0 13px;background:#fff;color:var(--gray-500)}
+  .od-d-ch:focus-within{border-color:#1D5C3A;color:#1D5C3A}
+  .od-d-ch input{flex:1;border:none;outline:none;background:none;font:inherit;font-size:1rem;
+    padding:13px 0;color:var(--gray-900)}
+  .od-d-pied{font-size:.78rem;color:var(--gray-500);margin-top:12px;line-height:1.5}
+  .od-d-tel{font-size:.8rem;color:var(--gray-500);font-variant-numeric:tabular-nums}
+  .od-d-bad{margin-left:auto;font-size:.72rem;font-weight:700;border-radius:20px;padding:3px 10px;white-space:nowrap}
+  .od-d-bad.loc{background:#E0F2F1;color:#00695C}
+  .od-d-bad.ren{background:#E8F5E9;color:#1D5C3A}
+  .od-d-bad.pat{background:var(--gray-100);color:var(--gray-600)}
+  .od-d-deja{font-size:.74rem;color:#B26A00;font-weight:600}
+  .od-r-liste{max-height:44vh;overflow:auto;margin-top:12px;min-height:96px}
   .od-r-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
     font:inherit;background:#fff;border:1px solid #e7ece9;border-radius:10px;
     padding:11px 13px;margin-bottom:7px;cursor:pointer}
@@ -1387,19 +1463,22 @@
     + '</div></div>'
 
     + '<div class="overlay" id="od-ov-dem">'
-    + '<div class="mbox" style="max-width:520px">'
+    + '<div class="mbox" style="max-width:560px">'
     +   '<div class="mbox-h"><b>Demander un document</b>'
     +     '<button class="x" onclick="odFermerDemander()">✕</button></div>'
     +   '<div class="mbox-b">'
-    +     '<label class="lbl" for="od-d-motif">Ce qu’on demande</label>'
-    +     '<select class="inp" id="od-d-motif" style="margin-bottom:10px">'
-    +       '<option value="document">Un document</option>'
-    +       '<option value="ordonnance">Une ordonnance</option>'
-    +       '<option value="mutuelle">Une carte de mutuelle</option>'
-    +     '</select>'
-    +     '<input class="inp" id="od-d-q" placeholder="Nom du patient…" oninput="odRendDemander()" autocomplete="off">'
-    +     '<div class="od-r-liste" id="od-d-liste"></div>'
-    +     '<div style="font-size:.78rem;color:var(--gray-500);margin-top:10px">'
+    +     '<div class="od-d-lbl">Ce qu’on demande</div>'
+    +     '<div class="od-seg" id="od-d-motifs"></div>'
+    +     '<div class="od-d-lbl" style="margin-top:16px">À qui</div>'
+    +     '<div class="od-d-ch">'
+    +       '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
+    +         ' stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/>'
+    +         '<path d="M16 16l4 4"/></svg>'
+    +       '<input id="od-d-q" placeholder="Nom du patient…" oninput="odRendDemander()"'
+    +         ' autocomplete="off" spellcheck="false">'
+    +     '</div>'
+    +     '<div class="od-r-liste kb-liste" id="od-d-liste"></div>'
+    +     '<div class="od-d-pied">'
     +       'Le lien envoyé est <b>nominatif</b> : ce que le patient enverra arrivera à son nom et '
     +       'déjà rattaché à son dossier. Il reste valable sept jours. '
     +       'Seuls les dossiers portant un mobile apparaissent ici.</div>'
@@ -1412,7 +1491,7 @@
     +     '<button class="x" onclick="odFermerRattacher()">✕</button></div>'
     +   '<div class="mbox-b">'
     +     '<input class="inp" id="od-r-q" placeholder="Nom du patient…" oninput="odRendRattacher()" autocomplete="off">'
-    +     '<div class="od-r-liste" id="od-r-liste"></div>'
+    +     '<div class="od-r-liste kb-liste" id="od-r-liste"></div>'
     +     '<div style="font-size:.78rem;color:var(--gray-500);margin-top:10px">'
     +       'Un document rattaché à un dossier est <b>conservé</b> et suit la rétention de ce dossier. '
     +       'Sans rattachement, il est effacé sept jours après son arrivée.</div>'
