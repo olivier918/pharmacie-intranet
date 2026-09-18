@@ -546,6 +546,36 @@ ainsi : deux lectures simultanées peuvent encore s'écraser. La conséquence �
 une pastille de non-lu qui reste allumée — a été jugée supportable. À revoir
 si elle devient gênante.
 
+## Modifier une fiche : la limite est la RÉALISATION, pas la livraison
+
+Une demande de préparation se corrige tant que rien n'est fabriqué : elle
+décrit alors une **intention**. Une fois l'étape « Préparé / Réceptionné »
+franchie, elle décrit ce qu'il y a **dans le flacon** — la réécrire ferait
+mentir la trace sur ce qui a été fabriqué. `prepModifiable()` dit non, et
+l'écran explique comment faire : reculer d'une étape sur le fil, ce qui est un
+geste visible et daté, puis corriger.
+
+C'est la même frontière partout où une fiche bascule de l'intention au fait :
+le relevé de température signé ne se corrige pas non plus, il se commente au
+relevé suivant.
+
+## Ce qui modifie une collection DOIT l'enregistrer
+
+La resynchronisation des huit secondes remplace les collections par la copie
+serveur (`if(d.preps)preps=d.preps`). Une action qui modifie une liste sans
+appeler `saveNow()` ou `schedSave()` ne survit donc **que si une autre action
+enregistre entre-temps** — ce qui arrive souvent, et masque la faute jusqu'au
+jour où ça n'arrive pas.
+
+`savePrep`, `abandonPrep` et `askPrepStep` étaient dans ce cas, toutes les
+trois : une demande prise au comptoir pouvait disparaître huit secondes plus
+tard. `node essais/preparations.js` vérifie désormais leur présence dans la
+source elle-même — c'est ce garde-fou qui les a trouvées d'un coup.
+
+**Création et changement d'état : `saveNow()`, pas `schedSave()`.** Ces actions
+sont délibérées et rares ; différer de 600 ms, c'est offrir une fenêtre où un
+rechargement les emporte.
+
 ## Un travail à faire n’apparaît que dans UNE liste
 
 Une ordonnance photographiée chez le patient pendant une livraison ouvre un

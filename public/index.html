@@ -711,14 +711,14 @@ tr:hover td{background:#fafffe}
 
     <!-- ═══ PRÉPARATIONS ═══ -->
     <div id="sec-preparations" class="sec">
-      <div class="card" style="border:none;box-shadow:none;background:linear-gradient(135deg,#E8F5E9 0%,#fff 40%);border-radius:16px;padding:1.5rem 1.5rem 1rem;margin-bottom:1.2rem">
+      <div class="card" id="prep-form-card" style="border:none;box-shadow:none;background:linear-gradient(135deg,#E8F5E9 0%,#fff 40%);border-radius:16px;padding:1.5rem 1.5rem 1rem;margin-bottom:1.2rem">
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.2rem">
           <div style="width:48px;height:48px;border-radius:14px;background:var(--g-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <svg viewBox="0 0 24 24" style="width:28px;height:28px"><path fill="#fff" d="M17.88 3.03 C17.19 3.16 16.81 3.53 16.42 4.47 16.23 4.9 16.19 4.96 15.82 5.39 15.59 5.64 15.23 6.07 15 6.33 14.78 6.59 14.43 7 14.23 7.24 14.03 7.47 13.78 7.76 13.69 7.87 13.6 7.98 13.42 8.19 13.29 8.33 13.17 8.48 13.01 8.68 12.92 8.78 12.84 8.88 12.71 9.04 12.63 9.13 12.55 9.22 12.44 9.35 12.38 9.42 12.29 9.54 12.29 9.54 8.1 9.54 4.57 9.54 3.86 9.55 3.65 9.6 2.21 9.9 2 11.28 3 13.87 3.52 15.22 4.81 16.86 5.97 17.63 6.28 17.84 6.28 17.85 6 18.12 5.17 18.94 5.18 20.66 6.02 20.97 6.24 21.06 17.73 21.02 17.92 20.94 18.69 20.59 18.72 18.97 17.97 18.17 17.77 17.95 17.77 17.95 18.15 17.69 20.38 16.17 22 13.21 21.84 10.96 21.8 10.34 21.23 9.65 20.77 9.65 20.72 9.65 20.66 9.63 20.63 9.61 20.6 9.57 20.36 9.56 19.81 9.55 18.87 9.53 18.92 9.61 19.36 8.75 19.54 8.4 19.84 7.82 20.03 7.46 20.21 7.1 20.45 6.68 20.56 6.51 21.18 5.6 21.23 4.84 20.72 4.2 20.48 3.91 20.26 3.77 19.07 3.17 18.72 2.99 18.3 2.94 17.88 3.03 z M18.73 4.42 C18.93 4.52 19.18 4.65 19.29 4.71 19.39 4.77 19.49 4.83 19.51 4.83 19.76 4.83 19.84 5.28 19.65 5.58 19.25 6.21 19.12 6.43 18.81 7.03 18.62 7.4 18.3 8.01 18.11 8.39 17.91 8.77 17.71 9.17 17.65 9.29 17.59 9.41 17.53 9.51 17.51 9.52 17.47 9.55 14.05 9.55 14.03 9.53 14.02 9.52 14.02 9.48 14.04 9.44 14.06 9.38 14.11 9.31 14.44 8.95 14.51 8.88 14.67 8.67 14.82 8.5 14.96 8.33 15.25 7.98 15.47 7.74 15.68 7.49 16.08 7.02 16.36 6.7 16.63 6.37 16.97 5.98 17.11 5.83 17.28 5.64 17.39 5.48 17.44 5.35 17.51 5.15 17.73 4.64 17.81 4.46 17.94 4.2 18.27 4.18 18.73 4.42 z M20.36 10.82 C20.55 10.86 20.6 10.97 20.57 11.31 20.39 13.42 19.15 15.52 17.41 16.67 16.25 17.44 16.77 17.37 12.11 17.37 7.76 17.37 7.84 17.38 7.16 16.9 7.1 16.85 7.03 16.82 7.02 16.82 6.95 16.82 6.25 16.25 5.91 15.93 4.74 14.79 4.03 13.44 3.72 11.74 3.55 10.81 3.53 10.83 4.87 10.8 6.32 10.78 20.21 10.8 20.36 10.82 z M16.45 18.66 C16.7 18.72 16.94 18.89 17.08 19.09 17.18 19.25 17.25 19.69 17.19 19.75 17.17 19.77 15.11 19.78 11.94 19.78 6.72 19.77 6.72 19.77 6.71 19.59 6.68 19.15 6.93 18.81 7.37 18.68 7.47 18.65 7.56 18.62 7.58 18.62 7.74 18.57 16.25 18.61 16.45 18.66 z"/></svg>
           </div>
           <div>
-            <div style="font-size:1.15rem;font-weight:700;color:var(--g-dark)">Nouvelle demande de préparation</div>
-            <div style="font-size:.78rem;color:var(--gray-500)">Enregistrez la demande, puis suivez-la sur son fil : devis validé, préparé / réceptionné, délivré.</div>
+            <div style="font-size:1.15rem;font-weight:700;color:var(--g-dark)" id="prep-form-t">Nouvelle demande de préparation</div>
+            <div style="font-size:.78rem;color:var(--gray-500)" id="prep-form-s">Enregistrez la demande, puis suivez-la sur son fil : devis validé, préparé / réceptionné, délivré.</div>
           </div>
         </div>
         <div class="fgrid">
@@ -747,8 +747,11 @@ tr:hover td{background:#fafffe}
         </div>
         <div style="display:flex;gap:8px;margin-top:1.2rem;flex-wrap:wrap;justify-content:flex-end;align-items:center">
           <div id="prep-send-status" style="display:none;font-size:.82rem;font-weight:600"></div>
+          <button class="btn bs" id="btn-annul-prep" onclick="annulerEditPrep()" style="display:none;padding:10px 18px;font-size:.9rem;border-radius:10px">
+            <svg class="ico"><use href="#ic-fermer"></use></svg> Annuler la modification
+          </button>
           <button class="btn bp" id="btn-send-prep" onclick="savePrep()" style="padding:10px 22px;font-size:.9rem;border-radius:10px">
-            <svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer la demande
+            <svg class="ico"><use href="#ic-valider"></use></svg> <span id="btn-send-prep-lbl">Enregistrer la demande</span>
           </button>
         </div>
       </div>
@@ -4924,6 +4927,67 @@ function prepStepIdx(p){
   return idx;
 }
 
+// ── Modifier une demande qui n'est pas encore faite ─────────────────────────
+//
+// Une demande se saisit au comptoir, souvent avec le patient qui parle en meme
+// temps : un dosage mal entendu, un numero de telephone a un chiffre pres, un
+// type de demande choisi trop vite. Jusqu'ici il fallait abandonner la demande
+// et la ressaisir — ce qui laissait une ligne « abandonnee » dans l'historique
+// pour une faute de frappe, et perdait la place reservee au planning.
+//
+// LA LIMITE EST LA REALISATION, PAS LA LIVRAISON. Tant que rien n'est prepare,
+// la fiche decrit une INTENTION et se corrige librement. Une fois « preparee »
+// franchie, elle decrit ce qu'il y a DANS LE FLACON : la reecrire ferait mentir
+// la trace sur ce qui a ete fabrique. On refuse donc, et on dit comment faire —
+// reculer d'une etape sur le fil, ce qui est un geste visible, puis corriger.
+let prepEditId = null;
+function prepModifiable(p){
+  return !!p && p.status !== 'prête' && p.status !== 'délivrée' && p.status !== 'abandonnée';
+}
+function prepFormMaj(){
+  const e = !!prepEditId;
+  const t = document.getElementById('prep-form-t');
+  const d = document.getElementById('prep-form-s');
+  const l = document.getElementById('btn-send-prep-lbl');
+  const a = document.getElementById('btn-annul-prep');
+  if(t) t.textContent = e ? 'Modifier la demande de préparation' : 'Nouvelle demande de préparation';
+  if(d) d.textContent = e
+    ? 'Corrigez ce qui doit l’être, puis enregistrez. Le fil de suivi et la place au planning sont conservés.'
+    : 'Enregistrez la demande, puis suivez-la sur son fil : devis validé, préparé / réceptionné, délivré.';
+  if(l) l.textContent = e ? 'Enregistrer les modifications' : 'Enregistrer la demande';
+  if(a) a.style.display = e ? '' : 'none';
+}
+function prepFormVider(){
+  ['p-nom','p-prenom','p-dob','p-tel','p-med','p-prep'].forEach(i=>{const e=document.getElementById(i); if(e) e.value='';});
+  const t=document.getElementById('p-type'); if(t) t.value='realisation-pharmacie';
+}
+function annulerEditPrep(){
+  prepEditId = null;
+  prepFormVider();
+  prepFormMaj();
+}
+function editPrep(id){
+  const p = preps.find(x => x.id === id); if(!p) return;
+  if(!prepModifiable(p)){
+    alert('Cette préparation est déjà réalisée : sa fiche décrit ce qui a été fabriqué.\n\n'
+      + 'Pour la corriger, reculez d’abord d’une étape sur son fil de suivi.');
+    return;
+  }
+  prepEditId = id;
+  document.getElementById('p-nom').value    = p.nom || '';
+  document.getElementById('p-prenom').value = p.prenom || '';
+  document.getElementById('p-dob').value    = p.dob || '';
+  document.getElementById('p-tel').value    = p.tel || '';
+  document.getElementById('p-med').value    = p.med || '';
+  document.getElementById('p-type').value   = PREP_TYPES[p.type] ? p.type : 'realisation-kerangal';
+  document.getElementById('p-prep').value   = p.prep || '';
+  const st=document.getElementById('prep-send-status'); if(st) st.style.display='none';
+  prepFormMaj();
+  const carte = document.getElementById('prep-form-card');
+  if(typeof formEnVue === 'function') formEnVue(carte);
+  else if(carte) carte.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
 function savePrep(){
   const nom=document.getElementById('p-nom').value.trim().toUpperCase();
   const prenom=document.getElementById('p-prenom').value.trim();
@@ -4934,6 +4998,46 @@ function savePrep(){
   const med=document.getElementById('p-med').value.trim();
   const prep=document.getElementById('p-prep').value.trim();
   const now=new Date();
+
+  // ── Modification d'une demande existante ────────────────────────────────
+  // On garde son identite : l'id, la date de la demande, qui l'a prise, et la
+  // place deja reservee au planning. Seul ce qui est saisi ici change.
+  if(prepEditId){
+    const p=preps.find(x=>x.id===prepEditId);
+    if(!p || !prepModifiable(p)){ annulerEditPrep(); renderPreps(); return; }
+    const ancienType=p.type;
+    Object.assign(p,{nom,prenom,dob,tel,med,prep,type});
+    // Le statut suit le type : passer a un devis remet la demande en attente
+    // du devis, en sortir la remet en cours. Sans cela, un fil de suivi
+    // afficherait une etape qui n'existe plus pour ce type.
+    if(PREP_TYPES[type].devis && !p.devisValideAt) p.status='attente devis';
+    else if(!PREP_TYPES[type].devis && p.status==='attente devis') p.status='en cours';
+    // Le jour de production ne concerne QUE ce qui est fabrique ici : il se
+    // libere quand la demande part chez Kerangal, et s'obtient quand elle
+    // revient a l'officine.
+    if(type!==window.PP_TYPE) delete p.jour;
+    else if(!p.jour && window.ppJourPourNouvelle){ const j=window.ppJourPourNouvelle(); if(j) p.jour=j; }
+    p.modifieLe=Date.now();
+    p.modifiePar=currentUser?.id||null;
+    p.updatedAt=Date.now();
+    window.ppJourRetenu=null;
+    upsertPatient({nom,prenom,dob,tel});
+    if(med){ const parts=med.replace(/^Dr\.?\s*/i,'').trim().split(' ');
+      const mn=parts[parts.length-1].toUpperCase(); const mp=parts.slice(0,-1).join(' ');
+      if(mn) upsertMedecin({nom:mn,prenom:mp}); }
+    if(typeof logAction==='function') logAction('Demande de préparation modifiée','');
+    const quandM=(p.jour&&window.ppLibelleJour)?window.ppLibelleJour(p.jour):'';
+    const stM=document.getElementById('prep-send-status');
+    if(stM){ stM.style.display='block'; stM.style.color='#2E7D32';
+      stM.textContent='✅ Demande modifiée'+(quandM?' — prévue '+quandM:'')
+        +(ancienType!==type?' · type changé':'')+'.';
+      setTimeout(function(){ stM.style.display='none'; },4000); }
+    saveNow();
+    annulerEditPrep();
+    renderPreps();
+    return;
+  }
+
   const p={id:Date.now(),nom,prenom,dob,tel,med,prep,type,
     operateur:currentUser?`${currentUser.prenom} ${currentUser.nom}`:'Opérateur',
     by:currentUser?.id||null,
@@ -4961,6 +5065,12 @@ function savePrep(){
   if(st){ st.style.display='block'; st.style.color='#2E7D32';
     st.textContent='✅ Demande enregistrée'+(quand?' — prévue '+quand:'')+'.';
     setTimeout(function(){ st.style.display='none'; },4000); }
+  // SANS CECI, LA DEMANDE NE PARTAIT JAMAIS AU SERVEUR. Elle ne vivait qu'en
+  // memoire, et la resynchronisation des huit secondes remplace `preps` par la
+  // copie serveur : la demande disparaissait. Elle ne survivait que si une
+  // autre action de l'application declenchait un enregistrement entre-temps —
+  // ce qui arrive souvent, et masquait la faute.
+  saveNow();
   renderPreps();
 }
 
@@ -5029,11 +5139,12 @@ function prepCard(p){
         ${attente}
       </div>
       ${p.prep?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${p.prep}</span></div>`:''}
-      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}${smsMention(p.smsId)}`:''}</span></div>
+      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.modifieLe?` · modifiée le ${new Date(p.modifieLe).toLocaleDateString('fr-FR')} par ${staffName(p.modifiePar)}`:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}${smsMention(p.smsId)}`:''}</span></div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
       ${p.status==='prête'?`<button class="btn bs btn-ico" onclick="openPrepSms(${p.id})" title="${p.smsAt?'SMS déjà envoyé le '+new Date(p.smsAt).toLocaleDateString('fr-FR'):'Prévenir le patient par SMS'}"${p.smsAt?' style="border-color:#A5D6A7;background:#E8F5E9"':''}>${ico('messagerie')}</button>`:''}
+      ${prepModifiable(p)?`<button class="btn bs btn-ico" onclick="editPrep(${p.id})" title="Modifier la demande">${ico('modifier')}</button>`:''}
       ${!archived?`<button class="btn bd btn-ico" onclick="abandonPrep(${p.id})" title="Abandonner">${ico('fermer')}</button>`:''}
     </div>
   </div>`;
@@ -5055,6 +5166,7 @@ function askPrepStep(id, target){
     p.status=nouveau; p.updatedAt=Date.now();
     if(!recul){ p[st.key]=new Date().toISOString().split('T')[0]; p[st.key+'By']=currentUser?.id||null; }
     else { steps.slice(target+1).forEach(function(s){ delete p[s.key]; delete p[s.key+'By']; }); }
+    saveNow();
     closeModal('confirm-modal'); renderPreps();
     // Préparée / réceptionnée : on propose aussitôt de prévenir le patient.
     if(!recul && nouveau==='prête') setTimeout(function(){ openPrepSms(p.id); },250);
@@ -5094,7 +5206,8 @@ function openPrepSms(id){
 function abandonPrep(id){
   const p=preps.find(x=>x.id===id);if(!p)return;
   if(confirm('Abandonner la demande pour '+p.nom+' '+p.prenom+' ?')){
-    p.status='abandonnée';p.updatedAt=Date.now();logAction('Préparation abandonnée',(p.nom||'')+' '+(p.prenom||''));renderPreps();
+    p.status='abandonnée';p.updatedAt=Date.now();logAction('Préparation abandonnée',(p.nom||'')+' '+(p.prenom||''));
+    saveNow();renderPreps();
   }
 }
 

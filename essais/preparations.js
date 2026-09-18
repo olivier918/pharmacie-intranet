@@ -207,5 +207,64 @@ console.log('\nLe SMS proposé quand la préparation est faite');
     !/(mg\b|gélule|crème|suppositoire|solution|comprim|formule)/i.test(txt));
 })();
 
+// ── Modifier une demande pas encore realisee ────────────────────────────────
+// Les regles viennent de public/index.html lui-meme : la limite de la
+// modification, et le statut qui suit le changement de type.
+(function () {
+  const ix = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  function bloc(nom) {
+    const d = ix.indexOf('\nfunction ' + nom + '(');
+    if (d < 0) throw new Error('introuvable : ' + nom);
+    const une = ix.slice(d + 1).split('\n')[0];
+    if (/^function [^(]+\([^)]*\)\s*\{.*\}$/.test(une)) return une;
+    const f = ix.indexOf('\n}\n', d);
+    return ix.slice(d + 1, f + 2);
+  }
+  eval(/const PREP_TYPES=\{[\s\S]*?\n\};/.exec(ix)[0].replace('const', 'var'));
+  eval(/const PREP_STATUSES=\[.*?\];/.exec(ix)[0].replace('const', 'var'));
+  eval(bloc('prepModifiable'));
+
+  console.log('\nModifier une demande — jusqu’où');
+  t('une demande en cours se modifie', prepModifiable({ status: 'en cours' }));
+  t('une demande en attente de devis aussi', prepModifiable({ status: 'attente devis' }));
+  t('une demande PRÉPARÉE ne se modifie plus', !prepModifiable({ status: 'prête' }));
+  t('une demande délivrée non plus', !prepModifiable({ status: 'délivrée' }));
+  t('une demande abandonnée non plus', !prepModifiable({ status: 'abandonnée' }));
+  t('rien du tout ne se modifie pas', !prepModifiable(null));
+  // La limite est la REALISATION : passe cette etape, la fiche ne decrit plus
+  // une intention mais ce qu'il y a dans le flacon.
+  t('la limite est bien la réalisation, pas la délivrance',
+    PREP_STATUSES.indexOf('prête') < PREP_STATUSES.indexOf('délivrée')
+    && !prepModifiable({ status: 'prête' }));
+
+  // Le statut suit le type : la regle telle qu'elle est ecrite dans savePrep.
+  function statutApres(type, p) {
+    if (PREP_TYPES[type].devis && !p.devisValideAt) return 'attente devis';
+    if (!PREP_TYPES[type].devis && p.status === 'attente devis') return 'en cours';
+    return p.status;
+  }
+  // ── Ce qui change une demande DOIT l'enregistrer ──────────────────────────
+  // La resynchronisation des huit secondes remplace `preps` par la copie
+  // serveur. Une action qui modifie la liste sans enregistrer ne survit donc
+  // que si une AUTRE action de l'application enregistre entre-temps — ce qui
+  // arrive souvent, et masque la faute jusqu'au jour ou ca n'arrive pas.
+  // C'est ce garde-fou qui l'a trouvee sur trois fonctions d'un coup.
+  console.log('\nRien ne change une demande sans l’enregistrer');
+  [['savePrep', 'la création'], ['abandonPrep', 'l’abandon'], ['askPrepStep', 'le franchissement d’une étape']]
+    .forEach(function (x) {
+      t(x[1] + ' appelle saveNow()', /\bsaveNow\(\)/.test(bloc(x[0])));
+    });
+
+  console.log('\nChanger le type d’une demande');
+  t('passer à un devis remet en attente du devis',
+    statutApres('devis-kerangal', { status: 'en cours' }) === 'attente devis');
+  t('sortir du devis remet en cours',
+    statutApres('realisation-pharmacie', { status: 'attente devis' }) === 'en cours');
+  t('un devis déjà validé ne se redemande pas',
+    statutApres('devis-kerangal', { status: 'en cours', devisValideAt: '2026-09-10' }) === 'en cours');
+  t('changer entre deux types sans devis ne touche à rien',
+    statutApres('realisation-kerangal', { status: 'en cours' }) === 'en cours');
+})();
+
 console.log('\n' + ok + ' réussi(s), ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
