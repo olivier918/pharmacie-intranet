@@ -559,22 +559,27 @@ C'est la même frontière partout où une fiche bascule de l'intention au fait :
 le relevé de température signé ne se corrige pas non plus, il se commente au
 relevé suivant.
 
-## Ce qui modifie une collection DOIT l'enregistrer
+## L'enregistrement est accroché aux fonctions de RENDU
 
-La resynchronisation des huit secondes remplace les collections par la copie
-serveur (`if(d.preps)preps=d.preps`). Une action qui modifie une liste sans
-appeler `saveNow()` ou `schedSave()` ne survit donc **que si une autre action
-enregistre entre-temps** — ce qui arrive souvent, et masque la faute jusqu'au
-jour où ça n'arrive pas.
+Tout en bas d'index.html, section « AUTO-SAVE HOOKS » : `renderD`,
+`renderPreps`, `renderLocs` et une dizaine d'autres sont enveloppées pour
+appeler `schedSave()` après coup. **Une fonction métier qui finit par
+`renderX()` enregistre donc, même si elle n'appelle aucun `save`** — et c'est
+ce qui explique que presque aucune ne le fasse explicitement.
 
-`savePrep`, `abandonPrep` et `askPrepStep` étaient dans ce cas, toutes les
-trois : une demande prise au comptoir pouvait disparaître huit secondes plus
-tard. `node essais/preparations.js` vérifie désormais leur présence dans la
-source elle-même — c'est ce garde-fou qui les a trouvées d'un coup.
+À ne pas relire trop vite : on croit lire une perte de données là où il n'y en
+a pas. La resynchronisation des huit secondes remplace bien les collections par
+la copie serveur (`if(d.preps)preps=d.preps`), mais elle ne tourne que si
+`_savePending` est faux, et le rendu a déjà armé la sauvegarde.
 
-**Création et changement d'état : `saveNow()`, pas `schedSave()`.** Ces actions
-sont délibérées et rares ; différer de 600 ms, c'est offrir une fenêtre où un
-rechargement les emporte.
+Le piège réel est l'inverse : **une fonction qui modifie une collection sans
+rendre ensuite** n'enregistre rien du tout, et rien ne le signale.
+
+**Création et changement d'état : `saveNow()` plutôt que le rendu seul.** Ces
+actions sont délibérées et rares ; les laisser au débounce de 600 ms offre une
+fenêtre où un rechargement les emporte. C'est la règle que `savePrep`,
+`abandonPrep` et `askPrepStep` suivent désormais — un resserrage, pas un
+sauvetage. `node essais/preparations.js` le vérifie dans la source.
 
 ## Un travail à faire n’apparaît que dans UNE liste
 

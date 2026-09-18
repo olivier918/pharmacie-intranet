@@ -243,13 +243,14 @@ console.log('\nLe SMS proposé quand la préparation est faite');
     if (!PREP_TYPES[type].devis && p.status === 'attente devis') return 'en cours';
     return p.status;
   }
-  // ── Ce qui change une demande DOIT l'enregistrer ──────────────────────────
-  // La resynchronisation des huit secondes remplace `preps` par la copie
-  // serveur. Une action qui modifie la liste sans enregistrer ne survit donc
-  // que si une AUTRE action de l'application enregistre entre-temps — ce qui
-  // arrive souvent, et masque la faute jusqu'au jour ou ca n'arrive pas.
-  // C'est ce garde-fou qui l'a trouvee sur trois fonctions d'un coup.
-  console.log('\nRien ne change une demande sans l’enregistrer');
+  // ── Ce qui change une demande l'enregistre TOUT DE SUITE ─────────────────
+  // Les fonctions de rendu sont enveloppees en bas d'index.html pour appeler
+  // schedSave() : une action qui finit par renderPreps() enregistre donc de
+  // toute facon, apres 600 ms. Ce garde-fou exige mieux pour les trois actions
+  // deliberees et rares que sont creer, abandonner et franchir une etape :
+  // saveNow(), sans attendre — 600 ms suffisent a perdre une demande si le
+  // poste se recharge (deploiement, onglet ferme).
+  console.log('\nCréer, abandonner, franchir une étape : enregistré sans attendre');
   [['savePrep', 'la création'], ['abandonPrep', 'l’abandon'], ['askPrepStep', 'le franchissement d’une étape']]
     .forEach(function (x) {
       t(x[1] + ' appelle saveNow()', /\bsaveNow\(\)/.test(bloc(x[0])));
