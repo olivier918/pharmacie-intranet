@@ -808,13 +808,15 @@ tr:hover td{background:#fafffe}
         <div class="fgrid">
           <div class="fg" style="position:relative">
             <label>Nom patient <span class="req">*</span></label>
-            <input type="text" id="lc-nom" placeholder="NOM" oninput="acPatient('lc-nom','lc-prenom','lc-dob-pat','lc-pat-ac','lc-tel','lc-mail')" autocomplete="off">
+            <input type="text" id="lc-nom" placeholder="NOM" oninput="acPatient('lc-nom','lc-prenom','lc-dob-pat','lc-pat-ac','lc-tel','lc-mail','lc-adresse','lc-commune')" autocomplete="off">
             <div id="lc-pat-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="lc-prenom" placeholder="Prénom"></div>
           <div class="fg"><label>Date de naissance</label><input type="date" id="lc-dob-pat"></div>
           <div class="fg"><label>Téléphone patient</label><input type="tel" id="lc-tel" placeholder="06 …"></div>
           <div class="fg"><label>E-mail patient</label><input type="email" id="lc-mail" placeholder="patient@mail.fr"></div>
+          <div class="fg"><label>Adresse</label><input type="text" id="lc-adresse" placeholder="12 rue des Lilas"></div>
+          <div class="fg"><label>Code postal · Commune</label><input type="text" id="lc-commune" placeholder="14120 Mondeville"></div>
           <div class="fg" style="position:relative">
             <label>Prescripteur</label>
             <input type="text" id="lc-prescripteur" placeholder="Dr …" oninput="acMedecin('lc-prescripteur','lc-med-ac')" autocomplete="off">
@@ -6165,7 +6167,7 @@ function toggleLocForm(){
   if(!shown){
     locEditId=null;
     document.getElementById('loc-form-title').textContent='Nouvelle location';
-    ['lc-nom','lc-prenom','lc-prescripteur','lc-num','lc-tel','lc-mail','lc-dob-pat'].forEach(i=>document.getElementById(i).value='');
+    ['lc-nom','lc-prenom','lc-prescripteur','lc-num','lc-tel','lc-mail','lc-dob-pat','lc-adresse','lc-commune'].forEach(i=>document.getElementById(i).value='');
     ['lc-date-presc','lc-date-debut'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('lc-duree').value='';
     document.getElementById('lc-type').value='';
@@ -6268,14 +6270,14 @@ window.lcMajLiv = function(){
   // prendre — cocher enverrait le livreur reclamer un cheque deja encaisse.
   const c=document.getElementById('lc-liv-cheque');
   if(c && !c.dataset.touche) c.checked=(lcCautionChoisie()==='attente');
+  // Reprise des champs du dossier plutot que de l'annuaire : ils sont deja
+  // remplis par l'autocompletion, et ils marchent aussi pour un patient qu'on
+  // est en train de creer.
   const ad=document.getElementById('lc-liv-adresse');
   if(ad && !ad.dataset.touche){
-    const n=(document.getElementById('lc-nom')||{}).value||'';
-    const pr=(document.getElementById('lc-prenom')||{}).value||'';
-    const fiche=patients.find(function(x){
-      return x && (x.nom||'').toUpperCase()===n.trim().toUpperCase()
-          && (x.prenom||'').toLowerCase()===pr.trim().toLowerCase(); });
-    ad.value=[(fiche&&fiche.adresse)||'', (fiche&&fiche.commune)||''].filter(Boolean).join(' · ');
+    ad.value=[((document.getElementById('lc-adresse')||{}).value||'').trim(),
+              ((document.getElementById('lc-commune')||{}).value||'').trim()]
+             .filter(Boolean).join(' · ');
   }
   lcRemplirPlus(); lcRendLivMat();
 };
@@ -6417,7 +6419,11 @@ function saveLoc(){
   obj.dateFinManuelle=(finSaisie&&finSaisie!==lcFinCalculee())?finSaisie:null;
   obj.cautionMontant=obj.caution?(((LOC_TYPES[obj.type]||{}).caution)||200):null;
   // Auto-upsert patient DB
-  upsertPatient({nom,prenom,dob,tel,mail});
+  // L'adresse suit le meme chemin que le telephone : saisie ici, elle remonte
+  // dans l'annuaire, qui reste la seule source a jour.
+  upsertPatient({nom,prenom,dob,tel,mail,
+    adresse:(document.getElementById('lc-adresse')||{}).value||'',
+    commune:(document.getElementById('lc-commune')||{}).value||''});
   // Auto-upsert medecin DB
   if(prescripteur){
     const parts=prescripteur.replace(/^Dr\.?\s*/i,'').trim().split(' ');
@@ -6695,6 +6701,16 @@ function locPatient(l){
 function locTel(l){ const p=locPatient(l); return (p&&p.tel)||l.tel||''; }
 function locMail(l){ const p=locPatient(l); return (p&&p.mail)||l.mail||''; }
 function locDob(l){ const p=locPatient(l); return (p&&p.dob)||l.dob||''; }
+// L'adresse, en lignes — celles d'une enveloppe. Elle vit dans l'annuaire
+// patient, la seule a jour ; le dossier ne sert que de repli pour un dossier
+// saisi avant que la fiche existe.
+function locAdresseLignes(l){
+  const p=locPatient(l)||{};
+  const rue=(p.adresse||(l&&l.adresse)||'').trim();
+  const cp=(p.cp||(l&&l.cp)||'').trim();
+  const ville=(p.commune||(l&&l.commune)||'').trim();
+  return [rue, [cp,ville].filter(Boolean).join(' ')].filter(Boolean);
+}
 // Champ « date de fin » du formulaire : pré-rempli avec le calcul, recalculé
 // quand le début ou la durée changent — sauf si l'opérateur l'a fixé à la main.
 let lcFinTouchee=false;
@@ -7883,6 +7899,9 @@ function editLoc(id){
   document.getElementById('lc-tel').value=locTel(l);
   document.getElementById('lc-mail').value=locMail(l);
   document.getElementById('lc-dob-pat').value=locDob(l);
+  const adrL=locAdresseLignes(l);
+  document.getElementById('lc-adresse').value=adrL[0]||'';
+  document.getElementById('lc-commune').value=adrL[1]||'';
   document.getElementById('lc-prescripteur').value=l.prescripteur||'';
   document.getElementById('lc-date-debut').value=l.dateDebut||'';
   document.getElementById('lc-date-presc').value=l.datePresc||'';
@@ -7911,6 +7930,10 @@ function genContrat(){
   if(!nom||!prenom){alert('Remplissez au moins nom, prénom et les informations de l\'appareil.');return}
   const l={
     nom,prenom,
+    // Saisies ici, pas encore dans l'annuaire : un contrat imprime avant
+    // l'enregistrement doit quand meme porter l'adresse qu'on vient de taper.
+    adresse:(document.getElementById('lc-adresse')||{}).value||'',
+    commune:(document.getElementById('lc-commune')||{}).value||'',
     prescripteur:document.getElementById('lc-prescripteur').value,
     dateDebut:document.getElementById('lc-date-debut').value,
     datePresc:document.getElementById('lc-date-presc').value,
@@ -7918,7 +7941,11 @@ function genContrat(){
     type:document.getElementById('lc-type').value,
     num:document.getElementById('lc-num').value,
     opts:getLocOpts(),
-    caution:document.getElementById('lc-caut-oui').checked,
+    // Depuis que la caution a trois etats, lire la seule case « oui » faisait
+    // imprimer « Non applicable » sur un contrat dont la caution est due mais
+    // pas encore encaissee.
+    caution:(lcCautionChoisie()!=='non'),
+    cautionEtat:lcCautionChoisie(),
   };
   printContrat(l);
 }
@@ -7939,6 +7966,10 @@ function printContrat(l){
   const fin=locDateFin(l);
   const typeLbl=locTypeLabel(l.type);
   const optsLbl=locOptsStr(l);
+  // Echappee, contrairement au reste de ce gabarit : un contrat qui part a
+  // l'impression avec une adresse contenant un chevron n'a pas a se casser.
+  const adr=locAdresseLignes(l);
+  const adrLbl=adr.length?adr.map(hEsc).join('<br>'):'—';
   const html=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <title>Contrat de location</title>
 <style>
@@ -7971,6 +8002,7 @@ ${[1,2].map(ex=>`
     <div class="section-title">Informations patient</div>
     <table>
       <tr><td>Nom / Prénom</td><td>${l.nom} ${l.prenom}</td></tr>
+      <tr><td>Adresse</td><td>${adrLbl}</td></tr>
       <tr><td>Médecin prescripteur</td><td>${l.prescripteur||'—'}</td></tr>
       <tr><td>Date de prescription</td><td>${l.datePresc?new Date(l.datePresc).toLocaleDateString('fr-FR'):'—'}</td></tr>
     </table>

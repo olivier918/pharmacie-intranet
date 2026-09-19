@@ -136,5 +136,42 @@ t('... et il n’a pas de case « serie » qui trainerait vide',
 t('un ajout d’avant ce changement, sans drapeau, reste un appareil',
   sup([{ k: 'lit', lbl: 'Lit' }])[0].avecSerie === true);
 
+// ── L'adresse du patient, sur le contrat ────────────────────────────────────
+// Elle vit dans l'annuaire, la seule a jour ; le dossier ne sert que de repli
+// pour un contrat imprime avant l'enregistrement.
+let patients = [];
+eval(bloc('locPatient'));
+eval(bloc('locAdresseLignes'));
+
+console.log('\nL’adresse du patient sur le contrat');
+patients = [{ nom: 'MARTIN', prenom: 'Claire', adresse: '12 rue des Lilas', cp: '14120', commune: 'Mondeville' }];
+let a = locAdresseLignes({ nom: 'MARTIN', prenom: 'Claire' });
+t('elle vient de l’annuaire', a.join('|') === '12 rue des Lilas|14120 Mondeville');
+t('deux lignes, comme sur une enveloppe', a.length === 2);
+t('la casse du nom ne change rien',
+  locAdresseLignes({ nom: 'martin', prenom: 'CLAIRE' }).length === 2);
+
+// Un contrat imprime avant d'enregistrer : la fiche n'existe pas encore.
+patients = [];
+a = locAdresseLignes({ nom: 'NOUVEAU', prenom: 'Patient', adresse: '3 place du Marché', cp: '14000', commune: 'Caen' });
+t('à défaut de fiche, ce qui vient d’être saisi est repris',
+  a.join('|') === '3 place du Marché|14000 Caen');
+
+// L'ANNUAIRE L'EMPORTE : un patient qui a demenage a corrige sa fiche, pas le
+// vieux dossier de location.
+patients = [{ nom: 'MARTIN', prenom: 'Claire', adresse: '9 rue Neuve', cp: '14120', commune: 'Mondeville' }];
+t('l’annuaire l’emporte sur le dossier',
+  locAdresseLignes({ nom: 'MARTIN', prenom: 'Claire', adresse: 'ancienne adresse' })[0] === '9 rue Neuve');
+
+patients = [];
+t('sans rien, la ligne ne s’invente pas', locAdresseLignes({ nom: 'X', prenom: 'Y' }).length === 0);
+t('une commune sans rue tient quand même sur une ligne',
+  locAdresseLignes({ nom: 'X', prenom: 'Y', commune: 'Caen' }).join('|') === 'Caen');
+t('un code postal sans commune aussi',
+  locAdresseLignes({ nom: 'X', prenom: 'Y', cp: '14000' }).join('|') === '14000');
+t('rien du tout ne casse rien', locAdresseLignes(null).length === 0);
+t('les espaces parasites sont rognés',
+  locAdresseLignes({ nom: 'X', prenom: 'Y', adresse: '  3 rue A  ', commune: ' Caen ' }).join('|') === '3 rue A|Caen');
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
