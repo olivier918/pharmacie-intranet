@@ -2848,7 +2848,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','depannages','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2872,6 +2872,7 @@ function _collRef(n){ switch(n){
   case 'depots':return depots;
   case 'laboratoires':return laboratoires;
   case 'locProvenances':return locProvDB;
+  case 'etiqFormats':return etiqFormats;
   case 'reactions':return reactions;
   case 'convos':return convos; case 'messages':return messages;
   case 'groupesMsg':return groupesMsg;
@@ -2923,7 +2924,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,depannages,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -2980,6 +2981,7 @@ async function loadAll(){
     if(data.locations)locations=data.locations;
     if(Array.isArray(data.locTypes)&&data.locTypes.length){ locTypesDB=data.locTypes; rebuildLocTypes(); }
     if(Array.isArray(data.locProvenances)&&data.locProvenances.length) locProvDB=data.locProvenances;
+    if(Array.isArray(data.etiqFormats)) etiqFormats=data.etiqFormats;
     if(data.caisse)caisse=data.caisse;
     if(data.credits)credits=data.credits;
     if(data.labo)labo=data.labo;
@@ -3046,6 +3048,7 @@ setInterval(async()=>{
         if(d.locations)locations=d.locations;
         if(Array.isArray(d.locTypes)&&d.locTypes.length){ locTypesDB=d.locTypes; rebuildLocTypes(); }
         if(Array.isArray(d.locProvenances)&&d.locProvenances.length) locProvDB=d.locProvenances;
+        if(Array.isArray(d.etiqFormats)) etiqFormats=d.etiqFormats;
         if(d.caisse)caisse=d.caisse;
         if(d.credits)credits=d.credits;
         if(d.patients)patients=d.patients;
@@ -5155,11 +5158,12 @@ function prepCard(p){
         ${attente}
       </div>
       ${p.prep?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${p.prep}</span></div>`:''}
-      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.modifieLe?` · modifiée le ${new Date(p.modifieLe).toLocaleDateString('fr-FR')} par ${staffName(p.modifiePar)}`:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}${smsMention(p.smsId)}`:''}</span></div>
+      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.modifieLe?` · modifiée le ${new Date(p.modifieLe).toLocaleDateString('fr-FR')} par ${staffName(p.modifiePar)}`:''}${p.etiq&&p.etiq.lot?` · étiquette lot ${p.etiq.lot}`:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}${smsMention(p.smsId)}`:''}</span></div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
       ${p.status==='prête'?`<button class="btn bs btn-ico" onclick="openPrepSms(${p.id})" title="${p.smsAt?'SMS déjà envoyé le '+new Date(p.smsAt).toLocaleDateString('fr-FR'):'Prévenir le patient par SMS'}"${p.smsAt?' style="border-color:#A5D6A7;background:#E8F5E9"':''}>${ico('messagerie')}</button>`:''}
+      ${!isAbandoned?`<button class="btn bs btn-ico" onclick="etOuvrir(${p.id})" title="${p.etiq&&p.etiq.imprimeLe?'Étiquette imprimée le '+new Date(p.etiq.imprimeLe).toLocaleDateString('fr-FR')+(p.etiq.lot?' · lot '+p.etiq.lot:''):'Imprimer l’étiquette'}"${p.etiq&&p.etiq.imprimeLe?' style="border-color:#A5D6A7;background:#E8F5E9"':''}>${ico('document')}</button>`:''}
       ${prepModifiable(p)?`<button class="btn bs btn-ico" onclick="editPrep(${p.id})" title="Modifier la demande">${ico('modifier')}</button>`:''}
       ${!archived?`<button class="btn bd btn-ico" onclick="abandonPrep(${p.id})" title="Abandonner">${ico('fermer')}</button>`:''}
     </div>
@@ -6471,6 +6475,8 @@ let locTypesDB=[];
 // feraient trois provenances et aucun comptage ne serait juste. La liste se
 // tient au Back Office, onglet Materiel, comme le catalogue.
 let locProvDB=[];
+// Les formats d'etiquettes de la ZD230 (voir public/et-module.js).
+let etiqFormats=[];
 const LOC_PROV_DEFAUT=[
   {id:'bluestone', lbl:'Bluestone Medical', defaut:true},
   {id:'pharmacie', lbl:'Pharmacie (parc propre)'},
@@ -12890,6 +12896,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="rx-module.js"></script>
 <script src="md-module.js"></script>
 <script src="kb-module.js"></script>
+<script src="et-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>

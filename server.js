@@ -1583,7 +1583,11 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   // Module Litiges : litiges fournisseurs et factures manquantes.
   'litiges', 'facturesManq',
   // SMS programmes : envoyes par le serveur, a 8 h 30, sans poste allume.
-  'smsProg'];
+  'smsProg',
+  // Formats d'etiquettes de l'imprimante a etiquettes : quelques lignes, mais
+  // partagees entre les postes — un format cree au comptoir doit exister au
+  // preparatoire.
+  'etiqFormats'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des

@@ -594,6 +594,40 @@ facturé deux fois le jour où deux personnes y vont, et jamais le jour où
 chacune croit que l’autre s’en charge. Quand un module en alimente un autre,
 **celui qui alimente se tait**. `essais/livraison-ordo.js` garde ce point.
 
+## Étiquettes de préparation : une PAGE, pas du ZPL
+
+La ZD230 parle ZPL, et on pourrait lui envoyer des commandes brutes — mais
+aucun navigateur ne sait ouvrir un port d'imprimante. Il faudrait un logiciel
+de plus sur chaque poste. `public/et-module.js` imprime donc une **page**
+dont la taille est exactement celle de l'étiquette (`@page{size:57mm 32mm;
+margin:0}`), par le pilote de la ZD230 comme n'importe quelle imprimante. La
+même fonction construit l'aperçu et la page imprimée : l'aperçu ne peut pas
+mentir.
+
+**Le format est une donnée**, pas du code : `etiqFormats` est une collection
+synchronisée, parce qu'un format créé au comptoir doit exister au préparatoire.
+Trois formats d'usine complètent la liste enregistrée sans l'écraser, et un
+format supprimé exprès ne ressuscite pas — même mécanique que les modèles de
+SMS, pour la même raison.
+
+> **`etAjuster` n'a pas le droit d'avoir de fermeture.** Elle est recopiée dans
+> la fenêtre d'impression par `toString()` : toute constante du module qu'elle
+> citerait y serait introuvable. C'est arrivé — `ET_MIN` n'existait pas là-bas,
+> l'ajustement de la police se plantait en silence, et l'étiquette sortait
+> coupée. Son minimum est donc un paramètre avec sa valeur par défaut, et
+> `essais/etiquettes.js` relit sa source pour l'exiger.
+>
+> Corollaire du même piège : `forEach(etAjuster)` passe l'indice en deuxième
+> argument, qui deviendrait le minimum — la deuxième étiquette d'un lot
+> tomberait à 1 pt. L'appel est enveloppé.
+
+**Ce que l'étiquette doit porter n'est pas un choix de présentation** :
+l'article R. 5121-146-2 du code de la santé publique impose composition,
+numéro de lot, numéro d'ordonnancier, date limite d'utilisation, précautions de
+conservation, nom et adresse de la pharmacie. Ces champs sont demandés à
+l'impression et **restent sur la fiche** : six mois plus tard, « quel lot y
+avait-il sur ce flacon ? » doit avoir une réponse.
+
 ## Armoires réfrigérées : le manuel est à part
 
 `temperatures.js` (le robot), `temp-alertes.js` (la décision) et
