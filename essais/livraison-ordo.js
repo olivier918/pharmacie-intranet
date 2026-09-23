@@ -81,5 +81,30 @@ t('module absent : un badge, pas un bouton mort',
   !/<button/.test(dBoutonOrdo(liv({}))) && /Ordo/.test(dBoutonOrdo(liv({}))));
 global.odCapturerLivraison = vraiOd;
 
+// ── L'ordre des dates dans le journal ───────────────────────────────────────
+eval(extraireBloc('dDatesTriees'));
+
+console.log('\nL’ordre des en-têtes de date');
+const G = { '2024-03-02': [1], '2026-09-23': [1], '2025-11-14': [1] };
+// Une semaine se lit en avancant : lundi, mardi, mercredi.
+t('sans recherche, la semaine se lit du plus ancien au plus récent',
+  dDatesTriees(G, false).join() === '2024-03-02,2025-11-14,2026-09-23');
+// Une recherche par nom traverse les annees : c'est la derniere livraison qui
+// interesse, et elle se trouvait tout en bas de la page.
+t('en recherche, la plus récente est en tête',
+  dDatesTriees(G, true).join() === '2026-09-23,2025-11-14,2024-03-02');
+t('une seule date ne change pas d’ordre',
+  dDatesTriees({ '2026-09-23': [1] }, true).join() === '2026-09-23');
+t('aucune date ne casse rien', dDatesTriees({}, true).length === 0 && dDatesTriees(null, true).length === 0);
+// Les dates sont en ISO : leur ordre texte EST leur ordre chronologique, y
+// compris d'une annee sur l'autre et sur un changement de mois.
+t('le tri est bien chronologique, pas alphabétique par hasard',
+  dDatesTriees({ '2026-01-02': [], '2026-01-10': [], '2026-02-01': [] }, true).join()
+  === '2026-02-01,2026-01-10,2026-01-02');
+// C'est la RECHERCHE qui renverse, pas la vue semaine ni la liste a facturer :
+// une liste de travail se prend par le plus ancien.
+t('c’est la recherche, et elle seule, qui renverse l’ordre',
+  /const sortedDates=dDatesTriees\(groups, !!q\);/.test(src));
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

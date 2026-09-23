@@ -4220,7 +4220,7 @@ function renderD(){
       if(!groups[d.date])groups[d.date]=[];
       groups[d.date].push(d);
     });
-    const sortedDates=Object.keys(groups).sort();
+    const sortedDates=dDatesTriees(groups, !!q);
     el.innerHTML=sortedDates.map(dt=>{
       const rows=groups[dt];
       const cnt=rows.length;
@@ -4234,6 +4234,20 @@ function renderD(){
         </div>`;
     }).join('');
   }
+}
+
+// L'ordre des en-tetes de date dans le journal des livraisons.
+//
+// UNE SEMAINE SE LIT EN AVANCANT : lundi, mardi, mercredi — on prepare la
+// tournee du jour, puis celle d'apres. L'ordre chronologique est le bon.
+//
+// UNE RECHERCHE PAR NOM, NON. On cherche un patient precisement parce qu'on ne
+// sait plus quel jour sa livraison a ete saisie, et neuf fois sur dix c'est la
+// derniere qui interesse — « est-ce qu'on lui a livre son traitement ? ». Elle
+// se trouvait tout en bas, apres des annees de livraisons anciennes.
+function dDatesTriees(groups, recentDabord){
+  const l=Object.keys(groups||{}).sort();   // ISO : l'ordre texte est l'ordre des dates
+  return recentDabord ? l.reverse() : l;
 }
 
 function dCard(d){
