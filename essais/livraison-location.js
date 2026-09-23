@@ -173,5 +173,20 @@ t('rien du tout ne casse rien', locAdresseLignes(null).length === 0);
 t('les espaces parasites sont rognés',
   locAdresseLignes({ nom: 'X', prenom: 'Y', adresse: '  3 rue A  ', commune: ' Caen ' }).join('|') === '3 rue A|Caen');
 
+// Le telephone du contrat suit exactement la meme regle : c'est le numero
+// qu'on compose le jour ou le materiel n'est pas revenu.
+eval(bloc('locTel'));
+console.log('\nLe téléphone sur le contrat');
+patients = [{ nom: 'MARTIN', prenom: 'Claire', tel: '06 01 02 03 04' }];
+t('il vient de l’annuaire', locTel({ nom: 'MARTIN', prenom: 'Claire' }) === '06 01 02 03 04');
+t('l’annuaire l’emporte sur le dossier',
+  locTel({ nom: 'MARTIN', prenom: 'Claire', tel: '06 99 99 99 99' }) === '06 01 02 03 04');
+patients = [];
+t('à défaut de fiche, ce qui vient d’être saisi est repris',
+  locTel({ nom: 'NOUVEAU', prenom: 'Patient', tel: '06 99 88 77 66' }) === '06 99 88 77 66');
+t('sans numéro nulle part, rien ne s’invente', locTel({ nom: 'X', prenom: 'Y' }) === '');
+t('le contrat écrit un tiret plutôt qu’une case vide',
+  /const telLbl=locTel\(l\)\?hEsc\(locTel\(l\)\):'—';/.test(src));
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

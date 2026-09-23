@@ -7940,6 +7940,7 @@ function genContrat(){
     // l'enregistrement doit quand meme porter l'adresse qu'on vient de taper.
     adresse:(document.getElementById('lc-adresse')||{}).value||'',
     commune:(document.getElementById('lc-commune')||{}).value||'',
+    tel:(document.getElementById('lc-tel')||{}).value||'',
     prescripteur:document.getElementById('lc-prescripteur').value,
     dateDebut:document.getElementById('lc-date-debut').value,
     datePresc:document.getElementById('lc-date-presc').value,
@@ -7976,6 +7977,9 @@ function printContrat(l){
   // l'impression avec une adresse contenant un chevron n'a pas a se casser.
   const adr=locAdresseLignes(l);
   const adrLbl=adr.length?adr.map(hEsc).join('<br>'):'—';
+  // Meme source que l'adresse : l'annuaire d'abord, la saisie en repli. C'est
+  // le numero qu'on compose le jour ou le materiel n'est pas revenu.
+  const telLbl=locTel(l)?hEsc(locTel(l)):'—';
   const html=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <title>Contrat de location</title>
 <style>
@@ -8009,6 +8013,7 @@ ${[1,2].map(ex=>`
     <table>
       <tr><td>Nom / Prénom</td><td>${l.nom} ${l.prenom}</td></tr>
       <tr><td>Adresse</td><td>${adrLbl}</td></tr>
+      <tr><td>Téléphone</td><td>${telLbl}</td></tr>
       <tr><td>Médecin prescripteur</td><td>${l.prescripteur||'—'}</td></tr>
       <tr><td>Date de prescription</td><td>${l.datePresc?new Date(l.datePresc).toLocaleDateString('fr-FR'):'—'}</td></tr>
     </table>
