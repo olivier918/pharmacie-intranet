@@ -147,6 +147,42 @@ main{grid-area:main;padding:1.2rem;min-width:0}
   #app.sb-collapsed .sb-item{justify-content:flex-start;padding:.7rem 1.1rem;gap:14px}
 }
 .sec{display:none}.sec.active{display:block}
+/* LE BOUTON QUI NE PART PAS AVEC LA PAGE.
+   « Nouvelle livraison » vivait dans l'en-tete de la carte : des qu'on
+   descendait dans la liste — et on y descend, il y a quarante lignes un mardi
+   matin — il fallait remonter pour en creer une. Le geste le plus frequent de
+   l'ecran etait le seul a demander un aller-retour.
+
+   IL RESTE UN BOUTON ECRIT tant que la place le permet : « + Nouvelle
+   livraison » se lit, un « + » nu se devine. En dessous de 720 px, la place ne
+   le permet plus et il devient le rond — c'est la seule raison de le reduire.
+
+   IL EST DANS #sec-livraisons, pas dans <body> : une section inactive est en
+   display:none, donc le bouton dispararait tout seul dans les autres modules.
+   Aucune regle a tenir a jour le jour ou une section s'ajoute. */
+.fab-liv{position:fixed;right:22px;bottom:22px;z-index:240;
+  display:inline-flex;align-items:center;gap:9px;
+  padding:14px 22px;border:none;border-radius:999px;cursor:pointer;
+  background:var(--g-mid,#2E7D54);color:#fff;font:inherit;font-size:.95rem;font-weight:700;
+  box-shadow:0 8px 22px rgba(29,92,58,.34),0 2px 6px rgba(0,0,0,.14);
+  transition:transform .16s ease,box-shadow .16s ease,opacity .16s ease}
+.fab-liv:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(29,92,58,.4),0 3px 8px rgba(0,0,0,.16)}
+.fab-liv:active{transform:translateY(0)}
+.fab-liv:focus-visible{outline:3px solid var(--g-dark,#1D5C3A);outline-offset:3px}
+.fab-liv .fab-plus{font-size:1.35rem;line-height:1;font-weight:800;margin-top:-2px}
+/* Le formulaire ouvert occupe deja l'ecran : le bouton qui l'ouvre n'a plus
+   rien a proposer, et il se placerait par-dessus « Enregistrer ». */
+.fab-liv.off{opacity:0;pointer-events:none;transform:translateY(12px)}
+/* La derniere ligne de la liste ne doit pas finir sous le bouton. */
+#sec-livraisons{padding-bottom:96px}
+@media(max-width:720px){
+  .fab-liv{right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));
+    width:60px;height:60px;padding:0;justify-content:center;gap:0}
+  .fab-liv .fab-txt{display:none}
+  .fab-liv .fab-plus{font-size:2rem;margin-top:-3px}
+}
+@media print{.fab-liv{display:none}}
+@media(prefers-reduced-motion:reduce){.fab-liv{transition:none}.fab-liv:hover{transform:none}}
 .stitle{font-size:1.2rem;font-weight:600;color:var(--g-dark);margin-bottom:1rem;display:flex;align-items:center;gap:8px}
 
 /* ── CARDS / FORMS ── */
@@ -610,7 +646,6 @@ tr:hover td{background:#fafffe}
         <div class="ch">
           <span class="ct"><svg class="ico"><use href="#ic-livraison"></use></svg> Livraisons</span>
           <div style="display:flex;gap:7px;flex-wrap:wrap">
-            <button class="btn bp sm no-print" onclick="openDForm()">+ Nouvelle livraison</button>
             <button class="btn bs sm no-print" onclick="window.print()"><svg class="ico"><use href="#ic-imprimer"></use></svg> Imprimer</button>
           </div>
         </div>
@@ -637,6 +672,10 @@ tr:hover td{background:#fafffe}
         </div>
         <div id="dlist"></div>
       </div>
+
+      <button type="button" class="fab-liv no-print" id="fab-liv" onclick="openDForm()"
+        title="Nouvelle livraison" aria-label="Nouvelle livraison"><span class="fab-plus"
+        aria-hidden="true">+</span><span class="fab-txt">Nouvelle livraison</span></button>
 
       <!-- FORM -->
       <div class="card no-print" id="dform" style="display:none;border:2px solid var(--g-border)">
@@ -4621,9 +4660,22 @@ function openDForm(id){
     delete form.dataset.editId;
   }
   form.style.display='block';
+  majFabLiv();
   formEnVue(form);
 }
-function closeDForm(){document.getElementById('dform').style.display='none'}
+function closeDForm(){document.getElementById('dform').style.display='none'; majFabLiv();}
+// LE BOUTON FLOTTANT S'EFFACE QUAND LE FORMULAIRE EST OUVERT. Deux raisons, et
+// la seconde est la vraie : il ne propose plus rien d'utile, et surtout il se
+// poserait par-dessus « Enregistrer », en bas a droite du pave. Un bouton fixe
+// qui recouvre le bouton de validation, c'est un formulaire qu'on ne peut plus
+// valider — et on ne le decouvrirait qu'au comptoir.
+// Les deux fonctions ci-dessus sont les SEULS endroits qui touchent l'affichage
+// de #dform : l'etat du bouton ne peut donc pas se desynchroniser.
+function majFabLiv(){
+  const b=document.getElementById('fab-liv'), f=document.getElementById('dform');
+  if(!b||!f) return;
+  b.classList.toggle('off', f.style.display!=='none' && f.style.display!=='');
+}
 function saveD(){
   const nom=document.getElementById('d-nom').value.trim().toUpperCase();
   const prenom=document.getElementById('d-prenom').value.trim();
