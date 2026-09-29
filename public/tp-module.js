@@ -107,6 +107,25 @@
   .tp-rv-act{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
   .tp-rv-sig{font-size:13px;color:#5b5a53;flex:1}
   .tp-rv-ko{color:#b3261e;font-size:13px;margin-top:8px}
+  .tp-lbl2{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    color:#888780;margin:14px 0 6px}
+  .tp-vd{border-radius:11px;padding:11px 14px;font-size:13.5px;line-height:1.55;border:1px solid}
+  .tp-vd b{display:block;font-size:15px;margin-bottom:3px}
+  .tp-vd-ok{background:#E8F5E9;border-color:#A5D6A7;color:#1D5C3A}
+  .tp-vd-liaison{background:#fff6f5;border-color:#f0c8c4;color:#7f1d1d}
+  .tp-vd-sondes{background:#FFF3E0;border-color:#E65100;color:#7c3a00}
+  .tp-vd-robot{background:#fee2e2;border-color:#b91c1c;color:#7f1d1d}
+  .tp-vd-d{margin-top:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
+    background:rgba(0,0,0,.05);border-radius:7px;padding:6px 8px;word-break:break-word}
+  .tp-tir{margin-top:12px;border:1px solid #e6e4dc;border-radius:10px;overflow:hidden}
+  .tp-tir-l{display:flex;gap:12px;align-items:baseline;padding:6px 12px;font-size:12.5px;
+    border-bottom:1px solid #f1efe8;background:#fff}
+  .tp-tir-l:last-child{border-bottom:none}
+  .tp-tir-l.ko{background:#fff6f5}
+  .tp-tir-l .h{color:#5b5a53;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tp-tir-l .e{font-weight:600;white-space:nowrap;min-width:92px}
+  .tp-tir-l.ko .e{color:#b3261e}
+  .tp-tir-l .d{color:#888780;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tp-ar-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .tp-ar-h .tp-al-t{margin:0;flex:1}
   .tp-ar-r{display:block;width:100%;text-align:left;border:1px solid #e6e4dc;border-radius:10px;
@@ -144,6 +163,7 @@
       <div class="tp-bulle" id="tp-bulle"></div>
       <div class="tp-info" id="tp-info"></div>
     </div>
+    <div class="tp-carte" id="tp-diag" style="margin-top:18px;display:none"></div>
     <div class="tp-carte" id="tp-alertes" style="margin-top:18px"></div>
     <div class="tp-carte" id="tp-archives" style="margin-top:18px"></div>
   </div>`;
@@ -688,6 +708,119 @@
     } catch (e) { tpMsg('\u00c9valuation impossible : ' + e.message, true); }
   };
 
+  // ── D'où vient la panne ? ─────────────────────────────────────────────────
+  //
+  // C'est la seule question qu'on se pose devant un écran vide, et jusqu'ici
+  // il fallait ouvrir une console pour y répondre. Le journal des tirages la
+  // tranche : chaque interrogation y laisse une ligne, réussie ou non.
+  //
+  //   plus aucune ligne récente -> le robot ne tourne plus (serveur)
+  //   ok = false                -> la LIAISON avec Saveris
+  //   ok = true, reçues = 0     -> la liaison va bien, mais Saveris n'a rien
+  //                                à donner : les SONDES n'émettent plus
+  //   ok = true, reçues > 0, mais la dernière mesure est vieille -> Saveris
+  //                                rejoue toujours les mêmes : SONDES aussi
+  const TP_ROBOT_MS = 30 * 60e3;   // le robot tire toutes les 15 min
+  function tpVerdict(tirages, derniereMesure, maintenant) {
+    const n = +new Date(maintenant);
+    const l = (tirages || []).filter(Boolean);
+    if (!l.length) {
+      return { quoi: 'robot', titre: 'Aucune interrogation enregistrée',
+               dit: 'Le robot n’a jamais tourné, ou la table vient d’être créée.' };
+    }
+    const dernier = l[0];
+    const age = n - (+new Date(dernier.ts));
+    if (age > TP_ROBOT_MS) {
+      return { quoi: 'robot', titre: 'Le robot ne tourne plus',
+               dit: 'Dernière tentative il y a ' + Math.round(age / 60e3) + ' minutes, alors qu’il '
+                  + 'interroge les sondes toutes les 15 minutes. C’est le SERVEUR PILOT qu’il faut '
+                  + 'regarder — un redémarrage l’a peut-être laissé sans relancer la boucle.' };
+    }
+    if (dernier.ok === false) {
+      return { quoi: 'liaison', titre: 'PILOT n’arrive plus à parler à Saveris',
+               dit: 'L’interrogation échoue. Ce n’est donc pas les sondes : c’est la LIAISON.',
+               detail: dernier.detail || '' };
+    }
+    if (!Number(dernier.recues)) {
+      return { quoi: 'sondes', titre: 'Saveris répond, mais ne renvoie aucune mesure',
+               dit: 'La liaison fonctionne — le jeton est accepté, les points de mesure sont lus. '
+                  + 'Ce sont les SONDES ou leur passerelle qui n’envoient plus rien à Saveris.' };
+    }
+    const vieux = derniereMesure ? (n - (+new Date(derniereMesure))) : null;
+    if (vieux !== null && vieux > TP_PERIME_MS) {
+      return { quoi: 'sondes', titre: 'Saveris rejoue toujours les mêmes mesures',
+               dit: 'L’interrogation réussit et rapporte des valeurs, mais la plus récente date '
+                  + 'de ' + Math.round(vieux / 60e3) + ' minutes. Saveris n’a rien reçu de neuf : '
+                  + 'ce sont les SONDES ou leur passerelle.' };
+    }
+    return { quoi: 'ok', titre: 'Tout va bien',
+             dit: 'Dernière interrogation réussie, ' + dernier.recues + ' mesure(s) rapportée(s).' };
+  }
+  window.tpVerdict = tpVerdict;
+
+  let tpTirages = [], tpDerniereMesure = null;
+  async function tpChargerTirages() {
+    const r = await fetch('/api/temp/tirages?limite=20', { cache: 'no-store' });
+    const j = await r.json();
+    if (!j || !j.ok) throw new Error((j && j.error) || 'journal indisponible');
+    tpTirages = j.tirages || [];
+    tpDerniereMesure = j.derniereMesure || null;
+  }
+
+  function tpRendreDiag() {
+    const z = document.getElementById('tp-diag'); if (!z) return;
+    if (!tpAdmin()) { z.style.display = 'none'; return; }
+    z.style.display = '';
+    const v = tpVerdict(tpTirages, tpDerniereMesure, Date.now());
+    let h = '<div class="tp-ar-h"><div class="tp-al-t">D’où vient la panne</div>'
+      + '<button class="tp-onglet no-print" onclick="tpDiagnostiquer()">Interroger les sondes maintenant</button></div>'
+      + '<div class="tp-vd tp-vd-' + v.quoi + '"><b>' + tpEch(v.titre) + '</b><div>' + tpEch(v.dit) + '</div>'
+      + (v.detail ? '<div class="tp-vd-d">' + tpEch(String(v.detail).slice(0, 300)) + '</div>' : '')
+      + '</div>';
+    if (tpTirages.length) {
+      h += '<div class="tp-tir">' + tpTirages.slice(0, 10).map(function (t) {
+        const d = new Date(t.ts);
+        return '<div class="tp-tir-l' + (t.ok ? '' : ' ko') + '">'
+          + '<span class="h">' + tpDateCourte(d) + ' ' + tpHeure(d) + '</span>'
+          + '<span class="e">' + (t.ok ? Number(t.recues) + ' mesure(s)' : 'échec') + '</span>'
+          + '<span class="d">' + tpEch(String(t.detail || '').slice(0, 90)) + '</span></div>';
+      }).join('') + '</div>';
+    }
+    h += '<div id="tp-diag-res"></div>';
+    z.innerHTML = h;
+  }
+
+  // Le diagnostic complet : il FORCE un tirage et raconte chaque étape. C'est
+  // la route qu'on regarde quand le verdict ci-dessus ne suffit pas.
+  window.tpDiagnostiquer = async function () {
+    const z = document.getElementById('tp-diag-res'); if (!z) return;
+    z.innerHTML = '<div class="tp-vide">Interrogation en cours…</div>';
+    try {
+      const r = await fetch('/api/temp/diag', { method: 'POST' });
+      const j = await r.json();
+      const et = (j && j.etapes) || [];
+      z.innerHTML = '<div class="tp-lbl2">Détail de l’interrogation</div>'
+        + '<div class="tp-tir">' + et.map(function (e) {
+            const ko = (e.ok === false) || e.erreur;
+            let quoi = '';
+            if (e.noms) quoi = e.noms.join(', ');
+            else if (e.essais) quoi = e.essais.map(x => x.variante + ' : ' + (x.statut || x.erreur)).join(' · ');
+            else if (e.resultat) quoi = e.resultat.ok
+              ? (e.resultat.recues + ' mesure(s), ' + (e.resultat.ecrites || 0) + ' nouvelle(s)')
+              : ('échec — ' + (e.resultat.detail || ''));
+            else if (e.erreur) quoi = e.erreur;
+            else if (e.expire_dans_h != null) quoi = 'valable encore ' + e.expire_dans_h + ' h';
+            else quoi = (e.ok === false ? 'absent' : 'ok');
+            return '<div class="tp-tir-l' + (ko ? ' ko' : '') + '">'
+              + '<span class="h">' + tpEch(e.etape) + '</span>'
+              + '<span class="d" style="flex:1">' + tpEch(String(quoi).slice(0, 220)) + '</span></div>';
+          }).join('') + '</div>';
+      try { await tpChargerTirages(); tpRendreDiag(); } catch (e) {}
+    } catch (e) {
+      z.innerHTML = '<div class="tp-vide">Diagnostic impossible : ' + tpEch(e.message) + '</div>';
+    }
+  };
+
   // ── L'archive des relevés signés ──────────────────────────────────────────
   // Signer un relevé ne sert à rien si personne ne peut le relire : la trace
   // existait en base depuis le premier jour, mais aucun écran ne la montrait.
@@ -820,6 +953,9 @@
       // echoue, les courbes restent lisibles et le panneau se tait.
       try { await tpChargerAlertes(); tpRendreAlertes(); } catch (e) {}
       try { await tpChargerArchives(); tpRendreArchives(); } catch (e) {}
+      // Le journal des tirages : il ne doit pas non plus emporter l'ecran.
+      try { await tpChargerTirages(); } catch (e) { tpTirages = []; }
+      try { tpRendreDiag(); } catch (e) {}
     }
     catch (e) {
       const z = document.getElementById('tp-zone');

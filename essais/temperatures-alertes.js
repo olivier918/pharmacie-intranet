@@ -146,5 +146,56 @@ t('le même numéro deux fois ne fait pas deux SMS',
 t('une liste vide : personne, et on le saura', AL.destinataires([], num).length === 0);
 t('une liste absente ne casse rien', AL.destinataires(null, num).length === 0);
 
+// ── D'ou vient la panne ? ───────────────────────────────────────────────────
+// La question qu'on se pose devant un ecran vide. Le journal des tirages la
+// tranche, et cette fonction est ce qui la tranche. Elle vient de
+// public/tp-module.js.
+(function () {
+  const fs = require('fs'), path = require('path');
+  const tp = fs.readFileSync(path.join(__dirname, '..', 'public', 'tp-module.js'), 'utf8');
+  const d = tp.indexOf('\n  function tpVerdict(');
+  const f = tp.indexOf('\n  }\n', d);
+  const TP_PERIME_MS = 45 * 60e3;
+  const TP_ROBOT_MS = 30 * 60e3;
+  eval(tp.slice(d + 1, f + 4));
+
+  const N = Date.parse('2026-09-29T10:00:00Z');
+  const il_y_a = min => new Date(N - min * 60e3).toISOString();
+
+  console.log('\nD’où vient la panne');
+  t('aucune interrogation : c’est le robot', tpVerdict([], null, N).quoi === 'robot');
+  t('la dernière remonte à une heure : le robot ne tourne plus',
+    tpVerdict([{ ts: il_y_a(60), ok: true, recues: 4 }], il_y_a(60), N).quoi === 'robot');
+
+  // OK = false : l'interrogation elle-meme echoue. Ce n'est donc pas les sondes.
+  let v = tpVerdict([{ ts: il_y_a(5), ok: false, recues: 0, detail: 'jeton refuse (401)' }], il_y_a(300), N);
+  t('une interrogation en échec désigne la LIAISON', v.quoi === 'liaison');
+  t('... et le message d’erreur est montré tel quel', v.detail === 'jeton refuse (401)');
+
+  // OK = true mais rien : la liaison va bien, Saveris n'a rien a donner.
+  v = tpVerdict([{ ts: il_y_a(5), ok: true, recues: 0 }], il_y_a(300), N);
+  t('une interrogation réussie qui ne rapporte rien désigne les SONDES', v.quoi === 'sondes');
+  t('... et elle dit explicitement que la liaison fonctionne', /liaison fonctionne/.test(v.dit));
+
+  // LE CAS TRAITRE : l'interrogation reussit, rapporte des valeurs, mais ce
+  // sont toujours les memes. Un ecran vert sur des donnees figees.
+  v = tpVerdict([{ ts: il_y_a(5), ok: true, recues: 8 }], il_y_a(300), N);
+  t('des mesures rapportées mais toutes vieilles désignent les SONDES', v.quoi === 'sondes');
+  t('... et le verdict dit depuis combien de temps', /300 minutes/.test(v.dit));
+
+  t('tout frais, tout va bien',
+    tpVerdict([{ ts: il_y_a(5), ok: true, recues: 8 }], il_y_a(10), N).quoi === 'ok');
+  t('c’est le tirage le PLUS RÉCENT qui décide, pas les anciens',
+    tpVerdict([{ ts: il_y_a(5), ok: true, recues: 8 }, { ts: il_y_a(20), ok: false }], il_y_a(10), N).quoi === 'ok');
+  t('une panne récente l’emporte sur des réussites anciennes',
+    tpVerdict([{ ts: il_y_a(5), ok: false, detail: 'x' }, { ts: il_y_a(20), ok: true, recues: 8 }], il_y_a(10), N).quoi === 'liaison');
+  t('une ligne abîmée ne casse rien', tpVerdict([null], null, N).quoi === 'robot');
+  // `recues` arrive de PostgreSQL : parfois une chaine.
+  t('un compte rendu en texte est compris comme un nombre',
+    tpVerdict([{ ts: il_y_a(5), ok: true, recues: '0' }], il_y_a(300), N).quoi === 'sondes');
+  t('les quatre verdicts ont chacun leur couleur dans l’écran',
+    ['tp-vd-ok', 'tp-vd-liaison', 'tp-vd-sondes', 'tp-vd-robot'].every(c => tp.indexOf(c) > 0));
+}());
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

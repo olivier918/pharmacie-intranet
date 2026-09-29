@@ -698,6 +698,27 @@ function routes(app, getDb, deps) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
+  // L'HISTORIQUE DES TIRAGES. C'est lui qui repond a la seule question qu'on se
+  // pose le jour ou l'ecran est vide : est-ce que PILOT n'arrive plus a parler
+  // a Saveris, ou est-ce que Saveris n'a plus rien a dire ?
+  //   ok = false            -> la liaison (jeton refuse, API changee, reseau)
+  //   ok = true, recues = 0 -> la liaison va bien, mais rien n'arrive : sondes
+  //   plus aucune ligne     -> le robot lui-meme ne tourne plus
+  // Ne renvoie aucun identifiant : `detail` porte le message d'erreur et la
+  // variante d'URL retenue, rien d'autre.
+  app.get('/api/temp/tirages', async (req, res) => {
+    const db = getDb();
+    if (!db) return res.status(503).json({ ok: false, error: 'base indisponible' });
+    const limite = Math.min(Math.max(parseInt(req.query.limite, 10) || 20, 1), 200);
+    try {
+      const q = await db.query(
+        'SELECT ts, ok, recues, detail FROM app_temp_tirages ORDER BY ts DESC LIMIT $1', [limite]);
+      const p = await db.query('SELECT MAX(ts) AS derniere FROM app_temperatures');
+      res.json({ ok: true, tirages: q.rows,
+                 derniereMesure: (p.rows[0] && p.rows[0].derniere) || null });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
   // Diagnostic : force un tirage et raconte ce qui s'est passe. C'est la route
   // qu'on regarde quand plus rien n'arrive. Elle ne renvoie jamais d'identifiant.
   app.post('/api/temp/diag', async (req, res) => {

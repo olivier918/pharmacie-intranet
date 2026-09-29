@@ -255,11 +255,26 @@ erreur se rattrape dans le commentaire du relevé suivant.
 | `POST /api/temp/releve` | Signe le relevé — refuse un dépassement non commenté |
 | `GET /api/temp/releves?debut=&fin=&limite=` | L'archive des relevés signés. **Lecture seule — rien ne les modifie.** |
 | `POST /api/temp/alerte-test` | Force une évaluation — **administrateurs seulement** |
+| `GET /api/temp/tirages?limite=` | Le journal des interrogations : ce qui distingue une panne de liaison d'une panne de sondes |
 | `POST /api/temp/diag` | Force un tirage et raconte chaque étape. **C'est la route qu'on regarde le jour où plus rien n'arrive.** Ne renvoie jamais d'identifiant. |
 
 ---
 
 ## Le jour où ça casse
+
+**Ouvrir l'écran Températures et lire la carte « D'où vient la panne ».** Elle
+répond à la seule question qui se pose, et elle la tranche sur le journal des
+tirages — une ligne par interrogation, réussie ou non :
+
+| Ce que dit le journal | Ce que c'est |
+|---|---|
+| plus aucune ligne depuis 30 min | **le robot** ne tourne plus — c'est le serveur PILOT |
+| `ok = false` | **la liaison** avec Saveris : jeton refusé, API changée, réseau. Le message d'erreur est affiché tel quel |
+| `ok = true`, `reçues = 0` | la liaison va bien, Saveris n'a rien à donner : **les sondes** |
+| `ok = true`, `reçues > 0`, mais la dernière mesure est vieille | Saveris rejoue les mêmes : **les sondes** aussi. `nouvelles=0` sur chaque ligne en est la signature |
+
+Le bouton **« Interroger les sondes maintenant »** (administrateurs) force un
+tirage et détaille chaque étape — c'est la suite, quand le verdict ne suffit pas.
 
 1. **`POST /api/temp/diag`** — elle dit quelle étape échoue : le jeton, la liste
    des points, la variante d'URL, l'écriture.
