@@ -426,7 +426,11 @@ async function evaluerAlertes(db, deps) {
   const agir = async (point, dec, txt) => {
     decisions.push({ point: point, action: dec.action, motif: dec.motif, valeur: dec.valeur });
     if (dec.action === 'rien') return;
-    const envoye = (reg.actif && dec.action !== 'rien') ? await envoyer(deps, tels, txt) : 0;
+    // L'EPISODE EST TRACE DANS TOUS LES CAS, l'ENVOI non. Deux conditions le
+    // retiennent : les alertes eteintes, et le motif. L'absence de releve
+    // (`panne`) ouvre, rappelle et clot son episode comme avant — l'ecran la
+    // montre — mais elle ne part plus en SMS. Voir AL.alerteEnvoyable.
+    const envoye = (reg.actif && AL.alerteEnvoyable(dec)) ? await envoyer(deps, tels, txt) : 0;
     if (dec.action === 'ouvrir') {
       await db.query('UPDATE app_temp_episodes SET clos_le = NOW() WHERE point = $1 AND clos_le IS NULL', [point]);
       await db.query(

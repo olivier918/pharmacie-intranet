@@ -595,7 +595,11 @@
       const n = (r.astreintes || []).filter(function (a) { return a.actif; }).length;
       h += '<div class="tp-al-ok" style="font-size:13px">✓ Armées — ' + n + ' destinataire'
         + (n > 1 ? 's' : '') + ', plage ' + r.vmin + '–' + r.vmax + ' °C. '
-        + 'Trois relévés en journée, le premier la nuit et le dimanche.</div>';
+        + 'Trois relévés en journée, le premier la nuit et le dimanche.</div>'
+        + '<div class="tp-al-msg" style="color:#888780">Seuls les <b>dépassements de '
+        + 'température</b> partent en SMS. Une armoire qui cesse d’émettre est signalée '
+        + 'ici, mais ne réveille plus personne — et tant qu’elle se tait, un échauffement '
+        + 'ne peut pas être vu.</div>';
     }
 
     if (enCours.length) {
@@ -605,7 +609,9 @@
           + (e.motif === 'panne' ? 'plus aucun relévé' : 'hors plage')
           + (e.valeur != null ? ' (' + tpDeg(Number(e.valeur)) + ' °C)' : '')
           + ' depuis le ' + tpDateCourte(d) + ' à ' + tpHeure(d)
-          + ' · ' + (e.envois || 0) + ' SMS envoyé(s)</div>';
+          + ' · ' + (e.motif === 'panne'
+              ? 'pas de SMS : l’absence de relévé n’alerte plus'
+              : (e.envois || 0) + ' SMS envoyé(s)') + '</div>';
       }).join('');
     }
 
@@ -846,7 +852,9 @@
                  dit: 'Aucune astreinte active : le SMS serait écrit et n’aurait personne à qui partir.' });
       } else {
         l.push({ cle: 'sms', etat: 'ok', titre: 'Alertes armées',
-                 dit: a.length + ' destinataire(s) d’astreinte, plage ' + reg.vmin + '–' + reg.vmax + ' °C.' });
+                 dit: a.length + ' destinataire(s) d’astreinte, plage ' + reg.vmin + '–' + reg.vmax + ' °C. '
+                    + 'Seuls les dépassements de température partent en SMS — une armoire qui se '
+                    + 'tait est signalée à l’écran, sans appel.' });
       }
     }
 

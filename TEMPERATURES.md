@@ -144,11 +144,35 @@ SMS : ce serait la meilleure façon de faire ignorer le vingt-cinquième.
 - **un message au retour** dans la plage ;
 - puis silence.
 
-### Une panne du robot ne fait qu'UN SMS
+### Un seul motif part en SMS : le dépassement
+
+**L'absence de relévé n'envoie plus rien** (décision d'Olivier, 29/09/2026).
+Elle reste entièrement détectée : l'épisode `panne` s'ouvre, se rappelle et se
+clot comme avant, et l'écran des alertes l'affiche — mais aucun téléphone ne
+sonne. Le point de passage unique est `alerteEnvoyable(decision)` dans
+`temp-alertes.js` ; `evaluerAlertes` ne peut envoyer que par lui.
+
+| Motif | Épisode tracé | SMS |
+|---|---|---|
+| `seuil` — ouverture, rappel, clôture | oui | **oui** |
+| `panne` — plus aucun relévé | oui | **non** |
+
+**Ce que cela coûte, et qu'il vaut mieux lire ici qu'un dimanche :** une sonde
+qui se tait pendant qu'une armoire se réchauffe ne déclenchera **rien** — ni
+panne (on n'alerte plus) ni seuil (il n'y a plus de valeur à comparer). Le
+silence n'est pas une bonne nouvelle ; il n'est simplement plus une raison
+d'appeler la nuit. L'écran le dit en toutes lettres sous la ligne « Armées ».
+
+Pour rétablir ces SMS un jour : **une seule ligne**, le `decision.motif !==
+'panne'` de `alerteEnvoyable`. L'historique des épisodes muets sera déjà là
+pour dire à quel point c'était fréquent.
+
+### Une panne du robot ne fait qu'UN épisode
 
 Si plus rien n'arrive, les quatre armoires sont muettes pour une seule cause.
 Le robot est donc évalué **en premier**, sur le point `(robot)` ; si la panne
-est constatée, les armoires ne sont pas évaluées.
+est constatée, les armoires ne sont pas évaluées. (Depuis le 29/09/2026 cet
+épisode ne part plus en SMS — voir ci-dessus.)
 
 ### Le texte des SMS
 

@@ -132,6 +132,25 @@ function decider(etat, episode, maintenant, requis) {
     : { action: 'rien', motif: 'tout va bien' };
 }
 
+// ─── Ce qui a le droit de faire sonner un téléphone ─────────────────
+// UN SEUL MOTIF PART EN SMS : le dépassement de température. L'absence de
+// relevé (`panne`) continue d'être détectée, d'ouvrir un épisode et de
+// s'afficher à l'écran — mais elle ne réveille plus personne.
+//
+// C'était une décision d'Olivier, et elle a un prix qu'il faut écrire ici
+// plutôt que de le découvrir un dimanche : une sonde qui se tait pendant
+// qu'une armoire se réchauffe ne déclenchera RIEN, ni panne ni seuil, parce
+// qu'il n'y a plus de valeur à comparer. Le silence n'est pas une bonne
+// nouvelle ; il n'est simplement plus une raison d'appeler la nuit.
+//
+// La détection reste entière — c'est volontaire. Le jour où l'on veut
+// rétablir ces SMS, il n'y a que cette fonction à changer, et l'historique
+// des épisodes muets est déjà là pour dire à quel point c'était fréquent.
+function alerteEnvoyable(decision) {
+  if (!decision || decision.action === 'rien') return false;
+  return decision.motif !== 'panne';
+}
+
 // ─── Le texte du SMS ────────────────────────────────────────────────────────
 // SANS ACCENTS, volontairement. Un seul caractère hors GSM-7 fait tomber la
 // limite de 160 à 70 caracteres : le message passe a deux ou trois credits, et
@@ -174,5 +193,6 @@ function destinataires(astreintes, valider) {
 
 module.exports = {
   PLAGE_DEFAUT, PANNE_MS, RAPPEL_MS, RELEVES_JOUR,
-  momentParis, regime, relevesRequis, etatPoint, decider, texte, destinataires
+  momentParis, regime, relevesRequis, etatPoint, decider, texte, destinataires,
+  alerteEnvoyable
 };

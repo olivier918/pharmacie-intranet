@@ -197,6 +197,59 @@ t('une liste absente ne casse rien', AL.destinataires(null, num).length === 0);
     ['tp-vd-ok', 'tp-vd-liaison', 'tp-vd-sondes', 'tp-vd-robot'].every(c => tp.indexOf(c) > 0));
 }());
 
+// ── Ce qui a le droit de faire sonner un telephone ─────────────────────
+// Un seul motif part en SMS : le depassement. L'absence de releve reste
+// DETECTEE et TRACEE — elle ne reveille simplement plus personne.
+console.log('\nUn seul motif fait sonner un téléphone');
+
+const EP = (motif, envoi) => ({ motif: motif, ouvert_le: ETE_MARDI_14H, dernier_envoi_le: envoi || null, clos_le: null });
+const HORS = { etat: 'hors', valeur: 11, consecutifs: 3, sens: 'haut', age: 0 };
+const MUET = { etat: 'muet', valeur: 5, consecutifs: 0, age: 90 * 60e3 };
+const BIEN = { etat: 'ok', valeur: 5, consecutifs: 0, age: 0 };
+const VIEUX = new Date(+ETE_MARDI_14H - 3 * 3600e3);
+
+t('un dépassement part', AL.alerteEnvoyable(AL.decider(HORS, null, ETE_MARDI_14H, 3)));
+t('son rappel part aussi',
+  AL.alerteEnvoyable(AL.decider(HORS, EP('seuil', VIEUX), ETE_MARDI_14H, 3)));
+t('sa clôture part — savoir que c’est rentré dans l’ordre compte autant',
+  AL.alerteEnvoyable(AL.decider(BIEN, EP('seuil'), ETE_MARDI_14H, 3)));
+
+t('une armoire qui se tait ne part PLUS',
+  !AL.alerteEnvoyable(AL.decider(MUET, null, ETE_MARDI_14H, 1)));
+t('son rappel non plus',
+  !AL.alerteEnvoyable(AL.decider(MUET, EP('panne', VIEUX), ETE_MARDI_14H, 1)));
+t('sa clôture non plus — on n’annonce pas la fin d’une alerte jamais envoyée',
+  !AL.alerteEnvoyable(AL.decider(BIEN, EP('panne'), ETE_MARDI_14H, 1)));
+
+// LA DETECTION RESTE ENTIERE. C'est ce qui permettra de retablir ces SMS d'une
+// seule ligne, et c'est ce qui fait que l'ecran peut encore le montrer.
+t('l’épisode muet est toujours OUVERT, seul l’envoi est retenu',
+  AL.decider(MUET, null, ETE_MARDI_14H, 1).action === 'ouvrir');
+t('... et il porte toujours le motif « panne »',
+  AL.decider(MUET, null, ETE_MARDI_14H, 1).motif === 'panne');
+t('... et son texte existe toujours, prêt à resservir',
+  /plus aucun releve/.test(AL.texte('Frigo 1', AL.decider(MUET, null, ETE_MARDI_14H, 1), null)));
+
+t('« rien » ne part jamais, quel que soit le motif',
+  !AL.alerteEnvoyable({ action: 'rien', motif: 'seuil' }));
+t('une décision absente ne casse rien', !AL.alerteEnvoyable(null));
+
+// LE POINT DE PASSAGE UNIQUE. Si un jour quelqu'un renvoie un SMS sans passer
+// par ce predicat, l'alerte de panne revient sans que personne l'ait voulu.
+(function () {
+  const fs = require('fs'), path = require('path');
+  const tx = fs.readFileSync(path.join(__dirname, '..', 'temperatures.js'), 'utf8');
+  t('l’envoi passe par alerteEnvoyable, et par lui seul',
+    /AL\.alerteEnvoyable\(dec\)/.test(tx) && (tx.match(/await envoyer\(/g) || []).length === 1);
+  const tp = fs.readFileSync(path.join(__dirname, '..', 'public', 'tp-module.js'), 'utf8');
+  t('l’écran dit que seuls les dépassements partent',
+    /Seuls les <b>dépassements de/.test(tp));
+  t('... et il dit le prix : une armoire muette masque un échauffement',
+    /un échauffement[\s\S]{0,40}ne peut pas être vu/.test(tp));
+  t('un épisode muet n’affiche plus « SMS envoyé(s) »',
+    /n’alerte plus/.test(tp));
+}());
+
 // ── « Je ne recois plus les releves » ───────────────────────────────────────
 // Le jour ou le verdict dit « tout va bien » et ou personne ne recoit rien,
 // c'est l'autre chaine qui est cassee : la signature du matin, ou les SMS.
