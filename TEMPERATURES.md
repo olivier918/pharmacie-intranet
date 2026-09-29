@@ -276,6 +276,23 @@ tirages — une ligne par interrogation, réussie ou non :
 Le bouton **« Interroger les sondes maintenant »** (administrateurs) force un
 tirage et détaille chaque étape — c'est la suite, quand le verdict ne suffit pas.
 
+### « Tout va bien », et pourtant je ne reçois plus les relevés
+
+C'est le cas le plus traître, parce que les deux phrases sont vraies en même
+temps. **Les mesures qui ENTRENT et les relevés qui SORTENT sont deux chaînes
+distinctes.** Le verdict ci-dessus ne parle que de la première. Le bloc
+**« Et les relevés, partent-ils ? »**, juste en dessous, parle de la seconde :
+
+| Ce qu'on ne reçoit plus | Où ça se casse | Où ça se répare |
+|---|---|---|
+| la fenêtre de signature du matin | elle ne s'ouvre **que** pour un poste commençant par « Pharmacien » ; elle s'abstient si le relevé du jour est déjà signé, ou s'il n'y a aucune mesure à relire | Back office > Équipe, champ **poste** |
+| les SMS d'alerte | alertes **éteintes**, ou armées **sans astreinte active** — le SMS s'écrit et n'a personne à qui partir | Back office > Températures |
+| les courriels de Testo | ils ne passent **pas** par PILOT | compte Testo / Saveris |
+
+Chacune de ces trois s'éteint **sans message, sans erreur et sans trace** : un
+poste renommé en « Titulaire » suffit à supprimer la signature quotidienne pour
+toujours. C'est précisément pour cela que l'écran l'affiche au lieu de le taire.
+
 1. **`POST /api/temp/diag`** — elle dit quelle étape échoue : le jeton, la liste
    des points, la variante d'URL, l'écriture.
 2. Un **401 sur le jeton** : l'utilisateur dédié a été désactivé, ou son mot de

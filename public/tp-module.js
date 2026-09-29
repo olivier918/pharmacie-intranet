@@ -115,6 +115,12 @@
   .tp-vd-liaison{background:#fff6f5;border-color:#f0c8c4;color:#7f1d1d}
   .tp-vd-sondes{background:#FFF3E0;border-color:#E65100;color:#7c3a00}
   .tp-vd-robot{background:#fee2e2;border-color:#b91c1c;color:#7f1d1d}
+  .tp-vd-attention{background:#FFF8E1;border-color:#E6C34A;color:#6b4e00}
+  .tp-vd-info{background:var(--gray-100,#f4f5f7);border-color:#dcdfe4;color:#3f4650}
+  .tp-ch{display:grid;gap:8px;margin-top:10px}
+  .tp-ch .tp-vd b{font-size:13.5px}
+  .tp-ch-t{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+           color:var(--gray-500,#6b7280);margin:16px 0 2px}
   .tp-vd-d{margin-top:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
     background:rgba(0,0,0,.05);border-radius:7px;padding:6px 8px;word-break:break-word}
   .tp-tir{margin-top:12px;border:1px solid #e6e4dc;border-radius:10px;overflow:hidden}
@@ -758,6 +764,100 @@
   }
   window.tpVerdict = tpVerdict;
 
+  // ── « Je ne reçois plus les relevés » ─────────────────────────────────────
+  //
+  // Le verdict ci-dessus répond à UNE question : est-ce que les mesures
+  // arrivent ? Le jour où il répond « tout va bien » et qu'on ne reçoit
+  // toujours rien, c'est que le mot « relevé » désignait autre chose — et il
+  // n'y a alors plus rien à regarder dans l'écran, il faut ouvrir la fiche
+  // d'un collaborateur, le back-office, ou le site de Testo.
+  //
+  // Les mesures qui entrent et les relevés qu'on REÇOIT sont deux chaînes
+  // distinctes, et chacune casse de son côté :
+  //
+  //   la signature du matin -> la fenêtre ne s'ouvre QUE pour un poste qui
+  //        commence par « Pharmacien ». Renommer un poste en « Titulaire »
+  //        suffit à l'éteindre, sans message, sans erreur, sans trace.
+  //   les SMS d'alerte      -> ils demandent des alertes ARMÉES et au moins
+  //        une astreinte active. Éteindre l'un ou l'autre est silencieux.
+  //   les courriels de Testo -> ils ne passent pas par PILOT du tout.
+  //
+  // Cette fonction dit dans quel état est chacune, pour qu'on n'aille plus
+  // chercher une panne de sondes là où quelqu'un a simplement décoché une case.
+  const TP_CHAINE_RETARD_MS = 48 * 3600e3;
+  function tpEtatChaine(staff, reg, dernier, maintenant) {
+    const n = +new Date(maintenant);
+    const jour = function (d) {
+      return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(d);
+    };
+    const quand = function (d) {
+      return new Intl.DateTimeFormat('fr-FR',
+        { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        .format(d).replace(',', ' à');
+    };
+    const pharm = (staff || []).filter(function (u) {
+      const p = String((u && u.poste) || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      return p.indexOf('pharmacien') === 0;
+    });
+    const l = [];
+
+    // 1. La signature du matin.
+    if (!pharm.length) {
+      l.push({ cle: 'signature', etat: 'ko', titre: 'Personne ne peut signer le relevé',
+               dit: 'La fenêtre du matin ne s’ouvre que pour un collaborateur dont le poste '
+                  + 'commence par « Pharmacien ». Aucune fiche ne porte ce poste : la fenêtre ne '
+                  + 's’ouvrira pour personne, et rien ne le signalera. Back office > Équipe.' });
+    } else if (!dernier || !dernier.le) {
+      l.push({ cle: 'signature', etat: 'attention', titre: 'Aucun relevé n’a encore été signé',
+               dit: pharm.length + ' pharmacien(s) peuvent le signer. La fenêtre s’ouvre à la '
+                  + 'première ouverture de session de la journée — elle s’abstient s’il n’y a '
+                  + 'aucune mesure à relire sur la période.' });
+    } else {
+      const d = new Date(dernier.le), age = n - (+d);
+      const qui = dernier.nom || dernier.par || '';
+      if (jour(d) === jour(new Date(n))) {
+        l.push({ cle: 'signature', etat: 'ok', titre: 'Relevé signé aujourd’hui',
+                 dit: 'Signé le ' + quand(d) + (qui ? ' par ' + qui : '') + '. La fenêtre ne se '
+                    + 'représentera pas avant demain : c’est voulu, elle ne s’ouvre qu’une fois par jour.' });
+      } else if (age > TP_CHAINE_RETARD_MS) {
+        l.push({ cle: 'signature', etat: 'ko', titre: 'Plus aucun relevé signé depuis ' + Math.floor(age / 3600e3 / 24) + ' jours',
+                 dit: 'Dernière signature le ' + quand(d) + (qui ? ' par ' + qui : '') + '. Les mesures, '
+                    + 'elles, continuent d’être enregistrées — c’est la RELECTURE qui manque, et c’est '
+                    + 'elle qu’un inspecteur demande.' });
+      } else {
+        l.push({ cle: 'signature', etat: 'attention', titre: 'Relevé du jour pas encore signé',
+                 dit: 'Dernière signature le ' + quand(d) + (qui ? ' par ' + qui : '') + '. La fenêtre '
+                    + 's’ouvrira à la prochaine ouverture de session d’un pharmacien.' });
+      }
+    }
+
+    // 2. Les SMS d'alerte.
+    if (!reg) {
+      l.push({ cle: 'sms', etat: 'attention', titre: 'Réglages d’alerte illisibles',
+               dit: 'Le panneau Alertes n’a pas répondu. On ne peut pas dire si un SMS partirait.' });
+    } else if (!reg.actif) {
+      l.push({ cle: 'sms', etat: 'ko', titre: 'Les alertes sont éteintes',
+               dit: 'Les dépassements sont enregistrés, mais aucun SMS ne partira — de jour comme '
+                  + 'de nuit. Back office > Températures pour les rallumer.' });
+    } else {
+      const a = (reg.astreintes || []).filter(function (x) { return x && x.actif; });
+      if (!a.length) {
+        l.push({ cle: 'sms', etat: 'ko', titre: 'Alertes armées, mais aucun destinataire',
+                 dit: 'Aucune astreinte active : le SMS serait écrit et n’aurait personne à qui partir.' });
+      } else {
+        l.push({ cle: 'sms', etat: 'ok', titre: 'Alertes armées',
+                 dit: a.length + ' destinataire(s) d’astreinte, plage ' + reg.vmin + '–' + reg.vmax + ' °C.' });
+      }
+    }
+
+    // 3. Ce qui ne dépend pas de nous.
+    l.push({ cle: 'testo', etat: 'info', titre: 'Les courriels de Testo ne passent pas par PILOT',
+             dit: 'Si ce sont les messages de Saveris qui ne viennent plus, ils se règlent sur le '
+                + 'compte Testo — PILOT ne les émet pas et ne peut pas les rétablir.' });
+    return l;
+  }
+  window.tpEtatChaine = tpEtatChaine;
+
   let tpTirages = [], tpDerniereMesure = null;
   async function tpChargerTirages() {
     const r = await fetch('/api/temp/tirages?limite=20', { cache: 'no-store' });
@@ -786,6 +886,18 @@
           + '<span class="d">' + tpEch(String(t.detail || '').slice(0, 90)) + '</span></div>';
       }).join('') + '</div>';
     }
+    // Le verdict ci-dessus ne parle que des mesures qui ENTRENT. Ce bloc-ci
+    // parle des relevés qui SORTENT — la signature du matin, les SMS — parce
+    // que « je ne reçois plus les relevés » désigne presque toujours ceux-là,
+    // et qu'aucun écran ne le disait.
+    const chaine = tpEtatChaine(
+      (typeof window._collRef === 'function' ? window._collRef('staffDB') : null) || [],
+      tpReg, tpArchives[0] || null, Date.now());
+    h += '<div class="tp-ch-t">Et les relevés, partent-ils&nbsp;?</div>'
+      + '<div class="tp-ch">' + chaine.map(function (c) {
+        return '<div class="tp-vd tp-vd-' + c.etat + '"><b>' + tpEch(c.titre) + '</b>'
+             + '<div>' + tpEch(c.dit) + '</div></div>';
+      }).join('') + '</div>';
     h += '<div id="tp-diag-res"></div>';
     z.innerHTML = h;
   }

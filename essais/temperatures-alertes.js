@@ -197,5 +197,69 @@ t('une liste absente ne casse rien', AL.destinataires(null, num).length === 0);
     ['tp-vd-ok', 'tp-vd-liaison', 'tp-vd-sondes', 'tp-vd-robot'].every(c => tp.indexOf(c) > 0));
 }());
 
+// ── « Je ne recois plus les releves » ───────────────────────────────────────
+// Le jour ou le verdict dit « tout va bien » et ou personne ne recoit rien,
+// c'est l'autre chaine qui est cassee : la signature du matin, ou les SMS.
+// Chacune s'eteint SANS message et sans erreur — d'ou ces verifications.
+(function () {
+  const fs = require('fs'), path = require('path');
+  const tp = fs.readFileSync(path.join(__dirname, '..', 'public', 'tp-module.js'), 'utf8');
+  const d = tp.indexOf('\n  function tpEtatChaine(');
+  const f = tp.indexOf('\n  }\n', d);
+  const TP_CHAINE_RETARD_MS = 48 * 3600e3;
+  eval(tp.slice(d + 1, f + 4));
+
+  const N = Date.parse('2026-09-29T10:00:00Z');
+  const PH = [{ poste: 'Pharmacien' }, { poste: 'Pharmacien adjoint' }];
+  const PREPAS = [{ poste: 'Préparateur' }, { poste: 'Secrétaire' }];
+  const REG_OK = { actif: true, vmin: 2, vmax: 8, astreintes: [{ tel: '06', actif: true }] };
+  const de = (cle, l) => l.filter(x => x.cle === cle)[0];
+  const sig = (staff, dernier) => de('signature', tpEtatChaine(staff, REG_OK, dernier, N));
+  const sms = reg => de('sms', tpEtatChaine(PH, reg, { le: N }, N));
+
+  console.log('\nEt les relevés, partent-ils ?');
+
+  // LE PIEGE SILENCIEUX. La fenetre ne s'ouvre que pour un poste commencant par
+  // « Pharmacien ». Renommer ce poste l'eteint pour toujours, sans rien dire.
+  t('aucun poste « Pharmacien » : la fenêtre ne s’ouvrira jamais, et l’écran le dit',
+    sig(PREPAS, { le: N }).etat === 'ko');
+  t('... et il dit où le corriger', /Back office/.test(sig(PREPAS, { le: N }).dit));
+  t('« Pharmacien adjoint » compte aussi', sig([{ poste: 'Pharmacien adjoint' }], { le: N }).etat === 'ok');
+  t('les accents et la casse ne changent rien', sig([{ poste: 'pharmacien' }], { le: N }).etat === 'ok');
+  t('« Préparateur » ne commence pas par « Pharmacien »', sig(PREPAS, { le: N }).etat === 'ko');
+
+  t('signé aujourd’hui : rien à faire', sig(PH, { le: N, nom: 'Anouck' }).etat === 'ok');
+  t('... et on sait par qui', /Anouck/.test(sig(PH, { le: N, nom: 'Anouck' }).dit));
+  t('signé hier : la fenêtre s’ouvrira à la prochaine session',
+    sig(PH, { le: N - 26 * 3600e3 }).etat === 'attention');
+  t('rien depuis cinq jours : c’est la relecture qui manque, pas les mesures',
+    sig(PH, { le: N - 5 * 24 * 3600e3 }).etat === 'ko');
+  t('... et le verdict le dit en toutes lettres',
+    /RELECTURE/.test(sig(PH, { le: N - 5 * 24 * 3600e3 }).dit));
+  t('jamais signé, mais quelqu’un peut le faire : simple avertissement',
+    sig(PH, null).etat === 'attention');
+  t('une liste d’équipe absente ne casse rien', sig(null, { le: N }).etat === 'ko');
+
+  // LA DEUXIEME CHAINE. Armees sans destinataire, c'est un SMS qui s'ecrit et
+  // ne part pas : l'ecran doit le distinguer d'alertes eteintes.
+  t('alertes éteintes : aucun SMS ne partira', sms({ actif: false }).etat === 'ko');
+  t('armées sans astreinte active : personne à qui écrire',
+    sms({ actif: true, vmin: 2, vmax: 8, astreintes: [{ tel: '06', actif: false }] }).etat === 'ko');
+  t('... et ce n’est pas le même message qu’éteintes',
+    sms({ actif: true, vmin: 2, vmax: 8, astreintes: [] }).titre !== sms({ actif: false }).titre);
+  t('armées avec un destinataire : tout va bien', sms(REG_OK).etat === 'ok');
+  t('réglages illisibles : on ne prétend pas savoir', sms(null).etat === 'attention');
+
+  // CE QUI NE DEPEND PAS DE NOUS. Sans cette ligne, on cherche dans PILOT une
+  // panne qui est chez Testo.
+  const testo = de('testo', tpEtatChaine(PH, REG_OK, { le: N }, N));
+  t('les courriels de Testo sont nommés comme extérieurs à PILOT', !!testo && testo.etat === 'info');
+
+  t('les deux nouveaux états ont leur couleur dans l’écran',
+    ['tp-vd-attention', 'tp-vd-info'].every(c => tp.indexOf(c) > 0));
+  t('le bloc lit l’équipe par _collRef, jamais par window.staffDB',
+    tp.indexOf("_collRef('staffDB')") > 0 && tp.indexOf('window.staffDB') < 0);
+}());
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
