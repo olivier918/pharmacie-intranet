@@ -667,13 +667,13 @@ tr:hover td{background:#fafffe}
             <option>Domicile</option><option>EHPAD</option><option>IDE MDS</option>
             <option>IDE 9</option><option>Pharmacie</option>
           </select>
-          <input type="text" id="dv-q" class="ctl-search" placeholder="Rechercher un patient…"
+          <input type="text" id="dv-q" data-rc="recherche" class="ctl-search" placeholder="Rechercher un patient…"
             oninput="renderD()" style="flex:1;min-width:180px">
         </div>
         <div id="dlist"></div>
       </div>
 
-      <button type="button" class="fab-liv no-print" id="fab-liv" onclick="openDForm()"
+      <button data-rc="neuf" type="button" class="fab-liv no-print" id="fab-liv" onclick="openDForm()"
         title="Nouvelle livraison" aria-label="Nouvelle livraison"><span class="fab-plus"
         aria-hidden="true">+</span><span class="fab-txt">Nouvelle livraison</span></button>
 
@@ -726,9 +726,9 @@ tr:hover td{background:#fafffe}
     <div id="sec-messagerie" class="sec">
       <p class="stitle"><svg class="ico"><use href="#ic-messagerie"></use></svg> Messagerie — Dossiers patients &amp; médecins</p>
       <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
-        <button class="btn bp sm" onclick="newThread()">+ Nouveau sujet</button>
+        <button data-rc="neuf" class="btn bp sm" onclick="newThread()">+ Nouveau sujet</button>
         <button class="btn bs sm" id="arch-btn" onclick="toggleArchives()"><svg class="ico"><use href="#ic-archives"></use></svg> Afficher archives</button>
-        <input type="text" id="ts-q" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:7px 12px;font-size:.85rem;flex:1;min-width:180px" oninput="renderThreads()">
+        <input type="text" id="ts-q" data-rc="recherche" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:7px 12px;font-size:.85rem;flex:1;min-width:180px" oninput="renderThreads()">
       </div>
       <div class="msg-layout">
         <div class="thread-sb" id="thread-sb"></div>
@@ -764,7 +764,7 @@ tr:hover td{background:#fafffe}
         <div class="fgrid">
           <div class="fg" style="position:relative">
             <label>Nom patient <span class="req">*</span></label>
-            <input type="text" id="p-nom" placeholder="NOM" oninput="acPatient('p-nom','p-prenom','p-dob','p-ac','p-tel')" autocomplete="off">
+            <input data-rc="neuf" type="text" id="p-nom" placeholder="NOM" oninput="acPatient('p-nom','p-prenom','p-dob','p-ac','p-tel')" autocomplete="off">
             <div id="p-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="p-prenom" placeholder="Prénom"></div>
@@ -808,7 +808,7 @@ tr:hover td{background:#fafffe}
           <span class="ct">Suivi des demandes</span>
           <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
             <button class="btn bs sm" id="prep-arch-btn" onclick="togglePrepArchives()"><svg class="ico"><use href="#ic-archives"></use></svg> Voir archives</button>
-            <input type="text" id="prep-q" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.82rem" oninput="renderPreps()">
+            <input type="text" id="prep-q" data-rc="recherche" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.82rem" oninput="renderPreps()">
           </div>
         </div>
         <div class="twrap" id="prep-table"></div>
@@ -822,10 +822,10 @@ tr:hover td{background:#fafffe}
       <div class="card">
         <div class="ch">
           <span class="ct">Patients à inclure</span>
-          <button class="btn bp sm no-print" onclick="newBpm()">+ Ajouter</button>
+          <button data-rc="neuf" class="btn bp sm no-print" onclick="newBpm()">+ Ajouter</button>
         </div>
         <div style="margin-bottom:.75rem">
-          <input type="text" id="bpm-q" placeholder="Rechercher un patient…" style="border:1px solid var(--gray-200);border-radius:7px;padding:7px 12px;font-size:.85rem;width:100%" oninput="renderBpm()">
+          <input type="text" id="bpm-q" data-rc="recherche" placeholder="Rechercher un patient…" style="border:1px solid var(--gray-200);border-radius:7px;padding:7px 12px;font-size:.85rem;width:100%" oninput="renderBpm()">
         </div>
         <div class="twrap" id="bpm-table"></div>
       </div>
@@ -953,7 +953,7 @@ tr:hover td{background:#fafffe}
         <div class="ch">
           <span class="ct">Locations en cours &amp; historique</span>
           <div style="display:flex;gap:7px;flex-wrap:wrap">
-            <button class="btn bp sm" onclick="toggleLocForm()">+ Nouvelle location</button>
+            <button data-rc="neuf" class="btn bp sm" onclick="toggleLocForm()">+ Nouvelle location</button>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:.75rem;flex-wrap:wrap">
@@ -961,7 +961,7 @@ tr:hover td{background:#fafffe}
           <select id="loc-med-filter" onchange="renderLocs()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
             <option value="">Tous prescripteurs</option>
           </select>
-          <input type="text" id="loc-q" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem;flex:1;min-width:160px" oninput="renderLocs()">
+          <input type="text" id="loc-q" data-rc="recherche" placeholder="Rechercher…" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem;flex:1;min-width:160px" oninput="renderLocs()">
         </div>
         <div class="twrap" id="loc-table"></div>
       </div>
@@ -1025,7 +1025,7 @@ tr:hover td{background:#fafffe}
             <option value="livraison">Livraisons</option>
             <option value="renouvellement">Renouvellements</option>
           </select>
-          <input type="text" id="smsl-q" class="ctl-search" placeholder="Rechercher (patient, numéro, texte…)" oninput="renderSmsLog()" style="flex:1;min-width:170px">
+          <input type="text" id="smsl-q" data-rc="recherche" class="ctl-search" placeholder="Rechercher (patient, numéro, texte…)" oninput="renderSmsLog()" style="flex:1;min-width:170px">
         </div>
         <div id="smsl-list"></div>
       </div>
@@ -1086,7 +1086,7 @@ tr:hover td{background:#fafffe}
           <span class="ct">Crédits en cours &amp; historique</span>
           <div style="display:flex;gap:7px;flex-wrap:wrap">
             <button class="btn bs sm" onclick="openCredArchive()" title="Tous les messages archivés"><svg class="ico"><use href="#ic-archives"></use></svg> Archive messages</button>
-            <button class="btn bp sm" onclick="toggleCredForm()">+ Nouveau crédit</button>
+            <button data-rc="neuf" class="btn bp sm" onclick="toggleCredForm()">+ Nouveau crédit</button>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:.75rem;flex-wrap:wrap">
@@ -1109,7 +1109,7 @@ tr:hover td{background:#fafffe}
           <select id="cred-op-filter" onchange="renderCreds()" title="Opérateur ayant saisi la dernière relance" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem">
             <option value="">Tous opérateurs</option>
           </select>
-          <input type="text" id="cred-q" placeholder="Rechercher…" oninput="renderCreds()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem;flex:1;min-width:160px">
+          <input type="text" id="cred-q" data-rc="recherche" placeholder="Rechercher…" oninput="renderCreds()" style="border:1px solid var(--gray-200);border-radius:7px;padding:6px 10px;font-size:.83rem;flex:1;min-width:160px">
         </div>
         <div class="twrap" id="cred-table"></div>
       </div>
@@ -1245,7 +1245,7 @@ tr:hover td{background:#fafffe}
             <div style="font-size:.8rem;color:var(--gray-500)">Réf. FICHE 110 Winncare — Maintenance annuelle (NF EN 60601-2-52)</div>
           </div>
         </div>
-        <button class="btn bp" onclick="openControleForm()"><svg class="ico"><use href="#ic-securite"></use></svg> Nouveau contrôle</button>
+        <button data-rc="neuf" class="btn bp" onclick="openControleForm()"><svg class="ico"><use href="#ic-securite"></use></svg> Nouveau contrôle</button>
       </div>
       <div class="card">
         <div class="ch">
@@ -1253,7 +1253,7 @@ tr:hover td{background:#fafffe}
           <span id="ctl-count" style="font-size:.78rem;color:var(--gray-500)"></span>
         </div>
         <div class="ctl-toolbar">
-          <input type="text" id="ctl-q" class="ctl-search" placeholder="Rechercher (patient, n° de série/parc, n° de rapport…)" oninput="renderControles()">
+          <input type="text" id="ctl-q" data-rc="recherche" class="ctl-search" placeholder="Rechercher (patient, n° de série/parc, n° de rapport…)" oninput="renderControles()">
         </div>
         <div id="ctl-list"></div>
       </div>
@@ -1352,7 +1352,7 @@ tr:hover td{background:#fafffe}
       </div>
       <div class="card">
         <div class="ch"><span class="ct"><svg class="ico"><use href="#ic-archives"></use></svg> Historique des retours</span><span id="ret-count" style="font-size:.78rem;color:var(--gray-500)"></span></div>
-        <div class="ctl-toolbar" style="margin-bottom:1rem"><input type="text" id="ret-q" class="ctl-search" placeholder="Rechercher (patient, n° de parc, canal…)" oninput="renderRetours()"></div>
+        <div class="ctl-toolbar" style="margin-bottom:1rem"><input type="text" id="ret-q" data-rc="recherche" class="ctl-search" placeholder="Rechercher (patient, n° de parc, canal…)" oninput="renderRetours()"></div>
         <div id="ret-list"></div>
       </div>
     </div>
@@ -12967,6 +12967,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="rx-module.js"></script>
 <script src="md-module.js"></script>
 <script src="kb-module.js"></script>
+<script src="rc-module.js"></script>
 <script src="et-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->

@@ -723,3 +723,42 @@ paquet, se demander ce qu'il fait qu'on ne saurait pas écrire en vingt lignes.*
 
 Sur une demande qui touche à l'un de ces points : décrire ce qu'il faudrait
 faire et pourquoi, plutôt que d'ouvrir une pull request.
+
+## Les raccourcis clavier : le clavier ne connaît aucun module
+
+`public/rc-module.js`. **Alt + lettre**, jamais une touche F : F1 est l'aide du
+navigateur, F11 et F12 lui appartiennent et ne se reprennent pas, et une touche
+F partie au milieu d'une saisie remplace un nom de patient par un écran qui
+s'ouvre. Alt n'écrit pas de texte — le raccourci peut donc servir **pendant**
+qu'on tape, ce qu'une touche F ne permet pas.
+
+**Les deux pièges qui ne se voient pas sur le poste où l'on développe :**
+
+| Le piège | Ce qui se passe | La règle |
+|---|---|---|
+| Le Mac | Option+L ne produit pas « l » mais « ¬ » | on lit **`e.code`** (`KeyL`), jamais `e.key` |
+| L'AZERTY | AltGr **est** Ctrl+Alt : « € », « @ », « # » | on ignore tout ce qui porte **`ctrlKey`** |
+
+Chrome garde **Alt+D, Alt+E, Alt+F** (barre d'adresse, son menu) et ne les
+rend pas : `RC_INTERDITES` les écarte, et aucune section ne s'en sert.
+
+**Un module ne se déclare pas au clavier, il s'étiquette.** Le raccourci ne
+connaît aucune fonction : il cherche `[data-rc="neuf"]` ou
+`[data-rc="recherche"]` **dans la section ouverte** et s'en sert — un bouton se
+clique, un champ se prend au curseur (les préparations n'ont pas de bouton
+« nouvelle », leur pavé est toujours ouvert). Ajouter un module, c'est poser un
+attribut ; ce fichier n'est pas rouvert, et l'infobulle « Alt+N » apparaît
+toute seule sur le nouveau bouton.
+
+**Trois choses qu'un raccourci ne doit jamais contourner :** une fenêtre
+ouverte (naviguer alors, c'est perdre une saisie sans comprendre — seule
+Alt+H reste joignable) ; un module masqué sur ce poste (le raccourci passe par
+l'entrée de menu, qui porte déjà le réglage) ; et le silence (une touche qui ne
+fait rien se retape plus fort — elle dit pourquoi).
+
+**Alt+H** affiche la liste, et elle ne montre que les modules ouverts à cette
+personne : une aide qui annonce des touches inertes est pire que pas d'aide.
+
+Vérifié par `essais/raccourcis-clavier.js` et en rendu réel (Chromium), y
+compris les deux pièges ci-dessus, simulés avec le vrai `key` du Mac et le vrai
+`ctrlKey` de l'AltGr.
