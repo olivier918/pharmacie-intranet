@@ -796,3 +796,37 @@ plutôt que laissé au hasard. **Aucune migration n'est écrite** (piège #7) : 
 fiche d'avant n'a pas de rang et se range à sa date, et une fiche posée APRÈS
 un classement va à la fin — c'est ce qu'on attend d'un sujet ajouté la veille
 au soir, il ne s'insère pas au milieu d'un ordre du jour déjà réglé.
+
+## Un rituel à deux temps : la coche vaut pour un CRÉNEAU
+
+Le module Ruptures (`public/rp-module.js`, rubrique `ruptures`) n'est pas une
+liste de tâches. Un médicament coché disparaît **jusqu'à 14 heures**, puis
+revient ; coché l'après-midi, il revient le lendemain matin. Tout le module
+découle d'un seul calcul, `rpCreneau()`, qui rend `AAAA-MM-JJ-matin` ou
+`-aprem`.
+
+**Le créneau se lit à Paris, jamais sur l'horloge du poste.** Un navigateur mal
+réglé ferait basculer la liste à 15 h ou à 16 h, et la tournée de l'après-midi
+n'apparaîtrait jamais au bon moment. Même raison que pour les alertes de
+température : `Intl.DateTimeFormat` avec `timeZone: 'Europe/Paris'`, et le
+changement d'heure ne déplace rien.
+
+**Un seul geste est définitif : la croix.** Cocher se fait dix fois par jour et
+ne demande rien ; effacer demande confirmation, et pose une pierre tombale.
+Les deux ne doivent jamais se ressembler — c'est une ligne qu'on gratte depuis
+trois semaines qui disparaîtrait.
+
+**Se raviser reprend ce qui a été compté.** Recliquer une coche rend la ligne au
+créneau ET décrémente le compteur de demandes, sinon « 14 demandes » finit par
+compter des clics et non des appels.
+
+## PILOT déborde horizontalement sur un téléphone — l'en-tête, pas les écrans
+
+Constaté le 30/09/2026, sur toutes les sections : à 390 px de large, la page en
+fait 485. La cause est unique — la barre d'en-tête mesure 485 px et ne se replie
+pas (Sonnette, Aide, Remplacement, Verrouiller, Déconnexion). Masquer l'en-tête
+ramène la page à exactement 390.
+
+Ce n'est donc **pas** un défaut des modules : inutile de chercher dans une carte
+ou une grille. Tant que ce n'est pas corrigé, tout écran neuf héritera du
+défilement latéral.

@@ -46,9 +46,16 @@ console.log('\nLe dépôt ne perd jamais l’original');
   console.log('\nLe code lui-même');
   t('plus aucune interpolation directe de s.photo dans un style',
     !/background-image:url\('\$\{s\.photo\}'\)/.test(src));
-  t('jsPDF ne reçoit plus rec.sig brut',
+  // Le module depannage, qui portait la seconde moitie de cette verification,
+  // a ete supprime le 30/09/2026 : plus de fichier, donc plus de signature
+  // brute a y trouver. On verifie desormais l'ensemble des modules, ce qui
+  // couvre aussi ceux qui viendront.
+  t('jsPDF ne reçoit plus rec.sig brut, dans aucun module',
     !/addImage\(rec\.sig/.test(src)
-    && !/addImage\(rec\.sig/.test(fs.readFileSync(path.join(__dirname,'..','public','dp-module.js'),'utf8')));
+    && fs.readdirSync(path.join(__dirname,'..','public'))
+        .filter(f=>/-module\.js$/.test(f))
+        .every(f=>!/addImage\(rec\.sig/.test(
+          fs.readFileSync(path.join(__dirname,'..','public',f),'utf8'))));
   t('la reprise relit avant de remplacer',
     /const relu=await imgDataURL\(id\);[\s\S]{0,200}s\[c\.champ\]=id/.test(src));
   t('la reprise est réservée aux administrateurs',

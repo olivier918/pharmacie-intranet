@@ -1564,7 +1564,6 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   'plPostes', 'plRotations', 'plContrats', 'plTrames', 'plExceptions', 'plDemandes', 'plReels', 'plNotifs', 'plClotures',
   'plHeuresSup', 'plAbsences', 'plEchanges',
   // Module Dépannage : bons de commande envoyés aux dépositaires
-  'depannages',
   // Journal d'activite : append-only, jamais modifie apres coup — la fusion par
   // id garantit que les actions de deux postes se cumulent au lieu de s'ecraser.
   'journal',
@@ -1595,7 +1594,7 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   // Formats d'etiquettes de l'imprimante a etiquettes : quelques lignes, mais
   // partagees entre les postes — un format cree au comptoir doit exister au
   // preparatoire.
-  'etiqFormats'];
+  'etiqFormats', 'ruptures'];
 
 // ── caisse : conteneur (réglages + sous-listes à id) ──
 // La caisse n'est pas une collection plate : c'est un objet qui contient des
