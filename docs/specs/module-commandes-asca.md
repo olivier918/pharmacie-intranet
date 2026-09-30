@@ -58,7 +58,6 @@ app_asca_lignes       synthese_id, cip13, libelle, categorie, stock, ventes_moy,
 app_asca_produits     cip13 (unique), libelle, labo, origine_labo, maj
 app_asca_labos        nom (unique), alias (text[]), canal, notes
 app_asca_statuts      cip13, synthese_id, statut, par, le, commentaire
-app_asca_bdpm         cip13, titulaire, libelle          (rafraîchie mensuellement)
 ```
 
 `pharmacie_id` : **non**. Une seule officine, et une colonne inutilisée
@@ -122,15 +121,67 @@ Huit pièces jointes PDF :
 | `Hit Parade.PDF` | pondération de l'urgence |
 | `Produits à faible rotation.PDF`, `Liste des Promotions.PDF`, `Configuration EEG ASCA.PDF` | ignorés en V1 |
 
-⚠️ **LE FORMAT DES COLONNES DES PDF N'EST PAS CONNU, et il ne faut pas le
-deviner.** Première tâche : obtenir 2 ou 3 synthèses réelles, les poser dans
-`essais/exemples/asca/`, relever les colonnes (CIP13 ? libellé ? stock ? ventes
-moyennes, et par jour ou par mois ? fournisseur ? date de commande ?) et
-**documenter le format constaté en tête du module d'analyse**.
+### 3.1 Les colonnes — RELEVÉES sur la synthèse du 28/09/2026
 
-De ce relevé dépendent deux choses que rien d'autre ne peut trancher : si une
-**colonne fournisseur** existe, le § 5 devient presque inutile ; si la **date de
-commande** existe, la règle 🔁 marche du premier jour.
+Exemples réels dans `essais/exemples/asca/`, prototype d'extraction éprouvé dans
+`prototype-lecture.py` du même dossier.
+
+```
+rupture sans commande   Code · EAN · CIP13 · Produit · Forme · Etiquette · Stock ·
+                        Dern.Vte · depuis · Moy.Vte                      (2 pages, 65 lignes)
+risque 15 jours         Code · EAN · CIP13 · Produit · Stk · à Cder · Moy.Vte
+                                                                         (3 pages, 95 lignes)
+rupture avec commande   Code · Produit · Dern.Vte · Stock · Dt.Liv · En Cde · Moy.Vte
+                                                                         (1 page, 33 lignes)
+hit parade              N° · Code · Produit · Cdt · Stock · Réserve · Total · Cde ·
+                        Ventes · Rupt (jours)                            (8 pages)
+```
+
+**LE LABORATOIRE EST DÉJÀ DANS LE PDF**, en ligne d'intertitre au-dessus de ses
+produits. C'est la découverte qui simplifie le plus ce module : **toute la
+section BDPM disparaît** — pas de base publique à charger, pas de job mensuel,
+pas de table, et plus de réserve sur le titulaire d'AMM qui n'est pas celui chez
+qui on commande. Le bloc « laboratoire à identifier » ne servira qu'aux rares
+lignes orphelines.
+
+**Les quantités existent aussi** : `à Cder` (suggestion d'ASCA), `En Cde`
+(quantité déjà commandée) et surtout **`Dt.Liv`, la date de livraison prévue**.
+La règle 🔁 n'a donc plus rien à deviner : un produit dont la `Dt.Liv` est passée
+et qui reste en rupture est en retard, et de combien de jours exactement.
+
+**La date de la synthèse est dans le pied de page de chaque PDF** (« au lun 28
+sept 2026 à 09:00 »). L'import manuel n'a donc pas besoin du `.eml` ni d'une
+saisie : déposer les PDF suffit.
+
+### 3.2 Les quatre pièges de l'extraction
+
+Aucun ne se voit en ouvrant le PDF à l'écran. Tous ont été rencontrés.
+
+1. **Les noms de laboratoires sont en faux gras par SURIMPRESSION.** ASCA n'a pas
+   de police grasse : il imprime le texte deux fois, décalé d'un poil. À
+   l'extraction, chaque caractère sort en double — `AABBOOCCAA` pour ABOCA.
+2. **Le signe moins est un glyphe séparé.** Un stock de −6 sort `- 6`, avec une
+   espace. Un `parseFloat` naïf lit « vide » : un stock très négatif passerait
+   pour zéro, soit exactement l'inverse d'une urgence.
+3. **Une ligne peut se couper en deux.** Les mots d'une même ligne diffèrent
+   parfois d'un point d'ordonnée. Regrouper par ARRONDI les coupe en silence et
+   il ne reste que le code produit ; il faut regrouper par PROXIMITÉ (≤ 3,5 pt).
+4. **Plusieurs colonnes sont vides une ligne sur deux** (Code, CIP13, Stock).
+   Découper aux espaces décale tout : il faut lire les mots avec leur abscisse et
+   les ranger selon les colonnes relevées sur la ligne d'en-tête — qui se répète
+   à chaque page et ne doit pas être lue comme une ligne de produit.
+
+### 3.3 Le contrôle qui prouve que l'extraction est juste
+
+Le corps du mail annonce **52** ruptures sans commande et **33** avec commande.
+Le PDF « sans commande » contient 65 lignes, dont **exactement 52** à `Moy.Vte`
+supérieure à 1.00 — l'indicateur du mail ne compte que celles-là, il le dit
+lui-même (« moyenne ventes > 1.00 unit. »). Le PDF « avec commande » contient
+**exactement 33** lignes.
+
+**Ces deux égalités sont le test de non-régression du parseur.** Si ASCA change
+son format, elles cassent, et le module doit le dire plutôt que d'afficher une
+liste plus courte que la vérité.
 
 ---
 
@@ -149,25 +200,23 @@ faire en passant. Deux règles s'il est validé :
 
 ## 5. Rattachement produit → laboratoire
 
-Le point difficile. Dans l'ordre :
+**Résolu par le PDF lui-même** (§ 3.1) : le laboratoire est l'intertitre au-dessus
+du produit. Il reste à :
 
-1. **Colonne fournisseur du PDF**, si elle existe (à vérifier, § 3).
-2. **Rattachement déjà connu** dans `app_asca_produits`.
-3. **BDPM** (base publique des médicaments) : `CIS_bdpm.txt` et
-   `CIS_CIP_bdpm.txt` chargés dans `app_asca_bdpm`, rafraîchis par un job
-   mensuel. Pas d'appel réseau à chaque synthèse.
-4. Sinon : groupe **❓ Laboratoire à identifier**, assignable en un clic, et le
-   choix est mémorisé.
+1. **normaliser les noms** — `app_asca_labos.alias` fusionne « RECKITT BENCKISER
+   HEALTHCARE FRANCE » et « Reckitt ». Même mécanisme que la réconciliation par
+   alias déjà en place pour les patients et les médecins ;
+2. **mémoriser** le laboratoire dans `app_asca_produits` à chaque synthèse, ce
+   qui donne un rattachement même le jour où une ligne arrive sans intertitre ;
+3. **laisser corriger à la main**, et retenir la correction.
 
-**Réserve honnête sur la BDPM** : elle donne le **titulaire d'AMM**, qui n'est
-pas toujours celui chez qui on commande — ni l'exploitant, ni le répartiteur par
-lequel la commande passe réellement. Elle sert de premier jet à corriger, pas de
-vérité. La parapharmacie et les dispositifs médicaux n'y figurent pas du tout :
-pour eux, seules les étapes 1, 2 et 4 existent.
+**La BDPM n'est plus nécessaire.** Elle reste une piste si l'on veut un jour
+rattacher un produit absent des PDF, mais avec sa limite : elle donne le
+titulaire d'AMM, qui n'est ni l'exploitant ni celui chez qui on commande. Ne pas
+la construire en V1.
 
-Normaliser les noms par `app_asca_labos.alias` : « RECKITT BENCKISER HEALTHCARE
-FRANCE » et « Reckitt » sont un seul laboratoire. C'est le même mécanisme que la
-réconciliation par alias déjà en place pour les patients et les médecins.
+Relevé sur la synthèse du 28/09 : **66 laboratoires** pour 128 produits, aucune
+ligne orpheline.
 
 ---
 
@@ -175,12 +224,25 @@ réconciliation par alias déjà en place pour les patients et les médecins.
 
 Seuils dans une table de réglages, **jamais en dur**.
 
+**`Moy.Vte` EST UN RYTHME MENSUEL, PAS JOURNALIER.** Recoupé avec le Hit Parade :
+le Délical riz au lait, `Moy.Vte` 41,08, a fait 35 ventes en 30 jours. Des seuils
+écrits en unités/jour seraient faux d'un facteur trente.
+
 | Niveau | Règle par défaut |
 |---|---|
-| 🔴 urgent | rupture sans commande **ET** (ventes ≥ `SEUIL_FORTE_ROTATION`, défaut 1/jour **OU** dans le top `TOP_HIT_PARADE`, défaut 100) |
-| 🟠 à commander | risque 15 j, **OU** rupture sans commande avec rotation ≥ `SEUIL_ROTATION_MIN` (défaut 0,2/jour) |
-| ⚪ pas pressé | rupture sans commande sous `SEUIL_ROTATION_MIN` |
-| 🔁 à relancer | rupture **avec** commande depuis plus de `DELAI_RELANCE_JOURS` (défaut 3) ; date de commande inconnue → présent dans cette liste sur **2 synthèses consécutives** |
+| 🔴 urgent | rupture sans commande **ET** (`Moy.Vte` ≥ `SEUIL_URGENT`, défaut **8/mois** **OU** présent au Hit Parade) |
+| 🟠 à commander | rupture sans commande ou risque 15 j, avec `Moy.Vte` ≥ `SEUIL_COMMANDER`, défaut **4/mois** |
+| ⚪ pas pressé | le reste |
+| 🔁 à relancer | rupture **avec** commande dont la `Dt.Liv` est passée ; à défaut de date, présent sur **2 synthèses consécutives** |
+
+**Ces seuils ont été calibrés sur les vraies données, et c'est indispensable.**
+La règle initialement proposée — orange dès 2/mois, et tout le « risque 15 j »
+d'office — donnait **57 laboratoires orange sur 66** : une liste qui ne trie
+rien. La médiane des ventes est à 2,09/mois, donc un seuil à 2 retient la moitié
+du catalogue. Avec 8 et 4 : **4 urgents, 15 à commander, 42 qui attendent, 5
+relances**. Une page du matin qui se lit en dix secondes.
+
+À vérifier avec Olivier — ce sont des réglages, pas une vérité.
 
 Consolidation : **une carte par laboratoire**, à l'urgence de son produit le
 plus pressé. Un labo avec un rouge et trois oranges est rouge. À l'intérieur,
@@ -279,7 +341,7 @@ connexion à Winpharma · multi-officines · faible rotation et promotions.
 1. Analyse du corps du mail + import manuel, sur les exemples réels.
 2. Tables et routes (modèle `temperatures.js`).
 3. Analyse des PDF, une fois le format relevé.
-4. Rattachement laboratoire : BDPM, mémorisation, correction à la main.
+4. Normalisation des laboratoires par alias et correction à la main.
 5. Urgence et consolidation.
 6. L'écran « Commandes à passer ».
 7. Ingestion automatique (après validation de la voie).
@@ -289,9 +351,10 @@ connexion à Winpharma · multi-officines · faible rotation et promotions.
 
 ## 13. Ce qu'il faut demander à Olivier avant de coder
 
-1. **Les PDF.** Deux ou trois synthèses réelles — rien ne démarre sans elles.
-2. L'unité des ventes moyennes dans les PDF : par jour ou par mois ?
-3. Canal par laboratoire (direct / répartiteur) : liste de départ, ou saisie au
+1. ~~Les PDF~~ — reçus le 30/09, dans `essais/exemples/asca/`.
+2. ~~L'unité des ventes moyennes~~ — **par mois**, établi par recoupement (§ 6).
+3. Les seuils 🔴 8/mois et 🟠 4/mois conviennent-ils ?
+4. Canal par laboratoire (direct / répartiteur) : liste de départ, ou saisie au
    fil de l'eau ?
 4. Qui voit cette page : le titulaire seul, les adjoints, les préparateurs ?
 5. Ajout d'une dépendance d'analyse PDF : d'accord ?
