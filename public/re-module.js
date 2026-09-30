@@ -86,11 +86,38 @@
       .filter(r => r && r.date && String(r.date) >= a)
       .sort((x, y) => String(x.date).localeCompare(String(y.date)))[0] || null;
   }
-  // L'ordre du jour, dans l'ordre d'arrivée : le premier posé est le premier
-  // abordé. C'est le seul classement qui ne demande à personne d'arbitrer.
+  // L'ordre du jour : l'ordre d'arrivée, jusqu'à ce que quelqu'un en décide
+  // autrement. Un thème reçoit alors un `rang`, et c'est lui qui prime.
+  //
+  // AUCUNE MIGRATION N'EST ÉCRITE DANS LES DONNÉES. Les thèmes posés avant
+  // cette version n'ont pas de `rang`, et n'en auront jamais tant qu'on ne
+  // touche pas à l'ordre : ils se rangent à leur date d'arrivée, comme avant.
+  // La traduction se fait à la LECTURE, pas en réécrivant le fichier de
+  // données — une migration qui traverse le réseau toutes les huit secondes
+  // n'a pas sa place ici.
+  //
+  // Un thème posé APRÈS un classement à la main n'a pas de rang non plus :
+  // il se met à la fin. C'est ce qu'on attend d'un sujet ajouté la veille au
+  // soir — il ne doit pas s'insérer au milieu d'un ordre du jour déjà réglé.
+  const RE_SANS_RANG = Number.MAX_SAFE_INTEGER;
+  function reRang(t) {
+    return (t && typeof t.rang === 'number' && isFinite(t.rang)) ? t.rang : RE_SANS_RANG;
+  }
   function reOrdreDuJour(l) {
-    return (l || []).filter(t => t && !t.aborde)
-      .slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    return (l || []).filter(t => t && !t.aborde).slice()
+      .sort((a, b) => (reRang(a) - reRang(b)) || ((a.ts || 0) - (b.ts || 0)));
+  }
+
+  // L'échange de deux voisins. Fonction pure : elle rend la liste telle qu'elle
+  // sera, ou `null` quand il n'y a rien à faire — en haut on ne monte pas.
+  function reEchanger(jour, id, sens) {
+    const l = (jour || []).slice();
+    const i = l.findIndex(t => t && t.id === id);
+    if (i < 0) return null;
+    const j = i + (sens < 0 ? -1 : 1);
+    if (j < 0 || j >= l.length) return null;
+    const t = l[i]; l[i] = l[j]; l[j] = t;
+    return l;
   }
   // Les thèmes traités, du plus récemment coché au plus ancien.
   function reAbordes(l) {
@@ -233,6 +260,30 @@
     reSave(true); window.reRender();
   };
 
+  // Monter ou descendre un thème. Réservé aux administrateurs, comme poser la
+  // date : c'est un geste de personne qui anime la réunion, pas une reprise sur
+  // le texte de quelqu'un — que son auteur, lui, reste seul à pouvoir modifier.
+  window.reDeplacer = function (id, sens) {
+    const u = reUser(); if (!u || !reAdmin()) return;
+    const neuf = reEchanger(reOrdreDuJour(reThemes()), id, sens);
+    if (!neuf) return;
+    const now = Date.now();
+    // ON RENUMÉROTE TOUT, PAS SEULEMENT LES DEUX ÉCHANGÉS. Deux raisons, et la
+    // seconde est celle qui fait perdre un ordre du jour : au premier
+    // classement, aucun thème n'a de rang, donc n'en donner qu'à deux laisserait
+    // les autres à la fin. Et chaque fiche touchée doit recevoir un `updatedAt`
+    // neuf : la fusion garde la version la plus récente id par id, et un poste
+    // resté en arrière repousserait sinon ses propres copies — sans rang —
+    // par-dessus le classement qu'on vient de faire.
+    let bouge = 0;
+    neuf.forEach(function (t, i) {
+      if (t.rang === i) return;
+      t.rang = i; t.updatedAt = now; bouge++;
+    });
+    if (!bouge) return;
+    reSave(true); window.reRender();
+  };
+
   window.reModifier = function (id) {
     const u = reUser(); if (!u) return;
     const t = reThemes().find(x => x && x.id === id); if (!t) return;
@@ -341,8 +392,11 @@
       + (reAdmin() ? '<button class="re-lien re-d-m" onclick="reFormDate()">Modifier</button>' : '');
   }
 
-  function reCarte(t, moi, admin) {
+  function reCarte(t, moi, admin, i, n) {
     const mien = rePeutToucher(t, moi, admin);
+    // Les flèches n'ont de sens que dans l'ordre du jour : un thème abordé est
+    // dans l'historique, et l'historique se lit du plus récent, pas à la main.
+    const range = admin && !t.aborde && typeof i === 'number' && n > 1;
     const quand = (typeof acDepuis === 'function') ? '' : '';
     const d = new Date(t.ts || Date.now());
     const jour = pad(d.getDate()) + '/' + pad(d.getMonth() + 1);
@@ -362,6 +416,12 @@
             + E(t.fichNom || 'pièce jointe')
             + (t.fichTaille ? ' · ' + E(reTaille(t.fichTaille)) : '') + '</a>' : '')
       + '</div>'
+      + (range ? '<div class="re-t-r">'
+          + '<button type="button" class="re-fl" onclick="reDeplacer(' + (+t.id) + ',-1)"'
+          +   (i === 0 ? ' disabled' : '') + ' title="Monter" aria-label="Monter ce thème">▴</button>'
+          + '<button type="button" class="re-fl" onclick="reDeplacer(' + (+t.id) + ',1)"'
+          +   (i === n - 1 ? ' disabled' : '') + ' title="Descendre" aria-label="Descendre ce thème">▾</button>'
+          + '</div>' : '')
       + (mien ? '<div class="re-t-o">'
           + '<span onclick="reModifier(' + (+t.id) + ')" title="Modifier">✎</span>'
           + '<span onclick="reRetirer(' + (+t.id) + ')" title="Retirer">✕</span>'
@@ -383,7 +443,7 @@
     const el = document.getElementById('re-liste');
     if (el) {
       el.innerHTML = jour.length
-        ? jour.map(t => reCarte(t, moi, admin)).join('')
+        ? jour.map((t, i) => reCarte(t, moi, admin, i, jour.length)).join('')
         : '<div class="re-vide">L’ordre du jour est vide. Le premier thème posé sera le premier abordé.</div>';
     }
     const n = document.getElementById('re-n');
@@ -472,6 +532,17 @@
   .re-pj-i{font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;background:#1D5C3A;
     color:#fff;border-radius:4px;padding:1px 5px;font-weight:800}
   .re-t-o{flex:none;display:flex;gap:9px;color:#b6c2ba;font-size:.92rem}
+  /* Les flèches restent pâles : elles servent une fois par semaine, et un ordre
+     du jour se lit avant de se réorganiser. Elles s'affirment au survol. */
+  .re-t-r{flex:none;display:flex;flex-direction:column;gap:1px;margin-right:2px}
+  .re-fl{border:none;background:none;cursor:pointer;color:#b6c2ba;font-size:.82rem;
+    line-height:1;padding:3px 5px;border-radius:5px;transition:background .12s,color .12s}
+  .re-fl:hover:not(:disabled){background:var(--g-pale,#E8F5E9);color:var(--g-dark,#1D5C3A)}
+  .re-fl:focus-visible{outline:2px solid var(--g-mid,#2E7D54);outline-offset:1px}
+  /* En bout de liste, la flèche ne disparaît pas : elle s'éteint. Un bouton qui
+     s'efface fait sauter les deux autres lignes à chaque déplacement. */
+  .re-fl:disabled{opacity:.25;cursor:default}
+  @media print{.re-t-r{display:none}}
   .re-t-o span{cursor:pointer}
   .re-t-o span:hover{color:#1D5C3A}
   .re-vide{padding:1.6rem 1rem;text-align:center;color:var(--gray-500);font-size:.86rem;

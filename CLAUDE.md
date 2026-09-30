@@ -762,3 +762,25 @@ personne : une aide qui annonce des touches inertes est pire que pas d'aide.
 Vérifié par `essais/raccourcis-clavier.js` et en rendu réel (Chromium), y
 compris les deux pièges ci-dessus, simulés avec le vrai `key` du Mac et le vrai
 `ctrlKey` de l'AltGr.
+
+## Un ordre choisi à la main : renuméroter TOUT, et horodater chaque fiche
+
+Le jour où une liste cesse d'être classée par sa date d'arrivée (l'ordre du
+jour des réunions, `rang` dans `reunionThemes`), deux pièges se referment.
+
+**Ne donner un rang qu'aux deux fiches échangées ne suffit pas.** Au premier
+classement, aucune n'en a : les six autres resteraient sans rang, donc rejetées
+à la fin. On renumérote la liste entière, `0..n-1`.
+
+**Et chaque fiche touchée doit recevoir un `updatedAt` neuf.** La fusion garde,
+pour chaque id, la version la plus récente. Une fiche renumérotée mais non
+horodatée se ferait écraser par la copie — sans rang — d'un poste resté en
+arrière : l'ordre du jour se défait tout seul, quelques secondes après avoir
+été rangé, et personne ne comprend pourquoi.
+
+Le tri lit `rang` puis, à égalité, la date d'arrivée : deux postes qui classent
+en même temps produisent des rangs identiques, et le départage doit être stable
+plutôt que laissé au hasard. **Aucune migration n'est écrite** (piège #7) : une
+fiche d'avant n'a pas de rang et se range à sa date, et une fiche posée APRÈS
+un classement va à la fin — c'est ce qu'on attend d'un sujet ajouté la veille
+au soir, il ne s'insère pas au milieu d'un ordre du jour déjà réglé.
