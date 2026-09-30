@@ -22,6 +22,7 @@ const RE_SANS_RANG = Number.MAX_SAFE_INTEGER;
 eval(extraire('reRang'));
 eval(extraire('reOrdreDuJour'));
 eval(extraire('reEchanger'));
+eval(extraire('reInserer'));
 eval(extraire('reAbordes'));
 eval(extraire('rePeutToucher'));
 eval(extraire('reTaille'));
@@ -198,21 +199,85 @@ t('l’échange ne touche pas la liste reçue — un rendu raté ne doit pas lai
 // — donc a la fin — et sans `updatedAt` neuf : un poste reste en arriere
 // repousserait ses propres copies par-dessus le classement.
 console.log('\nCe qui ferait perdre le classement');
-const dep = /window\.reDeplacer = function[\s\S]*?\n  \};/.exec(src)[0];
+const dep = /function reAppliquerOrdre\([\s\S]*?\n  \}/.exec(src)[0];
+const fle = /window\.reDeplacer = function[\s\S]*?\n  \};/.exec(src)[0];
+const pos = /window\.rePoser = function[\s\S]*?\n  \};/.exec(src)[0];
 t('on renumérote TOUS les thèmes, pas seulement les deux échangés',
   /neuf\.forEach\(function \(t, i\) \{[\s\S]{0,160}t\.rang = i;/.test(dep));
 t('... et chaque fiche touchée reçoit un updatedAt neuf', /t\.updatedAt = now;/.test(dep));
 t('... et le code dit pourquoi', /repousserait sinon ses propres copies/.test(src));
 t('une fiche déjà au bon rang n’est pas réécrite — on ne fait pas voyager huit '
   + 'fiches pour un échange de deux', /if \(t\.rang === i\) return;/.test(dep));
-t('rien n’a bougé : on n’enregistre pas', /if \(!bouge\) return;/.test(dep));
+t('rien n’a bougé : on n’enregistre pas', /if \(!bouge\) return false;/.test(dep));
 t('l’enregistrement est immédiat, pas différé — un classement est rare et voulu',
-  /reSave\(true\); window\.reRender\(\);\s*\n  \};/.test(dep));
+  /reSave\(true\); window\.reRender\(\); return true;/.test(dep));
+// UN SEUL ENDROIT ECRIT UN ORDRE. Deux chemins vers deux renumerotations
+// finiraient par diverger, et l'un des deux perdrait le classement.
+t('les flèches et le glisser-déposer passent par le MÊME endroit',
+  /reAppliquerOrdre\(reEchanger\(/.test(fle) && /reAppliquerOrdre\(reInserer\(/.test(pos));
+t('... et aucun autre code ne pose un rang',
+  (src.match(/\.rang = /g) || []).length === 1);
+
+// ── Poser une carte n'importe où ───────────────────────────────
+console.log('\nPoser une carte n’importe où');
+const cinq = [T(1,100), T(2,200), T(3,300), T(4,400), T(5,500)];
+t('du dernier au deuxième', ids(reInserer(cinq, 5, 1)) === '1,5,2,3,4');
+t('du deuxième au dernier', ids(reInserer(cinq, 2, 4)) === '1,3,4,5,2');
+t('du premier au dernier',   ids(reInserer(cinq, 1, 4)) === '2,3,4,5,1');
+t('reposer à sa place ne rend rien — on n’écrit pas pour rien',
+  reInserer(cinq, 3, 2) === null);
+t('une place au-delà de la liste est ramenée au bout, pas refusée',
+  ids(reInserer(cinq, 1, 99)) === '2,3,4,5,1');
+t('une place négative aussi',   ids(reInserer(cinq, 5, -3)) === '5,1,2,3,4');
+t('un identifiant inconnu ne déplace rien', reInserer(cinq, 77, 2) === null);
+t('l’insertion ne touche pas la liste reçue',
+  (function () { const l = cinq.slice(); reInserer(l, 5, 0); return ids(l) === '1,2,3,4,5'; }()));
+
+// ── LE GESTE ─────────────────────────────────────────
+console.log('\nLe glisser-déposer');
+t('on passe par les événements POINTEUR, pas par le draggable du navigateur — '
+  + 'qui ne marche pas au doigt', /addEventListener\('pointerdown'/.test(src)
+  && !/draggable\s*[=:]/.test(src) && !/dragstart/.test(src));
+t('la souris, le doigt et le stylet suivent le même chemin',
+  /pointermove/.test(src) && /pointerup/.test(src) && /pointercancel/.test(src));
+t('SEULE LA POIGNÉE porte touch-action:none — sur la carte, l’ordre du jour ne '
+  + 'se ferait plus défiler au doigt',
+  /\.re-dd\{[^}]*touch-action:none/.test(src) && !/\.re-t\{[^}]*touch-action/.test(src));
+t('on ne saisit que par la poignée', /closest\('\.re-dd'\)/.test(src));
+t('un clic droit ou la molette ne commencent rien',
+  /ev\.button != null && ev\.button !== 0/.test(src));
+t('le pointeur est capturé : sortir de la carte n’interrompt pas le geste',
+  /setPointerCapture/.test(src) && /releasePointerCapture/.test(src));
+t('un fantôme montre où la carte se posera', /re-ph/.test(src) && /\.re-ph\{[^}]*dashed/.test(src));
+t('il bascule au MILIEU de la carte voisine, pas au bord — sinon deux cartes '
+  + 's’échangent sans arrêt sur la frontière', /r\.top \+ r\.height \/ 2/.test(src));
+t('la liste défile quand on approche du bord — sans cela on ne peut pas remonter '
+  + 'un thème au-dessus de ce qui est visible',
+  /RE_DD_BORD/.test(src) && /window\.scrollBy/.test(src));
+t('... et le fantôme se replace pendant ce défilement',
+  /if \(window\.pageYOffset !== avant\) reDDPlacerFantome/.test(src));
+t('la place visée est lue dans le DOM AVANT de retirer le fantôme — c’est ce que '
+  + 'la personne voit à l’instant où elle relâche',
+  /const place = ordre\.indexOf\(reDD\.ph\);[\s\S]{0,200}reDDDefaire\(\);/.test(src));
+t('Échap repose la carte où elle était', /Escape' && reDD/.test(src) && /reDDAnnuler/.test(src));
+t('... et un geste interrompu par le système fait de même',
+  /'pointercancel', reDDAnnuler/.test(src));
+t('la carte relevée ne capte plus les clics — sinon elle se met devant ce qu’on vise',
+  /\.re-t\.re-drag\{[^}]*pointer-events:none/.test(src));
+t('le défilement automatique s’arrête avec le geste',
+  /cancelAnimationFrame\(d\.defile\)/.test(src));
+t('la carte porte son identifiant, l’ordre se lit dans le DOM',
+  /data-id="' \+ \(\+t\.id\) \+ '"/.test(src));
+t('ni poignée ni flèches sur un thème abordé', /const range = admin && !t\.aborde/.test(src));
+t('la poignée ne s’imprime pas', /@media print\{\.re-dd,\.re-ph\{display:none\}\}/.test(src));
 
 // ── Qui a le droit ────────────────────────────────────────
 console.log('\nQui peut classer');
-t('classer est réservé aux administrateurs, comme poser la date',
-  /const u = reUser\(\); if \(!u \|\| !reAdmin\(\)\) return;/.test(dep));
+t('les flèches sont réservées aux administrateurs, comme poser la date',
+  /if \(!u \|\| !reAdmin\(\)\) return;/.test(fle));
+t('le glisser-déposer aussi — la poignée visible ne suffit pas, on revérifie au dépôt',
+  /if \(!u \|\| !reAdmin\(\)\) return false;/.test(pos));
+t('... et le geste lui-même ne démarre pas', /if \(!reAdmin\(\) \|\| reDD\) return;/.test(src));
 t('modifier le texte reste à son auteur — classer ne donne pas la main dessus',
   rePeutToucher({ par: 'AF' }, 'OF', true) === true && rePeutToucher({ par: 'AF' }, 'OF', false) === false);
 

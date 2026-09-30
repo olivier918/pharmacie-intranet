@@ -778,6 +778,18 @@ horodatée se ferait écraser par la copie — sans rang — d'un poste resté e
 arrière : l'ordre du jour se défait tout seul, quelques secondes après avoir
 été rangé, et personne ne comprend pourquoi.
 
+**Un seul endroit écrit un ordre** (`reAppliquerOrdre`). Les flèches et le
+glisser-déposer y passent tous les deux : deux chemins vers deux
+renumérotations différentes finiraient par diverger, et l'un des deux perdrait
+le classement sans qu'on sache lequel.
+
+**Le glisser-déposer se fait aux événements pointeur, jamais au `draggable` du
+navigateur** — celui-ci est fait pour déposer un fichier dans une page : il ne
+marche pas au doigt, et l'on ne maîtrise ni l'image traînée ni le défilement.
+**Seule la poignée porte `touch-action:none`** ; posé sur la carte entière, cet
+attribut empêcherait la liste de défiler au doigt. Et **les flèches restent** :
+un geste continu se rate, et il n'existe pas au clavier.
+
 Le tri lit `rang` puis, à égalité, la date d'arrivée : deux postes qui classent
 en même temps produisent des rangs identiques, et le départage doit être stable
 plutôt que laissé au hasard. **Aucune migration n'est écrite** (piège #7) : une

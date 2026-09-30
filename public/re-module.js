@@ -260,13 +260,25 @@
     reSave(true); window.reRender();
   };
 
-  // Monter ou descendre un thème. Réservé aux administrateurs, comme poser la
-  // date : c'est un geste de personne qui anime la réunion, pas une reprise sur
-  // le texte de quelqu'un — que son auteur, lui, reste seul à pouvoir modifier.
-  window.reDeplacer = function (id, sens) {
-    const u = reUser(); if (!u || !reAdmin()) return;
-    const neuf = reEchanger(reOrdreDuJour(reThemes()), id, sens);
-    if (!neuf) return;
+  // Déplacer un thème d'une place à une autre, où qu'elle soit. La souris s'en
+  // sert pour poser une carte n'importe où ; les flèches, pour la décaler d'un
+  // cran. Fonction pure : elle rend la liste telle qu'elle sera, ou `null`.
+  function reInserer(jour, id, place) {
+    const l = (jour || []).slice();
+    const i = l.findIndex(t => t && t.id === id);
+    if (i < 0) return null;
+    let j = Math.max(0, Math.min(l.length - 1, place | 0));
+    if (i === j) return null;
+    l.splice(j, 0, l.splice(i, 1)[0]);
+    return l;
+  }
+
+  // LE SEUL ENDROIT QUI ÉCRIT UN ORDRE. Les flèches et le glisser-déposer
+  // passent tous deux par ici : deux chemins vers deux renumérotations
+  // différentes finiraient par diverger, et l'un des deux perdrait le
+  // classement sans qu'on sache lequel.
+  function reAppliquerOrdre(neuf) {
+    if (!neuf) return false;
     const now = Date.now();
     // ON RENUMÉROTE TOUT, PAS SEULEMENT LES DEUX ÉCHANGÉS. Deux raisons, et la
     // seconde est celle qui fait perdre un ordre du jour : au premier
@@ -280,8 +292,24 @@
       if (t.rang === i) return;
       t.rang = i; t.updatedAt = now; bouge++;
     });
-    if (!bouge) return;
-    reSave(true); window.reRender();
+    if (!bouge) return false;
+    reSave(true); window.reRender(); return true;
+  }
+
+  // Monter ou descendre d'un cran. Réservé aux administrateurs, comme poser la
+  // date : c'est un geste de personne qui anime la réunion, pas une reprise sur
+  // le texte de quelqu'un — que son auteur, lui, reste seul à pouvoir modifier.
+  // LES FLÈCHES RESTENT, MÊME AVEC LE GLISSER-DÉPOSER. Elles marchent au doigt
+  // sans viser, au clavier, et pour qui ne peut pas tenir un geste continu.
+  window.reDeplacer = function (id, sens) {
+    const u = reUser(); if (!u || !reAdmin()) return;
+    reAppliquerOrdre(reEchanger(reOrdreDuJour(reThemes()), id, sens));
+  };
+
+  // Poser un thème à une place donnée — ce que rend le glisser-déposer.
+  window.rePoser = function (id, place) {
+    const u = reUser(); if (!u || !reAdmin()) return false;
+    return reAppliquerOrdre(reInserer(reOrdreDuJour(reThemes()), id, place));
   };
 
   window.reModifier = function (id) {
@@ -400,7 +428,9 @@
     const quand = (typeof acDepuis === 'function') ? '' : '';
     const d = new Date(t.ts || Date.now());
     const jour = pad(d.getDate()) + '/' + pad(d.getMonth() + 1);
-    return '<div class="re-t' + (t.aborde ? ' fait' : '') + '">'
+    return '<div class="re-t' + (t.aborde ? ' fait' : '')
+      + (range ? ' re-prise' : '') + '" data-id="' + (+t.id) + '">'
+      + (range ? '<span class="re-dd" title="Glisser pour classer" aria-hidden="true">\u283f</span>' : '')
       + '<button class="re-coche" onclick="reCocher(' + (+t.id) + ')" title="'
         + (t.aborde ? 'Remettre à l’ordre du jour' : 'Marquer comme abordé') + '">'
         + (t.aborde ? '✓' : '') + '</button>'
@@ -428,6 +458,140 @@
           + '</div>' : '')
       + '</div>';
   }
+
+  // ── LE GLISSER-DÉPOSER ────────────────────────────────────
+  //
+  // POURQUOI LES ÉVÉNEMENTS POINTEUR ET PAS LE GLISSER-DÉPOSER DU NAVIGATEUR.
+  // Le HTML5 `draggable` est fait pour déposer un fichier dans une page, pas
+  // pour réorganiser une liste : il ne fonctionne pas au doigt sur téléphone,
+  // on ne maîtrise ni l'image traînée ni le défilement. Les événements
+  // pointeur traitent la souris, le doigt et le stylet de la même manière.
+  //
+  // ON NE PREND QUE PAR LA POIGNÉE. Rendre toute la carte saisissable au doigt
+  // obligerait à y poser `touch-action:none` — et l'ordre du jour ne se
+  // ferait plus défiler du tout. La poignée porte seule cette contrainte.
+  //
+  // LES FLÈCHES RESTENT. Un geste continu se rate : on relâche trop tôt, la
+  // main tremble, l'écran tactile saute une image. Et il n'existe pas au
+  // clavier. Le glisser-déposer est le confort ; les flèches sont le recours.
+  let reDD = null;
+  const RE_DD_BORD = 90, RE_DD_PAS = 14;   // défilement quand on approche du bord
+
+  function reDDListe() { return document.getElementById('re-liste'); }
+
+  function reDDDebut(ev) {
+    if (!reAdmin() || reDD) return;
+    if (ev.button != null && ev.button !== 0) return;      // clic droit, molette
+    const prise = ev.target.closest ? ev.target.closest('.re-dd') : null;
+    if (!prise) return;
+    const el = prise.closest('.re-t');
+    const liste = reDDListe();
+    if (!el || !liste || el.parentNode !== liste) return;
+
+    const r = el.getBoundingClientRect();
+    const ph = document.createElement('div');
+    ph.className = 're-ph';
+    ph.style.height = r.height + 'px';
+    liste.insertBefore(ph, el);
+
+    reDD = { el: el, ph: ph, liste: liste, id: Number(el.dataset.id),
+             dx: ev.clientX - r.left, dy: ev.clientY - r.top,
+             l: r.width, prise: prise, pid: ev.pointerId, defile: 0 };
+    el.classList.add('re-drag');
+    el.style.width = r.width + 'px';
+    el.style.left = r.left + 'px';
+    el.style.top = r.top + 'px';
+    document.body.classList.add('re-dd-on');
+    try { prise.setPointerCapture(ev.pointerId); } catch (e) { /* capture indisponible */ }
+    ev.preventDefault();
+    reDDDefiler();
+  }
+
+  function reDDBouger(ev) {
+    if (!reDD || ev.pointerId !== reDD.pid) return;
+    reDD.y = ev.clientY;
+    reDD.el.style.left = (ev.clientX - reDD.dx) + 'px';
+    reDD.el.style.top = (ev.clientY - reDD.dy) + 'px';
+    reDDPlacerFantome(ev.clientY);
+    ev.preventDefault();
+  }
+
+  // Le fantôme se pose avant la première carte dont on a dépassé le milieu.
+  // Comparer au milieu, et non au bord, évite le clignotement d'une carte qui
+  // s'échange sans arrêt quand le pointeur reste sur la frontière.
+  function reDDPlacerFantome(y) {
+    const freres = [].slice.call(reDD.liste.children)
+      .filter(c => c !== reDD.el && c !== reDD.ph && c.classList.contains('re-t'));
+    let avant = null;
+    for (let i = 0; i < freres.length; i++) {
+      const r = freres[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) { avant = freres[i]; break; }
+    }
+    if (avant) { if (reDD.ph.nextSibling !== avant) reDD.liste.insertBefore(reDD.ph, avant); }
+    else if (reDD.liste.lastChild !== reDD.ph) reDD.liste.appendChild(reDD.ph);
+  }
+
+  // Un ordre du jour peut dépasser l'écran : sans cela, on ne pourrait pas
+  // remonter un thème au-dessus de ce qui est visible.
+  function reDDDefiler() {
+    if (!reDD) return;
+    reDD.defile = requestAnimationFrame(reDDDefiler);
+    const y = reDD.y;
+    if (y == null) return;
+    let d = 0;
+    if (y < RE_DD_BORD) d = -RE_DD_PAS;
+    else if (y > window.innerHeight - RE_DD_BORD) d = RE_DD_PAS;
+    if (!d) return;
+    const avant = window.pageYOffset;
+    window.scrollBy(0, d);
+    if (window.pageYOffset !== avant) reDDPlacerFantome(y);
+  }
+
+  function reDDDefaire() {
+    if (!reDD) return null;
+    const d = reDD;
+    cancelAnimationFrame(d.defile);
+    try { d.prise.releasePointerCapture(d.pid); } catch (e) { /* déjà relâchée */ }
+    d.el.classList.remove('re-drag');
+    d.el.style.width = d.el.style.left = d.el.style.top = '';
+    document.body.classList.remove('re-dd-on');
+    reDD = null;
+    return d;
+  }
+
+  function reDDFin(ev) {
+    if (!reDD || (ev && ev.pointerId !== reDD.pid)) return;
+    // La place visée se lit dans le DOM, AVANT de retirer quoi que ce soit :
+    // c'est exactement ce que la personne voit à l'instant où elle relâche.
+    const ordre = [].slice.call(reDD.liste.children)
+      .filter(c => c === reDD.ph || (c.classList.contains('re-t') && c !== reDD.el));
+    const place = ordre.indexOf(reDD.ph);
+    const id = reDD.id;
+    const ph = reDD.ph;
+    reDDDefaire();
+    if (ph.parentNode) ph.parentNode.removeChild(ph);
+    // rePoser redessine quand l'ordre change ; sinon la carte est déjà
+    // revenue à sa place toute seule, et redessiner ne ferait que clignoter.
+    if (place >= 0) window.rePoser(id, place);
+  }
+
+  // Échap pendant le geste : on repose la carte où elle était. Un classement
+  // commencé par erreur doit pouvoir s'abandonner sans rien changer.
+  function reDDAnnuler() {
+    if (!reDD) return;
+    const ph = reDD.ph;
+    reDDDefaire();
+    if (ph.parentNode) ph.parentNode.removeChild(ph);
+    window.reRender();
+  }
+
+  document.addEventListener('pointerdown', reDDDebut, true);
+  document.addEventListener('pointermove', reDDBouger, true);
+  document.addEventListener('pointerup', reDDFin, true);
+  document.addEventListener('pointercancel', reDDAnnuler, true);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && reDD) { ev.preventDefault(); ev.stopPropagation(); reDDAnnuler(); }
+  }, true);
 
   let rePliAbordes = true;
   window.reBasculerAbordes = function () { rePliAbordes = !rePliAbordes; window.reRender(); };
@@ -535,6 +699,22 @@
   /* Les flèches restent pâles : elles servent une fois par semaine, et un ordre
      du jour se lit avant de se réorganiser. Elles s'affirment au survol. */
   .re-t-r{flex:none;display:flex;flex-direction:column;gap:1px;margin-right:2px}
+  /* LA POIGNÉE PORTE SEULE touch-action:none. Posée sur la carte entière,
+     elle empêcherait l'ordre du jour de défiler au doigt. */
+  .re-dd{flex:none;align-self:center;cursor:grab;touch-action:none;color:#cdd8d1;
+    font-size:.95rem;line-height:1;padding:6px 3px;margin:-6px 0 -6px -4px;user-select:none}
+  .re-t:hover .re-dd{color:#9bb0a4}
+  .re-prise.re-drag .re-dd,.re-dd:active{cursor:grabbing}
+  /* La carte saisie quitte le flux et suit le pointeur. Un léger soulèvement
+     dit qu'elle est en main ; sans lui on ne sait pas ce qu'on déplace. */
+  .re-t.re-drag{position:fixed;z-index:1100;margin:0;pointer-events:none;
+    box-shadow:0 16px 34px rgba(0,0,0,.18);border-color:#bcd2c4;opacity:.98}
+  /* Le fantôme montre OÙ la carte se posera. Sans lui, on déplace à l'aveugle
+     et l'on découvre le résultat en relâchant. */
+  .re-ph{border:2px dashed #bcd2c4;background:var(--g-pale,#E8F5E9);border-radius:12px;
+    margin-bottom:9px;box-sizing:border-box}
+  body.re-dd-on{user-select:none;cursor:grabbing}
+  @media print{.re-dd,.re-ph{display:none}}
   .re-fl{border:none;background:none;cursor:pointer;color:#b6c2ba;font-size:.82rem;
     line-height:1;padding:3px 5px;border-radius:5px;transition:background .12s,color .12s}
   .re-fl:hover:not(:disabled){background:var(--g-pale,#E8F5E9);color:var(--g-dark,#1D5C3A)}
