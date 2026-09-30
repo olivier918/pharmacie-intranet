@@ -56,7 +56,7 @@ app_asca_syntheses    date_synthese (unique), recu_le, indicateurs…, source, e
 app_asca_lignes       synthese_id, cip13, libelle, categorie, stock, ventes_moy,
                       date_commande, rang_hit, brut (jsonb)
 app_asca_produits     cip13 (unique), libelle, labo, origine_labo, maj
-app_asca_labos        nom (unique), alias (text[]), canal, notes
+app_asca_labos        nom (unique), alias (text[]), notes, contact
 app_asca_statuts      cip13, synthese_id, statut, par, le, commentaire
 ```
 
@@ -185,16 +185,42 @@ liste plus courte que la vérité.
 
 ---
 
-## 4. Analyse des PDF : une dépendance à assumer
+## 3.4 Ce qu'Olivier a tranché le 30/09
 
-Le dépôt a **deux dépendances**, `express` et `pg`. Lire un PDF en ajoute une
-(`pdf-parse`, ou `pdfjs-dist`). C'est un choix à valider avec Olivier, pas à
-faire en passant. Deux règles s'il est validé :
+- **Seuils** : 🔴 8 ventes/mois, 🟠 4. Retenus.
+- **Qui voit la page** : **tout le monde**. Pas de réserve aux administrateurs —
+  ni pour la lecture, ni pour marquer « commande passée ». Le nom de qui a
+  marqué est enregistré, comme pour cocher un thème de réunion : c'est une
+  trace, pas un droit.
+- **Canal de commande** : **il n'y a pas de grossiste, tout est en direct
+  laboratoire.** La colonne `canal` et le filtre correspondant **disparaissent**
+  — un filtre sur une dimension qui n'a qu'une valeur n'est pas une option,
+  c'est un bouton qui ne fait rien. Le jour où un répartiteur apparaîtrait,
+  c'est un champ à ajouter, pas une architecture à refaire.
+- Les fiches laboratoire (contacts, notes) **se remplissent au fil de l'eau**,
+  pas de liste initiale à saisir.
 
-- l'extraction se fait **côté serveur**, jamais dans le navigateur ;
-- **si ASCA change son format, le module échoue bruyamment** — une alerte à
-  l'écran — plutôt que de produire une liste vide qu'on croira bonne. Une page
-  « Commandes à passer » vide ressemble à une bonne nouvelle.
+---
+
+## 4. Analyse des PDF : AUCUNE dépendance
+
+Le dépôt a deux dépendances, `express` et `pg`. **Il en a toujours deux.**
+
+Les PDF d'ASCA sont d'une simplicité rare : leurs flux de contenu ne
+contiennent **que** l'opérateur `BT x y Td (texte) Tj ET` — pas un seul tableau
+`TJ`, pas une seule matrice `Tm`, aucune police à encodage exotique. Chaque
+morceau de texte porte donc ses coordonnées absolues, et `zlib`, qui est dans
+Node, suffit à décompresser les flux. `commandes-asca.js` fait tout le travail
+en un fichier sans rien installer.
+
+Ce choix a un prix qu'il faut connaître : **le jour où ASCA changerait de
+générateur de PDF, ce lecteur ne comprendrait plus rien.** D'où `verifier()`,
+ci-dessous, qui refuse une lecture douteuse au lieu de rendre une liste
+tronquée.
+
+**Si ASCA change son format, le module échoue bruyamment.** Une page
+« Commandes à passer » trop courte ressemble à une bonne nouvelle : on ne
+s'apercevrait de rien avant la rupture.
 
 ---
 
@@ -349,12 +375,25 @@ connexion à Winpharma · multi-officines · faible rotation et promotions.
 
 ---
 
-## 13. Ce qu'il faut demander à Olivier avant de coder
+## 13. Questions ouvertes
 
-1. ~~Les PDF~~ — reçus le 30/09, dans `essais/exemples/asca/`.
-2. ~~L'unité des ventes moyennes~~ — **par mois**, établi par recoupement (§ 6).
-3. Les seuils 🔴 8/mois et 🟠 4/mois conviennent-ils ?
-4. Canal par laboratoire (direct / répartiteur) : liste de départ, ou saisie au
-   fil de l'eau ?
-4. Qui voit cette page : le titulaire seul, les adjoints, les préparateurs ?
-5. Ajout d'une dépendance d'analyse PDF : d'accord ?
+Toutes celles qui bloquaient sont tranchées (§ 3.4). Restent, pour plus tard :
+
+1. Faut-il notifier quand un laboratoire passe au 🔴, ou la page du matin
+   suffit-elle ?
+2. Voie d'ingestion automatique : webhook de mails entrants, ou lecture IMAP ?
+   **Elle crée une route publique nouvelle : à décrire et faire valider avant
+   d'ouvrir quoi que ce soit** (`CLAUDE.md`, « ce qu'il ne faut pas faire seul »).
+
+---
+
+## 14. État d'avancement
+
+| Étape | État |
+|---|---|
+| Lecture des PDF (`commandes-asca.js`) | **faite**, sans dépendance, 46 vérifications |
+| Urgence et consolidation | **faites**, calibrées sur les vraies données |
+| Exemples de test | **posés** dans `essais/exemples/asca/` |
+| Tables et routes | à faire |
+| Page « Commandes à passer » + import manuel | à faire |
+| Ingestion automatique du courriel | à faire, après validation de la voie |
