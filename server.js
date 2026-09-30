@@ -24,6 +24,7 @@ const MAX_HISTORY = 400;
 // La route est protégée par sa signature cryptographique, pas par le portail.
 const paiement = require('./paiement');
 const temperatures = require('./temperatures');
+const commandes = require('./commandes');
 const smsProgrammes = require('./sms-programmes');
 const identite = require('./identite');
 const traces = require('./traces');
@@ -853,6 +854,13 @@ const TEMP_DEPS = {
   qui: identite.qui
 };
 temperatures.routes(app, () => db, TEMP_DEPS);
+
+// ─── Commandes a passer, syntheses ASCA (voir commandes.js) ───
+// La page est ouverte a toute l'equipe : on ne prete au module que l'identite
+// de qui agit, pour signer « commande passee », et la notion d'administrateur,
+// qui ne sert qu'a changer les seuils.
+commandes.routes(app, () => db, { qui: identite.qui,
+  estAdmin: (req) => estAdministrateur(identite.qui(req)) });
 
 // ─── Identite des operateurs (voir identite.js) ───
 // Lecture et ecriture de l'etat, partagees avec le module : elles suivent le
@@ -2091,6 +2099,7 @@ async function start() {
     }
   } catch (e) { console.error('  ⛔ Accuses de remise SMS indisponibles :', e.message); }
   await temperatures.demarrer(db, TEMP_DEPS);
+  await commandes.demarrer(db);
   if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {
