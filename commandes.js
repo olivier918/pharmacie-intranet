@@ -54,7 +54,26 @@ async function creerTables(db) {
       nom     TEXT PRIMARY KEY,
       alias   TEXT[] NOT NULL DEFAULT '{}',
       contact TEXT,
-      notes   TEXT
+      tel     TEXT,
+      mail    TEXT,
+      notes   TEXT,
+      maj     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  // Une base existante n'a pas les trois dernieres colonnes : on les ajoute
+  // sans toucher aux donnees. Il n'y a pas de systeme de migrations ici.
+  for (const c of ["tel TEXT", "mail TEXT", "maj TIMESTAMPTZ NOT NULL DEFAULT NOW()"]) {
+    await db.query('ALTER TABLE app_cmd_labos ADD COLUMN IF NOT EXISTS ' + c);
+  }
+  // LE REFUS SE MEMORISE AUTANT QUE LA FUSION. Sans lui, le module reproposerait
+  // chaque matin de confondre Pierre Fabre Medicament et Pierre Fabre Oral Care,
+  // et c'est ainsi qu'on finit par cliquer « oui » sans lire.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_cmd_labos_refus (
+      a   TEXT NOT NULL,
+      b   TEXT NOT NULL,
+      par TEXT,
+      le  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (a, b)
     )`);
   // Le statut est porté par le COUPLE produit + synthèse : « commandé » le
   // 28 ne vaut pas pour la synthèse du 29, où le produit doit reparaître s'il
@@ -195,25 +214,45 @@ async function consolidee(db, id) {
   // Le laboratoire retenu à la main prime sur celui du PDF.
   const corr = await db.query("SELECT code, labo FROM app_cmd_produits WHERE origine = 'manuel'");
   const manuel = new Map(corr.rows.map(function (r) { return [r.code, r.labo]; }));
+  // Les laboratoires retenus, et leurs alias. LA TRADUCTION SE FAIT ICI, A LA
+  // LECTURE (piege #7) : les lignes enregistrees gardent le nom qu'ASCA a
+  // ecrit, sinon defaire un rapprochement deviendrait impossible.
+  const lab = await db.query('SELECT nom, alias, contact, tel, mail, notes FROM app_cmd_labos');
+  const labos = lab.rows;
+  // ON RETIENT TOUS LES NOMS LUS, pas seulement ceux qui finiront en carte. Un
+  // meme produit peut porter deux orthographes selon le tableau d'ASCA ; le
+  // rassemblement par code n'en garde alors qu'une, et la variante disparait
+  // avant qu'on ait pu proposer de les rapprocher.
+  const nomsVus = new Set();
   l.rows.forEach(function (r) {
     const x = r.brut || {};
     if (manuel.has(r.code)) x.labo = manuel.get(r.code);
+    x.labo = A.nomRetenu(x.labo, labos);
+    if (x.labo) nomsVus.add(x.labo);
     lu[par[r.categorie]].lignes.push(x);
   });
   const seuils = await lireSeuils(db);
   const st = await db.query('SELECT code, statut, par, le, commentaire FROM app_cmd_statuts WHERE synthese_id = $1', [syn.id]);
   const statuts = new Map(st.rows.map(function (r) { return [r.code, r]; }));
-  const labos = A.consolider(lu, { seuils: seuils, aujourdhui: syn.date_synthese });
-  labos.forEach(function (g) {
+  const labos2 = A.consolider(lu, { seuils: seuils, aujourdhui: syn.date_synthese });
+  labos2.forEach(function (g) {
     g.produits.forEach(function (p) {
       const s = statuts.get(p.code);
       if (s) { p.statut = s.statut; p.statutPar = s.par; p.statutLe = s.le; p.commentaire = s.commentaire; }
       p.cats = [...p.cats];   // les Set ne traversent pas JSON
     });
   });
+  // Ce qu'on propose de rapprocher, calcule sur les noms REELLEMENT affiches.
+  const refus = await db.query('SELECT a, b FROM app_cmd_labos_refus');
+  const propositions = A.rapprochements([...nomsVus],
+    refus.rows.map(function (r) { return [r.a, r.b]; }));
+  const fiches = {};
+  labos.forEach(function (r) {
+    fiches[r.nom] = { contact: r.contact, tel: r.tel, mail: r.mail, notes: r.notes };
+  });
   return { id: syn.id, date: syn.date_synthese, recuLe: syn.recu_le,
            indicateurs: syn.indicateurs, erreurs: syn.erreurs || [],
-           seuils: seuils, labos: labos };
+           seuils: seuils, labos: labos2, fiches: fiches, propositions: propositions };
 }
 
 function routes(app, getDb, deps) {
@@ -296,6 +335,101 @@ function routes(app, getDb, deps) {
         [String(b.code), labo]);
       await db().query('INSERT INTO app_cmd_labos (nom) VALUES ($1) ON CONFLICT (nom) DO NOTHING', [labo]);
       res.json({ ok: true });
+    } catch (e) { rate(res, e); }
+  });
+
+  // ── Les laboratoires ──────────────────────────────────────────────────────
+  //
+  // FUSIONNER, C'EST AJOUTER UN ALIAS, pas effacer un nom. Le nom absorbe reste
+  // dans la liste des alias : c'est ce qui permet de defaire, et c'est ce qui
+  // fait que la synthese de demain, ou ASCA reecrira l'ancien nom, retombe sur
+  // la bonne carte.
+  app.post('/api/commandes/labo-fusion', async (req, res) => {
+    try {
+      const uid = (deps && typeof deps.qui === 'function') ? deps.qui(req) : null;
+      if (!uid) return res.status(401).json({ ok: false, error: 'session inconnue' });
+      const b = req.body || {};
+      const garde = String(b.garde || '').trim(), absorbe = String(b.absorbe || '').trim();
+      if (!garde || !absorbe || garde === absorbe)
+        return res.status(400).json({ ok: false, error: 'deux laboratoires distincts sont attendus' });
+      await db().query(
+        `INSERT INTO app_cmd_labos (nom, alias, maj) VALUES ($1, ARRAY[$2], NOW())
+         ON CONFLICT (nom) DO UPDATE
+           SET alias = (SELECT ARRAY(SELECT DISTINCT unnest(app_cmd_labos.alias || ARRAY[$2]))),
+               maj = NOW()`,
+        [garde, absorbe]);
+      // La fiche du nom absorbe n'a plus de carte : on verse ce qu'elle portait
+      // dans celle qui reste, sans ecraser ce qui y est deja.
+      await db().query(
+        `UPDATE app_cmd_labos g SET contact = COALESCE(g.contact, a.contact),
+                tel = COALESCE(g.tel, a.tel), mail = COALESCE(g.mail, a.mail),
+                notes = COALESCE(g.notes, a.notes), maj = NOW()
+           FROM app_cmd_labos a WHERE g.nom = $1 AND a.nom = $2`, [garde, absorbe]);
+      await db().query('DELETE FROM app_cmd_labos WHERE nom = $1', [absorbe]);
+      res.json({ ok: true });
+    } catch (e) { rate(res, e); }
+  });
+
+  // Dire « ce sont deux laboratoires differents » est une information, pas un
+  // refus d'agir : elle se retient, sinon la question revient chaque matin.
+  app.post('/api/commandes/labo-distincts', async (req, res) => {
+    try {
+      const uid = (deps && typeof deps.qui === 'function') ? deps.qui(req) : null;
+      if (!uid) return res.status(401).json({ ok: false, error: 'session inconnue' });
+      const b = req.body || {};
+      const p = [String(b.a || '').trim(), String(b.b || '').trim()].sort();
+      if (!p[0] || !p[1]) return res.status(400).json({ ok: false, error: 'deux noms sont attendus' });
+      await db().query(
+        `INSERT INTO app_cmd_labos_refus (a, b, par) VALUES ($1,$2,$3)
+         ON CONFLICT (a, b) DO NOTHING`, [p[0], p[1], uid]);
+      res.json({ ok: true });
+    } catch (e) { rate(res, e); }
+  });
+
+  // La fiche : de quoi appeler. On ne valide pas le numero — un standard, un
+  // portable, un poste direct, une note « demander Sophie » : tout est bon.
+  app.post('/api/commandes/labo-fiche', async (req, res) => {
+    try {
+      const uid = (deps && typeof deps.qui === 'function') ? deps.qui(req) : null;
+      if (!uid) return res.status(401).json({ ok: false, error: 'session inconnue' });
+      const b = req.body || {};
+      const nom = String(b.nom || '').trim();
+      if (!nom) return res.status(400).json({ ok: false, error: 'laboratoire requis' });
+      const t = function (v) { const x = String(v == null ? '' : v).trim(); return x ? x.slice(0, 300) : null; };
+      await db().query(
+        `INSERT INTO app_cmd_labos (nom, contact, tel, mail, notes, maj)
+         VALUES ($1,$2,$3,$4,$5,NOW())
+         ON CONFLICT (nom) DO UPDATE SET contact = $2, tel = $3, mail = $4, notes = $5, maj = NOW()`,
+        [nom, t(b.contact), t(b.tel), t(b.mail), t(b.notes)]);
+      res.json({ ok: true });
+    } catch (e) { rate(res, e); }
+  });
+
+  // Le versement en bloc d'une liste de laboratoires. Ce qui est deja renseigne
+  // n'est jamais ecrase : une liste importee ne doit pas effacer une correction
+  // faite au comptoir la semaine derniere.
+  app.post('/api/commandes/labos-import', async (req, res) => {
+    try {
+      if (deps && typeof deps.estAdmin === 'function' && !(await deps.estAdmin(req)))
+        return res.status(403).json({ ok: false, error: 'réservé aux administrateurs' });
+      const l = (req.body && req.body.labos) || [];
+      if (!Array.isArray(l) || !l.length) return res.status(400).json({ ok: false, error: 'liste vide' });
+      let n = 0;
+      for (const x of l) {
+        const nom = String((x && x.nom) || '').trim();
+        if (!nom) continue;
+        await db().query(
+          `INSERT INTO app_cmd_labos (nom, contact, tel, mail, notes, maj)
+           VALUES ($1,$2,$3,$4,$5,NOW())
+           ON CONFLICT (nom) DO UPDATE
+             SET contact = COALESCE(app_cmd_labos.contact, $2),
+                 tel     = COALESCE(app_cmd_labos.tel, $3),
+                 mail    = COALESCE(app_cmd_labos.mail, $4),
+                 notes   = COALESCE(app_cmd_labos.notes, $5), maj = NOW()`,
+          [nom, x.contact || null, x.tel || null, x.mail || null, x.notes || null]);
+        n++;
+      }
+      res.json({ ok: true, enregistres: n });
     } catch (e) { rate(res, e); }
   });
 

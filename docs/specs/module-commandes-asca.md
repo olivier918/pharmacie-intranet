@@ -244,6 +244,48 @@ la construire en V1.
 Relevé sur la synthèse du 28/09 : **66 laboratoires** pour 128 produits, aucune
 ligne orpheline.
 
+### 5.1 « Il propose, tu tranches une fois » — la règle retenue le 01/10
+
+Olivier a tranché : le module **propose** les rapprochements, il n'en décide
+aucun. Un nom lu dans ASCA n'est jamais réécrit ni effacé ; ce qu'on enregistre,
+c'est un **alias** qui pointe vers le nom retenu, appliqué **à la lecture**
+(piège #7 : aucune migration de données).
+
+Ce qui déclenche une proposition — et c'est volontairement étroit :
+`cleLabo(nom)` enlève accents, espaces et ponctuation, met en capitales, et deux
+noms ne sont proposés que si **l'une des clés est un préfixe de l'autre**, avec
+au moins `LABO_MIN = 5` caractères communs.
+
+| Paire | Proposée ? | Pourquoi |
+|---|---|---|
+| `HALEON` / `HALEON FRANCE` | oui | préfixe |
+| `NUTRICIA` / `NUTRICIA DANONE SANTE NUTRITION` | oui | préfixe |
+| `PIERRE FABRE MEDICAMENT` / `PIERRE FABRE ORAL CARE` | **non** | divergent après le préfixe commun — ce sont deux interlocuteurs |
+| `AVENE` / `AVENIR SANTE` | **non** | ni l'un ni l'autre n'est préfixe |
+
+Une distance d'édition proposerait les deux dernières. On préfère **manquer un
+rapprochement** que faire cliquer « oui » sur une confusion : c'est ainsi qu'on
+finit par valider sans lire.
+
+**Le refus se mémorise autant que la fusion** (`app_cmd_labos_refus`, paire
+triée). Sans cela le module reproposerait Pierre Fabre chaque matin.
+
+Les propositions se calculent sur les **noms bruts de toutes les lignes**
+(`nomsVus`), pas sur les cartes consolidées : un même produit porte parfois deux
+orthographes d'un tableau à l'autre et `rassembler` ne garde que la dernière —
+c'est ce qui faisait manquer NUTRICIA.
+
+### 5.2 La fiche laboratoire
+
+`app_cmd_labos` porte `contact`, `tel`, `mail`, `notes`, `maj`. L'en-tête de
+carte affiche l'interlocuteur et le téléphone en `tel:` cliquable (chiffres
+seuls), et la fiche s'ouvre et s'enregistre depuis la carte, Échap pour fermer.
+
+`POST /api/commandes/labos-import` (**administrateurs**) reçoit la liste
+d'Olivier — nom, interlocuteur, téléphone, courriel — et **n'écrase jamais** une
+valeur déjà saisie. Une fusion verse la fiche absorbée dans la survivante par
+`COALESCE` : on ne perd pas un numéro de téléphone en rapprochant deux noms.
+
 ---
 
 ## 6. Règles d'urgence — une fonction pure, éprouvée
@@ -420,6 +462,8 @@ Toutes celles qui bloquaient sont tranchées (§ 3.4). Restent, pour plus tard :
 | Lecture des PDF (`commandes-asca.js`) | **faite**, sans dépendance, 46 vérifications |
 | Urgence et consolidation | **faites**, calibrées sur les vraies données |
 | Exemples de test | **posés** dans `essais/exemples/asca/` |
-| Tables et routes | à faire |
-| Page « Commandes à passer » + import manuel | à faire |
+| Tables et routes | **faites** — six tables `app_cmd_*` + `app_cmd_labos_refus` |
+| Page « Commandes à passer » + import manuel | **faite** — 95 vérifications |
+| Laboratoires : propositions, fusion, refus, fiche | **faits** — essai en session réelle, 16/16 |
+| Liste des laboratoires d'Olivier (contacts) | en attente de la liste — `labos-import` prête |
 | Ingestion automatique du courriel | **faite** — script Google Apps + route à secret (`outils/asca-vers-pilot.gs`) |

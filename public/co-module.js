@@ -88,6 +88,9 @@
     return '<div class="co-l co-l-' + l.urgence + (tous ? ' fait' : '') + '">'
       + '<div class="co-l-h"><span class="co-l-u">' + ICO[l.urgence] + '</span>'
       +   '<span class="co-l-n">' + E(l.labo || '❓ Laboratoire à identifier') + '</span>'
+      +   coContact(l.labo)
+      +   '<button type="button" class="co-fiche" onclick="coFiche(' + coIndex(l.labo) + ')"'
+      +     ' title="Fiche du laboratoire">✎</button>'
       +   '<span class="co-l-c">' + l.produits.length + '</span></div>'
       + l.produits.map(coProduit).join('')
       + '</div>';
@@ -123,6 +126,109 @@
     return s ? (s.prenom || s.id) : (id || '');
   }
 
+  // ── Les laboratoires : rapprocher, et savoir qui appeler ──────────────────
+  //
+  // ON NE FUSIONNE JAMAIS TOUT SEUL. Le module propose, quelqu'un tranche, et
+  // la réponse — fusion comme refus — est retenue pour toujours. Un
+  // rapprochement automatique ferait appeler le mauvais service tous les jours,
+  // sans que rien ne le dise.
+  function coIndex(labo) {
+    const i = (coEtat && coEtat.labos ? coEtat.labos : []).findIndex(function (g) { return g.labo === labo; });
+    return i;
+  }
+
+  // Le numéro est cliquable : au comptoir, on ouvre la page et on appelle. Un
+  // numéro qu'il faut recopier à la main n'est pas un numéro.
+  function coContact(labo) {
+    const f = (coEtat && coEtat.fiches) ? coEtat.fiches[labo] : null;
+    if (!f || (!f.tel && !f.contact)) return '';
+    const t = f.tel ? '<a class="co-tel" href="tel:' + E(String(f.tel).replace(/[^0-9+]/g, ''))
+                    + '" onclick="event.stopPropagation()">' + E(f.tel) + '</a>' : '';
+    return '<span class="co-ct">' + (f.contact ? E(f.contact) + (t ? ' · ' : '') : '') + t + '</span>';
+  }
+
+  function coRendreRapprochements() {
+    const z = document.getElementById('co-rappr'); if (!z) return;
+    const p = (coEtat && coEtat.propositions) || [];
+    if (!p.length) { z.innerHTML = ''; return; }
+    z.innerHTML = '<div class="co-rappr-t">Ces noms d\u2019ASCA d\u00e9signent-ils le m\u00eame laboratoire&nbsp;?</div>'
+      + p.map(function (x, i) {
+          return '<div class="co-rp"><div class="co-rp-n"><b>' + E(x.garde) + '</b>'
+            + '<span>et</span><b>' + E(x.absorbe) + '</b></div>'
+            + '<div class="co-rp-a">'
+            + '<button type="button" class="btn bp sm" onclick="coFusionner(' + i + ')">'
+            +   'Oui, un seul</button>'
+            + '<button type="button" class="btn bs sm" onclick="coDistincts(' + i + ')">'
+            +   'Non, deux</button></div></div>';
+        }).join('')
+      + '<div class="co-rappr-p">Une fois tranch\u00e9, la question ne reviendra plus \u2014 '
+      + 'dans un sens comme dans l\u2019autre.</div>';
+  }
+
+  window.coFusionner = async function (i) {
+    const x = (coEtat.propositions || [])[i]; if (!x) return;
+    await coEnvoyer('/api/commandes/labo-fusion', { garde: x.garde, absorbe: x.absorbe },
+      '« ' + x.absorbe + ' » rejoint « ' + x.garde + ' ».');
+  };
+  window.coDistincts = async function (i) {
+    const x = (coEtat.propositions || [])[i]; if (!x) return;
+    await coEnvoyer('/api/commandes/labo-distincts', { a: x.garde, b: x.absorbe },
+      'Ce sont bien deux laboratoires. On ne le redemandera plus.');
+  };
+
+  async function coEnvoyer(url, charge, mot) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                   body: JSON.stringify(charge) });
+      const j = await r.json();
+      if (!j.ok) { coMsg(j.error || 'refusé', true); return false; }
+      await coCharger(); window.coRender();
+      coMsg(mot, false);
+      return true;
+    } catch (e) { coMsg('Enregistrement impossible : ' + e.message, true); return false; }
+  }
+
+  // ── La fiche : de quoi appeler ────────────────────────────────────────────
+  window.coFiche = function (i) {
+    const g = (coEtat.labos || [])[i]; if (!g || !g.labo) return;
+    const f = (coEtat.fiches && coEtat.fiches[g.labo]) || {};
+    let ov = document.getElementById('co-ov');
+    if (!ov) { ov = document.createElement('div'); ov.id = 'co-ov'; document.body.appendChild(ov); }
+    ov.className = 'co-ov on';
+    ov.innerHTML = '<div class="co-ov-b" role="dialog" aria-label="Fiche du laboratoire">'
+      + '<div class="co-ov-h"><b>' + E(g.labo) + '</b>'
+      +   '<button type="button" class="co-ov-x" onclick="coFicheFermer()" aria-label="Fermer">×</button></div>'
+      + '<label>Interlocuteur</label><input type="text" id="co-f-contact" maxlength="300" value="'
+      +   E(f.contact || '') + '" placeholder="Nom de la personne à demander">'
+      + '<label>Téléphone</label><input type="tel" id="co-f-tel" maxlength="300" value="'
+      +   E(f.tel || '') + '" placeholder="02 31 …">'
+      + '<label>Courriel</label><input type="email" id="co-f-mail" maxlength="300" value="'
+      +   E(f.mail || '') + '" placeholder="commandes@…">'
+      + '<label>Notes</label><textarea id="co-f-notes" maxlength="300" rows="3"'
+      +   ' placeholder="Jours de commande, franco, particularités…">' + E(f.notes || '') + '</textarea>'
+      + '<div class="co-ov-a"><button class="btn bs" onclick="coFicheFermer()">Annuler</button>'
+      +   '<button class="btn bp" onclick="coFicheEnregistrer(' + i + ')">Enregistrer</button></div>'
+      + '</div>';
+    ov.onmousedown = function (ev) { if (ev.target === ov) coFicheFermer(); };
+    document.addEventListener('keydown', coFicheEchap, true);
+    const c = document.getElementById('co-f-contact'); if (c) c.focus();
+  };
+  function coFicheEchap(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); coFicheFermer(); } }
+  window.coFicheFermer = function () {
+    const ov = document.getElementById('co-ov');
+    if (ov) { ov.className = 'co-ov'; ov.innerHTML = ''; }
+    document.removeEventListener('keydown', coFicheEchap, true);
+  };
+  window.coFicheEnregistrer = async function (i) {
+    const g = (coEtat.labos || [])[i]; if (!g) return;
+    const v = function (id) { const e = document.getElementById(id); return e ? e.value : ''; };
+    const ok = await coEnvoyer('/api/commandes/labo-fiche', {
+      nom: g.labo, contact: v('co-f-contact'), tel: v('co-f-tel'),
+      mail: v('co-f-mail'), notes: v('co-f-notes')
+    }, 'Fiche de « ' + g.labo + ' » enregistrée.');
+    if (ok) coFicheFermer();
+  };
+
   // ── Le rendu ──────────────────────────────────────────────────────────────
   window.coRender = function () {
     const z = document.getElementById('co-liste');
@@ -134,6 +240,7 @@
         + 'il n’y a rien à saisir.</div>';
       return;
     }
+    coRendreRapprochements();
     const q = coFiltre.trim().toLowerCase();
     const l = coEtat.labos.filter(function (g) {
       if (coUrgence && g.urgence !== coUrgence) return false;
@@ -249,6 +356,7 @@
   +     '</div></div>'
   +   '<div id="co-msg" class="co-msg"></div>'
   +   '<div id="co-entete"></div>'
+  +   '<div id="co-rappr" class="co-rappr"></div>'
   +   '<div class="fbar"><input type="text" id="co-q" class="ctl-search" data-rc="recherche"'
   +     ' placeholder="Rechercher un laboratoire ou un produit…" oninput="coChercher()"'
   +     ' style="flex:1;min-width:200px"></div>'
@@ -286,6 +394,45 @@
   .co-l-h{display:flex;align-items:center;gap:9px;padding:10px 13px;background:#fafbfa;
     border-bottom:1px solid #eef2f0}
   .co-l-n{font-weight:700;font-size:.95rem;flex:1;min-width:0}
+  /* Le bloc de rapprochement se pose en haut, et il disparait des qu'il n'y a
+     plus rien a trancher : une question posee une fois ne doit pas devenir un
+     meuble. */
+  .co-rappr:not(:empty){background:#FFF8E1;border:1px solid #E6C34A;border-radius:11px;
+    padding:13px 15px;margin-bottom:12px}
+  .co-rappr-t{font-size:.88rem;font-weight:700;color:#6b4e00;margin-bottom:10px}
+  .co-rp{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:7px 0;
+    border-top:1px solid #f0e2b4}
+  .co-rp:first-of-type{border-top:none}
+  .co-rp-n{flex:1;min-width:200px;font-size:.86rem;display:flex;gap:7px;flex-wrap:wrap;align-items:baseline}
+  .co-rp-n span{color:#8a7a4a;font-style:italic}
+  .co-rp-a{display:flex;gap:6px;flex:none}
+  .co-rappr-p{margin-top:10px;font-size:.76rem;color:#8a7a4a}
+  /* L'interlocuteur et son numero vivent dans l'en-tete de la carte : c'est la
+     qu'on regarde au moment de decrocher. */
+  .co-ct{font-size:.76rem;color:var(--gray-500,#6b7280);flex:none}
+  .co-tel{color:var(--g-dark,#1D5C3A);font-weight:600;text-decoration:none}
+  .co-tel:hover{text-decoration:underline}
+  .co-fiche{flex:none;border:none;background:none;color:#ccd6d0;cursor:pointer;
+    font-size:.86rem;padding:3px 5px;border-radius:6px;line-height:1}
+  .co-fiche:hover{color:var(--g-dark,#1D5C3A);background:var(--g-pale,#E8F5E9)}
+  .co-fiche:focus-visible{outline:2px solid var(--g-mid,#2E7D54);outline-offset:1px}
+  .co-ov{display:none;position:fixed;inset:0;background:rgba(17,24,20,.5);z-index:1000;
+    align-items:center;justify-content:center;padding:18px}
+  .co-ov.on{display:flex}
+  .co-ov-b{background:#fff;border-radius:14px;padding:20px 22px;width:min(440px,94vw);
+    max-height:88vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+  .co-ov-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .co-ov-h b{font-size:1rem}
+  .co-ov-x{background:none;border:none;font-size:1.5rem;line-height:1;cursor:pointer;
+    color:var(--gray-500,#6b7280);padding:0 4px}
+  .co-ov-b label{display:block;font-size:.74rem;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--gray-500,#6b7280);margin:12px 0 4px}
+  .co-ov-b input,.co-ov-b textarea{width:100%;padding:10px 12px;border:1px solid var(--gray-200,#e5e7eb);
+    border-radius:9px;font:inherit;font-size:.9rem;box-sizing:border-box}
+  .co-ov-b input:focus,.co-ov-b textarea:focus{outline:none;border-color:var(--g-mid,#2E7D54);
+    box-shadow:0 0 0 3px var(--g-pale,#E8F5E9)}
+  .co-ov-a{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+  @media print{.co-rappr,.co-fiche,.co-ov{display:none}}
   .co-l-c{font-size:.75rem;color:var(--gray-500,#6b7280);background:#fff;border:1px solid #e7ece9;
     border-radius:999px;padding:1px 8px}
   .co-p{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid #f2f5f3}

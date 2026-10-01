@@ -73,7 +73,10 @@ t('un seuil « à commander » supérieur au seuil urgent est refusé',
 console.log('\nLes synthèses restent hors du blob');
 t('le module a ses propres tables', /CREATE TABLE IF NOT EXISTS app_cmd_syntheses/.test(sv));
 t('... créées au démarrage, sans système de migrations',
-  /creerTables/.test(sv) && !/migration/i.test(sv));
+  /creerTables/.test(sv)
+  && !/schema_migrations|migrations\//i.test(sv));
+t('une colonne qui arrive plus tard s’ajoute sans toucher aux données',
+  /ALTER TABLE app_cmd_labos ADD COLUMN IF NOT EXISTS/.test(sv));
 t('aucune rubrique n’est ajoutée au blob',
   !/SYNCED_COLLS/.test(sv) && !/_collRef\('commandes/.test(co));
 t('l’écran lit l’équipe par _collRef — piège #8', /_collRef\('staffDB'\)/.test(co));
@@ -179,6 +182,78 @@ t('la fonction est déclarée dès la LIGNE 1 : même un collage partiel la mont
 t('aucun commentaire de bloc, qui est ce qui avait cassé', !/\/\*/.test(gs));
 t('le mode d’emploi vit dans EXPLOITATION.md, pas dans le fichier à coller',
   /asca-vers-pilot/.test(fs.readFileSync(path.join(__dirname,'..','EXPLOITATION.md'),'utf8')));
+
+// ── LES LABORATOIRES ────────────────────────────────────────────────────────
+// ASCA ecrit parfois le meme laboratoire de deux facons. Deux cartes pour un
+// seul interlocuteur, c'est deux appels — et un rapprochement fait tout seul,
+// c'est le mauvais service appele tous les jours.
+console.log('\nRapprocher deux laboratoires');
+const H1 = 'HALEON GLAXOSMITHKLINE', H2 = 'HALEON GLAXOSMITHKLINE SANTE GP';
+const PF1 = 'PIERRE FABRE MEDICAMENT', PF2 = 'PIERRE FABRE ORAL CARE';
+const noms = [H1, H2, PF1, PF2, 'AVENE', 'AVENIR SANTE', 'A-DERMA'];
+const pr = A.rapprochements(noms, []);
+t('un nom suivi d’une précision est proposé', pr.length === 1 && pr[0].garde === H1 && pr[0].absorbe === H2);
+// LA RAISON D'ETRE DE TOUT CECI : deux divisions d'un meme groupe se
+// ressemblent autant que deux ecritures d'un meme labo.
+t('deux divisions d’un même groupe ne sont PAS proposées — aucun des deux noms '
+  + 'ne commence par l’autre', !pr.some(x => x.garde === PF1 || x.absorbe === PF2));
+t('« AVENE » et « AVENIR SANTE » ne sont pas confondus',
+  !pr.some(x => /AVEN/.test(x.garde) || /AVEN/.test(x.absorbe)));
+t('un nom trop court ne déclenche rien', A.rapprochements(['ABC', 'ABCDEF'], []).length === 0);
+t('un refus déjà exprimé fait taire la question',
+  A.rapprochements(noms, [[H1, H2]]).length === 0);
+t('... quel que soit l’ordre où il a été enregistré',
+  A.rapprochements(noms, [[H2, H1]]).length === 0);
+t('la casse et les accents ne changent rien', A.cleLabo('Hélon-Santé ') === 'HELONSANTE');
+t('le nom le plus COURT est proposé comme nom retenu — c’est le tronc commun',
+  pr[0].garde.length < pr[0].absorbe.length);
+t('une liste vide ne casse rien', A.rapprochements(null, null).length === 0);
+
+console.log('\nLe nom retenu s’applique à la LECTURE');
+const LAB = [{ nom: H1, alias: [H2] }];
+t('un alias retombe sur le nom retenu', A.nomRetenu(H2, LAB) === H1);
+t('le nom retenu reste lui-même', A.nomRetenu(H1, LAB) === H1);
+t('un laboratoire inconnu passe tel quel', A.nomRetenu('BAYER', LAB) === 'BAYER');
+t('sans table, rien ne change', A.nomRetenu('BAYER', []) === 'BAYER');
+// PIEGE #7 : la traduction se fait a la lecture, les lignes enregistrees
+// gardent le nom qu'ASCA a ecrit — sinon defaire deviendrait impossible.
+t('les lignes enregistrées ne sont jamais réécrites',
+  /nomRetenu\(x\.labo, labos\)/.test(sv) && !/UPDATE app_cmd_lignes SET labo/.test(sv));
+
+// CE QUE L'ESSAI EN SESSION REELLE A TROUVE : un meme produit peut porter deux
+// orthographes selon le tableau. Le rassemblement par code n'en garde qu'une,
+// et la variante disparait avant qu'on ait pu proposer de les rapprocher.
+t('les propositions se calculent sur les noms LUS, pas sur les cartes',
+  /const nomsVus = new Set\(\)/.test(sv) && /A\.rapprochements\(\[\.\.\.nomsVus\]/.test(sv));
+
+console.log('\nFusionner, refuser, et la fiche');
+t('fusionner AJOUTE un alias, n’efface pas un nom — c’est ce qui permet de défaire',
+  /INSERT INTO app_cmd_labos \(nom, alias, maj\)/.test(sv) && /unnest\(app_cmd_labos\.alias/.test(sv));
+t('la fiche du nom absorbé est versée dans celle qui reste, sans rien écraser',
+  /COALESCE\(g\.contact, a\.contact\)/.test(sv));
+t('un refus se mémorise — sinon la question revient chaque matin',
+  /INSERT INTO app_cmd_labos_refus/.test(sv));
+t('... et la paire est rangée dans un ordre fixe, pour ne pas la stocker deux fois',
+  /\.sort\(\);\s*\n\s*if \(!p\[0\] \|\| !p\[1\]\)/.test(sv));
+t('fusionner et refuser demandent une session', 
+  (sv.match(/session inconnue/g) || []).length >= 4);
+t('un import en bloc n’écrase jamais ce qui est déjà renseigné',
+  /COALESCE\(app_cmd_labos\.contact, \$2\)/.test(sv));
+t('... et il est réservé aux administrateurs',
+  /labos-import[\s\S]{0,300}réservé aux administrateurs/.test(sv));
+t('les colonnes manquantes sont ajoutées sans toucher aux données',
+  /ADD COLUMN IF NOT EXISTS/.test(sv));
+
+console.log('\nCe qu’on voit sur la carte');
+t('le numéro s’affiche dans l’en-tête, là où on regarde avant de décrocher',
+  /function coContact/.test(co));
+t('... et il est cliquable, débarrassé de ses espaces',
+  /href="tel:' \+ E\(String\(f\.tel\)\.replace\(\/\[\^0-9\+\]\/g, ''\)\)/.test(co));
+t('le bloc de rapprochement s’efface quand il n’y a plus rien à trancher',
+  /if \(!p\.length\) \{ z\.innerHTML = ''; return; \}/.test(co));
+t('la fiche se ferme avec Échap', /function coFicheEchap/.test(co));
+t('un gestionnaire ne reçoit jamais de texte saisi, seulement un indice',
+  /onclick="coFusionner\(' \+ i \+ '\)/.test(co) && /onclick="coFiche\(' \+ coIndex/.test(co));
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

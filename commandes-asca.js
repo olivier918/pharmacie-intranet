@@ -304,6 +304,65 @@ function vientDAsca(texte, expediteur) {
   return t.indexOf(a) >= 0 || String(expediteur || '').toLowerCase().indexOf(a) >= 0;
 }
 
+// ── 4 ter. Les laboratoires qui n'en font qu'un ──────────────────────────────
+//
+// ASCA écrit le laboratoire tel qu'il l'a en base, et il l'écrit parfois de deux
+// façons : « HALEON GLAXOSMITHKLINE » un jour, « HALEON GLAXOSMITHKLINE SANTE
+// GP » le lendemain. Deux cartes pour un seul interlocuteur, c'est deux appels.
+//
+// ON NE FUSIONNE JAMAIS TOUT SEUL. « PIERRE FABRE MEDICAMENT » et « PIERRE
+// FABRE ORAL CARE » se ressemblent autant que les deux précédents, et ce sont
+// pourtant peut-être deux services, deux commandes, deux numéros. Rapprocher
+// sur la ressemblance ferait appeler le mauvais service — tous les jours, et
+// sans que rien ne le dise. Le module PROPOSE, quelqu'un tranche, et la
+// réponse est retenue pour toujours : c'est déjà ce que font les patients et
+// les médecins avec leurs alias.
+function cleLabo(nom) {
+  return sansAccent(nom).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// Deux noms sont PROPOSÉS au rapprochement quand l'un commence par l'autre.
+// C'est la forme qu'ont toutes les variantes d'ASCA : un nom, puis le même
+// nom suivi d'une précision. En dessous de cinq caractères communs, on se
+// tait : « AVENE » et « AVENIR » n'ont rien à voir.
+const LABO_MIN = 5;
+function rapprochements(noms, refus) {
+  const nie = new Set((refus || []).map(function (r) {
+    return [cleLabo(r[0]), cleLabo(r[1])].sort().join('|');
+  }));
+  const l = [...new Set((noms || []).filter(Boolean))]
+    .map(function (n) { return { nom: n, cle: cleLabo(n) }; })
+    .filter(function (x) { return x.cle.length >= LABO_MIN; })
+    .sort(function (a, b) { return a.cle.length - b.cle.length; });
+  const out = [];
+  for (let i = 0; i < l.length; i++) {
+    for (let j = i + 1; j < l.length; j++) {
+      if (l[i].cle === l[j].cle) continue;
+      if (l[j].cle.indexOf(l[i].cle) !== 0) continue;
+      if (nie.has([l[i].cle, l[j].cle].sort().join('|'))) continue;
+      // Le plus court est propose comme nom retenu : c'est le tronc commun,
+      // et c'est celui qu'on reconnait d'un coup d'oeil sur une carte.
+      out.push({ garde: l[i].nom, absorbe: l[j].nom });
+    }
+  }
+  return out;
+}
+
+// Le nom retenu pour un nom lu dans un PDF. La traduction se fait À LA LECTURE
+// (piège #7) : on ne réécrit jamais les lignes déjà enregistrées, sans quoi
+// défaire un rapprochement deviendrait impossible.
+function nomRetenu(nom, labos) {
+  if (!nom) return nom;
+  const c = cleLabo(nom);
+  const l = labos || [];
+  for (let i = 0; i < l.length; i++) {
+    if (cleLabo(l[i].nom) === c) return l[i].nom;
+    const a = l[i].alias || [];
+    for (let j = 0; j < a.length; j++) if (cleLabo(a[j]) === c) return l[i].nom;
+  }
+  return nom;
+}
+
 // ── 5. De trois tableaux à une liste par laboratoire ─────────────────────────
 
 // LES SEUILS SONT EN VENTES PAR MOIS. `Moy.Vte` est un rythme MENSUEL, établi
@@ -403,4 +462,5 @@ module.exports = { fluxTexte, detexte, morceaux, lignes, colonnes, decouper,
                    estLabo, estPied, dateSynthese, analyser, verifier, nombre,
                    SCHEMAS, LIGNE_TOL, SEUILS, ORDRE,
                    rassembler, urgence, consolider, dateFr, jours,
-                   lireIndicateurs, vientDAsca, sansAccent, ASCA_EXPEDITEUR };
+                   lireIndicateurs, vientDAsca, sansAccent, ASCA_EXPEDITEUR,
+                   cleLabo, rapprochements, nomRetenu, LABO_MIN };
