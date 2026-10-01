@@ -57,11 +57,17 @@ async function creerTables(db) {
       tel     TEXT,
       mail    TEXT,
       notes   TEXT,
+      operateurs TEXT[] NOT NULL DEFAULT '{}',
       maj     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-  // Une base existante n'a pas les trois dernieres colonnes : on les ajoute
+  // Une base existante n'a pas les colonnes ajoutees apres coup : on les pose
   // sans toucher aux donnees. Il n'y a pas de systeme de migrations ici.
-  for (const c of ["tel TEXT", "mail TEXT", "maj TIMESTAMPTZ NOT NULL DEFAULT NOW()"]) {
+  //
+  // operateurs : QUI APPELLE CE LABORATOIRE. Un tableau, sans hierarchie --
+  // decision d'Olivier du 01/10. Le tableau VIDE n'est pas une absence de
+  // reponse : il veut dire « a attribuer », et la page le dit en orange.
+  for (const c of ["tel TEXT", "mail TEXT", "maj TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+                   "operateurs TEXT[] NOT NULL DEFAULT '{}'"]) {
     await db.query('ALTER TABLE app_cmd_labos ADD COLUMN IF NOT EXISTS ' + c);
   }
   // LE REFUS SE MEMORISE AUTANT QUE LA FUSION. Sans lui, le module reproposerait
@@ -217,7 +223,7 @@ async function consolidee(db, id) {
   // Les laboratoires retenus, et leurs alias. LA TRADUCTION SE FAIT ICI, A LA
   // LECTURE (piege #7) : les lignes enregistrees gardent le nom qu'ASCA a
   // ecrit, sinon defaire un rapprochement deviendrait impossible.
-  const lab = await db.query('SELECT nom, alias, contact, tel, mail, notes FROM app_cmd_labos');
+  const lab = await db.query('SELECT nom, alias, contact, tel, mail, notes, operateurs FROM app_cmd_labos');
   const labos = lab.rows;
   // ON RETIENT TOUS LES NOMS LUS, pas seulement ceux qui finiront en carte. Un
   // meme produit peut porter deux orthographes selon le tableau d'ASCA ; le
@@ -248,7 +254,8 @@ async function consolidee(db, id) {
     refus.rows.map(function (r) { return [r.a, r.b]; }));
   const fiches = {};
   labos.forEach(function (r) {
-    fiches[r.nom] = { contact: r.contact, tel: r.tel, mail: r.mail, notes: r.notes };
+    fiches[r.nom] = { contact: r.contact, tel: r.tel, mail: r.mail, notes: r.notes,
+                      operateurs: r.operateurs || [] };
   });
   return { id: syn.id, date: syn.date_synthese, recuLe: syn.recu_le,
            indicateurs: syn.indicateurs, erreurs: syn.erreurs || [],
@@ -363,7 +370,10 @@ function routes(app, getDb, deps) {
       await db().query(
         `UPDATE app_cmd_labos g SET contact = COALESCE(g.contact, a.contact),
                 tel = COALESCE(g.tel, a.tel), mail = COALESCE(g.mail, a.mail),
-                notes = COALESCE(g.notes, a.notes), maj = NOW()
+                notes = COALESCE(g.notes, a.notes),
+                operateurs = CASE WHEN cardinality(g.operateurs) = 0
+                                  THEN a.operateurs ELSE g.operateurs END,
+                maj = NOW()
            FROM app_cmd_labos a WHERE g.nom = $1 AND a.nom = $2`, [garde, absorbe]);
       await db().query('DELETE FROM app_cmd_labos WHERE nom = $1', [absorbe]);
       res.json({ ok: true });
@@ -405,6 +415,38 @@ function routes(app, getDb, deps) {
     } catch (e) { rate(res, e); }
   });
 
+  // ── QUI APPELLE QUI ───────────────────────────────────────────────────────
+  //
+  // L'ATTRIBUTION EST UNE DECISION D'ORGANISATION : elle reste aux
+  // administrateurs, comme les seuils. L'equipe voit chez qui elle doit
+  // appeler, elle ne se repartit pas le travail toute seule -- sinon un
+  // laboratoire penible finirait par n'etre a personne.
+  //
+  // Un tableau vide est une reponse valable : « a attribuer ». On accepte donc
+  // de vider, et la page le signale en orange au lieu de le taire.
+  app.post('/api/commandes/labo-operateurs', async (req, res) => {
+    try {
+      if (deps && typeof deps.estAdmin === 'function' && !(await deps.estAdmin(req)))
+        return res.status(403).json({ ok: false, error: 'réservé aux administrateurs' });
+      const b = req.body || {};
+      const nom = String(b.nom || '').trim();
+      if (!nom) return res.status(400).json({ ok: false, error: 'laboratoire requis' });
+      if (!Array.isArray(b.operateurs))
+        return res.status(400).json({ ok: false, error: 'liste d’opérateurs attendue' });
+      // Des identifiants de collaborateur, pas du texte libre : deux lettres
+      // comme « OF ». On deduplique et on borne, le reste est refuse en
+      // silence plutot que stocke.
+      const ops = [...new Set(b.operateurs
+        .map(function (x) { return String(x == null ? '' : x).trim().toUpperCase(); })
+        .filter(function (x) { return x && x.length <= 8; }))].slice(0, 20);
+      await db().query(
+        `INSERT INTO app_cmd_labos (nom, operateurs, maj) VALUES ($1,$2,NOW())
+         ON CONFLICT (nom) DO UPDATE SET operateurs = $2, maj = NOW()`,
+        [nom, ops]);
+      res.json({ ok: true, operateurs: ops });
+    } catch (e) { rate(res, e); }
+  });
+
   // Le versement en bloc d'une liste de laboratoires. Ce qui est deja renseigne
   // n'est jamais ecrase : une liste importee ne doit pas effacer une correction
   // faite au comptoir la semaine derniere.
@@ -418,15 +460,25 @@ function routes(app, getDb, deps) {
       for (const x of l) {
         const nom = String((x && x.nom) || '').trim();
         if (!nom) continue;
+        // La liste peut porter l'attribution : c'est le seul moyen de repartir
+        // soixante-six laboratoires sans ouvrir soixante-six fiches. Elle ne
+        // remplace jamais une attribution deja faite.
+        const ops = Array.isArray(x.operateurs)
+          ? [...new Set(x.operateurs.map(function (v) { return String(v || '').trim().toUpperCase(); })
+              .filter(function (v) { return v && v.length <= 8; }))].slice(0, 20)
+          : [];
         await db().query(
-          `INSERT INTO app_cmd_labos (nom, contact, tel, mail, notes, maj)
-           VALUES ($1,$2,$3,$4,$5,NOW())
+          `INSERT INTO app_cmd_labos (nom, contact, tel, mail, notes, operateurs, maj)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW())
            ON CONFLICT (nom) DO UPDATE
              SET contact = COALESCE(app_cmd_labos.contact, $2),
                  tel     = COALESCE(app_cmd_labos.tel, $3),
                  mail    = COALESCE(app_cmd_labos.mail, $4),
-                 notes   = COALESCE(app_cmd_labos.notes, $5), maj = NOW()`,
-          [nom, x.contact || null, x.tel || null, x.mail || null, x.notes || null]);
+                 notes   = COALESCE(app_cmd_labos.notes, $5),
+                 operateurs = CASE WHEN cardinality(app_cmd_labos.operateurs) = 0
+                                   THEN $6 ELSE app_cmd_labos.operateurs END,
+                 maj = NOW()`,
+          [nom, x.contact || null, x.tel || null, x.mail || null, x.notes || null, ops]);
         n++;
       }
       res.json({ ok: true, enregistres: n });

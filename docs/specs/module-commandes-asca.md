@@ -275,7 +275,50 @@ Les propositions se calculent sur les **noms bruts de toutes les lignes**
 orthographes d'un tableau à l'autre et `rassembler` ne garde que la dernière —
 c'est ce qui faisait manquer NUTRICIA.
 
-### 5.2 La fiche laboratoire
+### 5.2 Qui appelle quel laboratoire — tranché le 01/10
+
+Chaque laboratoire porte un ou **plusieurs opérateurs, sans hiérarchie**
+(`app_cmd_labos.operateurs TEXT[]`, des identifiants de collaborateur comme
+`OF`). Décisions d'Olivier :
+
+| Question | Réponse |
+|---|---|
+| Combien par laboratoire | plusieurs, sans hiérarchie |
+| Un laboratoire que personne n'a pris | revient **aux administrateurs**, et la carte l'affiche **« à attribuer » en orange** |
+| Qui attribue | **les administrateurs seulement** — c'est une décision d'organisation, comme les seuils |
+| Ce qu'on voit en arrivant | **« Mes laboratoires » d'emblée**, tout le reste replié derrière |
+
+Un tableau vide n'est donc pas une absence de réponse : il veut dire « à
+attribuer », et la page le dit plutôt que de le taire — sinon la liste des
+non-attribués ne se viderait jamais.
+
+**Le prix de cette vue, et comment il se paie.** Ouvrir sur sa propre tournée
+fait courir un risque qu'Olivier avait vu : *un laboratoire urgent attribué à un
+absent peut passer inaperçu*. Trois garde-fous :
+
+1. une ligne rouge au-dessus du repli nomme les laboratoires **pressés (rouge ou
+   relance) qui ne sont pas à vous**, avec un bouton « Voir » ;
+2. le replieur lui-même annonce « dont *n* pressé(s) » ;
+3. **l'impression ne tronque rien** : un `beforeprint` déplie tout, sinon la
+   feuille qu'on emporte au téléphone mentirait par omission.
+
+**Chercher donne une liste à plat.** Une recherche ou un filtre d'urgence
+abandonne le regroupement : on cherche un laboratoire précis, pas sa tournée.
+
+**Quand rien ne m'est attribué**, le repli est ouvert d'emblée et la page le dit
+en clair — un préparateur ne doit pas tomber sur un écran vide.
+
+L'attribution se fait par cases à cocher dans la fiche, et **seuls les
+administrateurs les voient** : on ne grise pas des cases qu'on ne peut pas
+cocher, une case inerte invite à cliquer et n'explique rien. Les autres lisent
+une phrase. `labos-import` accepte aussi un champ `operateurs` — c'est le seul
+moyen de répartir soixante-six laboratoires sans ouvrir soixante-six fiches — et
+ne remplace jamais une attribution déjà faite.
+
+Une fusion de deux noms conserve l'attribution : si le survivant n'a pas
+d'opérateur, il hérite de celle du nom absorbé.
+
+### 5.3 La fiche laboratoire
 
 `app_cmd_labos` porte `contact`, `tel`, `mail`, `notes`, `maj`. L'en-tête de
 carte affiche l'interlocuteur et le téléphone en `tel:` cliquable (chiffres
@@ -465,5 +508,6 @@ Toutes celles qui bloquaient sont tranchées (§ 3.4). Restent, pour plus tard :
 | Tables et routes | **faites** — six tables `app_cmd_*` + `app_cmd_labos_refus` |
 | Page « Commandes à passer » + import manuel | **faite** — 95 vérifications |
 | Laboratoires : propositions, fusion, refus, fiche | **faits** — essai en session réelle, 16/16 |
+| Attribution à un opérateur + vue « mes laboratoires » | **faite** — 130 vérifications, regroupement éprouvé sur la vraie fonction |
 | Liste des laboratoires d'Olivier (contacts) | en attente de la liste — `labos-import` prête |
 | Ingestion automatique du courriel | **faite** — script Google Apps + route à secret (`outils/asca-vers-pilot.gs`) |

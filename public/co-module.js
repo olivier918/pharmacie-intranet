@@ -19,7 +19,10 @@
   const MOT = { rouge: 'urgent', orange: 'à commander', gris: 'pas pressé', relance: 'à relancer' };
   const ORDRE = ['rouge', 'orange', 'gris', 'relance'];
 
-  let coEtat = null, coFiltre = '', coUrgence = '';
+  // coAutres reste a null tant que personne n'a touche au replieur : on en
+  // deduit l'etat d'ouverture au moment du rendu, selon qu'on a ou non des
+  // laboratoires a soi.
+  let coEtat = null, coFiltre = '', coUrgence = '', coAutres = null;
 
   function E(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
@@ -88,6 +91,7 @@
     return '<div class="co-l co-l-' + l.urgence + (tous ? ' fait' : '') + '">'
       + '<div class="co-l-h"><span class="co-l-u">' + ICO[l.urgence] + '</span>'
       +   '<span class="co-l-n">' + E(l.labo || '❓ Laboratoire à identifier') + '</span>'
+      +   coBadgeOps(l.labo)
       +   coContact(l.labo)
       +   '<button type="button" class="co-fiche" onclick="coFiche(' + coIndex(l.labo) + ')"'
       +     ' title="Fiche du laboratoire">✎</button>'
@@ -120,10 +124,34 @@
       + '</div></div>';
   }
 
+  function coEquipe() {
+    return (typeof window._collRef === 'function' ? window._collRef('staffDB') : null) || [];
+  }
   function coPrenom(id) {
-    const l = (typeof window._collRef === 'function' ? window._collRef('staffDB') : null) || [];
-    const s = l.find(function (x) { return x && x.id === id; });
+    const s = coEquipe().find(function (x) { return x && x.id === id; });
     return s ? (s.prenom || s.id) : (id || '');
+  }
+
+  // ── QUI APPELLE CE LABORATOIRE ────────────────────────────────────────────
+  //
+  // Un laboratoire sans opérateur n'est pas orphelin : il revient aux
+  // administrateurs — décision d'Olivier. Mais la carte le dit en orange
+  // plutôt que de le taire, pour qu'on finisse par vider cette liste.
+  function coOps(labo) {
+    const f = (coEtat && coEtat.fiches) ? coEtat.fiches[labo] : null;
+    return (f && Array.isArray(f.operateurs)) ? f.operateurs : [];
+  }
+  function coAMoi(labo) {
+    const u = coUser(); if (!u) return false;
+    const o = coOps(labo);
+    return o.length ? o.indexOf(u.id) >= 0 : coAdmin();
+  }
+  function coBadgeOps(labo) {
+    const o = coOps(labo);
+    if (!o.length) return '<span class="co-op0" title="Personne n’est désigné : '
+      + 'c’est aux administrateurs">à attribuer</span>';
+    return '<span class="co-opn">' + o.map(function (x) { return E(coPrenom(x)); }).join(' · ')
+      + '</span>';
   }
 
   // ── Les laboratoires : rapprocher, et savoir qui appeler ──────────────────
@@ -176,12 +204,17 @@
       'Ce sont bien deux laboratoires. On ne le redemandera plus.');
   };
 
+  async function coPost(url, charge) {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify(charge) });
+    const j = await r.json();
+    if (!j || !j.ok) throw new Error((j && j.error) || 'refusé');
+    return j;
+  }
+
   async function coEnvoyer(url, charge, mot) {
     try {
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                   body: JSON.stringify(charge) });
-      const j = await r.json();
-      if (!j.ok) { coMsg(j.error || 'refusé', true); return false; }
+      await coPost(url, charge);
       await coCharger(); window.coRender();
       coMsg(mot, false);
       return true;
@@ -206,6 +239,7 @@
       +   E(f.mail || '') + '" placeholder="commandes@…">'
       + '<label>Notes</label><textarea id="co-f-notes" maxlength="300" rows="3"'
       +   ' placeholder="Jours de commande, franco, particularités…">' + E(f.notes || '') + '</textarea>'
+      + coFicheOps(f)
       + '<div class="co-ov-a"><button class="btn bs" onclick="coFicheFermer()">Annuler</button>'
       +   '<button class="btn bp" onclick="coFicheEnregistrer(' + i + ')">Enregistrer</button></div>'
       + '</div>';
@@ -213,6 +247,29 @@
     document.addEventListener('keydown', coFicheEchap, true);
     const c = document.getElementById('co-f-contact'); if (c) c.focus();
   };
+  // QUI APPELLE : des cases à cocher pour les administrateurs, une phrase pour
+  // les autres. On ne grise pas des cases qu'on ne peut pas cocher — une case
+  // inerte invite à cliquer et n'explique rien.
+  function coFicheOps(f) {
+    const o = Array.isArray(f.operateurs) ? f.operateurs : [];
+    if (!coAdmin()) {
+      return '<label>Qui appelle</label><div class="co-op-lu">'
+        + (o.length ? o.map(function (x) { return E(coPrenom(x)); }).join(' · ')
+                    : 'Personne n’est désigné : c’est aux administrateurs.')
+        + '</div>';
+    }
+    const eq = coEquipe().filter(function (x) { return x && x.id; });
+    return '<label>Qui appelle ce laboratoire</label><div id="co-f-ops" class="co-ops">'
+      + (eq.length ? eq.map(function (x) {
+            return '<label class="co-op"><input type="checkbox" data-uid="' + E(x.id) + '"'
+              + (o.indexOf(x.id) >= 0 ? ' checked' : '') + '> '
+              + E(x.prenom || x.id) + '</label>';
+          }).join('')
+        : '<div class="co-op-lu">L’équipe n’est pas encore chargée.</div>')
+      + '</div><div class="co-ops-p">Si personne n’est coché, le laboratoire reste '
+      + 'aux administrateurs et la carte affiche « à attribuer ».</div>';
+  }
+
   function coFicheEchap(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); coFicheFermer(); } }
   window.coFicheFermer = function () {
     const ov = document.getElementById('co-ov');
@@ -222,11 +279,25 @@
   window.coFicheEnregistrer = async function (i) {
     const g = (coEtat.labos || [])[i]; if (!g) return;
     const v = function (id) { const e = document.getElementById(id); return e ? e.value : ''; };
-    const ok = await coEnvoyer('/api/commandes/labo-fiche', {
-      nom: g.labo, contact: v('co-f-contact'), tel: v('co-f-tel'),
-      mail: v('co-f-mail'), notes: v('co-f-notes')
-    }, 'Fiche de « ' + g.labo + ' » enregistrée.');
-    if (ok) coFicheFermer();
+    try {
+      await coPost('/api/commandes/labo-fiche', {
+        nom: g.labo, contact: v('co-f-contact'), tel: v('co-f-tel'),
+        mail: v('co-f-mail'), notes: v('co-f-notes')
+      });
+      // Les cases ne portent pas de texte saisi, seulement des identifiants de
+      // collaborateur : c'est la règle de la maison, un gestionnaire ne reçoit
+      // jamais ce que quelqu'un a tapé.
+      const z = document.getElementById('co-f-ops');
+      if (coAdmin() && z) {
+        const ops = [...z.querySelectorAll('input[type=checkbox]')]
+          .filter(function (c) { return c.checked; })
+          .map(function (c) { return c.getAttribute('data-uid'); });
+        await coPost('/api/commandes/labo-operateurs', { nom: g.labo, operateurs: ops });
+      }
+      await coCharger(); window.coRender();
+      coMsg('Fiche de « ' + g.labo + ' » enregistrée.', false);
+      coFicheFermer();
+    } catch (e) { coMsg('Enregistrement impossible : ' + e.message, true); }
   };
 
   // ── Le rendu ──────────────────────────────────────────────────────────────
@@ -248,8 +319,53 @@
       return String(g.labo || '').toLowerCase().indexOf(q) >= 0
           || g.produits.some(function (p) { return String(p.nom || '').toLowerCase().indexOf(q) >= 0; });
     });
-    z.innerHTML = l.length ? l.map(coCarte).join('')
-      : '<div class="co-vide">Rien ne correspond à cette recherche.</div>';
+    if (!l.length) {
+      z.innerHTML = '<div class="co-vide">Rien ne correspond à cette recherche.</div>';
+      return;
+    }
+    // CHERCHER, C'EST VOULOIR TOUT VOIR. Une recherche ou un filtre d'urgence
+    // donne une liste à plat : on cherche un laboratoire précis, pas sa tournée.
+    if (coFiltre.trim() || coUrgence || !coUser()) { z.innerHTML = l.map(coCarte).join(''); return; }
+    z.innerHTML = coGroupes(l);
+  };
+
+  // ── MA TOURNÉE D'ABORD, LE RESTE DERRIÈRE ─────────────────────────────────
+  //
+  // On arrive sur ses propres laboratoires : c'est ce qu'on va appeler dans
+  // l'heure. MAIS RIEN D'URGENT NE SE CACHE DERRIÈRE UN REPLI. Si un
+  // laboratoire pressé appartient à quelqu'un d'autre — en congé, en formation,
+  // au comptoir — une ligne le dit au-dessus du repli. C'est le prix de cette
+  // vue, et il se paie ici.
+  function coGroupes(l) {
+    const miens = l.filter(function (g) { return coAMoi(g.labo); });
+    const autres = l.filter(function (g) { return !coAMoi(g.labo); });
+    const presse = autres.filter(function (g) { return g.urgence === 'rouge' || g.urgence === 'relance'; });
+    const ouvert = (coAutres === null) ? (miens.length === 0) : coAutres;
+
+    let h = '<div class="co-grp">Mes laboratoires <b>' + miens.length + '</b></div>';
+    h += miens.length ? miens.map(coCarte).join('')
+       : '<div class="co-vide">Aucun laboratoire ne vous est attribué pour l’instant.</div>';
+    if (!autres.length) return h;
+
+    if (presse.length && !ouvert) {
+      h += '<div class="co-ailleurs">' + ICO.rouge + ' <b>' + presse.length
+         + '</b> laboratoire(s) pressé(s) ne sont pas à vous : '
+         + presse.slice(0, 4).map(function (g) { return E(g.labo); }).join(', ')
+         + (presse.length > 4 ? '…' : '')
+         + ' <button type="button" class="co-voir" onclick="coVoirAutres()">Voir</button></div>';
+    }
+    h += '<button type="button" class="co-grp co-repli" onclick="coVoirAutres()">'
+       + (ouvert ? '▾' : '▸') + ' Les autres laboratoires <b>' + autres.length + '</b>'
+       + (presse.length ? '<span class="co-grp-u">dont ' + presse.length + ' pressé(s)</span>' : '')
+       + '</button>';
+    if (ouvert) h += autres.map(coCarte).join('');
+    return h;
+  }
+
+  window.coVoirAutres = function () {
+    const l = coEtat ? coEtat.labos.filter(function (g) { return coAMoi(g.labo); }) : [];
+    coAutres = (coAutres === null) ? (l.length !== 0) : !coAutres;
+    window.coRender();
   };
 
   window.coFiltrerUrgence = function (u) { coUrgence = (coUrgence === u) ? '' : u; window.coRender(); };
@@ -334,6 +450,13 @@
     catch (e) { coMsg('Copie impossible sur ce poste.', true); }
   };
 
+  // ON N'IMPRIME PAS UNE LISTE TRONQUÉE. Le repli est une commodité d'écran ;
+  // sur papier, les laboratoires des autres doivent y être, sinon la feuille
+  // qu'on emporte au téléphone mentirait par omission.
+  window.addEventListener('beforeprint', function () {
+    if (coAutres !== true) { coAutres = true; window.coRender(); }
+  });
+
   window.coRafraichir = async function () {
     try { await coCharger(); window.coRender(); }
     catch (e) {
@@ -407,6 +530,35 @@
   .co-rp-n span{color:#8a7a4a;font-style:italic}
   .co-rp-a{display:flex;gap:6px;flex:none}
   .co-rappr-p{margin-top:10px;font-size:.76rem;color:#8a7a4a}
+  /* Qui appelle. « a attribuer » est orange : c'est un manque a combler, pas un
+     etat de repos. */
+  .co-op0{font-size:.7rem;font-weight:700;color:#7c3a00;background:#FFF3E0;
+    border:1px solid #E6B07A;border-radius:999px;padding:1px 8px;flex:none}
+  .co-opn{font-size:.72rem;color:var(--g-dark,#1D5C3A);background:var(--g-pale,#E8F5E9);
+    border:1px solid #cfe6d6;border-radius:999px;padding:1px 8px;flex:none}
+  .co-grp{display:flex;align-items:center;gap:8px;width:100%;margin:16px 0 8px;
+    font-size:.78rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--gray-500,#6b7280);background:none;border:none;padding:0;font-family:inherit}
+  .co-grp:first-child{margin-top:4px}
+  .co-grp b{font-size:.9rem;color:var(--g-dark,#1D5C3A);letter-spacing:0}
+  .co-repli{cursor:pointer;text-align:left}
+  .co-repli:hover b{text-decoration:underline}
+  .co-grp-u{text-transform:none;letter-spacing:0;font-weight:600;color:#C62828}
+  /* RIEN D'URGENT NE SE CACHE DERRIERE UN REPLI : cette ligne est la rancon de
+     la vue « mes laboratoires d'abord ». */
+  .co-ailleurs{background:#FFEBEE;border:1px solid #C62828;border-left-width:5px;
+    border-radius:9px;padding:9px 13px;font-size:.84rem;color:#7f1d1d;line-height:1.5;
+    margin:4px 0 2px}
+  .co-voir{background:#C62828;color:#fff;border:none;border-radius:7px;padding:3px 10px;
+    font:inherit;font-size:.8rem;font-weight:600;cursor:pointer;margin-left:4px}
+  .co-ops{display:flex;flex-wrap:wrap;gap:6px}
+  .co-op{display:flex;align-items:center;gap:5px;font-size:.84rem;border:1px solid var(--gray-200,#e5e7eb);
+    border-radius:999px;padding:5px 11px;cursor:pointer;background:#fff;text-transform:none;
+    letter-spacing:0;font-weight:400;color:inherit;margin:0}
+  .co-op:has(input:checked){background:var(--g-pale,#E8F5E9);border-color:var(--g-mid,#2E7D54);font-weight:700}
+  .co-op input{margin:0;accent-color:var(--g-mid,#2E7D54)}
+  .co-op-lu{font-size:.86rem;color:var(--gray-500,#6b7280)}
+  .co-ops-p{font-size:.74rem;color:var(--gray-500,#6b7280);margin-top:7px;line-height:1.5}
   /* L'interlocuteur et son numero vivent dans l'en-tete de la carte : c'est la
      qu'on regarde au moment de decrocher. */
   .co-ct{font-size:.76rem;color:var(--gray-500,#6b7280);flex:none}
@@ -448,7 +600,7 @@
   .co-b:hover{border-color:var(--g-mid,#2E7D54);color:var(--g-dark,#1D5C3A)}
   .co-b.on{background:var(--g-mid,#2E7D54);border-color:var(--g-mid,#2E7D54);color:#fff}
   .co-b:focus-visible{outline:2px solid var(--g-mid,#2E7D54);outline-offset:1px}
-  @media print{.co-puces,.co-p-a,.fbar,.co-msg{display:none}.co-l{break-inside:avoid}}
+  @media print{.co-puces,.co-p-a,.fbar,.co-msg,.co-voir{display:none}.co-l{break-inside:avoid}}
   `;
 
   function coInject() {

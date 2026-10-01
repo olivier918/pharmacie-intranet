@@ -255,5 +255,141 @@ t('la fiche se ferme avec Échap', /function coFicheEchap/.test(co));
 t('un gestionnaire ne reçoit jamais de texte saisi, seulement un indice',
   /onclick="coFusionner\(' \+ i \+ '\)/.test(co) && /onclick="coFiche\(' \+ coIndex/.test(co));
 
+// ── QUI APPELLE QUEL LABORATOIRE ────────────────────────────────────────────
+// Décision d'Olivier du 01/10 : plusieurs opérateurs par laboratoire, sans
+// hiérarchie ; ce qui n'est attribué à personne revient aux administrateurs,
+// et la carte le dit en orange plutôt que de le taire.
+console.log('\nQui appelle quel laboratoire');
+t('l’attribution est une colonne du laboratoire, pas une table de plus',
+  /operateurs TEXT\[\] NOT NULL DEFAULT '\{\}'/.test(sv));
+t('... posée sur une base existante sans toucher aux données',
+  /"operateurs TEXT\[\][^"]*"[\s\S]{0,200}ADD COLUMN IF NOT EXISTS/.test(sv));
+t('elle est relue avec la fiche et redescend à l’écran',
+  /SELECT nom, alias, contact, tel, mail, notes, operateurs FROM app_cmd_labos/.test(sv)
+  && /operateurs: r\.operateurs \|\| \[\]/.test(sv));
+t('attribuer est réservé aux administrateurs — c’est une décision d’organisation',
+  /labo-operateurs[\s\S]{0,400}réservé aux administrateurs/.test(sv));
+t('une liste vide est une réponse valable : « à attribuer »',
+  /Array\.isArray\(b\.operateurs\)/.test(sv));
+t('on enregistre des identifiants de collaborateur, pas du texte libre',
+  /x\.length <= 8/.test(sv) && /new Set\(b\.operateurs/.test(sv));
+t('... et on ne les laisse pas s’accumuler sans borne', /\.slice\(0, 20\)/.test(sv));
+t('une liste importée peut porter l’attribution, sans remplacer celle déjà faite',
+  /cardinality\(app_cmd_labos\.operateurs\) = 0/.test(sv));
+t('fusionner deux laboratoires ne perd pas l’opérateur du nom absorbé',
+  /cardinality\(g\.operateurs\) = 0/.test(sv));
+
+console.log('\nL’écran : ma tournée d’abord');
+t('un laboratoire sans opérateur revient aux administrateurs',
+  /return o\.length \? o\.indexOf\(u\.id\) >= 0 : coAdmin\(\);/.test(co));
+t('... et la carte le signale « à attribuer », au lieu de le taire',
+  /co-op0/.test(co) && /à attribuer/.test(co));
+t('la page s’ouvre sur mes laboratoires, le reste est replié',
+  /function coGroupes/.test(co) && /Mes laboratoires/.test(co));
+t('RIEN D’URGENT NE SE CACHE DERRIÈRE LE REPLI : une ligne le dit',
+  /co-ailleurs/.test(co)
+  && /g\.urgence === 'rouge' \|\| g\.urgence === 'relance'/.test(co));
+t('chercher donne une liste à plat — on cherche un laboratoire, pas sa tournée',
+  /if \(coFiltre\.trim\(\) \|\| coUrgence \|\| !coUser\(\)\)/.test(co));
+t('quand rien ne m’est attribué, le reste est ouvert d’emblée',
+  /\(coAutres === null\) \? \(miens\.length === 0\)/.test(co));
+t('on n’imprime pas une liste tronquée',
+  /addEventListener\('beforeprint'/.test(co));
+t('les cases à cocher ne sont montrées qu’aux administrateurs',
+  /if \(!coAdmin\(\)\) \{[\s\S]{0,300}co-op-lu/.test(co));
+t('... et le gestionnaire ne reçoit que des identifiants, jamais du texte saisi',
+  /getAttribute\('data-uid'\)/.test(co) && !/co-f-ops'\)\.value/.test(co));
+t('enregistrer la fiche et l’attribution ne recharge la page qu’une fois',
+  /await coPost\('\/api\/commandes\/labo-fiche'/.test(co)
+  && /await coPost\('\/api\/commandes\/labo-operateurs'/.test(co)
+  && (co.match(/await coCharger\(\); window\.coRender\(\);\n      coMsg\('Fiche/g) || []).length === 1);
+
+// ── LE REGROUPEMENT, ÉPROUVÉ SUR LA VRAIE FONCTION ──────────────────────────
+// Les vérifications ci-dessus lisent le source ; celles-ci FONT TOURNER
+// coGroupes et coAMoi, extraites de co-module.js. C'est la seule façon de
+// savoir qu'un laboratoire pressé attribué à un absent ne disparaît pas.
+console.log('\nLe regroupement, mis à l’épreuve');
+(function () {
+  function extraire(nom) {
+    const d = co.indexOf('  function ' + nom + '(');
+    if (d < 0) throw new Error('fonction introuvable : ' + nom);
+    const f = co.indexOf('\n  }\n', d);
+    return co.slice(d, f + 4);
+  }
+  // Le décor : juste ce dont les fonctions extraites ont besoin.
+  const ICO = { rouge: '🔴', orange: '🟠', gris: '⚪', relance: '🔁' };
+  const E = x => String(x == null ? '' : x);
+  let coEtat = null, coAutres = null, moi = null, admin = false;
+  const coUser = () => moi;
+  const coAdmin = () => admin;
+  const coPrenom = id => ({ OF: 'Olivier', AF: 'Anouck', SM: 'Sophie' })[id] || id;
+  const coCarte = l => '[' + l.labo + ']';
+  eval(extraire('coOps'));
+  eval(extraire('coAMoi'));
+  eval(extraire('coBadgeOps'));
+  eval(extraire('coGroupes'));
+  const window = { coRender() {} };
+
+  const labos = [
+    { labo: 'URGENT CHEZ MOI', urgence: 'rouge', produits: [] },
+    { labo: 'URGENT AILLEURS', urgence: 'rouge', produits: [] },
+    { labo: 'TRANQUILLE AILLEURS', urgence: 'gris', produits: [] },
+    { labo: 'PERSONNE', urgence: 'orange', produits: [] }
+  ];
+  const fiches = {
+    'URGENT CHEZ MOI': { operateurs: ['SM'] },
+    'URGENT AILLEURS': { operateurs: ['AF'] },
+    'TRANQUILLE AILLEURS': { operateurs: ['AF'] },
+    'PERSONNE': { operateurs: [] }
+  };
+  coEtat = { labos: labos, fiches: fiches };
+
+  // Sophie : préparatrice, pas administratrice.
+  moi = { id: 'SM' }; admin = false; coAutres = null;
+  let h = coGroupes(labos);
+  t('Sophie voit son laboratoire', h.indexOf('[URGENT CHEZ MOI]') >= 0);
+  t('... un seul : le compte le dit', /Mes laboratoires <b>1<\/b>/.test(h));
+  t('... les autres sont repliés', h.indexOf('[TRANQUILLE AILLEURS]') < 0);
+  t('... mais l’urgent d’Anouck est annoncé en clair',
+    h.indexOf('co-ailleurs') >= 0 && h.indexOf('URGENT AILLEURS') >= 0);
+  t('... et le tranquille d’Anouck ne vient pas encombrer cette ligne',
+    h.split('co-ailleurs')[1].indexOf('TRANQUILLE AILLEURS') < 0);
+  t('un laboratoire sans opérateur n’est pas à Sophie',
+    h.indexOf('[PERSONNE]') < 0);
+
+  // Le repli s'ouvre.
+  coAutres = true;
+  h = coGroupes(labos);
+  t('déplié, tout est là', h.indexOf('[TRANQUILLE AILLEURS]') >= 0 && h.indexOf('[PERSONNE]') >= 0);
+  t('... et la ligne rouge s’efface, elle n’a plus d’objet', h.indexOf('co-ailleurs') < 0);
+
+  // Olivier : administrateur. Ce que personne n'a pris est à lui.
+  moi = { id: 'OF' }; admin = true; coAutres = null;
+  h = coGroupes(labos);
+  t('ce que personne n’a pris revient à l’administrateur', h.indexOf('[PERSONNE]') >= 0);
+  t('... mais pas ce qui est explicitement à quelqu’un d’autre',
+    h.indexOf('[URGENT CHEZ MOI]') < 0);
+  t('l’urgent d’Anouck lui est signalé aussi', h.indexOf('co-ailleurs') >= 0);
+
+  // Personne n'a rien attribué : un préparateur ne doit pas voir une page vide.
+  moi = { id: 'SM' }; admin = false; coAutres = null;
+  coEtat = { labos: labos, fiches: { 'URGENT CHEZ MOI': { operateurs: [] },
+    'URGENT AILLEURS': { operateurs: [] }, 'TRANQUILLE AILLEURS': { operateurs: [] },
+    'PERSONNE': { operateurs: [] } } };
+  h = coGroupes(labos);
+  t('rien ne m’est attribué : le reste est ouvert, pas caché',
+    h.indexOf('[URGENT AILLEURS]') >= 0 && h.indexOf('[PERSONNE]') >= 0);
+  t('... et on me le dit franchement', /Aucun laboratoire ne vous est attribué/.test(h));
+
+  // Le badge.
+  coEtat = { labos: labos, fiches: fiches };
+  t('le badge nomme les opérateurs par leur prénom',
+    coBadgeOps('URGENT AILLEURS').indexOf('Anouck') >= 0);
+  t('... et dit « à attribuer » quand il n’y en a pas',
+    coBadgeOps('PERSONNE').indexOf('à attribuer') >= 0);
+  t('un laboratoire inconnu des fiches ne fait pas tomber la page',
+    coOps('JAMAIS VU').length === 0);
+}());
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
