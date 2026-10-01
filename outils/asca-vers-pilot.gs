@@ -1,65 +1,53 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   ASCA → PILOT — à coller dans Google Apps Script
-
-   Cherche la synthèse quotidienne d'ASCA dans la boîte, et envoie ses pièces
-   jointes à PILOT. Tourne dans le compte Google d'Olivier : aucun mot de passe
-   de messagerie ne quitte Google, et PILOT n'a rien à installer.
-
-   ─── POSE, UNE FOIS ────────────────────────────────────────────────────────
-   1. script.google.com → Nouveau projet → coller ce fichier.
-   2. Paramètres du projet → Propriétés du script → ajouter :
-         PILOT_URL     https://pilot.pharmacie-mondeville.fr/api/commandes/courrier
-         PILOT_SECRET  (la même valeur que ASCA_HOOK_SECRET sur Railway)
-      NE JAMAIS écrire le secret dans le code : ce fichier est dans un dépôt.
-   3. Déclencheurs → Ajouter → fonction `verifierAsca`, déclencheur horaire,
-      toutes les 15 minutes.
-   4. Exécuter `verifierAsca` une fois à la main pour accorder les
-      autorisations Gmail.
-
-   ─── CE QU'IL NE FAIT PAS ──────────────────────────────────────────────────
-   Il ne supprime rien, ne répond à personne, n'envoie rien ailleurs. Il lit,
-   il POSTe, il pose une étiquette. C'est tout.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-var ETIQUETTE = 'PILOT-traite';   // marque les fils déjà envoyés
-var EXPEDITEUR = 'SyntheseAscaEtiq@noreply.asca-pharma.com';
-
 function verifierAsca() {
+  // ASCA vers PILOT. Cherche la synthese quotidienne dans la boite Gmail et
+  // envoie ses pieces jointes a PILOT. Mode d'emploi : EXPLOITATION.md.
+  // Volontairement sans accents ni caracteres decoratifs : ce texte est colle
+  // a la main dans un editeur web, et tout ce qui peut s'y abimer s'y abime.
+  var ETIQUETTE = 'PILOT-traite';
+  var EXPEDITEUR = 'SyntheseAscaEtiq@noreply.asca-pharma.com';
+
   var prop = PropertiesService.getScriptProperties();
   var url = prop.getProperty('PILOT_URL');
   var secret = prop.getProperty('PILOT_SECRET');
-  if (!url || !secret) { Logger.log('PILOT_URL ou PILOT_SECRET manquant.'); return; }
+  if (!url || !secret) {
+    Logger.log('PILOT_URL ou PILOT_SECRET manquant dans les proprietes du script.');
+    return;
+  }
 
   var lab = GmailApp.getUserLabelByName(ETIQUETTE) || GmailApp.createLabel(ETIQUETTE);
 
-  // L'ETIQUETTE EST CE QUI EVITE LE DOUBLON, pas la date : un fil deja traite
-  // est ecarte des la recherche. PILOT sait de toute facon remplacer une
-  // synthese reimportee, mais autant ne pas la lui envoyer vingt fois.
+  // L'etiquette est ce qui evite le doublon, pas la date : un fil deja traite
+  // est ecarte des la recherche. On ne regarde que trois jours en arriere.
   var fils = GmailApp.search(
     'subject:"ASCA : Synthese" has:attachment newer_than:3d -label:' + ETIQUETTE, 0, 10);
+  Logger.log(fils.length + ' fil(s) a examiner.');
 
-  fils.forEach(function (fil) {
-    var messages = fil.getMessages();
+  for (var i = 0; i < fils.length; i++) {
+    var messages = fils[i].getMessages();
     var envoye = false;
 
-    messages.forEach(function (m) {
+    for (var j = 0; j < messages.length; j++) {
+      var m = messages[j];
       var corps = m.getPlainBody() || '';
-      // L'EXPEDITEUR D'ORIGINE EST DANS LE CORPS : le courriel arrive
-      // transfere, donc son `From` est celui de la pharmacie, pas d'ASCA.
-      if (corps.indexOf(EXPEDITEUR) < 0 && m.getFrom().indexOf(EXPEDITEUR) < 0) return;
 
-      var pj = m.getAttachments().filter(function (a) {
-        return /\.pdf$/i.test(a.getName());
-      });
-      if (!pj.length) return;
+      // L'expediteur d'origine est dans le CORPS : le courriel arrive
+      // transfere, donc son From est celui de la pharmacie, pas d'ASCA.
+      if (corps.indexOf(EXPEDITEUR) < 0 && m.getFrom().indexOf(EXPEDITEUR) < 0) continue;
+
+      var pj = [];
+      var toutes = m.getAttachments();
+      for (var k = 0; k < toutes.length; k++) {
+        if (/\.pdf$/i.test(toutes[k].getName())) {
+          pj.push({ nom: toutes[k].getName(), b64: Utilities.base64Encode(toutes[k].getBytes()) });
+        }
+      }
+      if (!pj.length) continue;
 
       var charge = {
         expediteur: m.getFrom(),
         recuLe: m.getDate().toISOString(),
         corps: corps.slice(0, 20000),
-        fichiers: pj.map(function (a) {
-          return { nom: a.getName(), b64: Utilities.base64Encode(a.getBytes()) };
-        })
+        fichiers: pj
       };
 
       var rep = UrlFetchApp.fetch(url, {
@@ -71,12 +59,13 @@ function verifierAsca() {
       });
       var code = rep.getResponseCode();
       Logger.log('PILOT a repondu ' + code + ' : ' + rep.getContentText().slice(0, 200));
-      // ON N'ETIQUETTE QUE SI PILOT A DIT OUI. Marquer un fil que PILOT a
-      // refuse, c'est perdre la synthese du jour en silence : le prochain
-      // passage ne la reverrait plus.
-      if (code >= 200 && code < 300) envoye = true;
-    });
 
-    if (envoye) fil.addLabel(lab);
-  });
+      // On n'etiquette QUE si PILOT a dit oui. Marquer un fil refuse, c'est
+      // perdre la synthese du jour en silence : le prochain passage ne la
+      // reverrait plus.
+      if (code >= 200 && code < 300) envoye = true;
+    }
+
+    if (envoye) fils[i].addLabel(lab);
+  }
 }

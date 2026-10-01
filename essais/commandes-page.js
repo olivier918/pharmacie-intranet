@@ -167,6 +167,18 @@ t('il ne supprime rien et ne répond à personne',
   !/moveToTrash|sendEmail|reply\(/.test(gs));
 t('il ne regarde que trois jours en arrière, pas toute la boîte',
   /newer_than:3d/.test(gs));
+// LE SCRIPT SE COLLE A LA MAIN DANS UN EDITEUR WEB. Le 01/10/2026, un en-tete
+// de commentaire orne de filets a casse au collage : Apps Script a repondu
+// « Unexpected identifier 'verifierAsca' (ligne 1) » et le declencheur etait
+// impossible a creer. Tout ce qui peut s'abimer dans un copier-coller doit
+// donc etre absent du fichier.
+t('le script est en ASCII pur — ni accents ni filets à abîmer au collage',
+  !/[^\x00-\x7F]/.test(gs));
+t('la fonction est déclarée dès la LIGNE 1 : même un collage partiel la montre',
+  /^function verifierAsca\(\) \{/.test(gs));
+t('aucun commentaire de bloc, qui est ce qui avait cassé', !/\/\*/.test(gs));
+t('le mode d’emploi vit dans EXPLOITATION.md, pas dans le fichier à coller',
+  /asca-vers-pilot/.test(fs.readFileSync(path.join(__dirname,'..','EXPLOITATION.md'),'utf8')));
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
