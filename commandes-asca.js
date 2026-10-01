@@ -256,6 +256,54 @@ function nombre(v) {
   return isNaN(n) ? null : n;
 }
 
+// ── 4 bis. Les totaux annoncés par le corps du courriel ──────────────────────
+//
+// Le courriel annonce ses propres comptes. C'est la seule source extérieure qui
+// permette de dire « la lecture est juste » — et elle n'arrive QUE par la voie
+// automatique : quand on dépose les PDF à la main, ce contrôle ne peut pas
+// jouer.
+//
+// LE TEXTE EST SALE, ET IL FAUT LE PRENDRE AINSI. Deux nombres par ligne sans
+// séparateur (« 33 57 » = 33 aujourd'hui, 57 en moyenne), des lignes coupées en
+// plein milieu, des accents tantôt présents tantôt perdus au passage d'un
+// client de messagerie. Les expressions ci-dessous sont volontairement lâches ;
+// une ligne illisible rend `null`, et `null` n'est pas zéro.
+function sansAccent(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+function lireIndicateurs(texte) {
+  const t = sansAccent(texte).replace(/[ \t]+/g, ' ');
+  const prendre = function (re) {
+    const m = re.exec(t);
+    return m ? { jour: parseInt(m[1], 10), moyenne: m[2] != null ? parseInt(m[2], 10) : null } : null;
+  };
+  const avec = prendre(/Produits en rupture avec une commande\s*(\d+)(?:\s+(\d+))?/i);
+  const sans = prendre(/Produits en rupture \(pas de reserve,? pas de commande\)\s*(\d+)(?:\s+(\d+))?/i);
+  const reas = prendre(/Produits en rupture avec une reserve[^\n]*?\s(\d+)(?:\s+(\d+))?/i);
+  const serveur = /Etat du serveur de mise a jour\s+([^\n]+)/i.exec(t);
+  const piles = /Nombre d'etiquettes dont la pile est faible\s*(\d+)/i.exec(t);
+  return {
+    sansCommande: sans ? sans.jour : null,
+    avecCommande: avec ? avec.jour : null,
+    reassort:     reas ? reas.jour : null,
+    moyennes: { sansCommande: sans ? sans.moyenne : null,
+                avecCommande: avec ? avec.moyenne : null },
+    serveur: serveur ? serveur[1].trim() : null,
+    pilesFaibles: piles ? parseInt(piles[1], 10) : null
+  };
+}
+
+// L'EXPEDITEUR D'ORIGINE SE LIT DANS LE CORPS, pas dans l'en-tête : le courriel
+// arrive TRANSFERE depuis la boîte de la pharmacie, donc son `From` est celui
+// de la pharmacie. Un filtre posé sur l'en-tête n'aurait jamais rien laissé
+// passer — ou pire, aurait laissé passer n'importe quel transfert.
+const ASCA_EXPEDITEUR = 'SyntheseAscaEtiq@noreply.asca-pharma.com';
+function vientDAsca(texte, expediteur) {
+  const t = sansAccent(texte).toLowerCase();
+  const a = ASCA_EXPEDITEUR.toLowerCase();
+  return t.indexOf(a) >= 0 || String(expediteur || '').toLowerCase().indexOf(a) >= 0;
+}
+
 // ── 5. De trois tableaux à une liste par laboratoire ─────────────────────────
 
 // LES SEUILS SONT EN VENTES PAR MOIS. `Moy.Vte` est un rythme MENSUEL, établi
@@ -354,4 +402,5 @@ function consolider(lu, options) {
 module.exports = { fluxTexte, detexte, morceaux, lignes, colonnes, decouper,
                    estLabo, estPied, dateSynthese, analyser, verifier, nombre,
                    SCHEMAS, LIGNE_TOL, SEUILS, ORDRE,
-                   rassembler, urgence, consolider, dateFr, jours };
+                   rassembler, urgence, consolider, dateFr, jours,
+                   lireIndicateurs, vientDAsca, sansAccent, ASCA_EXPEDITEUR };

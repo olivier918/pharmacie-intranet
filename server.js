@@ -52,6 +52,11 @@ auth.install(app);            // routes /api/login, /api/logout (avant le portai
 // d'en-tete plutot que par le mot de passe d'acces (voir accuses.js).
 accuses.installer(app, { getDb: () => db, lireEtat: lireEtatBrut, ecrireEtat: ecrireEtatBrut });
 
+// Arrivee des syntheses ASCA par courriel. Comme les accuses Brevo : l'appelant
+// n'a pas de session, sa route est donc montee AVANT le portail, et un secret
+// remplace la session. Sans ASCA_HOOK_SECRET, la route repond 503.
+commandes.installerCourrier(app, { getDb: () => db });
+
 // Depot d'ordonnance par les patients. Comme les accuses Brevo : un patient n'a
 // pas de session, sa route est donc montee AVANT le portail. Elle a son propre
 // analyseur JSON, bien plus serre que le 50 Mo global (constat #19).

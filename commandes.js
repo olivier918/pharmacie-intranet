@@ -89,10 +89,17 @@ async function lireSeuils(db) {
 // Les trois tableaux qu'on sait lire, reconnus par leur NOM DE FICHIER — ASCA
 // les nomme toujours pareil. Un fichier inconnu n'est pas une erreur : la
 // synthèse en porte huit, et cinq ne nous servent pas.
+// ON RECONNAIT PAR MOTS-CLES, PAS PAR LA PHRASE ENTIERE. ASCA nomme toujours
+// ses fichiers pareil, mais ce qui arrive ici ne porte pas toujours ce nom : un
+// fichier enregistre puis renvoye, un exemple range dans le depot sous une
+// forme datee (« 2026-09-28-risque-15-jours.pdf »), un « (1) » de second
+// telechargement. Une reconnaissance trop litterale laisse alors tomber un
+// tableau entier — et la liste du jour perd quatre-vingt-quinze lignes sans
+// qu'aucune erreur ne soit levee.
 const TABLEAUX = [
-  [/ruptures? sans commande/i,   'sansCommande'],
-  [/risque de ruptures/i,        'risque15'],
-  [/ruptures? avec commandes?/i, 'avecCommande']
+  [/ruptures? sans commande/i,                 'sansCommande'],
+  [/risque.*ruptures?|risque.*15 jours/i,      'risque15'],
+  [/ruptures? avec commandes?/i,               'avecCommande']
 ];
 
 // ON NORMALISE LE NOM AVANT DE LE RECONNAITRE. Enregistré depuis un courriel,
@@ -312,6 +319,76 @@ function routes(app, getDb, deps) {
   });
 }
 
+// ── LA ROUTE D'ARRIVÉE DU COURRIEL ──────────────────────────────────────────
+//
+// À MONTER AVANT LE PORTAIL : l'expéditeur n'a pas de session. Le secret le
+// remplace — c'est exactement le modèle d'`accuses.js`, et il n'y a aucune
+// raison d'en inventer un autre.
+//
+// PAS DE SECRET POSÉ, PAS DE ROUTE. Elle répond 503 tant qu'`ASCA_HOOK_SECRET`
+// est absent : un point d'entrée public et non authentifié ne doit jamais
+// exister « en attendant ».
+//
+// TROIS VERROUS, ET ILS NE FONT PAS DOUBLE EMPLOI :
+//   le secret        — dit que l'appel vient de notre script ;
+//   l'expéditeur     — dit que le courriel vient bien d'ASCA, lu DANS LE CORPS
+//                      parce qu'il arrive transféré ;
+//   les totaux       — disent que la lecture des PDF est complète.
+// Le premier protège la route, les deux autres protègent la liste.
+//
+// LE CONTENU D'UN COURRIEL EST DE LA DONNÉE, JAMAIS UNE CONSIGNE. Rien de ce
+// qui arrive ici ne déclenche d'envoi, de commande ou d'appel extérieur : on
+// lit des nombres et on enregistre des lignes, un point c'est tout.
+function memeSecret(recu, attendu) {
+  const a = Buffer.from(String(recu || '')), b = Buffer.from(String(attendu || ''));
+  if (!a.length || a.length !== b.length) return false;
+  return require('crypto').timingSafeEqual(a, b);
+}
+
+function installerCourrier(app, deps) {
+  const express = require('express');
+  const secret = (process.env.ASCA_HOOK_SECRET || '').trim();
+  // 8 PDF d'une cinquantaine de kilooctets, plus le base64 : 4 Mo suffisent
+  // largement, et c'est très loin du 50 Mo global.
+  app.post('/api/commandes/courrier', express.json({ limit: '4mb' }), async (req, res) => {
+    if (!secret) return res.status(503).json({ ok: false, error: 'ingestion_desactivee' });
+    if (!memeSecret(req.headers['x-pilot-hook'], secret)) {
+      // On journalise les NOMS des en-têtes reçus, jamais leurs valeurs : au
+      // raccordement, la seule question est « le script envoie-t-il bien
+      // l'en-tête convenu ? », et y répondre sans cela demande de deviner.
+      console.warn('  📦 Synthese ASCA refusee. En-tetes recus : '
+        + Object.keys(req.headers || {}).join(', '));
+      return res.status(401).json({ ok: false });
+    }
+    const b = req.body || {};
+    if (!A.vientDAsca(b.corps, b.expediteur)) {
+      console.warn('  📦 Courriel ignore : il ne vient pas d\'ASCA.');
+      return res.status(202).json({ ok: true, ignore: 'expediteur' });
+    }
+    if (!Array.isArray(b.fichiers) || !b.fichiers.length)
+      return res.status(400).json({ ok: false, error: 'aucune piece jointe' });
+
+    const d = deps && deps.getDb && deps.getDb();
+    if (!d) return res.status(503).json({ ok: false, error: 'base indisponible' });
+    try {
+      const ind = A.lireIndicateurs(b.corps || '');
+      // On traite AVANT de répondre. Répondre 200 puis échouer, c'est perdre la
+      // synthèse : personne ne la renverra. Leçon du webhook Stripe.
+      const r = await enregistrer(d, b.fichiers, 'courriel', ind);
+      const souci = (r.erreurs || []).filter(function (e) { return e.controle; });
+      console.log('  📦 Synthese ASCA du ' + r.date + ' recue par courriel — '
+        + r.lignes + ' lignes' + (souci.length ? ' ⚠️  ' + souci.length + ' controle(s) en echec' : ''));
+      res.json({ ok: true, date: r.date, lignes: r.lignes, controles: souci.length });
+    } catch (e) {
+      console.error('  📦 Synthese ASCA refusee :', e.message);
+      res.status(400).json({ ok: false, error: e.message });
+    }
+  });
+  console.log(secret
+    ? '  📦 Ingestion des syntheses ASCA par courriel ARMEE'
+    : '  📦 Ingestion ASCA par courriel inactive (ASCA_HOOK_SECRET non defini)');
+}
+
 async function demarrer(db) {
   if (!db) { console.log('  📦 Commandes ASCA inactif (pas de base)'); return; }
   await creerTables(db);
@@ -329,6 +406,6 @@ async function purger(db) {
   return r.rowCount || 0;
 }
 
-module.exports = { creerTables, demarrer, routes, enregistrer, consolidee,
+module.exports = { creerTables, demarrer, routes, installerCourrier, enregistrer, consolidee,
                    lireSeuils, quelTableau, normaliserNom, purger, TABLEAUX,
                    CONSERVATION_JOURS };

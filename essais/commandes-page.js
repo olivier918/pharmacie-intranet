@@ -25,6 +25,17 @@ t('... avec le « (1) » d’un second téléchargement',
   C.quelTableau('Produits_en_Ruptures_avec_Commandes (1).PDF') === 'avecCommande');
 t('le risque 15 jours', C.quelTableau('Risque de Ruptures par rapport aux ventes sur 15 Jours.PDF') === 'risque15');
 t('les accents ne décident de rien', C.normaliserNom('Réassort Rayon') === 'Reassort Rayon');
+// LE PIEGE QUI A COUTE 95 LIGNES. Les exemples du depot sont ranges sous une
+// forme datee, et la reconnaissance, trop litterale, laissait tomber le tableau
+// « risque 15 jours » en entier — sans lever la moindre erreur.
+t('un exemple daté du dépôt est reconnu aussi',
+  C.quelTableau('2026-09-28-risque-15-jours.pdf') === 'risque15');
+t('... et les deux autres', C.quelTableau('2026-09-28-rupture-sans-commande.pdf') === 'sansCommande'
+  && C.quelTableau('2026-09-28-rupture-avec-commande.pdf') === 'avecCommande');
+t('un tableau écarté le reste, quelle que soit sa forme',
+  C.quelTableau('2026-09-28-hit-parade.pdf') === null
+  && C.quelTableau('Reassort Rayon depuis Reserve.PDF') === null
+  && C.quelTableau('Produits à faible rotation.PDF') === null);
 t('le Hit Parade n’est pas un tableau de commandes', C.quelTableau('Hit Parade.PDF') === null);
 t('les promotions non plus', C.quelTableau('Liste des Promotions.PDF') === null);
 t('un nom absent ne casse rien', C.quelTableau(null) === null);
@@ -88,6 +99,74 @@ t('une carte de laboratoire ne se coupe pas entre deux pages',
   /break-inside:avoid/.test(co));
 t('aucune commande n’est passée automatiquement',
   /AUCUNE COMMANDE N'EST JAMAIS PASSÉE/.test(co));
+
+// ── L'ARRIVEE PAR COURRIEL ──────────────────────────────────────────────────
+// Une route montee AVANT le portail est un point d'entree public. Ce qui se
+// joue ici n'est pas le confort : c'est qu'elle n'existe que si on l'a voulue,
+// et qu'elle n'avale pas n'importe quel courriel.
+const A = require('../commandes-asca');
+const gs = fs.readFileSync(path.join(__dirname, '..', 'outils', 'asca-vers-pilot.gs'), 'utf8');
+console.log('\nL’arrivée des synthèses par courriel');
+
+t('pas de secret posé, pas de route : elle répond 503',
+  /if \(!secret\) return res\.status\(503\)/.test(sv));
+t('le secret est comparé en temps constant', /timingSafeEqual/.test(sv));
+t('il vient d’une variable d’environnement, jamais du dépôt',
+  /process\.env\.ASCA_HOOK_SECRET/.test(sv) && !/ASCA_HOOK_SECRET\s*=\s*['"]/.test(sv));
+t('un refus journalise les NOMS des en-têtes, jamais leurs valeurs',
+  /Object\.keys\(req\.headers/.test(sv) && !/JSON\.stringify\(req\.headers/.test(sv));
+t('elle est montée AVANT le portail', (function () {
+  const srv = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  return srv.indexOf('installerCourrier') < srv.indexOf('app.use(auth.gate)');
+}()));
+t('son analyseur JSON est serré, très loin du 50 Mo global',
+  /express\.json\(\{ limit: '4mb' \}\)/.test(sv));
+t('on traite AVANT de répondre — répondre puis échouer perdrait la synthèse',
+  /await enregistrer\(d, b\.fichiers[\s\S]{0,400}res\.json\(\{ ok: true, date/.test(sv));
+
+// L'EXPEDITEUR SE LIT DANS LE CORPS : le courriel arrive TRANSFERE, son `From`
+// est celui de la pharmacie. Un filtre sur l'en-tete n'aurait rien laisse
+// passer — ou aurait laisse passer n'importe quel transfert.
+const CORPS = 'Forwarded message\nDe : <' + A.ASCA_EXPEDITEUR + '>\n'
+  + 'Produits en rupture avec une commande 33 57\n'
+  + 'Produits en rupture avec une réserve (réassort rayon) 1 1\n'
+  + 'Produits en rupture (pas de réserve, pas de commande) 52 41\n'
+  + 'Nombre d’étiquettes dont la pile est faible 88\n'
+  + 'Etat du serveur de mise à jour En marche';
+t('un transfert d’ASCA est reconnu par son CORPS', A.vientDAsca(CORPS, 'pharmacie@ferran.fr'));
+t('... et aussi quand il arrive en direct', A.vientDAsca('', A.ASCA_EXPEDITEUR));
+t('un courriel quelconque est écarté', !A.vientDAsca('Bonjour, voici des PDF', 'inconnu@exemple.fr'));
+t('... et la route l’écarte au lieu de l’avaler', /ignore: 'expediteur'/.test(sv));
+
+// LES TOTAUX ANNONCES : c'est ce que la voie automatique apporte et que le
+// depot manuel ne peut pas donner.
+const ind = A.lireIndicateurs(CORPS);
+t('le corps donne les 52 ruptures sans commande', ind.sansCommande === 52);
+t('... les 33 avec commande', ind.avecCommande === 33);
+t('... et la moyenne sur 30 jours, second nombre de la même ligne',
+  ind.moyennes.sansCommande === 41 && ind.moyennes.avecCommande === 57);
+t('l’état du serveur ASCA est relevé', ind.serveur === 'En marche');
+t('une ligne absente rend null, et null n’est pas zéro',
+  A.lireIndicateurs('rien du tout').sansCommande === null);
+t('les accents perdus en route ne cassent rien',
+  A.lireIndicateurs(A.sansAccent(CORPS)).sansCommande === 52);
+t('ces totaux sont passés au contrôle de lecture',
+  /A\.lireIndicateurs\(b\.corps/.test(sv) && /enregistrer\(d, b\.fichiers, 'courriel', ind\)/.test(sv));
+
+// ── LE SCRIPT GOOGLE ────────────────────────────────────────────────────────
+console.log('\nLe script qui vit dans le compte Google');
+t('le secret n’est pas dans le fichier — il est dans les propriétés du projet',
+  /getScriptProperties\(\)/.test(gs) && !/PILOT_SECRET\s*=\s*['"][^'"]+['"]/.test(gs));
+t('il n’envoie que si le secret ET l’adresse sont posés',
+  /if \(!url \|\| !secret\)/.test(gs));
+t('il lit l’expéditeur d’origine dans le corps, comme la route',
+  /corps\.indexOf\(EXPEDITEUR\) < 0/.test(gs));
+t('il n’étiquette QUE si PILOT a répondu oui — sinon la synthèse du jour '
+  + 'serait perdue en silence', /if \(code >= 200 && code < 300\) envoye = true/.test(gs));
+t('il ne supprime rien et ne répond à personne',
+  !/moveToTrash|sendEmail|reply\(/.test(gs));
+t('il ne regarde que trois jours en arrière, pas toute la boîte',
+  /newer_than:3d/.test(gs));
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

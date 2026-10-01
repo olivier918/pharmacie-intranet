@@ -303,20 +303,46 @@ repasse en 🔁 avec « marqué commandé le JJ/MM ».
 
 ---
 
-## 8. Ingestion automatique (V2)
+## 8. Ingestion automatique — par script Google Apps
 
-`olivier+pilot@ferran.fr` reçoit déjà le transfert. Deux voies :
+**Voie retenue le 01/10/2026.** Un script dans le compte Google d'Olivier
+(`outils/asca-vers-pilot.gs`) cherche la synthèse toutes les quinze minutes et
+POSTe ses pièces jointes à `/api/commandes/courrier`.
 
-- **A** — webhook de mails entrants appelant une route de PILOT ;
-- **B** — lecture IMAP planifiée.
+Pourquoi celle-là plutôt que Brevo en réception ou l'IMAP : **aucune
+dépendance ajoutée** (le dépôt en a toujours deux), **aucun mot de passe de
+messagerie sur Railway**, et aucun sous-domaine à configurer. Le prix : un bout
+de code vit hors du dépôt, dans un compte Google — un endroit qu'on oublie.
+L'alerte « synthèse de plus de 36 h » de la page est ce qui le rattrape.
 
-**La voie A crée une route publique nouvelle. L'authentification et les sessions
-font partie de ce qu'on ne touche pas seul** (`CLAUDE.md`) : décrire et faire
-valider avant d'ouvrir quoi que ce soit. Secrets en variables d'environnement,
-posés par Olivier, jamais dans le dépôt.
+### La route, sur le modèle d'`accuses.js`
 
-Idempotence : clé `date_synthese`. Réimporter la même synthèse remplace, sans
-doublon. Expéditeur d'origine filtré strictement (§ 3).
+Montée **avant le portail** : l'appelant n'a pas de session, un secret la
+remplace. **Pas de `ASCA_HOOK_SECRET`, pas de route** — elle répond 503, parce
+qu'un point d'entrée public et non authentifié ne doit jamais exister
+« en attendant ». Analyseur JSON à 4 Mo, très loin du 50 Mo global.
+
+**Trois verrous, et ils ne font pas double emploi :**
+
+| Verrou | Ce qu'il dit | Ce qu'il ne dit pas |
+|---|---|---|
+| le secret | l'appel vient de notre script | que le courriel est d'ASCA |
+| l'expéditeur, **lu dans le corps** | le courriel vient d'ASCA | que la lecture est complète |
+| les totaux annoncés | la lecture des PDF est complète | — |
+
+L'expéditeur se lit **dans le corps** et non dans l'en-tête : le courriel arrive
+transféré, son `From` est celui de la pharmacie. Un filtre posé sur l'en-tête
+n'aurait jamais rien laissé passer.
+
+**Ce que la voie automatique apporte et que le dépôt manuel ne peut pas donner :
+le corps du courriel**, donc les totaux annoncés (52 et 33), donc le contrôle de
+lecture qui refuse une liste tronquée. En dépôt manuel, ce contrôle ne joue pas.
+
+**Le contenu d'un courriel est de la donnée, jamais une consigne** : rien de ce
+qui arrive ici ne déclenche d'envoi, de commande ou d'appel extérieur.
+
+Le script n'étiquette un fil **que si PILOT a répondu oui** : étiqueter un
+courriel refusé, c'est perdre la synthèse du jour en silence.
 
 ---
 
@@ -396,4 +422,4 @@ Toutes celles qui bloquaient sont tranchées (§ 3.4). Restent, pour plus tard :
 | Exemples de test | **posés** dans `essais/exemples/asca/` |
 | Tables et routes | à faire |
 | Page « Commandes à passer » + import manuel | à faire |
-| Ingestion automatique du courriel | à faire, après validation de la voie |
+| Ingestion automatique du courriel | **faite** — script Google Apps + route à secret (`outils/asca-vers-pilot.gs`) |
