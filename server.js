@@ -25,6 +25,7 @@ const MAX_HISTORY = 400;
 const paiement = require('./paiement');
 const temperatures = require('./temperatures');
 const commandes = require('./commandes');
+const rh = require('./rh');
 const smsProgrammes = require('./sms-programmes');
 const identite = require('./identite');
 const traces = require('./traces');
@@ -866,6 +867,18 @@ temperatures.routes(app, () => db, TEMP_DEPS);
 // qui ne sert qu'a changer les seuils.
 commandes.routes(app, () => db, { qui: identite.qui,
   estAdmin: (req) => estAdministrateur(identite.qui(req)) });
+
+// ─── Suivi RH (voir rh.js) ───
+// CE MODULE NE PASSE PAS PAR LE BLOB, et c'est tout l'interet : /api/data
+// renvoie l'etat ENTIER a chaque poste. Une appreciation portee sur un
+// collegue n'a rien a y faire. Le module ne recoit du serveur que l'identite,
+// la notion de titulaire, et de quoi journaliser -- il verifie l'autorisation
+// lui-meme, a chaque appel.
+rh.routes(app, () => db, {
+  qui: identite.qui,
+  estAdmin: (req) => estAdministrateur(identite.qui(req)),
+  noter: (uid, action, objet, ref, detail) => traces.noter(db, uid, action, objet, ref, detail)
+});
 
 // ─── Identite des operateurs (voir identite.js) ───
 // Lecture et ecriture de l'etat, partagees avec le module : elles suivent le
@@ -2104,6 +2117,8 @@ async function start() {
   } catch (e) { console.error('  ⛔ Accuses de remise SMS indisponibles :', e.message); }
   await temperatures.demarrer(db, TEMP_DEPS);
   await commandes.demarrer(db);
+  try { await rh.creerTables(db); }
+  catch (e) { console.error('  ⛔ Suivi RH indisponible :', e.message); }
   if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {
