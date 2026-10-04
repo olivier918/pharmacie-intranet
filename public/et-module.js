@@ -40,6 +40,14 @@
     }
     return (typeof etiqFormats !== 'undefined' && Array.isArray(etiqFormats)) ? etiqFormats : [];
   };
+  // Les etiquettes libres deja imprimees. Meme mecanique que les formats.
+  const etLibres = () => {
+    if (typeof window._collRef === 'function') {
+      const l = window._collRef('etiqLibres');
+      if (Array.isArray(l)) return l;
+    }
+    return (typeof etiqLibres !== 'undefined' && Array.isArray(etiqLibres)) ? etiqLibres : [];
+  };
   const etSave = (now) => {
     try {
       if (now && typeof saveNow === 'function') saveNow();
@@ -106,16 +114,21 @@
   // Un numéro de lot qui se tient : la date, puis le rang de la préparation
   // étiquetée ce jour-là. Deux préparations du même jour ne portent jamais le
   // même lot, et le lot dit quand elle a été faite.
-  function etLotPropose(l, aujourdhui) {
+  // LES DEUX SOURCES COMPTENT. Un flacon d'alcool etiquete librement le matin
+  // prend un numero de lot ; si la preparation de l'apres-midi repartait du
+  // seul rang des preparations, deux contenants differents porteraient le meme
+  // lot le meme jour -- et la tracabilite ne voudrait plus rien dire.
+  function etLotPropose(l, aujourdhui, libres) {
     const j = String(aujourdhui || '').replace(/-/g, '');
     let n = 0;
-    (l || []).forEach(function (p) {
-      const e = p && p.etiq;
-      if (e && typeof e.lot === 'string' && e.lot.indexOf(j + '-') === 0) {
-        const k = parseInt(e.lot.slice(j.length + 1), 10);
+    const voir = function (lot) {
+      if (typeof lot === 'string' && lot.indexOf(j + '-') === 0) {
+        const k = parseInt(lot.slice(j.length + 1), 10);
         if (k > n) n = k;
       }
-    });
+    };
+    (l || []).forEach(function (p) { if (p && p.etiq) voir(p.etiq.lot); });
+    (libres || []).forEach(function (x) { if (x) voir(x.lot); });
     return j + '-' + (n + 1);
   }
   window.etLotPropose = etLotPropose;
@@ -257,7 +270,7 @@
 
     const g = (i, v) => { const el = document.getElementById(i); if (el) el.value = v || ''; };
     g('et-compo', e.compo || p.prep || '');
-    g('et-lot', e.lot || etLotPropose(etPreps(), auj));
+    g('et-lot', e.lot || etLotPropose(etPreps(), auj, etLibres()));
     g('et-ordo', e.ordo || '');
     g('et-poso', e.poso || '');
     g('et-dlu', e.dlu || '');
@@ -336,7 +349,16 @@
     if (typeof logAction === 'function') logAction('Étiquette de préparation imprimée', c.lot || '');
     etSave(true);
 
-    const corps = etCorps(etPrep, c);
+    if (!etLancerImpression(f, etCorps(etPrep, c), nb)) return;
+    etFermer();
+    if (typeof renderPreps === 'function') renderPreps();
+  };
+
+  // UNE SEULE FENETRE D'IMPRESSION pour les deux usages. Si l'etiquette de
+  // preparation et l'etiquette libre avaient chacune la leur, la deuxieme
+  // oublierait un jour le @page ou l'ajustement -- et sortirait coupee sans
+  // que l'apercu l'ait dit.
+  function etLancerImpression(f, corps, nb) {
     const une = '<div class="et" data-police="' + f.police + '">' + corps + '</div>';
     const html = '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'
       + '<title>Étiquette</title><style>'
@@ -351,10 +373,248 @@
       + 'setTimeout(function(){window.print();},250);<\/script>'
       + '</body></html>';
     const w = window.open('', '_blank');
-    if (!w) { alert('Le navigateur a bloqué la fenêtre d’impression. Autorisez les fenêtres pour PILOT.'); return; }
+    if (!w) {
+      alert('Le navigateur a bloqué la fenêtre d’impression. Autorisez les fenêtres pour PILOT.');
+      return false;
+    }
     w.document.write(html); w.document.close();
-    etFermer();
-    if (typeof renderPreps === 'function') renderPreps();
+    return true;
+  }
+
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     L'ÉTIQUETTE LIBRE — un flacon d'alcool, un pot de vaseline
+
+     Ce qui sort du préparatoire n'est pas toujours une préparation sur
+     ordonnance. On reconditionne de l'alcool, on remplit un pot de vaseline :
+     le contenant doit dire ce qu'il contient, et parfois d'où il vient.
+
+     JUSTE UN CHAMP TEXTE. Trois cases à cocher pour le reste — lot,
+     ordonnancier, péremption. Rien n'est obligatoire sauf le texte : une
+     étiquette qui ne dit rien ne sert à rien, le reste dépend du contenant.
+
+     ON GARDE CE QUI A ÉTÉ IMPRIMÉ. Deux raisons : réimprimer celle qu'on a
+     décollée en nettoyant, et ne pas redonner le même numéro de lot à deux
+     contenants différents du même jour.
+     ═════════════════════════════════════════════════════════════════════════ */
+  let etlFmtId = null, etlSeg = [], etlRepris = null;
+
+  function etlCorps(c) {
+    const o = etOfficine();
+    const t = [];
+    if (c.lot)  t.push('Lot ' + c.lot);
+    if (c.ordo) t.push('Ordo n° ' + c.ordo);
+    const trace = t.join(' · ');
+    return ''
+      + '<div class="et-h"><b>' + E(o.nom) + '</b><span>' + E(o.adr)
+      +   (o.tel ? ' · ' + E(o.tel) : '') + '</span></div>'
+      + '<div class="et-c et-libre">' + E(c.texte || '') + '</div>'
+      + (c.dlu ? '<div class="et-l"><b>À utiliser avant le ' + E(etFr(c.dlu)) + '</b></div>' : '')
+      + (trace ? '<div class="et-t">' + E(trace) + '</div>' : '')
+      + (c.mention ? '<div class="et-p">' + E(c.mention) + '</div>' : '');
+  }
+
+  window.etlOuvrir = function (reprise) {
+    const l = etAssurer();
+    etlRepris = (reprise && typeof reprise === 'object') ? reprise : null;
+    const r = etlRepris || {};
+    etlFmtId = (r.fmt && l.some(f => f.id === r.fmt)) ? r.fmt : etFormat(null).id;
+
+    let ov = document.getElementById('etl-ov');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.className = 'overlay'; ov.id = 'etl-ov';
+      document.body.appendChild(ov);
+    }
+    ov.innerHTML = '<div class="mbox" style="max-width:820px">'
+      + '<div class="mbox-h"><b>Étiquette libre</b>'
+      +   '<button class="x" onclick="etlFermer()">✕</button></div>'
+      + '<div class="mbox-b et-grid">'
+      +   '<div class="et-form">'
+      +     '<div class="et-lbl">Format</div><div class="et-seg" id="etl-seg"></div>'
+      +     '<div class="et-fg" style="margin-top:14px">'
+      +       '<label for="etl-texte">Texte de l’étiquette</label>'
+      +       '<textarea id="etl-texte" rows="3" oninput="etlRedessiner()"'
+      +         ' placeholder="Alcool à 70° — 125 mL"></textarea></div>'
+      +     '<div class="et-lbl" style="margin-top:14px">À ajouter si besoin</div>'
+      +     '<label class="cbl"><input type="checkbox" id="etl-c-lot"'
+      +       ' onchange="etlBasculer(\'lot\')"> Numéro de lot</label>'
+      +     '<div class="et-fg etl-sous" id="etl-z-lot" hidden>'
+      +       '<input id="etl-lot" oninput="etlRedessiner()"></div>'
+      +     '<label class="cbl"><input type="checkbox" id="etl-c-ordo"'
+      +       ' onchange="etlBasculer(\'ordo\')"> Numéro d’ordonnancier</label>'
+      +     '<div class="et-fg etl-sous" id="etl-z-ordo" hidden>'
+      +       '<input id="etl-ordo" oninput="etlRedessiner()"></div>'
+      +     '<label class="cbl"><input type="checkbox" id="etl-c-dlu"'
+      +       ' onchange="etlBasculer(\'dlu\')"> Date de péremption</label>'
+      +     '<div class="et-fg etl-sous" id="etl-z-dlu" hidden>'
+      +       '<div class="et-dlu"><input type="date" id="etl-dlu" oninput="etlRedessiner()">'
+      +         '<button class="btn bs sm" onclick="etlDlu(1)">+1 mois</button>'
+      +         '<button class="btn bs sm" onclick="etlDlu(2)">+2 mois</button></div></div>'
+      +     '<div class="et-2" style="margin-top:14px;align-items:end">'
+      +       '<div class="et-fg"><label for="etl-nb">Nombre d’étiquettes</label>'
+      +         '<input type="number" id="etl-nb" min="1" max="50" value="1"></div>'
+      +       '<button class="btn bp" onclick="etlImprimer()" style="height:40px">'
+      +         '<svg class="ico"><use href="#ic-document"></use></svg> Imprimer</button>'
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="et-cote">'
+      +     '<div class="et-lbl">Aperçu · taille réelle</div>'
+      +     '<div id="etl-apercu" class="et-ap"></div>'
+      +     '<div class="et-info" id="etl-info"></div>'
+      +   '</div>'
+      + '</div></div>';
+
+    const g = (i, v) => { const el = document.getElementById(i); if (el) el.value = v || ''; };
+    g('etl-texte', r.texte || '');
+    g('etl-lot', r.lot || '');
+    g('etl-ordo', r.ordo || '');
+    g('etl-dlu', r.dlu || '');
+    ['lot', 'ordo', 'dlu'].forEach(function (k) {
+      const c = document.getElementById('etl-c-' + k);
+      if (c) c.checked = !!r[k];
+      const z = document.getElementById('etl-z-' + k);
+      if (z) z.hidden = !(c && c.checked);
+    });
+    ov.classList.add('open');
+    etlRendFormats(); etlRedessiner();
+    const t = document.getElementById('etl-texte'); if (t) t.focus();
+  };
+  window.etlFermer = function () {
+    const ov = document.getElementById('etl-ov'); if (ov) ov.classList.remove('open');
+    etlRepris = null;
+  };
+
+  // Cocher « numéro de lot » PROPOSE le numéro du jour : la case n'est pas une
+  // case à remplir, c'est une case à cocher. On peut toujours le remplacer.
+  window.etlBasculer = function (k) {
+    const c = document.getElementById('etl-c-' + k);
+    const z = document.getElementById('etl-z-' + k);
+    const on = !!(c && c.checked);
+    if (z) z.hidden = !on;
+    if (on && k === 'lot') {
+      const i = document.getElementById('etl-lot');
+      if (i && !i.value) i.value = etLotPropose(etPreps(), etIso(new Date()), etLibres());
+    }
+    if (on && k === 'dlu') {
+      const i = document.getElementById('etl-dlu');
+      if (i && !i.value) i.value = etPlusMois(etIso(new Date()), 1);
+    }
+    etlRedessiner();
+    const f = document.getElementById('etl-' + k); if (on && f) f.focus();
+  };
+
+  // +1 et +2 mois comptent DEPUIS AUJOURD'HUI, jamais depuis la date affichée :
+  // deux clics de suite ne doivent pas donner trois mois sans le dire.
+  window.etlDlu = function (n) {
+    const d = document.getElementById('etl-dlu'); if (!d) return;
+    d.value = etPlusMois(etIso(new Date()), n);
+    etlRedessiner();
+  };
+
+  function etlRendFormats() {
+    const z = document.getElementById('etl-seg'); if (!z) return;
+    etlSeg = etAssurer().slice();
+    z.innerHTML = etlSeg.map(function (f, i) {
+      return '<button type="button" class="' + (f.id === etlFmtId ? 'on' : '') + '"'
+        + ' onclick="etlFormat(' + i + ')">' + E(f.lbl || f.id) + '</button>';
+    }).join('');
+  }
+  window.etlFormat = function (i) {
+    const f = etlSeg[i]; if (!f) return;
+    etlFmtId = f.id; etlRendFormats(); etlRedessiner();
+  };
+
+  function etlChamps() {
+    const v = i => String((document.getElementById(i) || {}).value || '').trim();
+    const on = k => !!(document.getElementById('etl-c-' + k) || {}).checked;
+    const f = etFormat(etlFmtId);
+    return {
+      texte: v('etl-texte'),
+      lot: on('lot') ? v('etl-lot') : '',
+      ordo: on('ordo') ? v('etl-ordo') : '',
+      dlu: on('dlu') ? v('etl-dlu') : '',
+      mention: (f.mention === undefined ? ET_PRUDENCE : f.mention),
+      fmt: f.id
+    };
+  }
+
+  window.etlRedessiner = function () {
+    const z = document.getElementById('etl-apercu'); if (!z) return;
+    const f = etFormat(etlFmtId);
+    z.innerHTML = '<style>' + etCss(f) + '</style>'
+      + '<div class="et" id="etl-boite" data-police="' + f.police + '">'
+      + etlCorps(etlChamps()) + '</div>';
+    const r = etAjuster(document.getElementById('etl-boite'));
+    const info = document.getElementById('etl-info');
+    if (info) {
+      info.className = 'et-info' + (r && r.deborde ? ' ko' : '');
+      info.textContent = r && r.deborde
+        ? 'Le texte déborde même en ' + r.police + ' pt : raccourcissez-le, ou prenez un format plus grand.'
+        : f.w + ' × ' + f.h + ' mm · corps ' + (r ? r.police : f.police) + ' pt'
+          + (r && r.police < f.police ? ' (réduit pour tenir)' : '');
+    }
+  };
+
+  window.etlImprimer = function () {
+    const f = etFormat(etlFmtId);
+    const c = etlChamps();
+    if (!c.texte) { alert('Le texte est vide : une étiquette sans texte ne dit rien.'); return; }
+    const nb = Math.max(1, Math.min(50, parseInt((document.getElementById('etl-nb') || {}).value, 10) || 1));
+    if (!etLancerImpression(f, etlCorps(c), nb)) return;
+
+    // La trace, avant tout pour le lot : réimprimer plus tard la même étiquette
+    // doit redonner le même numéro, pas un numéro neuf.
+    const l = etLibres();
+    let id = 'etl:' + Date.now();
+    while (l.some(x => x && x.id === id)) id += 'x';
+    l.unshift(Object.assign({}, c, {
+      id: id, nb: nb, le: Date.now(),
+      par: (etUser() || {}).id || null, updatedAt: Date.now()
+    }));
+    if (typeof logAction === 'function') logAction('Étiquette libre imprimée', c.texte.slice(0, 60));
+    etSave(true);
+    etlFermer();
+    etlRendre();
+  };
+
+  // ── Les dernières imprimées ───────────────────────────────────────────────
+  // Huit lignes, pas une de plus : c'est un aide-mémoire pour réimprimer, pas
+  // un registre. Le registre, c'est l'ordonnancier.
+  const ETL_VUES = 8;
+  window.etlRendre = function () {
+    const z = document.getElementById('etl-liste'); if (!z) return;
+    const l = etLibres().slice()
+      .sort(function (a, b) { return (b.le || 0) - (a.le || 0); })
+      .slice(0, ETL_VUES);
+    if (!l.length) {
+      z.innerHTML = '<div class="etl-vide">Aucune étiquette libre imprimée pour l’instant. '
+        + 'Un flacon d’alcool, un pot de vaseline : le texte, et ce qu’il faut tracer.</div>';
+      return;
+    }
+    const tous = etLibres();
+    z.innerHTML = l.map(function (x) {
+      const i = tous.indexOf(x);
+      const d = x.le ? new Date(x.le).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+                     : '';
+      const bits = [];
+      if (x.lot) bits.push('lot ' + x.lot);
+      if (x.ordo) bits.push('ordo ' + x.ordo);
+      if (x.dlu) bits.push('avant le ' + etFr(x.dlu));
+      if (x.nb > 1) bits.push(x.nb + ' ex.');
+      return '<div class="etl-l">'
+        + '<span class="etl-l-t">' + E(x.texte || '') + '</span>'
+        + '<span class="etl-l-d">' + E(d + (bits.length ? ' · ' + bits.join(' · ') : '')) + '</span>'
+        + '<button type="button" class="btn bs sm" onclick="etlReprendre(' + i + ')"'
+        +   ' title="Réimprimer la même étiquette">Réimprimer</button>'
+        + '</div>';
+    }).join('');
+  };
+  // Réimprimer, c'est rouvrir la fenêtre déjà remplie — avec le MÊME lot. On ne
+  // réimprime pas en silence : le format a pu changer, le nombre aussi.
+  window.etlReprendre = function (i) {
+    const x = etLibres()[i]; if (!x) return;
+    etlOuvrir(x);
   };
 
   // ── Enregistrer un format ─────────────────────────────────────────────────
@@ -445,7 +705,17 @@
   .et-neuf .et-n-lbl{grid-column:1/-1}
   .et-neuf input{font:inherit;font-size:.82rem;border:1px solid var(--gray-200);border-radius:8px;
     padding:6px 8px;width:100%;box-sizing:border-box}
-  .et-aide{font-size:.72rem;color:var(--gray-500);margin-top:8px;line-height:1.45}`;
+  .et-aide{font-size:.72rem;color:var(--gray-500);margin-top:8px;line-height:1.45}
+  /* L'etiquette libre : le texte est le sujet, il a droit a la place. */
+  .et-libre{font-weight:bold;font-size:1.15em}
+  .et-form .cbl{margin-bottom:6px}
+  .etl-sous{margin:4px 0 10px 24px}
+  .etl-l{display:flex;align-items:center;gap:10px;padding:7px 0;
+    border-bottom:1px solid var(--gray-100);flex-wrap:wrap}
+  .etl-l:last-child{border-bottom:none}
+  .etl-l-t{font-weight:600;font-size:.88rem;flex:1 1 180px;min-width:0}
+  .etl-l-d{font-size:.76rem;color:var(--gray-500)}
+  .etl-vide{font-size:.84rem;color:var(--gray-500);padding:14px 2px;line-height:1.6}`;
 
   function etInject() {
     if (document.getElementById('et-css')) return;
@@ -453,6 +723,7 @@
     st.id = 'et-css'; st.textContent = ET_CSS;
     document.head.appendChild(st);
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', etInject);
-  else etInject();
+  function etDemarrer() { etInject(); if (window.etlRendre) window.etlRendre(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', etDemarrer);
+  else etDemarrer();
 }());

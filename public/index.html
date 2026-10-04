@@ -803,6 +803,17 @@ tr:hover td{background:#fafffe}
         <div id="pp-planning"></div>
       </div>
 
+      <!-- L'ETIQUETTE LIBRE. Ce qui sort du preparatoire n'est pas toujours une
+           preparation sur ordonnance : un flacon d'alcool reconditionne, un pot
+           de vaseline. Le contenant doit dire ce qu'il contient. -->
+      <div class="card">
+        <div class="ch">
+          <span class="ct"><svg class="ico"><use href="#ic-document"></use></svg> Étiquette libre</span>
+          <button class="btn bp sm no-print" onclick="etlOuvrir()">+ Nouvelle étiquette</button>
+        </div>
+        <div id="etl-liste"></div>
+      </div>
+
       <div class="card">
         <div class="ch">
           <span class="ct">Suivi des demandes</span>
@@ -2886,7 +2897,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','ruptures'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','etiqLibres','ruptures'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2910,6 +2921,7 @@ function _collRef(n){ switch(n){
   case 'laboratoires':return laboratoires;
   case 'locProvenances':return locProvDB;
   case 'etiqFormats':return etiqFormats;
+  case 'etiqLibres':return etiqLibres;
   case 'ruptures':return ruptures;
   case 'reactions':return reactions;
   case 'convos':return convos; case 'messages':return messages;
@@ -2962,7 +2974,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,ruptures,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,etiqLibres,ruptures,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -3020,6 +3032,7 @@ async function loadAll(){
     if(Array.isArray(data.locTypes)&&data.locTypes.length){ locTypesDB=data.locTypes; rebuildLocTypes(); }
     if(Array.isArray(data.locProvenances)&&data.locProvenances.length) locProvDB=data.locProvenances;
     if(Array.isArray(data.etiqFormats)) etiqFormats=data.etiqFormats;
+    if(Array.isArray(data.etiqLibres)) etiqLibres=data.etiqLibres;
     if(Array.isArray(data.ruptures)) ruptures=data.ruptures;
     if(data.caisse)caisse=data.caisse;
     if(data.credits)credits=data.credits;
@@ -3087,6 +3100,7 @@ setInterval(async()=>{
         if(Array.isArray(d.locTypes)&&d.locTypes.length){ locTypesDB=d.locTypes; rebuildLocTypes(); }
         if(Array.isArray(d.locProvenances)&&d.locProvenances.length) locProvDB=d.locProvenances;
         if(Array.isArray(d.etiqFormats)) etiqFormats=d.etiqFormats;
+        if(Array.isArray(d.etiqLibres)){ etiqLibres=d.etiqLibres; if(window.etlRendre)etlRendre(); }
         if(Array.isArray(d.ruptures)){ ruptures=d.ruptures; if(window.rpRender)rpRender(); }
         if(d.caisse)caisse=d.caisse;
         if(d.credits)credits=d.credits;
@@ -6542,6 +6556,11 @@ let locTypesDB=[];
 let locProvDB=[];
 // Les formats d'etiquettes de la ZD230 (voir public/et-module.js).
 let etiqFormats=[];
+// Les etiquettes libres deja imprimees : un flacon d'alcool, un pot de
+// vaseline. On les garde pour deux raisons -- reimprimer celle qu'on a
+// decollee, et SURTOUT ne pas redonner un numero de lot deja porte par un
+// autre contenant le meme jour.
+let etiqLibres=[];
 let ruptures=[];
 const LOC_PROV_DEFAUT=[
   {id:'bluestone', lbl:'Bluestone Medical', defaut:true},

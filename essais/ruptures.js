@@ -98,15 +98,20 @@ t('se raviser reprend la demande comptée — sinon le compteur ment',
 // ── LE BRANCHEMENT ──────────────────────────────────────────────────────────
 // Piege #4 : une rubrique oubliee quelque part donne une liste qui ne quitte
 // jamais le navigateur — « ca marche, puis ca disparait au rechargement ».
+//
+// CES VERIFICATIONS NE NOMMENT PAS LE VOISIN. Elles l'ont fait, et le jour ou
+// une rubrique s'est glissee entre « etiqFormats » et « ruptures », trois
+// echecs sont apparus alors que le branchement etait juste. On verifie que la
+// rubrique est la, pas ou elle est assise.
 console.log('\nLa rubrique est déclarée aux cinq endroits (piège #4)');
 t('1. la variable',        /let ruptures=\[\];/.test(ix));
-t('2. SYNCED_COLLS côté écran', /'etiqFormats','ruptures'\]/.test(ix));
+t('2. SYNCED_COLLS côté écran', /const SYNCED_COLLS=\[[^\]]*'ruptures'/.test(ix));
 t('3. _collRef',          /case 'ruptures':return ruptures;/.test(ix));
-t('4. le corps de saveAll', /etiqFormats,ruptures,modulesParPoste/.test(ix));
+t('4. le corps de saveAll', /JSON\.stringify\(\{staffDB[\s\S]{0,2000}\bruptures\b/.test(ix));
 t('5a. loadAll',          /if\(Array\.isArray\(data\.ruptures\)\) ruptures=data\.ruptures;/.test(ix));
 t('5b. la resynchronisation de 8 s redessine l’écran',
   /if\(Array\.isArray\(d\.ruptures\)\)\{ ruptures=d\.ruptures; if\(window\.rpRender\)rpRender\(\); \}/.test(ix));
-t('et SYNCED_COLLS côté serveur',  /'etiqFormats', 'ruptures'\]/.test(sv));
+t('et SYNCED_COLLS côté serveur',  /'ruptures'\]/.test(sv));
 t('le module lit la collection par _collRef — piège #8', /_collRef\('ruptures'\)/.test(src));
 t('le module est chargé par index.html', /<script src="rp-module\.js"><\/script>/.test(ix));
 t('l’icône existe dans le sprite', /id="ic-rupture"/.test(ix));

@@ -114,5 +114,79 @@ t('le nom et l’adresse de la pharmacie sont en tête', /etOfficine\(\)/.test(s
 t('la largeur maximale de la ZD230 est vérifiée à la création d’un format',
   /w > 104/.test(src));
 
+// ── L'ÉTIQUETTE LIBRE ───────────────────────────────────────────────────────
+// Un flacon d'alcool, un pot de vaseline : juste un texte, et trois options.
+console.log('\nL’étiquette libre');
+const ix = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+const svr = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+// LE PIÈGE #4 : une collection oubliée dans l'un des six endroits ne lève
+// aucune erreur — elle cesse simplement de voyager entre les postes.
+const SIX = [
+  ['déclarée avec let', /let etiqLibres\s*=\s*\[\]/.test(ix)],
+  ['dans SYNCED_COLLS', /SYNCED_COLLS=\[[^\]]*'etiqLibres'/.test(ix)],
+  ['dans le résolveur _collRef', /case 'etiqLibres':\s*return etiqLibres/.test(ix)],
+  ['dans le corps de saveAll', /JSON\.stringify\(\{staffDB[\s\S]{0,2000}etiqLibres/.test(ix)],
+  ['relue par loadAll', /data\.etiqLibres/.test(ix)],
+  ['relue par la resynchro de 8 s', /d\.etiqLibres/.test(ix)],
+  ['connue du serveur', /'etiqLibres'/.test(svr)]
+];
+SIX.forEach(function (x) { t('la collection est ' + x[0], x[1]); });
+
+// LE DÉFAUT QUE CE MODULE POUVAIT INTRODUIRE : deux contenants différents, le
+// même jour, avec le même numéro de lot.
+console.log('\nLe numéro de lot ne se répète pas, même entre les deux usages');
+const preps = [{ etiq: { lot: '20261004-1' } }];
+const libres = [{ lot: '20261004-2' }];
+t('sans étiquette libre, le rang suit les préparations',
+  etLotPropose(preps, '2026-10-04', []) === '20261004-2');
+t('UNE ÉTIQUETTE LIBRE COMPTE AUSSI : le rang passe au suivant',
+  etLotPropose(preps, '2026-10-04', libres) === '20261004-3');
+t('... et une étiquette libre seule suffit à faire avancer le rang',
+  etLotPropose([], '2026-10-04', libres) === '20261004-3');
+t('un lot d’un autre jour ne compte pas',
+  etLotPropose([], '2026-10-05', libres) === '20261005-1');
+t('la troisième source est facultative — l’appel à deux arguments tient',
+  etLotPropose(preps, '2026-10-04') === '20261004-2');
+t('une entrée sans lot ne fait pas tomber le calcul',
+  etLotPropose([{}, { etiq: {} }], '2026-10-04', [{}, { lot: null }]) === '20261004-1');
+
+console.log('\nCe que la fenêtre promet');
+t('le texte est le seul champ obligatoire', /Le texte est vide/.test(src));
+t('les trois options sont bien trois cases à cocher',
+  /etl-c-lot/.test(src) && /etl-c-ordo/.test(src) && /etl-c-dlu/.test(src));
+t('cocher « numéro de lot » propose le numéro du jour',
+  /if \(i && !i\.value\) i\.value = etLotPropose\(etPreps\(\), etIso\(new Date\(\)\), etLibres\(\)\)/.test(src));
+t('cocher « péremption » propose un mois',
+  /i\.value = etPlusMois\(etIso\(new Date\(\)\), 1\)/.test(src));
+// LE PIEGE : +1 puis +2 ne doit pas faire trois mois. La version des
+// preparations compte depuis la date affichee ; celle-ci compte depuis
+// aujourd'hui, et c'est volontaire.
+t('+1 et +2 mois comptent depuis aujourd’hui, pas depuis la date affichée',
+  /window\.etlDlu = function \(n\) \{[\s\S]{0,200}etPlusMois\(etIso\(new Date\(\)\), n\)/.test(src));
+t('... alors que l’étiquette de préparation, elle, cumule — deux fonctions distinctes',
+  /window\.etDlu = function \(n\) \{[\s\S]{0,200}etPlusMois\(d\.value \|\| etIso\(new Date\(\)\), n\)/.test(src));
+t('une option décochée n’imprime rien, même si le champ est resté rempli',
+  /lot: on\('lot'\) \? v\('etl-lot'\) : ''/.test(src));
+t('l’étiquette libre ne porte AUCUN nom de patient',
+  /function etlCorps/.test(src)
+  && !/et-qui/.test(src.slice(src.indexOf('function etlCorps'), src.indexOf('window.etlOuvrir'))));
+t('le nom de la pharmacie y est, lui', /function etlCorps[\s\S]{0,600}etOfficine\(\)/.test(src));
+t('une seule fenêtre d’impression pour les deux usages',
+  (src.match(/function etLancerImpression/g) || []).length === 1
+  && (src.match(/if \(!etLancerImpression\(f,/g) || []).length === 2);
+t('... et elle recopie l’ajustement, sans quoi l’étiquette sortirait coupée',
+  /function etLancerImpression[\s\S]{0,900}etAjuster\.toString\(\)/.test(src));
+t('ce qui a été imprimé est gardé, avec qui et quand',
+  /le: Date\.now\(\)/.test(src) && /par: \(etUser\(\) \|\| \{\}\)\.id/.test(src));
+t('réimprimer rouvre la fenêtre déjà remplie — donc le même lot',
+  /window\.etlReprendre = function \(i\) \{[\s\S]{0,120}etlOuvrir\(x\)/.test(src));
+t('la liste des dernières se borne — c’est un aide-mémoire, pas un registre',
+  /ETL_VUES = 8/.test(src));
+t('le bouton existe dans la section Préparations',
+  /onclick="etlOuvrir\(\)"/.test(ix) && /id="etl-liste"/.test(ix));
+t('la resynchro redessine la liste si un autre poste imprime',
+  /if\(window\.etlRendre\)etlRendre\(\)/.test(ix));
+
 console.log('\n' + (ok + ko) + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
