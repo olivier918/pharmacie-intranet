@@ -51,6 +51,22 @@ const TONS = ['positif', 'neutre', 'corriger'];
 const TAGS = ['fiabilite', 'relation', 'initiative', 'qualite', 'securite', 'equipe', 'formation'];
 const TYPES = ['point', 'parcours', 'bilan'];
 
+// Trois etats, et rien de plus. « En cours » est le defaut : un objectif qu'on
+// n'a pas touche n'est pas un objectif rate.
+const ETATS_OBJ = ['en_cours', 'atteint', 'abandonne'];
+const TYPES_OBJ = ['objectif', 'bilan', 'formation'];
+
+// Rapprocher « Jean Claude TRAN VAN » du « Jean-Claude Tran Van » de l'equipe :
+// on compare des clefs sans accent, sans trait d'union et sans espace.
+// `normalize('NFD')` separe la lettre de son accent, et on jette les accents.
+function cleNom(v) {
+  return String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+function memeePersonne(a, b) {
+  return cleNom(a.nom) === cleNom(b.nom) && cleNom(a.prenom) === cleNom(b.prenom);
+}
+
 // ── Les echeances legales ───────────────────────────────────────────────────
 // La loi 2025-989 du 24 octobre 2025 a remplace l'entretien professionnel par
 // l'ENTRETIEN DE PARCOURS PROFESSIONNEL : il passe de deux a QUATRE ans, et le
@@ -372,6 +388,36 @@ async function creerTables(db) {
       maj      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
   await db.query('CREATE INDEX IF NOT EXISTS app_rh_hab_uid ON app_rh_habilitations (uid, echeance)');
+  // LE POSTE ET LES OBJECTIFS
+  //
+  // UNE SEULE TABLE POUR TROIS CHOSES : un objectif, une ligne de bilan, un
+  // souhait de formation. Elles vivent dans la meme section d'annee, se lisent
+  // ensemble, et les separer en trois tables obligerait a trois lectures pour
+  // afficher une annee.
+  //
+  // `rang` garde l'ordre du document d'origine : une liste d'objectifs n'est
+  // pas un ensemble, l'ordre dit ce qui vient d'abord.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_rh_poste (
+      uid       TEXT PRIMARY KEY,
+      intitule  TEXT,
+      missions  TEXT[] NOT NULL DEFAULT '{}',
+      referent  TEXT[] NOT NULL DEFAULT '{}',
+      maj       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_rh_objectifs (
+      id     BIGSERIAL PRIMARY KEY,
+      uid    TEXT NOT NULL,
+      annee  INTEGER NOT NULL,
+      type   TEXT NOT NULL DEFAULT 'objectif',
+      rang   INTEGER NOT NULL DEFAULT 0,
+      texte  TEXT NOT NULL,
+      etat   TEXT NOT NULL DEFAULT 'en_cours',
+      par    TEXT,
+      maj    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await db.query('CREATE INDEX IF NOT EXISTS app_rh_obj_uid ON app_rh_objectifs (uid, annee DESC, rang)');
   // LA QUALIFICATION GARDE SA GRILLE. On enregistre les reponses ET la version
   // de la grille : une qualification signee en 2026 doit rester lisible quand
   // la grille aura change, sinon elle n'atteste plus de rien.
@@ -509,6 +555,11 @@ function routes(app, getDb, deps) {
       const q = await db().query(
         `SELECT id, grille, version, le, echeance, reponses, reserves, par
            FROM app_rh_qualifications WHERE uid = $1 ORDER BY le DESC`, [u]);
+      const po = await db().query(
+        'SELECT intitule, missions, referent FROM app_rh_poste WHERE uid = $1', [u]);
+      const ob = await db().query(
+        `SELECT id, annee, type, rang, texte, etat FROM app_rh_objectifs
+          WHERE uid = $1 ORDER BY annee DESC, type, rang, id`, [u]);
       const c = await db().query('SELECT embauche FROM app_rh_collab WHERE uid = $1', [u]);
       const embauche = (c.rows[0] && c.rows[0].embauche) ? iso(new Date(c.rows[0].embauche)) : null;
       const auj = iso(new Date());
@@ -531,7 +582,25 @@ function routes(app, getDb, deps) {
                  reponses: r.reponses, reserves: r.reserves, par: r.par };
       });
       tracer(moi, 'consultation', u, 'fiche RH');
+      // Regroupe par annee ICI plutot qu'a l'ecran : l'ordre vient de la base,
+      // et deux ecrans qui regrouperaient chacun de leur cote finiraient par
+      // diverger.
+      const annees = [];
+      ob.rows.forEach(function (r) {
+        let a = annees.find(function (x) { return x.annee === r.annee; });
+        if (!a) { a = { annee: r.annee, objectifs: [], bilan: [], formations: [] }; annees.push(a); }
+        const l = { id: r.id, texte: r.texte, etat: r.etat, rang: r.rang };
+        if (r.type === 'bilan') a.bilan.push(l);
+        else if (r.type === 'formation') a.formations.push(l);
+        else a.objectifs.push(l);
+      });
+      annees.sort(function (x, y) { return y.annee - x.annee; });
+      const poste = po.rows[0]
+        ? { intitule: po.rows[0].intitule || '', missions: po.rows[0].missions || [],
+            referent: po.rows[0].referent || [] }
+        : null;
       res.json({ ok: true, uid: u, embauche: embauche, qualifications: quals,
+                 poste: poste, annees: annees,
                  grille: GRILLE_VACCINATION, faits: faits, entretiens: ents,
                  habilitations: habs, equilibre: equilibre(faits), silence: silence(faits, auj),
                  echeances: echeances(ents, embauche, auj),
@@ -684,6 +753,88 @@ function routes(app, getDb, deps) {
   });
 
 
+
+  // ── L'ETAT D'UN OBJECTIF ──────────────────────────────────────────────────
+  // Un clic, trois etats. Pas de pourcentage, pas de note : « ou en est-on ? »
+  // se repond en trois mots ou pas du tout.
+  app.post('/api/rh/objectif-etat', async (req, res) => {
+    try {
+      const moi = await titulaire(req, res); if (!moi) return;
+      const b = req.body || {};
+      const id = parseInt(b.id, 10);
+      const etat = ETATS_OBJ.indexOf(b.etat) >= 0 ? b.etat : null;
+      if (!id || !etat) return res.status(400).json({ ok: false, error: 'objectif et état requis' });
+      const r = await db().query(
+        'UPDATE app_rh_objectifs SET etat = $2, par = $3, maj = NOW() WHERE id = $1 RETURNING uid',
+        [id, etat, moi]);
+      if (!r.rows[0]) return res.status(404).json({ ok: false, error: 'objectif introuvable' });
+      tracer(moi, 'modification', r.rows[0].uid, 'objectif ' + etat);
+      res.json({ ok: true });
+    } catch (e) { rate(res, e); }
+  });
+
+  // ── L'IMPORT DES FICHES D'OBJECTIFS ───────────────────────────────────────
+  //
+  // ON RAPPROCHE PAR LE NOM, et on DIT ce qu'on n'a pas su rapprocher. Un import
+  // qui avale silencieusement deux fiches sur quatorze est pire qu'un import qui
+  // echoue : on croit le travail fait.
+  //
+  // Idempotent par (collaborateur, annee) : reimporter remplace l'annee plutot
+  // que d'empiler. Les etats deja poses sur une annee reimportee sont perdus --
+  // c'est le prix d'un remplacement franc, et il est annonce.
+  app.post('/api/rh/objectifs-import', async (req, res) => {
+    try {
+      const moi = await titulaire(req, res); if (!moi) return;
+      const fiches = (req.body && req.body.fiches) || [];
+      if (!Array.isArray(fiches) || !fiches.length)
+        return res.status(400).json({ ok: false, error: 'aucune fiche' });
+      if (!deps || typeof deps.equipe !== 'function')
+        return res.status(503).json({ ok: false, error: 'équipe indisponible' });
+      const equipe = (await deps.equipe()) || [];
+
+      const vus = [], inconnus = [];
+      let nObj = 0, nAnnees = 0;
+      for (const f of fiches) {
+        const q = equipe.find(function (x) { return x && memeePersonne(x, f); });
+        if (!q) { inconnus.push(((f.prenom || '') + ' ' + (f.nom || '')).trim()); continue; }
+
+        await db().query(
+          `INSERT INTO app_rh_poste (uid, intitule, missions, referent, maj)
+           VALUES ($1,$2,$3,$4,NOW())
+           ON CONFLICT (uid) DO UPDATE
+             SET intitule = $2, missions = $3, referent = $4, maj = NOW()`,
+          [q.id, String(f.intitule || '').slice(0, 200) || null,
+           (f.missions || []).map(function (x) { return String(x).slice(0, 500); }),
+           (f.referent || []).map(function (x) { return String(x).slice(0, 200); })]);
+
+        for (const a of (f.annees || [])) {
+          const an = parseInt(a.annee, 10);
+          if (!an || an < 1990 || an > 2100) continue;
+          await db().query('DELETE FROM app_rh_objectifs WHERE uid = $1 AND annee = $2', [q.id, an]);
+          nAnnees++;
+          const poser = async function (liste, type) {
+            let rang = 0;
+            for (const t of (liste || [])) {
+              const txt = String(t == null ? '' : t).trim().slice(0, 1000);
+              if (!txt) continue;
+              await db().query(
+                `INSERT INTO app_rh_objectifs (uid, annee, type, rang, texte, par)
+                 VALUES ($1,$2,$3,$4,$5,$6)`, [q.id, an, type, rang++, txt, moi]);
+              nObj++;
+            }
+          };
+          await poser(a.objectifs, 'objectif');
+          await poser(a.bilan, 'bilan');
+          await poser(a.formations, 'formation');
+        }
+        vus.push(q.id);
+        tracer(moi, 'creation', q.id, 'import des objectifs');
+      }
+      res.json({ ok: true, importes: vus.length, annees: nAnnees, lignes: nObj,
+                 inconnus: inconnus });
+    } catch (e) { rate(res, e); }
+  });
+
   // ── QUI PEUT VACCINER AUJOURD'HUI ─────────────────────────────────────────
   //
   // CELLE-CI N'EST PAS RESERVEE AUX TITULAIRES, et c'est voulu : un lundi
@@ -817,6 +968,7 @@ module.exports = {
   creerTables, routes,
   echeances, equilibre, silence, aPreparer, habilitationsDues,
   verdict, estPharmacien, estVaccinable, familleVaccinale, pointsGrille, echeanceQualif,
+  cleNom, memeePersonne, ETATS_OBJ, TYPES_OBJ,
   plusAns, joursEntre, iso,
   TONS, TAGS, TYPES, PARCOURS_ANS, BILAN_ANS, PREMIER_AN, SILENCE_JOURS, PREAVIS_JOURS,
   GRILLE_VACCINATION, GRILLE_VERSION, ETATS, QUALIF_MOIS, FAMILLES_VACCINALES

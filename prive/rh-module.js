@@ -263,7 +263,10 @@
       z.innerHTML = '<div class="rh-vide">L’équipe n’est pas encore chargée.</div>';
       return;
     }
-    z.innerHTML = '<div class="rh-tete"><h2>Suivi de l’équipe</h2>'
+    z.innerHTML = '<div class="rh-tete"><div class="rh-tete-h"><h2>Suivi de l’équipe</h2>'
+      + '<label class="rh-b rh-imp">Importer des objectifs'
+      +   '<input type="file" accept="application/json,.json" hidden onchange="rhImporterObjectifs(this)">'
+      + '</label></div>'
       + '<p>Un fait daté vaut mieux qu’un souvenir. Ce qui est écrit ici peut être demandé '
       + 'par la personne concernée : on écrit des faits, jamais des jugements.</p></div>'
       + '<div id="rh-msg" class="rh-msg"></div>'
@@ -308,6 +311,34 @@
       + '</button>';
   }
 
+  // ── L'IMPORT DES FICHES D'OBJECTIFS ───────────────────────────────────────
+  //
+  // Un fichier préparé à partir des documents Word. ON ANNONCE CE QU'ON N'A PAS
+  // SU RAPPROCHER : un import qui avale silencieusement deux fiches sur
+  // quatorze est pire qu'un import qui échoue — on croit le travail fait.
+  window.rhImporterObjectifs = async function (input) {
+    const f = (input.files || [])[0];
+    if (!f) return;
+    input.value = '';
+    try {
+      const corps = JSON.parse(await f.text());
+      const fiches = corps.fiches || corps;
+      if (!Array.isArray(fiches) || !fiches.length) throw new Error('aucune fiche dans ce fichier');
+      if (!confirm('Importer ' + fiches.length + ' fiche(s) d’objectifs ?\n\n'
+        + 'Les années réimportées sont remplacées : les états déjà posés sur ces '
+        + 'années-là seront perdus.')) return;
+      const j = await rhPost('/api/rh/objectifs-import', { fiches: fiches });
+      let m = j.importes + ' fiche(s) importée(s) · ' + j.lignes + ' ligne(s) sur '
+        + j.annees + ' année(s).';
+      if (j.inconnus && j.inconnus.length) {
+        m += ' NON RAPPROCHÉ(S) : ' + j.inconnus.join(', ')
+          + ' — vérifiez l’orthographe dans le Back Office.';
+      }
+      await rhRendreEquipe();
+      rhMsg(m, !!(j.inconnus && j.inconnus.length));
+    } catch (e) { rhMsg('Import impossible : ' + e.message, true); }
+  };
+
   // ── UNE FICHE ─────────────────────────────────────────────────────────────
   window.rhOuvrir = async function (uid) {
     rhUid = uid; rhEdite = null;
@@ -333,6 +364,7 @@
       + '</div>'
       + '<div id="rh-msg" class="rh-msg"></div>'
       + rhBandeau(f.equilibre, f.silence, f)
+      + rhBlocObjectifs(f)
       + rhSaisie()
       + rhListeFaits(f.faits)
       + rhBlocEntretiens(f)
@@ -376,6 +408,94 @@
     });
     return h;
   }
+
+
+  // ── LE POSTE ET LES OBJECTIFS ─────────────────────────────────────────────
+  //
+  // En tête de fiche, AVANT les faits : on lit ce qu'on attend de quelqu'un
+  // avant de lire ce qu'on lui reproche. Les objectifs de l'année en cours sont
+  // dépliés et cliquables ; les années passées se replient — mais elles restent,
+  // parce qu'un objectif qui revient à l'identique depuis trois ans est en soi
+  // une information.
+  const RH_ETAT_OBJ = {
+    en_cours:  { ico: '○', lbl: 'En cours',  cls: 'enc' },
+    atteint:   { ico: '✓', lbl: 'Atteint',   cls: 'att' },
+    abandonne: { ico: '–', lbl: 'Abandonné', cls: 'aba' }
+  };
+  let rhAnneesOuvertes = {};
+
+  function rhAnneeCourante() { return new Date().getFullYear(); }
+
+  function rhBlocObjectifs(f) {
+    const po = f.poste, annees = f.annees || [];
+    if (!po && !annees.length) return '';
+    const courante = rhAnneeCourante();
+    let h = '<div class="rh-bloc rh-obj"><div class="rh-bloc-h">Poste et objectifs</div>';
+
+    if (po) {
+      const liste = function (titre, l) {
+        if (!l || !l.length) return '';
+        return '<div class="rh-po-l"><b>' + titre + '</b> '
+          + l.map(function (x) { return E(x); }).join(' · ') + '</div>';
+      };
+      h += '<div class="rh-po">'
+        + (po.intitule ? '<div class="rh-po-t">' + E(po.intitule) + '</div>' : '')
+        + liste('Missions', po.missions)
+        + liste('Référent', po.referent)
+        + '</div>';
+    }
+
+    annees.forEach(function (a, i) {
+      const cur = a.annee >= courante;
+      const ouvert = (rhAnneesOuvertes[a.annee] === undefined) ? cur : rhAnneesOuvertes[a.annee];
+      const n = a.objectifs.length;
+      const atteints = a.objectifs.filter(function (o) { return o.etat === 'atteint'; }).length;
+      h += '<button type="button" class="rh-an' + (cur ? ' cur' : '') + '"'
+        + ' onclick="rhBasculerAnnee(' + a.annee + ')">'
+        + (ouvert ? '▾' : '▸') + ' Objectifs ' + a.annee
+        + '<span class="rh-an-n">' + (n ? atteints + ' / ' + n : '—') + '</span></button>';
+      if (!ouvert) return;
+      h += '<div class="rh-objs">';
+      a.objectifs.forEach(function (o) {
+        h += '<div class="rh-o rh-o-' + RH_ETAT_OBJ[o.etat].cls + '">'
+          + '<span class="rh-o-t">' + E(o.texte) + '</span>'
+          + (cur
+              ? '<span class="rh-o-e">' + Object.keys(RH_ETAT_OBJ).map(function (k) {
+                  return '<button type="button" class="rh-oe rh-oe-' + RH_ETAT_OBJ[k].cls
+                    + (o.etat === k ? ' on' : '') + '" title="' + RH_ETAT_OBJ[k].lbl + '"'
+                    + ' onclick="rhEtatObjectif(' + o.id + ',\'' + k + '\')">'
+                    + RH_ETAT_OBJ[k].ico + '</button>';
+                }).join('') + '</span>'
+              : '<span class="rh-o-fige">' + RH_ETAT_OBJ[o.etat].lbl + '</span>')
+          + '</div>';
+      });
+      if (a.bilan.length) {
+        h += '<div class="rh-o-sec">Bilan</div>'
+          + a.bilan.map(function (x) { return '<div class="rh-o-txt">' + E(x.texte) + '</div>'; }).join('');
+      }
+      if (a.formations.length) {
+        h += '<div class="rh-o-sec">Souhaits de formation</div>'
+          + a.formations.map(function (x) { return '<div class="rh-o-txt">' + E(x.texte) + '</div>'; }).join('');
+      }
+      h += '</div>';
+    });
+    return h + '</div>';
+  }
+
+  window.rhBasculerAnnee = function (an) {
+    const courante = rhAnneeCourante();
+    const actuel = (rhAnneesOuvertes[an] === undefined) ? (an >= courante) : rhAnneesOuvertes[an];
+    rhAnneesOuvertes[an] = !actuel;
+    rhRendreFiche();
+  };
+
+  // Un gestionnaire ne reçoit qu'un identifiant et un état, jamais du texte.
+  window.rhEtatObjectif = async function (id, etat) {
+    try {
+      await rhPost('/api/rh/objectif-etat', { id: id, etat: etat });
+      await rhOuvrir(rhUid);
+    } catch (e) { rhMsg('Enregistrement impossible : ' + e.message, true); }
+  };
 
   // ── LA SAISIE ─────────────────────────────────────────────────────────────
   // Un seul champ, et le rappel juste dessous.
@@ -639,10 +759,20 @@
           + (f.tag ? ' <i>(' + E(TAGS[f.tag] || f.tag) + ')</i>' : '') + '</li>';
       }).join('') + '</ul>';
     };
-    const corps = p.total
+    // LES OBJECTIFS DE L'ANNÉE VIENNENT AVEC. C'est ce qui fait du point une
+    // conversation plutôt qu'un relevé : les faits d'un côté, ce qu'on s'était
+    // dit de l'autre, sur la même feuille.
+    const an = (rhFiche.annees || []).find(function (a) { return a.annee >= rhAnneeCourante(); });
+    const objs = an && an.objectifs.length
+      ? '<h4>Objectifs ' + an.annee + '</h4><ul>' + an.objectifs.map(function (o) {
+          return '<li><b>' + RH_ETAT_OBJ[o.etat].ico + '</b> ' + E(o.texte)
+            + ' <i>(' + RH_ETAT_OBJ[o.etat].lbl.toLowerCase() + ')</i></li>';
+        }).join('') + '</ul>'
+      : '';
+    const corps = objs + (p.total
       ? bloc('À saluer', p.positif) + bloc('À évoquer', p.neutre) + bloc('À corriger', p.corriger)
       : '<p><b>Rien n’a été consigné depuis le dernier point.</b> Ce n’est pas forcément que rien '
-        + 'ne s’est passé — c’est peut-être qu’on n’a rien noté.</p>';
+        + 'ne s’est passé — c’est peut-être qu’on n’a rien noté.</p>');
     rhModale('Préparer le point — ' + rhNom(rhUid),
       '<div class="rh-prep" id="rh-prep">'
       + '<p class="rh-prep-s">'
@@ -675,6 +805,14 @@
               + (e.notes ? ' : ' + E(e.notes) : '')
               + (e.suites ? ' <i>Décidé : ' + E(e.suites) + '</i>' : ''));
           }).join('') + '</ul>' : '<p>Aucun.</p>')
+        + ((rhFiche && rhFiche.annees && rhFiche.annees.length)
+            ? '<h4>Objectifs</h4>' + rhFiche.annees.map(function (a) {
+                if (!a.objectifs.length) return '';
+                return '<p><b>' + a.annee + '</b></p><ul>' + a.objectifs.map(function (o) {
+                  return '<li>' + E(o.texte) + ' <i>(' + RH_ETAT_OBJ[o.etat].lbl.toLowerCase() + ')</i></li>';
+                }).join('') + '</ul>';
+              }).join('')
+            : '')
         + '<h4>Formations et habilitations</h4>'
         + (d.habilitations.length ? '<ul>' + d.habilitations.map(function (h) {
             return li(E(h.libelle) + (h.echeance ? ' — jusqu’au ' + rhFr(String(h.echeance).slice(0, 10)) : ''));
@@ -736,6 +874,9 @@
   // ── Style ─────────────────────────────────────────────────────────────────
   const RH_CSS = `
   #rh-host{padding:18px 22px;max-width:940px}
+  .rh-tete-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .rh-tete-h h2{flex:1;min-width:0}
+  .rh-imp{cursor:pointer;margin:0;flex:none}
   .rh-tete h2{margin:0 0 6px;font-size:1.2rem;color:var(--accent)}
   .rh-tete p{margin:0 0 16px;color:var(--mut);font-size:.84rem;line-height:1.55;max-width:640px}
   .rh-msg{font-size:.85rem;min-height:0;margin-bottom:8px}
@@ -830,6 +971,36 @@
   .rh-q button{border:none;background:none;color:#c3ccc8;cursor:pointer;font-size:.86rem;
     padding:2px 5px;border-radius:6px}
   .rh-q button:hover{color:var(--accent);background:var(--accent-soft)}
+  .rh-obj{margin-top:4px}
+  .rh-po{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:11px 13px;margin-bottom:8px}
+  .rh-po-t{font-weight:700;font-size:.92rem;color:var(--accent);margin-bottom:5px}
+  .rh-po-l{font-size:.82rem;line-height:1.6;color:var(--mut);margin-top:3px}
+  .rh-po-l b{color:var(--ink);font-size:.74rem;text-transform:uppercase;letter-spacing:.05em}
+  .rh-an{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;
+    border:none;border-top:1px solid var(--line);padding:9px 2px;cursor:pointer;font:inherit;
+    font-size:.84rem;font-weight:600;color:var(--mut)}
+  .rh-an.cur{color:var(--ink);font-weight:700}
+  .rh-an:hover{color:var(--accent)}
+  .rh-an-n{margin-left:auto;font-size:.76rem;font-weight:600;color:var(--mut);
+    background:var(--line);border-radius:999px;padding:1px 9px}
+  .rh-an.cur .rh-an-n{background:var(--accent-soft);color:var(--accent)}
+  .rh-objs{padding:2px 0 8px}
+  .rh-o{display:flex;align-items:flex-start;gap:10px;padding:6px 0;font-size:.86rem;line-height:1.5}
+  .rh-o-t{flex:1;min-width:0}
+  .rh-o-att .rh-o-t{color:var(--mut)}
+  .rh-o-aba .rh-o-t{color:var(--mut);text-decoration:line-through}
+  .rh-o-e{display:flex;gap:3px;flex:none}
+  .rh-oe{width:26px;height:24px;border:1px solid var(--line);background:var(--surface);
+    border-radius:7px;cursor:pointer;font:inherit;font-size:.8rem;color:#b9c4bf;line-height:1}
+  .rh-oe:hover{border-color:var(--accent)}
+  .rh-oe-att.on{background:var(--ok);border-color:var(--ok);color:#fff}
+  .rh-oe-enc.on{background:var(--warn);border-color:var(--warn);color:#fff}
+  .rh-oe-aba.on{background:var(--mut);border-color:var(--mut);color:#fff}
+  .rh-o-fige{font-size:.74rem;color:var(--mut);flex:none}
+  .rh-o-sec{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--mut);margin:10px 0 4px}
+  .rh-o-txt{font-size:.84rem;line-height:1.55;color:var(--ink);margin-bottom:3px}
   .rh-habs{display:flex;flex-direction:column;gap:5px}
   .rh-h{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);
     border-radius:9px;padding:8px 12px;font-size:.86rem}
