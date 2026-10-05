@@ -8176,6 +8176,25 @@ function credRelEtape(r){
   if(r.etape) return Math.min(Math.max(parseInt(r.etape)||1,1),CRED_ETAPE_MAX);
   return ({1:1,2:2,3:4})[r.niveau]||1;
 }
+// ── ENREGISTRER FAIT PARTIE DE L'ÉCRITURE ──────────────────────────────────
+//
+// LE DÉFAUT QUE CETTE FONCTION SUPPRIME. Toutes les écritures du module
+// estampillaient `updatedAt` et appelaient `renderCreds()` — et aucune
+// n'enregistrait. L'écran montrait donc la bonne chose, pendant huit secondes :
+// la boucle de resynchronisation remplace `credits` par la copie du serveur, et
+// une modification qui n'a pas été envoyée entre-temps disparaît sans un mot.
+//
+// Ça ne se voyait pas toujours, et c'est ce qui rendait le défaut sournois :
+// n'importe quelle autre action de l'application déclenchait un enregistrement
+// global qui emportait la relance au passage. Elle tenait donc une fois sur
+// deux, au hasard de ce qu'on faisait ensuite. Les relances par SMS, elles, ne
+// tenaient jamais : la fenêtre d'envoi se referme sans que rien d'autre ne
+// sauvegarde.
+//
+// `saveNow` et non `schedSave` : la maison réserve l'envoi immédiat aux
+// « changements d'état délibérés et rares ». Une relance en est un.
+function credTouche(c){ if(c) c.updatedAt=Date.now(); saveNow(); }
+
 function credRelances(c){
   const list=(c.relances||[]).slice();
   if(list.length) return list;
@@ -8550,7 +8569,7 @@ function saveCred(){
   };
   upsertPatient({nom,prenom,dob:obj.dob,tel:obj.tel,mail:obj.mail,adresse:obj.adresse,commune:obj.commune});
   if(credEditId){
-    const c=credits.find(x=>x.id===credEditId); if(c){ Object.assign(c,obj); c.updatedAt=Date.now(); }
+    const c=credits.find(x=>x.id===credEditId); if(c){ Object.assign(c,obj); credTouche(c); }
   } else {
     // La saisie du crédit VAUT relance n° 1 (orale, au comptoir ou par téléphone).
     const canal1=document.querySelector('input[name="cr-canal1"]:checked')?.value||'sur place';
@@ -8562,13 +8581,22 @@ function saveCred(){
   }
   toggleCredForm();
   renderCreds();
+  saveNow();
 }
 
 function deleteCred(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   document.getElementById('conf-title').textContent='Supprimer ce crédit';
   document.getElementById('conf-msg').textContent=`Supprimer définitivement le crédit de ${c.nom} ${c.prenom} (${credAmountTxt(c)}) ?`;
-  pendingAction=()=>{credits=credits.filter(x=>x.id!==id); renderCreds(); closeModal('confirm-modal'); closeModal('cred-detail-modal');};
+  pendingAction=()=>{
+    // La pierre tombale AVANT le retrait : sans elle, le serveur fusionne par
+    // id et ne voit qu'une liste a laquelle il manque une ligne — le credit
+    // supprime ici reviendrait au premier envoi d'un autre poste.
+    markDeleted('credits', id);
+    credits=credits.filter(x=>x.id!==id);
+    renderCreds(); saveNow();
+    closeModal('confirm-modal'); closeModal('cred-detail-modal');
+  };
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
 }
@@ -8646,7 +8674,7 @@ function saveCredRelance(){
     c.huissierAt=date;
     c.huissierNom=(document.getElementById('crel-huissier')?.value||'').trim();
   }
-  c.updatedAt=Date.now();
+  credTouche(c);
   closeModal('cred-rel-modal');
   renderCreds();
 }
@@ -8669,7 +8697,7 @@ function saveCredSolder(){
   c.paidAt=date;
   c.paidBy=currentUser?.id||'?';
   c.paidNotes=document.getElementById('cpay-notes').value.trim();
-  c.updatedAt=Date.now();
+  credTouche(c);
   closeModal('cred-pay-modal');
   closeModal('cred-detail-modal');
   renderCreds();
@@ -8727,14 +8755,14 @@ function credNoteAjouter(id){
     at:new Date().toISOString(),
     texte:texte, by:currentUser.id
   });
-  c.updatedAt=Date.now();
+  credTouche(c);
   schedSave(); renderCreds(); openCredDetail(id);
 }
 function credNoteSupprimer(id, noteId){
   const c=credits.find(x=>x.id===id); if(!c) return;
   const j=credNotes(c); const i=j.findIndex(x=>x.id===noteId); if(i<0) return;
   if(!isAdmin() && !(currentUser&&currentUser.id===j[i].by)){ alert('Seul l’auteur de la note, ou un administrateur, peut la supprimer.'); return; }
-  j.splice(i,1); c.updatedAt=Date.now();
+  j.splice(i,1); credTouche(c);
   schedSave(); renderCreds(); openCredDetail(id);
 }
 
@@ -8814,7 +8842,7 @@ function markCredIrrecouvrable(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   document.getElementById('conf-title').textContent='Crédit irrécouvrable';
   document.getElementById('conf-msg').textContent=`Marquer le crédit de ${c.nom} ${c.prenom} comme irrécouvrable ? Cette action peut être annulée depuis le détail.`;
-  pendingAction=()=>{c.status='perdu'; c.updatedAt=Date.now(); renderCreds(); closeModal('confirm-modal'); closeModal('cred-detail-modal');};
+  pendingAction=()=>{c.status='perdu'; credTouche(c); renderCreds(); closeModal('confirm-modal'); closeModal('cred-detail-modal');};
   document.getElementById('conf-ok').onclick=pendingAction;
   openModal('confirm-modal');
 }
@@ -8823,7 +8851,7 @@ function reopenCred(id){
   const c=credits.find(x=>x.id===id); if(!c) return;
   c.status='en cours';
   delete c.paidAt; delete c.paidBy; delete c.paidMode; delete c.paidNotes;
-  c.updatedAt=Date.now();
+  credTouche(c);
   renderCreds();
   closeModal('cred-detail-modal');
 }
@@ -8935,7 +8963,7 @@ async function sendCredRelanceMail(){
       notes: currentMsgNotes || ('Relance \u00e9tape '+e+' \u2014 mail envoy\u00e9 depuis l\u2019intranet'),
       by: currentUser?.id||'?'
     });
-    c.updatedAt=Date.now();
+    credTouche(c);
     const ok=document.getElementById('cmsg-confirm');
     ok.textContent='Mail envoy\u00e9 \u00e0 '+c.mail+'. La relance est archiv\u00e9e dans le dossier.';
     ok.style.display='block';
@@ -8964,7 +8992,7 @@ function confirmCredMsg(){
     notes: currentMsgNotes || `Relance étape ${e} — ${CRED_ETAPES[e].lbl} (${CRED_REL_LBL[canal]||canal})`,
     by: currentUser?.id||'?'
   });
-  c.updatedAt=Date.now();
+  credTouche(c);
   document.getElementById('cmsg-confirm').textContent='Relance enregistrée. Le message est archivé dans le dossier.';
   document.getElementById('cmsg-confirm').style.display='block';
   document.getElementById('cmsg-confirm-btn').style.display='none';
@@ -11701,7 +11729,7 @@ async function createCredPayLink(){
       mode:j.mode, status:'cree', envois:[],
       createdAt:new Date().toISOString(), createdBy:currentUser?.id||'?'
     };
-    c.updatedAt=Date.now();
+    credTouche(c);
     renderCreds();
     showClinkResult(c);
   }catch(e){
@@ -11729,7 +11757,7 @@ function credPayNoteEnvoi(credId, canal, dest){
   c.paiement.envois=c.paiement.envois||[];
   c.paiement.envois.push({canal, to:dest||null, at:now.toISOString(), by:currentUser?.id||'?'});
   if(c.paiement.status==='cree') c.paiement.status='envoye';
-  c.updatedAt=Date.now();
+  credTouche(c);
   renderCreds();
   const sent=document.getElementById('clink-sent');
   if(sent){ sent.textContent='Lien transmis ('+canal+(dest?' — '+dest:'')+').'; sent.style.display='block'; }
@@ -11820,7 +11848,7 @@ function cloturerCredWinpharma(id){
     c.winpharmaBy=currentUser.id;
     c.paidNotes='Réglé en ligne'+(p.montantPaye!=null?` (${credPayEuro(p.montantPaye)} €)`:'')
       +' — saisie Winpharma confirmée par '+staffName(currentUser.id)+'.';
-    c.updatedAt=Date.now();
+    credTouche(c);
     renderCreds();
     closeModal('confirm-modal');
     closeModal('cred-detail-modal');
@@ -11867,7 +11895,7 @@ async function checkCredPayment(){
       c.status='payé';
       sent.textContent='Règlement confirmé — reste à solder le crédit dans Winpharma.';
     }
-    c.updatedAt=Date.now();
+    credTouche(c);
     renderCreds();
   }catch(e){
     sent.textContent='Vérification impossible : '+(e.message||'erreur inconnue');
@@ -11895,7 +11923,7 @@ function openCredSms(credId, etape, date, notes){
                                   : `Relance étape ${etape} — SMS envoyé depuis l'intranet`),
         by: currentUser?.id||'?'
       });
-      c.updatedAt=Date.now();
+      credTouche(c);
       renderCreds();
     }
   });
