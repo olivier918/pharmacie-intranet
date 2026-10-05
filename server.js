@@ -877,6 +877,10 @@ commandes.routes(app, () => db, { qui: identite.qui,
 rh.routes(app, () => db, {
   qui: identite.qui,
   estAdmin: (req) => estAdministrateur(identite.qui(req)),
+  // SIGNER N'EST PAS SE CONNECTER. Le pharmacien qui qualifie un collegue tape
+  // son code sur le poste de quelqu'un d'autre : on verifie l'empreinte et on
+  // rend la personne, sans toucher a la session du poste.
+  signataire: async (req, code) => identite.signataire(req, code, await lireEtatBrut()),
   noter: (uid, action, objet, ref, detail) => traces.noter(db, uid, action, objet, ref, detail)
 });
 

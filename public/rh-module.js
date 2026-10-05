@@ -176,6 +176,7 @@
       + rhSaisie()
       + rhListeFaits(f.faits)
       + rhBlocEntretiens(f)
+      + rhBlocQualifications(f)
       + rhBlocHabilitations(f);
     rhMajCompteur();
   }
@@ -361,6 +362,49 @@
     if (!confirm('Retirer cet entretien du ' + rhFr(e.le) + ' ?')) return;
     try { await rhPost('/api/rh/entretien-retirer', { id: e.id }); await rhOuvrir(rhUid); }
     catch (x) { rhMsg('Suppression impossible : ' + x.message, true); }
+  };
+
+  // ── LES QUALIFICATIONS ────────────────────────────────────────────────────
+  // Signées ailleurs, dans l'espace général, par un pharmacien qui a tapé son
+  // code. ON NE LES MODIFIE PAS D'ICI : une qualification se refait, elle ne se
+  // corrige pas. Le détail de la grille s'ouvre, parce qu'une qualification
+  // qu'on ne peut pas relire n'atteste de rien.
+  const RH_ETAT = { oui: '✓', non: '✗', so: 's.o.' };
+  function rhBlocQualifications(f) {
+    const l = f.qualifications || [];
+    if (!l.length) return '';
+    const auj = rhIso(new Date());
+    return '<div class="rh-bloc"><div class="rh-bloc-h">Qualifications</div>'
+      + l.map(function (q, i) {
+          const perimee = q.echeance < auj;
+          return '<div class="rh-q' + (perimee ? ' perimee' : '') + '">'
+            + '<span class="rh-q-l">Vaccination</span>'
+            + '<span class="rh-q-d">' + (perimee ? 'périmée le ' : 'jusqu’au ')
+            +   rhFr(q.echeance) + ' · signée le ' + rhFr(q.le)
+            +   ' par ' + E(rhPrenom(q.par))
+            +   (q.reserves ? ' · <b>avec réserve</b>' : '') + '</span>'
+            + '<button type="button" onclick="rhQualif(' + i + ')" title="Voir la grille">⤢</button>'
+            + '</div>';
+        }).join('')
+      + '</div>';
+  }
+  window.rhQualif = function (i) {
+    const q = (rhFiche && rhFiche.qualifications) ? rhFiche.qualifications[i] : null; if (!q) return;
+    const g = (rhFiche && rhFiche.grille) || [];
+    const corps = '<div class="rh-prep" id="rh-q">'
+      + '<h3>Qualification à la vaccination — ' + E(rhNom(rhUid)) + '</h3>'
+      + '<p class="rh-prep-s">Signée le ' + rhFr(q.le) + ' par ' + E(rhPrenom(q.par))
+      +   ' · valable jusqu’au ' + rhFr(q.echeance) + ' · grille ' + E(q.version) + '</p>'
+      + g.map(function (b) {
+          return '<h4>' + E(b.bloc) + '</h4><ul>' + b.points.map(function (p) {
+            const e = (q.reponses || {})[p.clef];
+            return '<li><b>' + (RH_ETAT[e] || '—') + '</b> ' + E(p.titre) + '</li>';
+          }).join('') + '</ul>';
+        }).join('')
+      + (q.reserves ? '<h4>Réserve</h4><p>' + E(q.reserves) + '</p>' : '')
+      + '</div>';
+    rhModale('Qualification du ' + rhFr(q.le), corps, null, 'Imprimer',
+      function () { rhImprimer('rh-q', 'Qualification — ' + rhNom(rhUid)); });
   };
 
   // ── LES HABILITATIONS ─────────────────────────────────────────────────────
@@ -617,6 +661,15 @@
   .rh-e-h span{color:var(--mut);font-size:.78rem;margin-right:auto}
   .rh-e-t{font-size:.86rem;margin-top:6px;white-space:pre-wrap}
   .rh-e-s{font-size:.84rem;margin-top:5px;color:#41576e}
+  .rh-q{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);
+    border-left:4px solid var(--ok);border-radius:9px;padding:8px 12px;font-size:.86rem;margin-bottom:5px}
+  .rh-q.perimee{border-left-color:var(--crit)}
+  .rh-q-l{font-weight:600;flex:none}
+  .rh-q-d{font-size:.78rem;color:var(--mut);flex:1;min-width:0}
+  .rh-q.perimee .rh-q-d{color:var(--crit)}
+  .rh-q button{border:none;background:none;color:#c3ccc8;cursor:pointer;font-size:.86rem;
+    padding:2px 5px;border-radius:6px}
+  .rh-q button:hover{color:var(--accent);background:var(--accent-soft)}
   .rh-habs{display:flex;flex-direction:column;gap:5px}
   .rh-h{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);
     border-radius:9px;padding:8px 12px;font-size:.86rem}

@@ -12,6 +12,8 @@ const ix = lire('public/index.html');
 const pg = lire('public/planning.html');
 const sv = lire('server.js');
 const core = lire('public/pl-core.js');
+const id = lire('identite.js');
+const vq = lire('public/vq-module.js');
 
 let ok = 0, ko = 0;
 const t = (n, c) => { c ? (ok++, console.log('  ✓ ' + n)) : (ko++, console.log('  ✗ ' + n)); };
@@ -48,11 +50,37 @@ const routes = [];
 const re = /app\.(get|post)\('(\/api\/rh\/[^']*)'[\s\S]*?\n  \}\);/g;
 let m;
 while ((m = re.exec(src))) routes.push({ verbe: m[1], url: m[2], corps: m[0] });
-t('les routes du module sont bien toutes trouvées', routes.length >= 9);
+t('les routes du module sont bien toutes trouvées', routes.length >= 11);
+
+// DEUX ROUTES SORTENT DE LA PORTE, ET C'EST ECRIT ICI PLUTOT QUE DEDUIT. La
+// qualification se fait au comptoir, dans l'espace general : y exiger un
+// titulaire la rendrait impossible. Elles sont donc nommees une par une, et
+// chacune doit prouver ce qui la protege A LA PLACE. Une route qui s'ajouterait
+// a cette liste sans y etre nommee fait echouer l'essai -- c'est le but.
+const HORS_PORTE = ['/api/rh/vaccination/etat', '/api/rh/qualifier'];
 routes.forEach(function (r) {
+  if (HORS_PORTE.indexOf(r.url) >= 0) return;
   t(r.verbe.toUpperCase() + ' ' + r.url + ' vérifie le titulaire',
     /const moi = await titulaire\(req, res\); if \(!moi\) return;/.test(r.corps));
 });
+const horsPorte = routes.filter(function (r) { return HORS_PORTE.indexOf(r.url) >= 0; });
+t('les deux routes hors porte sont exactement celles qu’on a nommées',
+  horsPorte.length === HORS_PORTE.length);
+const etat = horsPorte.find(function (r) { return r.url === '/api/rh/vaccination/etat'; });
+const qual = horsPorte.find(function (r) { return r.url === '/api/rh/qualifier'; });
+t('l’état « qui peut vacciner » exige au moins une session ouverte',
+  /session inconnue/.test(etat.corps));
+t('... et il ne rend QUE des dates — aucune réserve, aucun contenu de grille',
+  !/reserves/.test(etat.corps) && !/reponses/.test(etat.corps));
+t('qualifier exige une session ouverte', /session inconnue/.test(qual.corps));
+t('... ET le code du pharmacien, vérifié par le serveur',
+  /deps\.signataire\(req, b\.code\)/.test(qual.corps));
+t('... qui doit bien être un pharmacien',
+  /estPharmacien\(qui2\)[\s\S]{0,120}seul un pharmacien peut qualifier/.test(qual.corps));
+t('... et qui ne peut pas se qualifier lui-même',
+  /qui2\.id === u[\s\S]{0,120}se qualifier soi-même/.test(qual.corps));
+t('le freinage de l’ouverture de session s’applique aussi à la signature',
+  /e\.code === 429/.test(qual.corps) && /function signataire[\s\S]{0,400}freine\(req\)/.test(id));
 t('la porte refuse une session inconnue par un 401',
   /status\(401\)[\s\S]{0,80}session inconnue/.test(src));
 t('... et un opérateur non titulaire par un 403',

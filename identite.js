@@ -212,6 +212,37 @@ function noterEchec(req) {
 function oublierEchecs(req) { _echecs.delete(adresse(req)); }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  SIGNER UN ACTE SANS OUVRIR DE SESSION
+//
+//  Un pharmacien qui qualifie un collegue tape son code SUR LE POSTE DE
+//  QUELQU'UN D'AUTRE. S'il fallait passer par /api/session/pin, la session du
+//  poste changerait : le collegue se retrouverait connecte sous le nom du
+//  pharmacien, et tout ce qu'il ferait ensuite porterait ce nom-la. On verifie
+//  donc le code et on rend la personne, sans toucher au cookie.
+//
+//  Le freinage est le MEME que celui de l'ouverture de session : sans lui,
+//  cette route serait un oracle a codes, plus commode que la porte d'entree.
+async function signataire(req, pin, data) {
+  const attente = freine(req);
+  if (attente) { const e = new Error('trop_d_essais'); e.attente = attente; e.code = 429; throw e; }
+  const code = String(pin == null ? '' : pin).trim();
+  if (!/^\d{4,8}$/.test(code)) { noterEchec(req); return null; }
+  const liste = Array.isArray(data && data.staffDB) ? data.staffDB : [];
+  // Comme a l'ouverture de session : on parcourt tout le monde sans
+  // court-circuit, pour que le temps de reponse ne dise pas ou se trouve la
+  // personne dans la liste.
+  let trouve = null;
+  for (const s of liste) {
+    if (!s || !s.pinHash || !s.pinSel) continue;
+    if (memeEmpreinte(empreinte(code, s.pinSel), s.pinHash) && !trouve) trouve = s;
+  }
+  if (!trouve) { noterEchec(req); return null; }
+  oublierEchecs(req);
+  const c = Object.assign({}, trouve); SECRETS_STAFF.forEach(k => delete c[k]);
+  return c;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function installer(app, deps) {
   const { lireEtat, ecrireEtat, journaliser } = deps;
 
@@ -366,5 +397,5 @@ function diagnostic(data) {
 
 module.exports = {
   installer, sansSecrets, sansSecretsEntrants, preserverSecrets, convertirCodes, diagnostic,
-  qui, empreinte, nouveauSel, SECRETS_STAFF
+  qui, signataire, empreinte, nouveauSel, SECRETS_STAFF
 };

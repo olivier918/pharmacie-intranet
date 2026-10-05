@@ -172,6 +172,137 @@ function habilitationsDues(habs, aujourdhui, preavis) {
     .sort(function (a, b) { return (a.dans || 0) - (b.dans || 0); });
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LA QUALIFICATION A LA VACCINATION
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  LA GRILLE EST ICI, PAS DANS L'ECRAN. L'ecran l'affiche, l'essai la verifie,
+//  et le serveur enregistre des clefs -- pas des libelles. Le jour ou un texte
+//  change, on corrige une ligne et les qualifications deja signees gardent un
+//  sens, parce qu'elles portent la clef et la version de la grille.
+//
+//  CHAQUE POINT PORTE SA REFERENCE. Une check-list sans texte derriere est une
+//  liste d'avis ; avec le texte, c'est une verification. Les references ont ete
+//  relevees le 05/10/2026 :
+//    — decret n° 2023-736 et arrete du 8 aout 2023 (cahier des charges et
+//      objectifs pedagogiques) ;
+//    — arrete du 4 decembre 2024, qui etend l'administration aux preparateurs
+//      et fixe le contenu de leur formation ;
+//    — declaration de l'activite vaccinale au conseil de l'Ordre.
+//
+//  TROIS ETATS PAR POINT, pas deux : oui, non, et SANS OBJET. Un preparateur
+//  n'a pas a declarer une activite de prescription ; sans le troisieme etat, il
+//  faudrait soit mentir en cochant, soit brancher la grille sur le statut --
+//  et une grille qui se replie toute seule finit par cacher la ligne qui
+//  comptait.
+const GRILLE_VERSION = '2026-10-05';
+const ETATS = ['oui', 'non', 'so'];
+
+const GRILLE_VACCINATION = [
+  { bloc: 'Le droit d’exercer', points: [
+    { clef: 'statut',
+      titre: 'Le statut est vérifié, et ce qu’il autorise est clair',
+      aide: 'Pharmacien : prescrit et administre. Préparateur ou étudiant de 6e année : '
+          + 'administre seulement, sous la supervision d’un pharmacien formé.',
+      ref: 'art. L.5125-1-1 A du CSP · décret 2023-736' },
+    { clef: 'formation_admin',
+      titre: 'Attestation de formation à l’administration des vaccins',
+      aide: 'Au nom de la personne, datée, délivrée par un organisme respectant les objectifs '
+          + 'pédagogiques du module « administration » : 7 h, dont 3 h 30 en présentiel obligatoire.',
+      ref: 'arrêté du 8 août 2023, modifié le 4 décembre 2024' },
+    { clef: 'formation_presc',
+      titre: 'Attestation de formation à la prescription',
+      aide: 'Pour un pharmacien qui prescrit : module de 10 h 30, dont 3 h 30 en présentiel. '
+          + 'Sans objet pour un préparateur ou un étudiant, qui ne prescrivent pas.',
+      ref: 'arrêté du 8 août 2023' },
+    { clef: 'declaration_ordre',
+      titre: 'Activité vaccinale déclarée au conseil de l’Ordre',
+      aide: 'Pour chaque pharmacien, titulaire comme adjoint. L’accusé de réception est conservé. '
+          + 'Sans objet pour un préparateur ou un étudiant.',
+      ref: 'décret 2023-736' },
+    { clef: 'supervision',
+      titre: 'La supervision est organisée',
+      aide: 'Pour un préparateur ou un étudiant : un pharmacien lui-même formé est présent pendant '
+          + 'toute l’activité, et il le sait. Sans objet pour un pharmacien.',
+      ref: 'arrêté du 4 décembre 2024' }
+  ]},
+  { bloc: 'Ce qu’elle sait faire', points: [
+    { clef: 'eligibilite',
+      titre: 'Vérifie l’éligibilité avant d’injecter',
+      aide: '11 ans et plus pour les vaccins du calendrier, 5 ans et plus pour la Covid. '
+          + 'Contre-indications, antécédent allergique, et vaccins vivants chez l’immunodéprimé.',
+      ref: 'arrêté du 8 août 2023, listes annexées' },
+    { clef: 'consentement',
+      titre: 'Recueille le consentement libre et éclairé',
+      aide: 'Et sait quoi faire s’il est refusé, ou si la personne hésite.',
+      ref: 'cahier des charges, module 2' },
+    { clef: 'hygiene',
+      titre: 'Hygiène des mains et antisepsie du point d’injection' },
+    { clef: 'technique',
+      titre: 'Technique d’injection intramusculaire et sous-cutanée',
+      aide: 'Choix du site, du matériel, et de la voie selon le vaccin.' },
+    { clef: 'anaphylaxie',
+      titre: 'Sait où est l’adrénaline, à quelle dose, et appelle le 15',
+      aide: 'Surveillance de la personne pendant les 15 minutes qui suivent l’injection. '
+          + 'C’est le point qu’on vérifie en le faisant dire, pas en le faisant cocher.',
+      ref: 'cahier des charges, module 2 — partie présentielle obligatoire' },
+    { clef: 'malaise',
+      titre: 'Sait allonger la personne et conduire un malaise vagal' },
+    { clef: 'dasri',
+      titre: 'Élimine l’aiguille dans le conteneur DASRI, sans la recapuchonner',
+      ref: 'art. R.1335-1 et suivants' },
+    { clef: 'tracabilite',
+      titre: 'Trace la vaccination là où il faut',
+      aide: 'Vaccin, numéro de lot, date, professionnel — dans Mon espace santé ou le dossier '
+          + 'pharmaceutique ; le carnet de vaccination ; et l’information du médecin traitant.',
+      ref: 'cahier des charges, conditions techniques' }
+  ]}
+];
+
+function pointsGrille() {
+  const l = [];
+  GRILLE_VACCINATION.forEach(function (b) {
+    b.points.forEach(function (x) { l.push(x.clef); });
+  });
+  return l;
+}
+
+// EST-CE QU'ON PEUT SIGNER ? Fonction pure, parce que c'est elle qui decide, et
+// qu'on ne veut pas decouvrir sa reponse en production.
+//
+// Un point « non » n'interdit pas de qualifier -- decision d'Olivier -- MAIS IL
+// EXIGE UNE RESERVE ECRITE. Une reserve vide serait une case cochee de plus.
+function verdict(reponses, reserves) {
+  const r = reponses || {};
+  const attendus = pointsGrille();
+  const manquants = attendus.filter(function (c) { return ETATS.indexOf(r[c]) < 0; });
+  const refuses = attendus.filter(function (c) { return r[c] === 'non'; });
+  const texte = String(reserves == null ? '' : reserves).trim();
+  if (manquants.length) {
+    return { ok: false, manquants: manquants, refuses: refuses,
+             motif: 'Il reste ' + manquants.length + ' point(s) sans réponse.' };
+  }
+  if (refuses.length && texte.length < 10) {
+    return { ok: false, manquants: [], refuses: refuses,
+             motif: 'Un point n’est pas satisfait : écrivez la réserve et le délai.' };
+  }
+  return { ok: true, manquants: [], refuses: refuses, avecReserve: refuses.length > 0 };
+}
+
+// QUI PEUT SIGNER. « Preparateur en pharmacie » contient « pharmacie » et non
+// « pharmacien » : le test tient, mais il tient a une lettre, et c'est pour
+// cela qu'il est eprouve.
+function estPharmacien(s) {
+  if (!s) return false;
+  if (s.admin === true) return true;
+  return /pharmacien/i.test(String(s.poste || ''));
+}
+
+// La qualification vaut un an : on revoit chacun avant la campagne grippe.
+const QUALIF_MOIS = 12;
+function echeanceQualif(le) { return plusAns(le, 1); }
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  LES TABLES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +346,23 @@ async function creerTables(db) {
       maj      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
   await db.query('CREATE INDEX IF NOT EXISTS app_rh_hab_uid ON app_rh_habilitations (uid, echeance)');
+  // LA QUALIFICATION GARDE SA GRILLE. On enregistre les reponses ET la version
+  // de la grille : une qualification signee en 2026 doit rester lisible quand
+  // la grille aura change, sinon elle n'atteste plus de rien.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_rh_qualifications (
+      id       BIGSERIAL PRIMARY KEY,
+      uid      TEXT NOT NULL,
+      grille   TEXT NOT NULL,
+      version  TEXT NOT NULL,
+      le       DATE NOT NULL,
+      echeance DATE NOT NULL,
+      reponses JSONB NOT NULL,
+      reserves TEXT,
+      par      TEXT NOT NULL,
+      saisi_le TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await db.query('CREATE INDEX IF NOT EXISTS app_rh_qualif_uid ON app_rh_qualifications (uid, le DESC)');
   // La date d'embauche vit ici, pas dans staffDB : c'est elle qui fait courir
   // la premiere echeance d'entretien, et c'est une donnee RH comme les autres.
   await db.query(`
@@ -312,6 +460,9 @@ function routes(app, getDb, deps) {
         'SELECT id, le, type, notes, suites, par, saisi_le FROM app_rh_entretiens WHERE uid = $1 ORDER BY le DESC', [u]);
       const h = await db().query(
         'SELECT id, libelle, obtenue, echeance, notes FROM app_rh_habilitations WHERE uid = $1 ORDER BY echeance NULLS LAST', [u]);
+      const q = await db().query(
+        `SELECT id, grille, version, le, echeance, reponses, reserves, par
+           FROM app_rh_qualifications WHERE uid = $1 ORDER BY le DESC`, [u]);
       const c = await db().query('SELECT embauche FROM app_rh_collab WHERE uid = $1', [u]);
       const embauche = (c.rows[0] && c.rows[0].embauche) ? iso(new Date(c.rows[0].embauche)) : null;
       const auj = iso(new Date());
@@ -328,8 +479,14 @@ function routes(app, getDb, deps) {
                  obtenue: r.obtenue ? iso(new Date(r.obtenue)) : null,
                  echeance: r.echeance ? iso(new Date(r.echeance)) : null, notes: r.notes };
       });
+      const quals = q.rows.map(function (r) {
+        return { id: r.id, grille: r.grille, version: r.version,
+                 le: iso(new Date(r.le)), echeance: iso(new Date(r.echeance)),
+                 reponses: r.reponses, reserves: r.reserves, par: r.par };
+      });
       tracer(moi, 'consultation', u, 'fiche RH');
-      res.json({ ok: true, uid: u, embauche: embauche, faits: faits, entretiens: ents,
+      res.json({ ok: true, uid: u, embauche: embauche, qualifications: quals,
+                 grille: GRILLE_VACCINATION, faits: faits, entretiens: ents,
                  habilitations: habs, equilibre: equilibre(faits), silence: silence(faits, auj),
                  echeances: echeances(ents, embauche, auj),
                  habilitationsDues: habilitationsDues(habs, auj),
@@ -480,6 +637,103 @@ function routes(app, getDb, deps) {
     } catch (e) { rate(res, e); }
   });
 
+
+  // ── QUI PEUT VACCINER AUJOURD'HUI ─────────────────────────────────────────
+  //
+  // CELLE-CI N'EST PAS RESERVEE AUX TITULAIRES, et c'est voulu : un lundi
+  // matin, savoir qui est habilite est une question d'organisation, pas de
+  // management. Elle ne rend QUE des dates -- aucun contenu de grille, aucune
+  // reserve, aucune appreciation. Une session ouverte suffit.
+  app.get('/api/rh/vaccination/etat', async (req, res) => {
+    try {
+      const moi = (deps && typeof deps.qui === 'function') ? deps.qui(req) : null;
+      if (!moi) return res.status(401).json({ ok: false, error: 'session inconnue' });
+      const q = await db().query(
+        `SELECT DISTINCT ON (uid) uid, le, echeance, par
+           FROM app_rh_qualifications WHERE grille = 'vaccination'
+          ORDER BY uid, le DESC, id DESC`);
+      const auj = iso(new Date());
+      res.json({ ok: true, aujourdhui: auj, grille: GRILLE_VACCINATION, version: GRILLE_VERSION,
+        etats: q.rows.map(function (r) {
+          const e = iso(new Date(r.echeance));
+          return { uid: r.uid, le: iso(new Date(r.le)), echeance: e, par: r.par,
+                   jours: joursEntre(auj, e), valide: e >= auj };
+        }) });
+    } catch (e) { rate(res, e); }
+  });
+
+  // ── QUALIFIER ─────────────────────────────────────────────────────────────
+  //
+  // CE N'EST PAS LA SESSION QUI SIGNE, C'EST LE CODE. L'ecran vit dans l'espace
+  // general : le poste est ouvert au nom de n'importe qui, souvent au nom de la
+  // personne qu'on est en train de qualifier. Le pharmacien tape SON code, le
+  // serveur verifie l'empreinte et rend son identite -- sans toucher a la
+  // session du poste, qui n'a aucune raison de changer.
+  //
+  // Et c'est le serveur qui decide qu'il s'agit bien d'un pharmacien. Le
+  // navigateur ne fait que l'afficher.
+  app.post('/api/rh/qualifier', async (req, res) => {
+    try {
+      const poste = (deps && typeof deps.qui === 'function') ? deps.qui(req) : null;
+      if (!poste) return res.status(401).json({ ok: false, error: 'session inconnue' });
+      const b = req.body || {};
+      const u = String(b.uid || '').trim();
+      if (!u) return res.status(400).json({ ok: false, error: 'collaborateur requis' });
+
+      if (!deps || typeof deps.signataire !== 'function')
+        return res.status(503).json({ ok: false, error: 'signature indisponible' });
+      let qui2 = null;
+      try { qui2 = await deps.signataire(req, b.code); }
+      catch (e) {
+        if (e && e.code === 429)
+          return res.status(429).json({ ok: false, error: 'trop d’essais', attente: e.attente });
+        throw e;
+      }
+      if (!qui2) return res.status(401).json({ ok: false, error: 'code non reconnu' });
+      if (!estPharmacien(qui2))
+        return res.status(403).json({ ok: false, error: 'seul un pharmacien peut qualifier' });
+      // ON NE SE QUALIFIE PAS SOI-MEME. Une attestation qu'on se delivre a
+      // soi-meme n'atteste de rien, et c'est le genre de ligne qu'un controle
+      // lit en premier.
+      if (qui2.id === u)
+        return res.status(400).json({ ok: false, error: 'on ne peut pas se qualifier soi-même' });
+
+      const v = verdict(b.reponses, b.reserves);
+      if (!v.ok) return res.status(400).json({ ok: false, error: v.motif, manquants: v.manquants });
+
+      const le = (function () {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(b.le || ''));
+        return m ? m[0].slice(0, 10) : iso(new Date());
+      }());
+      const ech = echeanceQualif(le);
+      const reserves = String(b.reserves || '').trim().slice(0, 2000) || null;
+      const propres = {};
+      pointsGrille().forEach(function (c) { propres[c] = b.reponses[c]; });
+
+      const r = await db().query(
+        `INSERT INTO app_rh_qualifications (uid, grille, version, le, echeance, reponses, reserves, par)
+         VALUES ($1,'vaccination',$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [u, GRILLE_VERSION, le, ech, JSON.stringify(propres), reserves, qui2.id]);
+
+      // LA QUALIFICATION REMONTE SEULE DANS L'ESPACE RH. Sans cela il faudrait
+      // la recopier a la main dans les habilitations, et personne ne le ferait.
+      // On remplace celle qui existe plutot que d'en empiler une par an.
+      await db().query(
+        "DELETE FROM app_rh_habilitations WHERE uid = $1 AND libelle = 'Vaccination — qualification'", [u]);
+      await db().query(
+        `INSERT INTO app_rh_habilitations (uid, libelle, obtenue, echeance, notes, par)
+         VALUES ($1,'Vaccination — qualification',$2,$3,$4,$5)`,
+        [u, le, ech,
+         'Qualifiée par ' + qui2.id + (reserves ? ' · avec réserve' : ''), qui2.id]);
+
+      if (deps && typeof deps.noter === 'function')
+        deps.noter(qui2.id, 'creation', 'collaborateur', u,
+          'qualification vaccination' + (reserves ? ' avec réserve' : ''));
+      res.json({ ok: true, id: r.rows[0].id, le: le, echeance: ech,
+                 par: qui2.id, prenom: qui2.prenom || qui2.id, avecReserve: !!reserves });
+    } catch (e) { rate(res, e); }
+  });
+
   // ── LE DOSSIER COMPLET D'UNE PERSONNE ─────────────────────────────────────
   // Article 15 du RGPD : si quelqu'un demande ce qui est ecrit sur lui, la
   // reponse doit pouvoir etre donnee. Sans cette route, il faudrait recopier
@@ -505,6 +759,8 @@ function routes(app, getDb, deps) {
 module.exports = {
   creerTables, routes,
   echeances, equilibre, silence, aPreparer, habilitationsDues,
+  verdict, estPharmacien, pointsGrille, echeanceQualif,
   plusAns, joursEntre, iso,
-  TONS, TAGS, TYPES, PARCOURS_ANS, BILAN_ANS, PREMIER_AN, SILENCE_JOURS, PREAVIS_JOURS
+  TONS, TAGS, TYPES, PARCOURS_ANS, BILAN_ANS, PREMIER_AN, SILENCE_JOURS, PREAVIS_JOURS,
+  GRILLE_VACCINATION, GRILLE_VERSION, ETATS, QUALIF_MOIS
 };

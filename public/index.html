@@ -1287,6 +1287,22 @@ tr:hover td{background:#fafffe}
           </div>
         </div>
       </div>
+      <!-- LA QUALIFICATION A LA VACCINATION. Elle vit dans l'espace general parce
+           qu'elle se fait AU COMPTOIR, devant la personne. Le pharmacien signe
+           avec son code : la session du poste ne change pas. -->
+      <div class="card" style="margin-bottom:1.1rem">
+        <div class="ch">
+          <span class="ct"><svg class="ico"><use href="#ic-securite"></use></svg> Qualification à la vaccination</span>
+          <button class="btn bp sm no-print" onclick="vqOuvrir()">Ouvrir la check-list</button>
+        </div>
+        <div style="font-size:.8rem;color:var(--gray-500);line-height:1.55">
+          Treize points à vérifier avec le collaborateur : formation, déclaration, éligibilité,
+          technique, anaphylaxie, traçabilité. Un pharmacien signe avec son code ; la
+          qualification vaut un an et remonte dans le suivi RH.
+        </div>
+        <div id="vq-host"></div>
+      </div>
+
       <div class="card" style="margin-bottom:1.1rem">
         <div class="ch"><span class="ct">Formulaires disponibles</span></div>
         <div class="frm-choice">
@@ -12988,6 +13004,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="rc-module.js"></script>
 <script src="co-module.js"></script>
 <script src="rp-module.js"></script>
+<script src="vq-module.js"></script>
 <script src="et-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
