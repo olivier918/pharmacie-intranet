@@ -156,6 +156,31 @@ async function lancer() {
   t('sans l’équipe, la route refuse au lieu de rapprocher à l’aveugle', r2.status === 503);
   srv2.close();
 
+  // ── LE CHEMIN SIMPLE ──────────────────────────────────────────────────────
+  // Les fiches voyagent avec l'application : le bouton les verse sans que
+  // personne ait a chercher un fichier. Un outil qu'on ne sait pas lancer
+  // n'existe pas.
+  console.log('\nLes fiches livrées avec l’application');
+  const db2 = fausseBase();
+  const app3 = express(); app3.use(express.json({ limit: '4mb' }));
+  rh.routes(app3, () => db2, {
+    qui: () => 'OF', estAdmin: async () => true, codeRH: () => true,
+    equipe: async () => EQUIPE, noter: () => {}
+  });
+  const srv3 = await new Promise(r3 => { const x = app3.listen(0, () => r3(x)); });
+  const b3 = 'http://127.0.0.1:' + srv3.address().port;
+  const rl = await fetch(b3 + '/api/rh/objectifs-livres', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const jl = await rl.json();
+  t('le fichier livré est trouvé et versé', rl.status === 200 && jl.ok === true);
+  t('les quatorze fiches y sont', jl.importes + jl.inconnus.length === 14);
+  t('... et ce qui ne se rapproche pas est nommé',
+    jl.inconnus.length === 0 || jl.inconnus.every(x => typeof x === 'string' && x.length > 2));
+  t('la réponse dit qu’elle vient du fichier livré', jl.livre === true);
+  t('rien n’est écrit pour une fiche non rapprochée',
+    db2.ordres.filter(o => /INSERT INTO app_rh_poste/.test(o.sql)).length === jl.importes);
+  srv3.close();
+
   console.log('\nL’état d’un objectif');
   const maj = async (corps) => {
     const x = await fetch(base + '/api/rh/objectif-etat', {

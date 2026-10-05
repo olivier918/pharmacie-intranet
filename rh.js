@@ -47,6 +47,9 @@
 // ── Le vocabulaire ──────────────────────────────────────────────────────────
 // Ferme, comme celui du journal des acces : une fiche ou chacun invente ses
 // libelles ne se relit pas deux ans plus tard.
+const fs = require('fs');
+const chemin = require('path');
+
 const TONS = ['positif', 'neutre', 'corriger'];
 const TAGS = ['fiabilite', 'relation', 'initiative', 'qualite', 'securite', 'equipe', 'formation'];
 const TYPES = ['point', 'parcours', 'bilan'];
@@ -788,8 +791,41 @@ function routes(app, getDb, deps) {
       const fiches = (req.body && req.body.fiches) || [];
       if (!Array.isArray(fiches) || !fiches.length)
         return res.status(400).json({ ok: false, error: 'aucune fiche' });
-      if (!deps || typeof deps.equipe !== 'function')
-        return res.status(503).json({ ok: false, error: 'équipe indisponible' });
+      const bilan = await verserFiches(fiches, req, res, moi);
+      if (bilan) res.json(Object.assign({ ok: true }, bilan));
+    } catch (e) { rate(res, e); }
+  });
+
+  // ── LES FICHES LIVREES AVEC L'APPLICATION ─────────────────────────────────
+  //
+  // POURQUOI CE SECOND CHEMIN. Le premier demande d'aller chercher un fichier
+  // dans le depot, a travers une fenetre de selection : ce n'est evident pour
+  // personne, et un outil qu'on ne sait pas lancer n'existe pas. Les quatorze
+  // fiches voyagent donc AVEC l'application, et le bouton les verse sans rien
+  // demander. Le choix de fichier reste, pour les imports suivants.
+  app.post('/api/rh/objectifs-livres', async (req, res) => {
+    try {
+      const moi = await titulaire(req, res); if (!moi) return;
+      const f = chemin.join(__dirname, 'outils', 'objectifs-import.json');
+      let fiches = null;
+      try { fiches = (JSON.parse(fs.readFileSync(f, 'utf8')) || {}).fiches; }
+      catch (e) {
+        return res.status(404).json({ ok: false,
+          error: 'aucun fichier d’objectifs n’est livré avec cette version' });
+      }
+      if (!Array.isArray(fiches) || !fiches.length)
+        return res.status(404).json({ ok: false, error: 'le fichier livré est vide' });
+      const bilan = await verserFiches(fiches, req, res, moi);
+      if (bilan) res.json(Object.assign({ ok: true, livre: true }, bilan));
+    } catch (e) { rate(res, e); }
+  });
+
+  // Le versement lui-meme, partage par les deux portes : une seule facon
+  // d'ecrire, quel que soit le chemin par lequel les fiches arrivent.
+  async function verserFiches(fiches, req, res, moi) {
+      if (!deps || typeof deps.equipe !== 'function') {
+        res.status(503).json({ ok: false, error: 'équipe indisponible' }); return null;
+      }
       const equipe = (await deps.equipe()) || [];
 
       const vus = [], inconnus = [];
@@ -830,10 +866,8 @@ function routes(app, getDb, deps) {
         vus.push(q.id);
         tracer(moi, 'creation', q.id, 'import des objectifs');
       }
-      res.json({ ok: true, importes: vus.length, annees: nAnnees, lignes: nObj,
-                 inconnus: inconnus });
-    } catch (e) { rate(res, e); }
-  });
+      return { importes: vus.length, annees: nAnnees, lignes: nObj, inconnus: inconnus };
+  }
 
   // ── QUI PEUT VACCINER AUJOURD'HUI ─────────────────────────────────────────
   //

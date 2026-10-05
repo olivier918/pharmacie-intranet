@@ -264,7 +264,9 @@
       return;
     }
     z.innerHTML = '<div class="rh-tete"><div class="rh-tete-h"><h2>Suivi de l’équipe</h2>'
-      + '<label class="rh-b rh-imp">Importer des objectifs'
+      + '<button type="button" class="rh-b rh-bp" onclick="rhImporterLivres()">'
+      +   'Importer les objectifs</button>'
+      + '<label class="rh-b rh-imp" title="Importer un autre fichier d’objectifs">⋯'
       +   '<input type="file" accept="application/json,.json" hidden onchange="rhImporterObjectifs(this)">'
       + '</label></div>'
       + '<p>Un fait daté vaut mieux qu’un souvenir. Ce qui est écrit ici peut être demandé '
@@ -316,6 +318,26 @@
   // Un fichier préparé à partir des documents Word. ON ANNONCE CE QU'ON N'A PAS
   // SU RAPPROCHER : un import qui avale silencieusement deux fiches sur
   // quatorze est pire qu'un import qui échoue — on croit le travail fait.
+  // LE CHEMIN SIMPLE : les quatorze fiches voyagent avec l'application, le
+  // bouton les verse. Rien à chercher, rien à choisir.
+  window.rhImporterLivres = async function () {
+    try {
+      const j = await rhPost('/api/rh/objectifs-livres', {});
+      await rhRendreEquipe();
+      rhMsg(rhBilanImport(j), !!(j.inconnus && j.inconnus.length));
+    } catch (e) { rhMsg('Import impossible : ' + e.message, true); }
+  };
+
+  function rhBilanImport(j) {
+    let m = j.importes + ' fiche(s) importée(s) · ' + j.lignes + ' ligne(s) sur '
+      + j.annees + ' année(s).';
+    if (j.inconnus && j.inconnus.length) {
+      m += ' NON RAPPROCHÉ(S) : ' + j.inconnus.join(', ')
+        + ' — vérifiez l’orthographe du nom dans le Back Office.';
+    }
+    return m;
+  }
+
   window.rhImporterObjectifs = async function (input) {
     const f = (input.files || [])[0];
     if (!f) return;
@@ -328,14 +350,8 @@
         + 'Les années réimportées sont remplacées : les états déjà posés sur ces '
         + 'années-là seront perdus.')) return;
       const j = await rhPost('/api/rh/objectifs-import', { fiches: fiches });
-      let m = j.importes + ' fiche(s) importée(s) · ' + j.lignes + ' ligne(s) sur '
-        + j.annees + ' année(s).';
-      if (j.inconnus && j.inconnus.length) {
-        m += ' NON RAPPROCHÉ(S) : ' + j.inconnus.join(', ')
-          + ' — vérifiez l’orthographe dans le Back Office.';
-      }
       await rhRendreEquipe();
-      rhMsg(m, !!(j.inconnus && j.inconnus.length));
+      rhMsg(rhBilanImport(j), !!(j.inconnus && j.inconnus.length));
     } catch (e) { rhMsg('Import impossible : ' + e.message, true); }
   };
 
@@ -876,7 +892,7 @@
   #rh-host{padding:18px 22px;max-width:940px}
   .rh-tete-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .rh-tete-h h2{flex:1;min-width:0}
-  .rh-imp{cursor:pointer;margin:0;flex:none}
+  .rh-imp{cursor:pointer;margin:0;flex:none;padding:7px 10px;letter-spacing:.1em}
   .rh-tete h2{margin:0 0 6px;font-size:1.2rem;color:var(--accent)}
   .rh-tete p{margin:0 0 16px;color:var(--mut);font-size:.84rem;line-height:1.55;max-width:640px}
   .rh-msg{font-size:.85rem;min-height:0;margin-bottom:8px}
