@@ -177,5 +177,44 @@ t('« qui peut vacciner » signale aussi ce qui va périmer',
 t('la fiche papier est proposée, pas imposée',
   /window\.vqImprimer = function/.test(vq) && /Imprimer la fiche/.test(vq));
 
+// ── LE FEU D'ARTIFICE ───────────────────────────────────────────────────────
+// Une animation plein écran qu'on n'a pas demandée peut faire mal : troubles
+// vestibulaires, migraines. Le réglage système existe, il se lit.
+console.log('\nLe feu d’artifice');
+t('il part quand le serveur a dit oui, pas avant',
+  /if \(!j \|\| !j\.ok\)[\s\S]{0,400}vqFeu\(\);/.test(vq));
+t('IL SE TAIT SI LE SYSTÈME DEMANDE MOINS D’ANIMATIONS',
+  /prefers-reduced-motion: reduce/.test(vq)
+  && /if \(vqAnimationsCoupees\(\)\) return false;/.test(vq));
+t('... et la lecture du réglage ne fait pas tomber la page si elle échoue',
+  /catch \(e\) \{ return false; \}/.test(vq));
+t('on peut cliquer à travers pendant qu’il brûle',
+  /#vq-feu\{[^}]*pointer-events:none/.test(vq));
+t('il est invisible pour un lecteur d’écran', /aria-hidden/.test(vq));
+t('il ne se superpose pas à lui-même',
+  /if \(document\.getElementById\('vq-feu'\)\) return false;/.test(vq));
+t('il se range — un canevas plein écran oublié coûte une trame sur deux',
+  /cancelAnimationFrame\(trame\)[\s\S]{0,160}c\.remove\(\)/.test(vq));
+t('... et il retire l’écouteur de redimensionnement avec lui',
+  /removeEventListener\('resize', mesurer\)/.test(vq));
+// LE DEFAUT QUE LA PREMIERE VERSION PORTAIT : la vitesse etait comptee en
+// trames. Sur un ecran a 120 Hz, le feu partait deux fois trop vite.
+t('IL EST CALÉ SUR LE TEMPS, PAS SUR LA CADENCE DE L’ÉCRAN',
+  /const dt = Math\.min\(2\.5/.test(vq) && /CADENCE = 1000 \/ 60/.test(vq));
+t('... la pesanteur des obus suit le temps', /o\.vy \+= G_OBUS \* dt/.test(vq));
+t('... celle des éclats aussi', /e\.vy \+= 0\.105 \* dt/.test(vq));
+t('... le frottement de l’air aussi, en puissance et non en produit',
+  /Math\.pow\(0\.986, dt\)/.test(vq));
+t('... et l’effacement des traînées aussi', /0\.26 \* dt/.test(vq));
+t('un onglet revenu au premier plan ne projette pas tout d’un coup',
+  /Math\.min\(2\.5, Math\.max\(0\.2/.test(vq));
+t('la hauteur d’éclatement se calcule, elle ne se devine pas',
+  /Math\.sqrt\(2 \* G_OBUS \* montee\)/.test(vq));
+t('les couleurs sont celles de la maison, en version soutenue',
+  /#2E7D54/.test(vq) && /#D26E96/.test(vq) && !/#F2F7F4/.test(vq));
+t('on ne peint pas en « lighter » : c’est le mode des feux sur ciel noir',
+  /globalCompositeOperation = 'source-over'/.test(vq)
+  && !/globalCompositeOperation = 'lighter'/.test(vq));
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

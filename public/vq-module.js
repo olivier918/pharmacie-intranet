@@ -219,6 +219,7 @@
         vqMajSignature();
         return;
       }
+      vqFeu();
       const qui = j.prenom || j.par, nom = vqNom(vqUid);
       vqDernier = { nom: nom, par: qui, le: j.le, echeance: j.echeance,
                     avecReserve: j.avecReserve, reserves: res, reponses: Object.assign({}, vqRep) };
@@ -229,6 +230,162 @@
       vqImprimable();
     } catch (e) { vqMsg('Enregistrement impossible : ' + e.message, true); }
   };
+
+
+  // ── LE FEU D'ARTIFICE ─────────────────────────────────────────────────────
+  //
+  // Qualifier quelqu'un est un bon moment : la personne est devant l'écran, on
+  // vient de dérouler treize points avec elle, et ça se fête. Deux secondes et
+  // demie, puis le canevas se retire tout seul.
+  //
+  // IL NE S'INTERPOSE JAMAIS. `pointer-events:none` : on peut cliquer à travers
+  // pendant qu'il brûle. Un confetti qui bloque un bouton n'est plus une fête.
+  //
+  // ET IL SE TAIT QUAND ON LE LUI DEMANDE. `prefers-reduced-motion` n'est pas
+  // une préférence esthétique : pour qui souffre de troubles vestibulaires ou
+  // de migraines, une animation plein écran qu'on n'a pas demandée fait mal.
+  // Le réglage existe dans tous les systèmes, il suffit de le lire.
+  const FEU_OBUS = 5;          // le nombre de départs
+  const FEU_ECLATS = 46;       // ce que chacun donne
+  const FEU_DUREE = 2600;      // après quoi on range tout
+  // Les couleurs de la maison, en versions SOUTENUES : sur le fond clair de
+  // PILOT, un blanc cassé ou un pastel ne se voit tout simplement pas.
+  const FEU_COULEURS = ['#2E7D54', '#1D5C3A', '#D26E96', '#B04A74', '#D99B20'];
+
+  function vqAnimationsCoupees() {
+    try {
+      return !!(window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) { return false; }
+  }
+
+  function vqFeu() {
+    if (vqAnimationsCoupees()) return false;
+    if (document.getElementById('vq-feu')) return false;
+    const c = document.createElement('canvas');
+    c.id = 'vq-feu';
+    c.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(c);
+    const ctx = c.getContext('2d');
+    if (!ctx) { c.remove(); return false; }
+
+    // On dessine en pixels physiques : sur un écran dense, un canevas réglé en
+    // pixels CSS rend une bouillie.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let L = 0, H = 0;
+    const mesurer = function () {
+      L = window.innerWidth; H = window.innerHeight;
+      c.width = Math.round(L * dpr); c.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    mesurer();
+    window.addEventListener('resize', mesurer);
+
+    const obus = [], eclats = [];
+    const hasard = (a, b) => a + Math.random() * (b - a);
+
+    // LA VITESSE SE CALCULE, ELLE NE SE DEVINE PAS. Au premier jet, les obus
+    // partaient a une vitesse fixe : sur un grand ecran ils n'atteignaient
+    // jamais leur hauteur et eclataient au sommet de leur course, une seconde
+    // trop tard -- le temps que le spectacle soit fini. On part donc de la
+    // hauteur voulue et on en deduit l'elan : v = racine(2 g h).
+    const G_OBUS = 0.55;
+    function partir(i) {
+      const cible = hasard(H * 0.14, H * 0.42);
+      const montee = (H + 10) - cible;
+      obus.push({
+        x: hasard(L * 0.18, L * 0.82), y: H + 10,
+        vx: hasard(-0.6, 0.6),
+        vy: -Math.sqrt(2 * G_OBUS * montee),
+        cible: cible,
+        col: FEU_COULEURS[i % FEU_COULEURS.length]
+      });
+    }
+    function eclater(o) {
+      // Les éclats partent sur un cercle, avec assez de désordre pour que la
+      // gerbe ne ressemble pas à une roue de vélo.
+      for (let i = 0; i < FEU_ECLATS; i++) {
+        const a = (Math.PI * 2 * i) / FEU_ECLATS + hasard(-0.08, 0.08);
+        const v = hasard(1.6, 5.2);
+        eclats.push({
+          x: o.x, y: o.y,
+          vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+          col: Math.random() < 0.18
+            ? FEU_COULEURS[Math.floor(Math.random() * FEU_COULEURS.length)] : o.col,
+          vie: hasard(0.75, 1)
+        });
+      }
+    }
+
+    const debut = performance.now();
+    let prochain = 0, lances = 0, trame = 0, precedent = debut;
+
+    // LE TEMPS, PAS LES TRAMES. Au premier jet, chaque trame ajoutait une
+    // constante a la vitesse : le feu jouait donc a la cadence de l'ecran. Sur
+    // un 120 Hz il partait deux fois trop vite et retombait avant qu'on l'ait
+    // vu. On mesure l'intervalle reel et on le ramene au soixantieme de
+    // seconde ; le plafond evite qu'un onglet revenu au premier plan apres une
+    // pause ne projette tout a l'autre bout de l'ecran d'un seul coup.
+    const CADENCE = 1000 / 60;
+    function pas(t) {
+      const age = t - debut;
+      const dt = Math.min(2.5, Math.max(0.2, (t - precedent) / CADENCE));
+      precedent = t;
+      // Les départs s'échelonnent : cinq obus simultanés font un flash, pas un
+      // feu d'artifice.
+      if (lances < FEU_OBUS && age >= prochain) {
+        partir(lances); lances++; prochain = age + hasard(130, 230);
+      }
+
+      // On efface en retirant de l'opacité plutôt qu'en peignant du noir : le
+      // canevas reste transparent, et les traînées s'éteignent toutes seules.
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,' + Math.min(0.85, 0.26 * dt).toFixed(3) + ')';
+      ctx.fillRect(0, 0, L, H);
+      // ET SURTOUT PAS « lighter » ICI. C'est le mode des feux d'artifice sur
+      // ciel noir : il ADDITIONNE les couleurs, donc il tire vers le blanc. Sur
+      // le fond clair de PILOT, tout ressortait delave. On peint normalement.
+      ctx.globalCompositeOperation = 'source-over';
+
+      for (let i = obus.length - 1; i >= 0; i--) {
+        const o = obus[i];
+        o.x += o.vx * dt; o.y += o.vy * dt; o.vy += G_OBUS * dt;
+        ctx.fillStyle = o.col;
+        ctx.beginPath(); ctx.arc(o.x, o.y, 2.6, 0, Math.PI * 2); ctx.fill();
+        if (o.vy >= 0 || o.y <= o.cible) { eclater(o); obus.splice(i, 1); }
+      }
+      ctx.lineCap = 'round';
+      for (let i = eclats.length - 1; i >= 0; i--) {
+        const e = eclats[i];
+        const ax = e.x, ay = e.y;
+        e.x += e.vx * dt; e.y += e.vy * dt;
+        e.vy += 0.105 * dt;                       // la pesanteur
+        const air = Math.pow(0.986, dt);          // et l'air
+        e.vx *= air; e.vy *= air;
+        e.vie -= 0.012 * dt;
+        if (e.vie <= 0) { eclats.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, Math.min(1, e.vie));
+        ctx.strokeStyle = e.col;
+        // Un eclat parcourt quatre a cinq pixels par trame : pose en points, il
+        // laisse un chapelet. On relie les deux positions.
+        ctx.lineWidth = 2.6 * Math.max(0.35, e.vie);
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(e.x, e.y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      if (age < FEU_DUREE || eclats.length) { trame = requestAnimationFrame(pas); }
+      else {
+        // ON RANGE. Un canevas plein écran oublié par-dessus l'application est
+        // invisible et consomme une trame sur deux pour rien.
+        cancelAnimationFrame(trame);
+        window.removeEventListener('resize', mesurer);
+        c.remove();
+      }
+    }
+    trame = requestAnimationFrame(pas);
+    return true;
+  }
+  window.vqFeu = vqFeu;
 
   // ── LA TRACE PAPIER ───────────────────────────────────────────────────────
   // Proposée, jamais imposée : certains classeurs vivent encore sur une
@@ -348,7 +505,10 @@
   .vq-fait-t{font-weight:700;color:#1D5C3A;font-size:.95rem}
   .vq-fait-s{font-size:.82rem;color:#2E7D54;margin:4px 0 10px;line-height:1.5}
   .vq-vide{padding:16px 2px;color:var(--gray-500,#6b7280);font-size:.86rem;line-height:1.6}
-  @media print{#vq-host{display:none}}
+  /* Au-dessus de tout, et traversable : on doit pouvoir cliquer pendant que
+     ca brule. */
+  #vq-feu{position:fixed;inset:0;z-index:9999;pointer-events:none}
+  @media print{#vq-host,#vq-feu{display:none}}
   `;
 
   function vqInjecter() {
