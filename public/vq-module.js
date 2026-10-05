@@ -55,16 +55,38 @@
     vqEtat = j; vqGrille = j.grille;
   }
 
+  // ── QUI PEUT ÊTRE QUALIFIÉ ────────────────────────────────────────────────
+  //
+  // Trois familles, et trois seulement : pharmaciens, préparateurs, étudiants
+  // en pharmacie. Le décret ne vise personne d'autre. Proposer de qualifier un
+  // rayonniste, c'est proposer tous les matins quelque chose qui n'arrivera
+  // jamais — et c'est ainsi qu'une liste cesse d'être lue.
+  //
+  // LA RÈGLE EST CELLE DU SERVEUR, recopiée ici pour l'affichage seulement :
+  // c'est le serveur qui refuse, l'écran ne fait que s'épargner des lignes.
+  const VQ_FAMILLES = [/pharmacien/i, /pr[ée]parat/i, /[ée]tudiant|interne|stagiaire/i];
+  function vqVaccinable(s) {
+    if (!s) return false;
+    const p = String(s.poste || '');
+    return VQ_FAMILLES.some(function (r) { return r.test(p); }) || s.admin === true;
+  }
+
   // ── QUI PEUT VACCINER AUJOURD'HUI ─────────────────────────────────────────
   // La question du lundi matin. Elle ne montre que des dates : savoir qui est
   // habilité est une affaire d'organisation, pas de management.
   function vqTableau() {
     const par = {};
     (vqEtat.etats || []).forEach(function (e) { par[e.uid] = e; });
-    const gens = vqStaff().slice().sort(function (a, b) {
+    const tous = vqStaff();
+    const gens = tous.filter(vqVaccinable).slice().sort(function (a, b) {
       return String(a.prenom || '').localeCompare(String(b.prenom || ''));
     });
-    if (!gens.length) return '<div class="vq-vide">L’équipe n’est pas encore chargée.</div>';
+    if (!tous.length) return '<div class="vq-vide">L’équipe n’est pas encore chargée.</div>';
+    if (!gens.length) {
+      return '<div class="vq-vide">Personne dans l’équipe n’occupe un poste qui permet de vacciner '
+        + '— pharmacien, préparateur ou étudiant en pharmacie. Les intitulés de poste se '
+        + 'corrigent au Back Office.</div>';
+    }
     return '<div class="vq-tbl">' + gens.map(function (s) {
       const e = par[s.id];
       let cls = 'non', txt = 'non qualifié';

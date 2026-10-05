@@ -881,6 +881,10 @@ rh.routes(app, () => db, {
   // son code sur le poste de quelqu'un d'autre : on verifie l'empreinte et on
   // rend la personne, sans toucher a la session du poste.
   signataire: async (req, code) => identite.signataire(req, code, await lireEtatBrut()),
+  // L'equipe, pour verifier que le poste d'une personne lui permet d'etre
+  // qualifiee a la vaccination. Lue a chaque fois : un changement de poste doit
+  // prendre effet tout de suite.
+  equipe: async () => (await lireEtatBrut()).staffDB || [],
   noter: (uid, action, objet, ref, detail) => traces.noter(db, uid, action, objet, ref, detail)
 });
 

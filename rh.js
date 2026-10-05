@@ -290,6 +290,32 @@ function verdict(reponses, reserves) {
   return { ok: true, manquants: [], refuses: refuses, avecReserve: refuses.length > 0 };
 }
 
+// ── QUI PEUT ETRE QUALIFIE ──────────────────────────────────────────────────
+//
+// Trois familles, et trois seulement : les pharmaciens, les preparateurs, les
+// etudiants en pharmacie. Le decret ne vise personne d'autre -- ni un
+// rayonniste, ni une esthreticienne, ni une apprentie en vente. Les faire
+// figurer dans la liste a qualifier, c'est proposer tous les matins quelque
+// chose qui n'arrivera jamais.
+//
+// LE LIBELLE DU POSTE EST DU TEXTE LIBRE, saisi au Back Office. On reconnait
+// donc des familles de mots, pas des valeurs exactes, et on accepte le
+// feminin comme le masculin.
+const FAMILLES_VACCINALES = [
+  { clef: 'pharmacien',  motif: /pharmacien/i },
+  { clef: 'preparateur', motif: /pr[ée]parat/i },
+  { clef: 'etudiant',    motif: /[ée]tudiant|interne|stagiaire/i }
+];
+function familleVaccinale(s) {
+  if (!s) return null;
+  const f = FAMILLES_VACCINALES.find(function (x) { return x.motif.test(String(s.poste || '')); });
+  if (f) return f.clef;
+  // Un titulaire marque administrateur est pharmacien, quel que soit le
+  // libelle qu'il s'est donne.
+  return s.admin === true ? 'pharmacien' : null;
+}
+function estVaccinable(s) { return familleVaccinale(s) !== null; }
+
 // QUI PEUT SIGNER. « Preparateur en pharmacie » contient « pharmacie » et non
 // « pharmacien » : le test tient, mais il tient a une lettre, et c'est pour
 // cela qu'il est eprouve.
@@ -692,6 +718,17 @@ function routes(app, getDb, deps) {
       if (!qui2) return res.status(401).json({ ok: false, error: 'code non reconnu' });
       if (!estPharmacien(qui2))
         return res.status(403).json({ ok: false, error: 'seul un pharmacien peut qualifier' });
+
+      // L'ECRAN FILTRE, LE SERVEUR REFUSE. La liste ne propose que les trois
+      // familles ; mais une liste est un affichage, et un affichage ne
+      // protege rien. C'est ici que la regle tient.
+      if (!deps || typeof deps.equipe !== 'function')
+        return res.status(503).json({ ok: false, error: 'équipe indisponible' });
+      const cible = (await deps.equipe() || []).find(function (x) { return x && x.id === u; });
+      if (!cible) return res.status(404).json({ ok: false, error: 'collaborateur inconnu' });
+      if (!estVaccinable(cible))
+        return res.status(403).json({ ok: false,
+          error: 'ce poste ne peut pas être qualifié à la vaccination' });
       // ON NE SE QUALIFIE PAS SOI-MEME. Une attestation qu'on se delivre a
       // soi-meme n'atteste de rien, et c'est le genre de ligne qu'un controle
       // lit en premier.
@@ -759,8 +796,8 @@ function routes(app, getDb, deps) {
 module.exports = {
   creerTables, routes,
   echeances, equilibre, silence, aPreparer, habilitationsDues,
-  verdict, estPharmacien, pointsGrille, echeanceQualif,
+  verdict, estPharmacien, estVaccinable, familleVaccinale, pointsGrille, echeanceQualif,
   plusAns, joursEntre, iso,
   TONS, TAGS, TYPES, PARCOURS_ANS, BILAN_ANS, PREMIER_AN, SILENCE_JOURS, PREAVIS_JOURS,
-  GRILLE_VACCINATION, GRILLE_VERSION, ETATS, QUALIF_MOIS
+  GRILLE_VACCINATION, GRILLE_VERSION, ETATS, QUALIF_MOIS, FAMILLES_VACCINALES
 };

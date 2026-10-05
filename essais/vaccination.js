@@ -110,6 +110,45 @@ t('un titulaire marqué administrateur le peut, quel que soit son libellé de po
   R.estPharmacien({ poste: 'Gérante', admin: true }) === true);
 t('une fiche vide ne passe pas', R.estPharmacien(null) === false && R.estPharmacien({}) === false);
 
+// ── QUI PEUT ÊTRE QUALIFIÉ ──────────────────────────────────────────────────
+// Trois familles, et trois seulement. Proposer de qualifier un rayonniste,
+// c'est proposer tous les matins quelque chose qui n'arrivera jamais.
+console.log('\nQui peut être qualifié');
+const poste = p => R.estVaccinable({ poste: p });
+[['Pharmacien titulaire', 'pharmacien'], ['Pharmacienne adjointe', 'pharmacien'],
+ ['Préparateur en pharmacie', 'preparateur'], ['Préparatrice', 'preparateur'],
+ ['Preparateur', 'preparateur'],
+ ['Étudiant en pharmacie', 'etudiant'], ['Etudiante 6e année', 'etudiant'],
+ ['Interne en pharmacie', 'etudiant']
+].forEach(function (x) {
+  t('« ' + x[0] + ' » peut l’être', poste(x[0]) === true);
+  t('... rangé dans la bonne famille', R.familleVaccinale({ poste: x[0] }) === x[1]);
+});
+['Rayonniste', 'Esthéticienne', 'Apprentie vente', 'Livreur', 'Comptable',
+ 'Agent d’entretien', 'Secrétaire'
+].forEach(function (p) { t('« ' + p + ' » ne peut pas l’être', poste(p) === false); });
+t('le féminin comme le masculin', poste('Préparatrice') && poste('Préparateur'));
+t('les accents ne décident de rien', poste('Etudiant') && poste('Étudiant'));
+t('un titulaire marqué administrateur passe, quel que soit son libellé',
+  R.estVaccinable({ poste: 'Gérante', admin: true }) === true);
+t('un poste vide ne passe pas', poste('') === false && R.estVaccinable(null) === false);
+t('trois familles, pas quatre', R.FAMILLES_VACCINALES.length === 3);
+
+// L'ECRAN FILTRE, LE SERVEUR REFUSE. Une liste est un affichage, et un
+// affichage ne protege rien.
+console.log('\nL’écran filtre, le serveur refuse');
+t('l’écran ne propose que les trois familles',
+  /function vqVaccinable/.test(vq) && /tous\.filter\(vqVaccinable\)/.test(vq));
+t('... et il le dit si personne ne correspond',
+  /Personne dans l’équipe n’occupe un poste qui permet de vacciner/.test(vq));
+t('le serveur vérifie le poste de la personne qualifiée',
+  /if \(!estVaccinable\(cible\)\)/.test(src));
+t('... en lisant l’équipe à chaque fois — un changement de poste prend effet tout de suite',
+  /equipe: async \(\) => \(await lireEtatBrut\(\)\)\.staffDB/.test(sv));
+t('... et il refuse plutôt que de fonctionner à moitié si l’équipe manque',
+  /typeof deps\.equipe !== 'function'[\s\S]{0,120}503/.test(src));
+t('un identifiant inconnu est refusé', /collaborateur inconnu/.test(src));
+
 // ── L'ÉCHÉANCE ──────────────────────────────────────────────────────────────
 console.log('\nUn an, avant chaque campagne grippe');
 t('douze mois', R.QUALIF_MOIS === 12);
