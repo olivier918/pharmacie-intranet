@@ -68,25 +68,168 @@
     setTimeout(function () { if (z.textContent === t) { z.textContent = ''; z.className = 'rh-msg'; } }, 6000);
   }
 
+  /* ── LE CODE DE LA RUBRIQUE ──────────────────────────────────────────────
+     Être titulaire ne suffit pas : il faut aussi taper le code. Deux verrous
+     indépendants, et le journal garde le nom de qui a ouvert.
+
+     POURQUOI UN PAVÉ, ET PAS UN CHAMP MOT DE PASSE. La demande était que le
+     navigateur ne puisse pas le retenir. `autocomplete="off"` ne tient pas
+     cette promesse : Chrome et Safari l'ignorent régulièrement sur un champ
+     de type `password`, et proposent d'enregistrer quand même. Ici il n'y a
+     ni champ, ni formulaire, ni soumission — rien qu'un gestionnaire de clic
+     et un compteur en mémoire. Le navigateur n'a rien à proposer, et rien à
+     remplir la fois suivante.
+
+     LE JETON NE SURVIT À RIEN. Une variable de module, jamais localStorage ni
+     sessionStorage : fermer l'onglet ou recharger la page le perd, et le code
+     est redemandé. C'est exactement ce qu'on veut d'un poste de comptoir. */
+  let rhJeton = null;
+
   async function rhGet(url) {
-    const r = await fetch(url, { cache: 'no-store' });
-    const j = await r.json();
-    if (!j || !j.ok) throw new Error((j && j.error) || 'lecture refusée');
-    return j;
+    const r = await fetch(url, { cache: 'no-store', headers: rhEntetes() });
+    return rhLire(r);
   }
   async function rhPost(url, charge) {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const r = await fetch(url, { method: 'POST',
+                                 headers: Object.assign({ 'Content-Type': 'application/json' }, rhEntetes()),
                                  body: JSON.stringify(charge) });
-    const j = await r.json();
-    if (!j || !j.ok) throw new Error((j && j.error) || 'refusé');
+    return rhLire(r);
+  }
+  function rhEntetes() { return rhJeton ? { 'X-RH-Jeton': rhJeton } : {}; }
+
+  // Le jeton part en en-tête, jamais dans l'adresse : une URL se retrouve dans
+  // un journal de serveur mandataire, un historique, une capture d'écran.
+  async function rhLire(r) {
+    const j = await r.json().catch(function () { return null; });
+    if (!j || !j.ok) {
+      // La rubrique s'est refermée pendant qu'on y était — expiration, ou
+      // session changée. On le dit, et on redemandera le code à l'ouverture
+      // suivante plutôt que de laisser un écran qui échoue sans raison visible.
+      if (j && j.error === 'code_rh_requis') rhJeton = null;
+      throw new Error((j && j.error) || 'refusé');
+    }
     return j;
   }
 
   // ── L'ÉCRAN D'ÉQUIPE ──────────────────────────────────────────────────────
   // Une carte par personne. ON LISTE TOUTE L'ÉQUIPE, pas seulement ceux qui ont
   // déjà une fiche : une carte vide est précisément l'information qui manque.
+  /* ── LE PAVÉ ─────────────────────────────────────────────────────────────
+     Dix touches, un effacement, rien d'autre. Les chiffres tapés ne vivent que
+     dans une variable : aucun champ ne les porte, donc rien à retenir pour le
+     navigateur, et rien à relire dans le DOM.
+
+     Pas de validation automatique à la longueur atteinte : cela dirait la
+     longueur du code à qui regarde l'écran par-dessus l'épaule. On valide
+     quand on a fini de taper. */
+  function rhDemanderCode() {
+    return new Promise(function (resoudre) {
+      const ov = document.createElement('div');
+      ov.className = 'rh-ov on rh-pave-ov';
+      let saisie = '';
+      let ferme = false;
+
+      function points() {
+        return saisie ? '•'.repeat(saisie.length) : '<span class="rh-pave-vide">— — — —</span>';
+      }
+      function peindre(msg, erreur) {
+        ov.innerHTML = '<div class="rh-ov-b rh-pave-b">'
+          + '<div class="rh-ov-h"><strong>Suivi RH</strong>'
+          + '<button class="rh-ov-x" type="button" data-rh-annuler aria-label="Fermer">×</button></div>'
+          + '<p class="rh-pave-aide">Cette rubrique contient les fiches du personnel. '
+          + 'Tapez le code pour l\'ouvrir.</p>'
+          + '<div class="rh-pave-ecran" aria-live="polite">' + points() + '</div>'
+          + (msg ? '<p class="rh-pave-msg' + (erreur ? ' ko' : '') + '">' + E(msg) + '</p>' : '')
+          + '<div class="rh-pave">'
+          + [1,2,3,4,5,6,7,8,9].map(function (n) {
+              return '<button type="button" data-rh-touche="' + n + '">' + n + '</button>'; }).join('')
+          + '<button type="button" data-rh-touche="effacer" aria-label="Effacer">⌫</button>'
+          + '<button type="button" data-rh-touche="0">0</button>'
+          + '<button type="button" class="rh-pave-ok" data-rh-valider aria-label="Ouvrir">→</button>'
+          + '</div></div>';
+      }
+
+      function finir(jeton) {
+        if (ferme) return;
+        ferme = true;
+        document.removeEventListener('keydown', clavier);
+        ov.remove();
+        resoudre(jeton);
+      }
+
+      async function valider() {
+        if (!saisie) return;
+        const essai = saisie;
+        saisie = '';
+        peindre('Vérification…');
+        try {
+          const r = await fetch('/api/session/rh', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: essai })
+          });
+          const j = await r.json().catch(function () { return null; });
+          if (j && j.ok && j.jeton) return finir(j.jeton);
+          if (j && j.error === 'trop_d_essais') {
+            return peindre('Trop d\'essais. Réessayez dans ' + (j.attente || 0) + ' s.', true);
+          }
+          if (j && j.error === 'code_non_configure') {
+            return peindre('Aucun code n\'est configuré sur le serveur : la rubrique reste fermée.', true);
+          }
+          peindre('Code refusé.', true);
+        } catch (e) { peindre('Serveur injoignable.', true); }
+      }
+
+      function clavier(ev) {
+        if (ev.key === 'Escape') return finir(null);
+        if (ev.key === 'Enter') { ev.preventDefault(); return valider(); }
+        if (ev.key === 'Backspace') { ev.preventDefault(); saisie = saisie.slice(0, -1); return peindre(); }
+        if (/^\d$/.test(ev.key)) { ev.preventDefault(); if (saisie.length < 32) saisie += ev.key; peindre(); }
+      }
+
+      ov.addEventListener('click', function (ev) {
+        const t = ev.target.closest('[data-rh-touche],[data-rh-valider],[data-rh-annuler]');
+        if (!t) return;
+        if (t.hasAttribute('data-rh-annuler')) return finir(null);
+        if (t.hasAttribute('data-rh-valider')) return valider();
+        const k = t.getAttribute('data-rh-touche');
+        if (k === 'effacer') saisie = saisie.slice(0, -1);
+        else if (saisie.length < 32) saisie += k;
+        peindre();
+      });
+
+      peindre();
+      document.body.appendChild(ov);
+      document.addEventListener('keydown', clavier);
+    });
+  }
+
+  // Refermer en sortant : le jeton expire seul au bout d'une demi-heure, mais
+  // un poste de comptoir ne doit pas rester ouvert jusque-là.
+  //
+  // PAS `rhFermer` : ce nom est déjà pris, plus bas, par la fermeture de la
+  // fenêtre modale. Défini ici, il était écrasé à la lecture du fichier — la
+  // rubrique restait ouverte au retour, et aucune relecture du code ne le
+  // montrait. C'est le navigateur qui l'a dit.
+  window.rhQuitterRubrique = function () {
+    if (!rhJeton) return;
+    const j = rhJeton;
+    rhJeton = null;
+    fetch('/api/session/rh/fermer', { method: 'POST', headers: { 'X-RH-Jeton': j } }).catch(function () {});
+  };
+
   window.rhRendreEquipe = async function () {
     const z = document.getElementById('rh-host'); if (!z) return;
+    // Le code est redemandé à chaque ouverture de la rubrique : le jeton ne
+    // survit pas à la sortie, ni au rechargement de la page.
+    if (!rhJeton) {
+      z.innerHTML = '';
+      const jeton = await rhDemanderCode();
+      if (!jeton) {
+        z.innerHTML = '<div class="rh-vide">Rubrique fermée. Le code est nécessaire pour ouvrir les fiches du personnel.</div>';
+        return;
+      }
+      rhJeton = jeton;
+    }
     try { rhEquipe = await rhGet('/api/rh/equipe'); }
     catch (e) {
       z.innerHTML = '<div class="rh-vide">Suivi RH indisponible : ' + E(e.message) + '</div>';
@@ -698,6 +841,23 @@
   .rh-prep ul{margin:0;padding-left:18px}
   .rh-prep li{margin-bottom:5px;font-size:.88rem;line-height:1.5}
   .rh-prep-s{color:var(--mut);font-size:.8rem;margin:0}
+
+  /* Le pavé du code. Aucun champ de saisie : les chiffres n'existent que dans
+     une variable, et l'écran n'affiche que des points. */
+  .rh-pave-b{width:min(320px,94vw)}
+  .rh-pave-aide{font-size:.84rem;color:var(--mut);line-height:1.5;margin:0 0 12px}
+  .rh-pave-ecran{font-size:1.6rem;letter-spacing:.22em;text-align:center;padding:12px 0;
+    background:var(--surface-2,#f3f5f3);border:1px solid var(--line);border-radius:10px;
+    min-height:1.6em;user-select:none}
+  .rh-pave-vide{color:var(--mut);font-size:1rem;letter-spacing:.18em}
+  .rh-pave-msg{font-size:.82rem;color:var(--mut);margin:9px 0 0;text-align:center}
+  .rh-pave-msg.ko{color:var(--crit);font-weight:600}
+  .rh-pave{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+  .rh-pave button{font:inherit;font-size:1.25rem;padding:14px 0;cursor:pointer;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;color:inherit}
+  .rh-pave button:hover{background:var(--accent-soft);border-color:var(--accent)}
+  .rh-pave button:active{transform:translateY(1px)}
+  .rh-pave .rh-pave-ok{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
   `;
 
   function rhInjecter() {

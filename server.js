@@ -877,6 +877,10 @@ commandes.routes(app, () => db, { qui: identite.qui,
 rh.routes(app, () => db, {
   qui: identite.qui,
   estAdmin: (req) => estAdministrateur(identite.qui(req)),
+  // La seconde serrure : le code de la rubrique, tape au pave numerique et
+  // verifie par identite.js. Le secret ne passe pas par ici, seulement la
+  // reponse a la question « ce poste a-t-il ouvert ? ».
+  codeRH: (req) => identite.jetonRHValide(req),
   // SIGNER N'EST PAS SE CONNECTER. Le pharmacien qui qualifie un collegue tape
   // son code sur le poste de quelqu'un d'autre : on verifie l'empreinte et on
   // rend la personne, sans toucher a la session du poste.

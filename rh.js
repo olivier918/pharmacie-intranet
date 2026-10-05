@@ -419,6 +419,14 @@ function routes(app, getDb, deps) {
     if (!uid) { res.status(401).json({ ok: false, error: 'session inconnue' }); return null; }
     const ok = (deps && typeof deps.estAdmin === 'function') ? await deps.estAdmin(req) : false;
     if (!ok) { res.status(403).json({ ok: false, error: 'réservé aux titulaires' }); return null; }
+    // LA SECONDE SERRURE. Etre titulaire ne suffit plus : il faut aussi avoir
+    // ouvert la rubrique avec son code. Le controle est ICI, dans la porte
+    // unique, et non route par route -- c'est tout l'interet d'avoir une porte.
+    //
+    // Absence de verificateur = fermeture. Un module monte sans sa serrure doit
+    // refuser, jamais ouvrir : l'oubli se voit a l'usage, l'ouverture non.
+    const ouvert = (deps && typeof deps.codeRH === 'function') ? deps.codeRH(req) : false;
+    if (!ouvert) { res.status(403).json({ ok: false, error: 'code_rh_requis' }); return null; }
     return uid;
   };
   const tracer = function (uid, action, ref, detail) {

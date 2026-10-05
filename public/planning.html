@@ -270,6 +270,8 @@ function plVue(v, btn){
   if (v === 'compteurs' && typeof plHsRender === 'function') plHsRender();
   if (v === 'conges' && typeof plAbsRender === 'function') plAbsRender();
   if (v === 'echanges' && typeof plEchRender === 'function') plEchRender();
+  // En quittant le suivi RH, on referme : le code sera redemande au retour.
+  if (v !== 'rh' && typeof rhQuitterRubrique === 'function') rhQuitterRubrique();
   if (v === 'rh' && typeof rhRendreEquipe === 'function') rhRendreEquipe();
 }
 /* pl-module appelle showSec sur l'intranet ; ici la navigation est locale */

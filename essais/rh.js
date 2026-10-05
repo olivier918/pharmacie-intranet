@@ -37,9 +37,58 @@ t('le module stocke dans ses propres tables',
   && /CREATE TABLE IF NOT EXISTS app_rh_habilitations/.test(src));
 t('l’écran ne lit aucune collection du blob, sauf l’annuaire de l’équipe',
   !/_collRef/.test(ecr) && /typeof staffDB/.test(ecr));
+// Les données RH ne viennent que de /api/rh. Deux exceptions, et deux seulement :
+// ouvrir et refermer la rubrique, qui passent par /api/session/rh — la porte
+// appartient à identite.js, qui détient les secrets. Elles ne transportent
+// aucune donnée de personne.
 t('... et il ne va chercher ses données que sur /api/rh',
-  (ecr.match(/fetch\(/g) || []).length === (ecr.match(/\/api\/rh/g) || []).length
-  || !/fetch\(['"`](?!\/api\/rh)/.test(ecr));
+  !/fetch\(['"`](?!\/api\/rh|\/api\/session\/rh)/.test(ecr));
+
+// ── LA SECONDE SERRURE ──────────────────────────────────────────────────────
+// Être titulaire ne suffit plus : il faut avoir tapé le code de la rubrique.
+// Les fiches du personnel ne sont pas le reste du blob — qui peut modifier
+// app_data ne doit pas pouvoir s'ouvrir cette porte-là.
+console.log('\nLe code de la rubrique');
+
+t('la porte unique exige le code, en plus du titre de titulaire',
+  /estAdmin[\s\S]{0,900}code_rh_requis/.test(src));
+t('... et refuse quand le vérificateur manque — un oubli ferme, il n’ouvre pas',
+  /typeof deps\.codeRH === 'function'\) \? deps\.codeRH\(req\) : false/.test(src));
+t('le serveur câble bien la serrure sur le module',
+  /codeRH:\s*\(req\)\s*=>\s*identite\.jetonRHValide\(req\)/.test(sv));
+
+t('le code vit dans l’environnement, pas dans la base',
+  /process\.env\.RH_CODE/.test(id) && !/RH_CODE/.test(src));
+t('... et sans lui la rubrique reste close',
+  /code_non_configure/.test(id));
+t('le code ne se compare jamais dans le navigateur',
+  !/RH_CODE/.test(ecr) && !/RH_CODE/.test(pg));
+t('la comparaison passe par des condensats — sinon la durée dit la longueur',
+  /createHash\('sha256'\)[\s\S]{0,200}memeEmpreinte/.test(id));
+t('les essais en force sont freinés comme à l’ouverture de session',
+  /function ouvrirRH[\s\S]{0,300}freine\(req\)/.test(id)
+  && /function ouvrirRH[\s\S]{0,900}noterEchec\(req\)/.test(id));
+
+// Ce que la demande visait : que le navigateur ne puisse pas retenir le code.
+// autocomplete="off" ne tient pas cette promesse — Chrome et Safari l'ignorent
+// sur un champ de type password. Un pavé ne donne rien à retenir.
+t('aucun champ de mot de passe : le navigateur n’a rien à enregistrer',
+  !/type=["']password["']/.test(ecr) && !/<form/i.test(ecr));
+t('les chiffres tapés ne vivent que dans une variable',
+  /let saisie = ''/.test(ecr));
+t('le jeton ne survit ni au rechargement ni à l’onglet',
+  !/\b(local|session)Storage\s*[.[]/.test(ecr) && /let rhJeton = null/.test(ecr));
+t('le jeton voyage en en-tête, jamais dans l’adresse',
+  /'X-RH-Jeton'/.test(ecr) && !/[?&]jeton=/.test(ecr));
+t('il est lié au poste et à l’identité — recopié ailleurs, il ne vaut rien',
+  /v\.uid === qui\(req\) && v\.adr === adresse\(req\)/.test(id));
+t('quitter la rubrique la referme',
+  /rhQuitterRubrique/.test(pg) && /\/api\/session\/rh\/fermer/.test(ecr));
+// `rhFermer` ferme la fenetre modale, et ce nom etait deja pris : defini une
+// seconde fois pour la rubrique, il ecrasait le premier en silence.
+t('... sous un nom qui n’entre en collision avec aucun autre',
+  (ecr.match(/window\.rhQuitterRubrique =/g) || []).length === 1
+  && (ecr.match(/window\.rhFermer =/g) || []).length === 1);
 
 // ── UNE SEULE PORTE ─────────────────────────────────────────────────────────
 // Un module où l'autorisation se vérifie route par route finit par en oublier

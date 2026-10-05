@@ -50,6 +50,79 @@ function memeEmpreinte(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
+// ── LE CODE DE LA RUBRIQUE RH ────────────────────────────────────
+//
+//  UNE SECONDE SERRURE, PAS UN REMPLACEMENT. Etre titulaire reste exige ; le
+//  code s'y ajoute. Deux verrous independants : le code seul ne sert a rien
+//  depuis un poste quelconque, et le journal garde le nom de qui a ouvert --
+//  ce qu'un code partage, a lui seul, ne saurait pas dire.
+//
+//  LE CODE N'EST PAS EN BASE, il est dans l'environnement. Une appreciation sur
+//  un collegue n'a pas le meme regime que le reste : qui peut changer le contenu
+//  de app_data ne doit pas pouvoir s'ouvrir la porte des fiches du personnel.
+//
+//  CE QUI SORT EST UN JETON, PAS UN DROIT POSE DANS LE COOKIE. Le cookie dure
+//  des jours ; ce jeton vit dans une variable du navigateur et meurt avec
+//  l'onglet. C'est ce qui fait que le code est redemande a chaque ouverture de
+//  la rubrique, et non une fois par semaine.
+//
+//  Il est lie a l'uid ET a l'adresse : recopie ailleurs, il ne vaut rien. Et il
+//  passe par un en-tete, jamais par l'adresse -- une URL se retrouve dans un
+//  journal de serveur mandataire, un historique, une capture d'ecran.
+const RH_JETON_MS = 30 * 60 * 1000;   // garde-fou si l'onglet se ferme mal
+const _jetonsRH = new Map();          // jeton -> { uid, adr, expire }
+
+function purgerJetonsRH() {
+  const t = Date.now();
+  for (const [k, v] of _jetonsRH) if (v.expire <= t) _jetonsRH.delete(k);
+}
+
+// Le code attendu. Absent, la rubrique est CLOSE et non ouverte : une variable
+// oubliee au deploiement ne doit pas ouvrir les fiches du personnel a tout le
+// monde. Le defaut se voit tout de suite, et c'est le bon sens du mot sur.
+function codeRHAttendu() {
+  const v = String(process.env.RH_CODE || '').trim();
+  return v || null;
+}
+
+function ouvrirRH(req, code) {
+  const attente = freine(req);
+  if (attente) { const e = new Error('trop_d_essais'); e.attente = attente; e.code = 429; throw e; }
+
+  const attendu = codeRHAttendu();
+  if (!attendu) { const e = new Error('code_non_configure'); e.code = 503; throw e; }
+
+  const saisi = String(code == null ? '' : code).trim();
+  // On compare des condensats, pas les chaines : `memeEmpreinte` rend false des
+  // que les longueurs different, et cette sortie immediate dit par sa duree
+  // combien de chiffres compte le vrai code. Deux sha256 font toujours
+  // trente-deux octets, quelle que soit la saisie.
+  const condense = (v) => crypto.createHash('sha256').update(String(v), 'utf8').digest('hex');
+  if (!memeEmpreinte(condense(saisi), condense(attendu))) { noterEchec(req); return null; }
+
+  oublierEchecs(req);
+  purgerJetonsRH();
+  const jeton = crypto.randomBytes(32).toString('base64url');
+  _jetonsRH.set(jeton, { uid: qui(req), adr: adresse(req), expire: Date.now() + RH_JETON_MS });
+  return jeton;
+}
+
+function jetonRHValide(req) {
+  purgerJetonsRH();
+  const j = String(req.headers['x-rh-jeton'] || '').trim();
+  if (!j) return false;
+  const v = _jetonsRH.get(j);
+  if (!v) return false;
+  // L'identite du poste a pu changer entre-temps -- on se deconnecte, quelqu'un
+  // d'autre ouvre : le jeton ne doit pas suivre.
+  return v.uid === qui(req) && v.adr === adresse(req);
+}
+
+function fermerRH(req) {
+  const j = String(req.headers['x-rh-jeton'] || '').trim();
+  if (j) _jetonsRH.delete(j);
+}
+
 // ── Le cookie de session nominatif ──────────────────────────────────────────
 function b64url(b) { return Buffer.from(b).toString('base64url'); }
 function signer(o) {
@@ -260,6 +333,28 @@ function installer(app, deps) {
     } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
   });
 
+  // Ouvrir la rubrique RH. Le code part ici ; il n'est jamais compare dans le
+  // navigateur, et il ne redescend jamais -- la reponse ne porte qu'un jeton.
+  app.post('/api/session/rh', async (req, res) => {
+    if (!qui(req)) return res.status(401).json({ ok: false, error: 'session inconnue' });
+    try {
+      const jeton = ouvrirRH(req, (req.body && req.body.code) || '');
+      if (!jeton) return res.status(403).json({ ok: false, error: 'code_refuse' });
+      return res.json({ ok: true, jeton });
+    } catch (e) {
+      if (e.code === 429) return res.status(429).json({ ok: false, error: 'trop_d_essais', attente: e.attente });
+      if (e.code === 503) return res.status(503).json({ ok: false, error: 'code_non_configure' });
+      return res.status(500).json({ ok: false, error: 'erreur' });
+    }
+  });
+
+  // Refermer en sortant de la rubrique. Le jeton expire de toute facon, mais
+  // attendre l'expiration laisse une porte ouverte sur un poste de comptoir.
+  app.post('/api/session/rh/fermer', (req, res) => {
+    fermerRH(req);
+    res.json({ ok: true });
+  });
+
   // Le code PIN : compare ici, jamais dans le navigateur.
   app.post('/api/session/pin', async (req, res) => {
     const attente = freine(req);
@@ -397,5 +492,6 @@ function diagnostic(data) {
 
 module.exports = {
   installer, sansSecrets, sansSecretsEntrants, preserverSecrets, convertirCodes, diagnostic,
-  qui, signataire, empreinte, nouveauSel, SECRETS_STAFF
+  qui, signataire, empreinte, nouveauSel, SECRETS_STAFF,
+  ouvrirRH, jetonRHValide, fermerRH, codeRHAttendu
 };
