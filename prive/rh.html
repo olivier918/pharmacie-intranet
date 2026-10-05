@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Suivi RH</title>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  SUIVI RH — sa propre page, à une adresse que rien ne mentionne
+
+  CE FICHIER N'EST PAS DANS public/. Tout ce qui s'y trouve est servi à
+  quiconque a passé le portail — c'est-à-dire à toute l'équipe. Le planning
+  livrait donc `rh-module.js` à chaque poste qui l'ouvrait : quarante kilo-
+  octets lisibles, où l'on apprenait l'existence du compteur de silence et de
+  l'alerte « cette fiche ne contient que du négatif ». Aucune donnée ne
+  fuyait ; le dispositif, lui, était à nu.
+
+  Cette page et le module vivent dans prive/, et le serveur ne les délivre
+  qu'à un titulaire identifié. Pour tout autre, la demande TOMBE DANS LE VIDE
+  et reçoit le 404 ordinaire d'Express : pas un « accès refusé », qui dirait
+  déjà que quelque chose existe ici.
+
+  DEUX SERRURES, PAS UNE. Être titulaire ouvre la page ; le code RH ouvre les
+  fiches. Le second verrou est demandé par le module lui-même, à chaque
+  ouverture, et son jeton meurt avec l'onglet.
+
+  INVISIBLE N'EST PAS SECRET. L'équipe est informée que ce suivi existe — la
+  note le dit, et c'est une obligation. Ce qu'on retire, c'est l'onglet sous
+  les yeux au comptoir, pas l'information.
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F8F5F4; --surface:#fff; --ink:#25282A; --mut:#71787A; --line:#E9E2E1;
+  --accent:#348466; --accent-soft:#E6F1EB; --rose:#D26E96; --rose-soft:#FAEAF1; --rose-ink:#B04A74;
+  --ok:#2E8564; --warn:#B8821C; --crit:#C4544A;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.45 'Schibsted Grotesk',-apple-system,'Segoe UI',sans-serif;
+  font-variant-numeric:tabular-nums}
+button{font-family:inherit}
+
+.bandeau{background:var(--surface);border-bottom:1px solid var(--line);
+  padding:13px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.marque{font-weight:700;font-size:1.02rem;letter-spacing:-.01em}
+.marque .v{color:var(--accent)}
+.marque .r{color:var(--rose-ink)}
+.sous{font-size:.75rem;color:var(--mut)}
+.bandeau .qui{margin-left:auto;font-size:.78rem;color:var(--mut)}
+.bandeau .qui b{color:var(--ink)}
+.retour{font-size:.78rem;color:var(--accent);text-decoration:none;font-weight:600}
+.retour:hover{text-decoration:underline}
+.attente{padding:34px 22px;color:var(--mut);font-size:.9rem;line-height:1.6;max-width:620px}
+.attente b{color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="bandeau">
+  <div>
+    <div class="marque"><span class="v">Suivi</span> <span class="r">RH</span></div>
+    <div class="sous">Pharmacie du Centre · Mondeville</div>
+  </div>
+  <div class="qui">Ouvert par <b id="rh-qui">…</b></div>
+  <a class="retour" href="/">← Intranet</a>
+  <a class="retour" href="/planning">Planning</a>
+</div>
+
+<div id="rh-host"><div class="attente">Ouverture…</div></div>
+
+<script src="/rh-module.js"></script>
+<script>
+/* Le module se charge, puis demande le code. Rien ici ne décide de quoi que
+   ce soit : la page est déjà servie par le serveur à un titulaire, et les
+   fiches restent derrière la seconde serrure. */
+(function () {
+  function nomDe(u) {
+    return u ? ((u.prenom || '') + ' ' + (u.nom || '')).trim() || u.id : '—';
+  }
+  async function demarrer() {
+    try {
+      const r = await fetch('/api/session', { cache: 'no-store' });
+      const j = await r.json();
+      if (j && j.connecte && j.user) {
+        // Le module lit `currentUser` et `staffDB` par leur nom. Les poser sur
+        // `window` les rend visibles à `typeof` — l'inverse n'est pas vrai pour
+        // une déclaration `let`, et c'est le piège #8 du dépôt.
+        window.currentUser = j.user;
+        document.getElementById('rh-qui').textContent = nomDe(j.user);
+      } else {
+        document.getElementById('rh-host').innerHTML =
+          '<div class="attente"><b>Session fermée.</b> Identifiez-vous sur l’intranet, '
+          + 'puis revenez sur cette page.</div>';
+        return;
+      }
+    } catch (e) {
+      document.getElementById('rh-host').innerHTML =
+        '<div class="attente">Session illisible : ' + String(e.message) + '</div>';
+      return;
+    }
+    // L'annuaire des prénoms arrive avec les fiches, derrière la même porte :
+    // cette page n'a aucune raison de télécharger l'état complet de PILOT.
+    if (typeof window.rhRendreEquipe === 'function') window.rhRendreEquipe();
+  }
+  // FERMER EN PARTANT. Le jeton meurt avec l'onglet cote navigateur, mais le
+  // serveur le garderait jusqu'a son echeance : on le lui rend. `pagehide`
+  // plutot que `beforeunload`, qui ne se declenche pas sur iOS.
+  window.addEventListener('pagehide', function () {
+    if (typeof window.rhQuitterRubrique === 'function') window.rhQuitterRubrique();
+  });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer);
+  else demarrer();
+}());
+</script>
+</body>
+</html>

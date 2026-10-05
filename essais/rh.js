@@ -7,7 +7,7 @@ const fs = require('fs'), path = require('path');
 const rac = path.join(__dirname, '..');
 const lire = f => fs.readFileSync(path.join(rac, f), 'utf8');
 const src = lire('rh.js');
-const ecr = lire('public/rh-module.js');
+const ecr = lire('prive/rh-module.js');
 const ix = lire('public/index.html');
 const pg = lire('public/planning.html');
 const sv = lire('server.js');
@@ -82,8 +82,10 @@ t('le jeton voyage en en-tête, jamais dans l’adresse',
   /'X-RH-Jeton'/.test(ecr) && !/[?&]jeton=/.test(ecr));
 t('il est lié au poste et à l’identité — recopié ailleurs, il ne vaut rien',
   /v\.uid === qui\(req\) && v\.adr === adresse\(req\)/.test(id));
-t('quitter la rubrique la referme',
-  /rhQuitterRubrique/.test(pg) && /\/api\/session\/rh\/fermer/.test(ecr));
+const rhp = lire('prive/rh.html');
+t('quitter la page referme la rubrique côté serveur',
+  /pagehide[\s\S]{0,160}rhQuitterRubrique/.test(rhp) && /\/api\/session\/rh\/fermer/.test(ecr));
+t('... et l’appel survit au départ de la page', /keepalive: true/.test(ecr));
 // `rhFermer` ferme la fenetre modale, et ce nom etait deja pris : defini une
 // seconde fois pour la rubrique, il ecrasait le premier en silence.
 t('... sous un nom qui n’entre en collision avec aucun autre',
@@ -136,8 +138,29 @@ t('... et un opérateur non titulaire par un 403',
   /status\(403\)[\s\S]{0,80}réservé aux titulaires/.test(src));
 t('l’autorisation est demandée au serveur, jamais au navigateur',
   /deps\.estAdmin\(req\)/.test(src) && !/req\.body[\s\S]{0,40}admin/.test(src));
-t('la page cache l’onglet ET la vue garde la porte',
-  /data-v="rh" data-admin="1"/.test(pg) && /'reglages','rh'\]\.includes\(v\)/.test(pg));
+// CE N'EST PLUS UN ONGLET CACHE, C'EST UNE PAGE A PART. Masquer en CSS laissait
+// le bouton dans le source et surtout faisait TELECHARGER rh-module.js a chaque
+// poste ouvrant le planning : aucune donnee ne fuyait, le dispositif etait a nu.
+t('le planning ne porte plus une seule mention du suivi RH',
+  !/\brh\b/i.test(pg));
+t('... et ne télécharge donc plus son module', !/rh-module/.test(pg));
+t('le module a quitté public/ : ce qui y est, est servi à tout le monde',
+  !fs.existsSync(path.join(rac, 'public', 'rh-module.js'))
+  && fs.existsSync(path.join(rac, 'prive', 'rh-module.js')));
+t('la page du suivi RH aussi',
+  !fs.existsSync(path.join(rac, 'public', 'rh.html'))
+  && fs.existsSync(path.join(rac, 'prive', 'rh.html')));
+t('le serveur sert /rh depuis prive/, et seulement à un titulaire',
+  /app\.get\('\/rh'[\s\S]{0,260}estAdministrateur\(uid\)[\s\S]{0,160}'prive', 'rh\.html'/.test(sv));
+t('... et le module par la même garde', /app\.get\('\/rh-module\.js', rhPagePrivee\)/.test(sv));
+// ON NE REPOND PAS « ACCES REFUSE » : un refus dit deja qu'il y a quelque chose
+// a cet endroit. On laisse tomber dans le 404 ordinaire d'Express.
+t('un non-titulaire reçoit le 404 ordinaire, pas un refus qui en dirait trop',
+  (sv.match(/if \(!uid \|\| !\(await estAdministrateur\(uid\)\)\) return next\(\);/g) || []).length === 2);
+t('l’annuaire voyage avec les fiches, derrière la même porte',
+  /annuaire: annuaire, moi: moi/.test(src) && /rhEquipe\.annuaire/.test(ecr));
+t('... et il ne porte ni code, ni empreinte, ni photo',
+  /\{ id: x\.id, prenom: x\.prenom \|\| '', nom: x\.nom \|\| '',\s*\n\s*poste: x\.poste \|\| '', admin: x\.admin === true \}/.test(src));
 
 // ── CE QUI SE JOURNALISE ────────────────────────────────────────────────────
 console.log('\nLe journal des accès');

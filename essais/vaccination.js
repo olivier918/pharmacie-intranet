@@ -10,7 +10,7 @@ const src = lire('rh.js');
 const id = lire('identite.js');
 const vq = lire('public/vq-module.js');
 const ix = lire('public/index.html');
-const rhm = lire('public/rh-module.js');
+const rhm = lire('prive/rh-module.js');
 const sv = lire('server.js');
 
 let ok = 0, ko = 0;

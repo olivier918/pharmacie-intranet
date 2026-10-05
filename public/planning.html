@@ -130,9 +130,6 @@ main{padding:18px 22px 30px;min-width:0}
     <button class="it" data-v="conges" onclick="plVue('conges',this)"><i class="p"></i>Congés &amp; absences<span class="bientot" id="pl-abs-badge" style="display:none"></span></button>
     <button class="it" data-v="echanges" onclick="plVue('echanges',this)"><i class="p"></i>Échanges de jours<span class="bientot" id="pl-ech-badge" style="display:none"></span></button>
 
-    <div class="grp" data-admin="1">Équipe</div>
-    <button class="it" data-v="rh" data-admin="1" onclick="plVue('rh',this)"><i class="p"></i>Suivi RH</button>
-
     <div class="grp">Paie</div>
     <button class="it" data-v="compteurs" onclick="plVue('compteurs',this)"><i class="p"></i>Heures sup &amp; compte-temps<span class="bientot" id="pl-hs-badge" style="display:none"></span></button>
     <button class="it" data-v="navette" data-admin="1" onclick="plVue('navette',this)"><i class="p"></i>Navette mensuelle<span class="bientot">bientôt</span></button>
@@ -154,8 +151,6 @@ main{padding:18px 22px 30px;min-width:0}
     <div class="vue" id="vue-conges"><div id="pl-abs-host" class="pl-vars" style="padding:18px 22px"></div></div>
 
     <div class="vue" id="vue-echanges"><div id="pl-ech-host" class="pl-vars" style="padding:18px 22px"></div></div>
-
-    <div class="vue" id="vue-rh"><div id="rh-host"></div></div>
 
     <div class="vue" id="vue-compteurs"><div id="pl-hs-host" class="pl-vars" style="padding:18px 22px"></div></div>
 
@@ -179,7 +174,6 @@ main{padding:18px 22px 30px;min-width:0}
 
 <script src="pl-core.js"></script>
 <script src="pl-module.js"></script>
-<script src="rh-module.js"></script>
 <script>
 /* ── accès ─────────────────────────────────────────────────────────────── */
 let pinStr = '';
@@ -259,7 +253,7 @@ document.addEventListener('keydown', e=>{
 
 /* ── navigation du menu ────────────────────────────────────────────────── */
 function plVue(v, btn){
-  if (['trames','navette','reglages','rh'].includes(v) && typeof plGarde === 'function' && !plGarde()) return;
+  if (['trames','navette','reglages'].includes(v) && typeof plGarde === 'function' && !plGarde()) return;
   // les trames s'ouvrent dans leur fenêtre pleine page : le menu reste sur le planning
   if (v === 'trames'){ plOpenTrames(); return; }
   document.querySelectorAll('.vue').forEach(x=>x.classList.remove('on'));
@@ -270,9 +264,6 @@ function plVue(v, btn){
   if (v === 'compteurs' && typeof plHsRender === 'function') plHsRender();
   if (v === 'conges' && typeof plAbsRender === 'function') plAbsRender();
   if (v === 'echanges' && typeof plEchRender === 'function') plEchRender();
-  // En quittant le suivi RH, on referme : le code sera redemande au retour.
-  if (v !== 'rh' && typeof rhQuitterRubrique === 'function') rhQuitterRubrique();
-  if (v === 'rh' && typeof rhRendreEquipe === 'function') rhRendreEquipe();
 }
 /* pl-module appelle showSec sur l'intranet ; ici la navigation est locale */
 function showSec(){ }

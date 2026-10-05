@@ -104,6 +104,35 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // C'est un client indépendant de la même base — il ne renvoie que ses rubriques.
 app.get('/planning', (req, res) => res.sendFile(path.join(__dirname, 'public', 'planning.html')));
 
+// ─── Suivi RH : une page a part, a une adresse que rien ne mentionne ───
+//
+// CE QUI EST DANS public/ EST SERVI A TOUT LE MONDE. Le planning livrait donc
+// rh-module.js a chaque poste qui l'ouvrait : quarante kilooctets lisibles, ou
+// l'on apprenait l'existence du compteur de silence et de l'alerte « cette
+// fiche ne contient que du negatif ». Aucune donnee ne fuyait ; le dispositif,
+// lui, etait a nu. La page et le module vivent desormais dans prive/, que le
+// statique ne sert pas.
+//
+// ON NE REPOND PAS « ACCES REFUSE ». Un refus dit deja qu'il y a quelque chose
+// a cet endroit. On laisse la demande poursuivre sa route : aucune autre ne
+// correspond, et Express rend son 404 ordinaire -- le meme, au caractere pres,
+// que pour une adresse qui n'existe pas.
+const rhPagePrivee = async (req, res, next) => {
+  try {
+    const uid = identite.qui(req);
+    if (!uid || !(await estAdministrateur(uid))) return next();
+  } catch (e) { return next(); }
+  res.sendFile(path.join(__dirname, 'prive', path.basename(req.path)));
+};
+app.get('/rh', async (req, res, next) => {
+  try {
+    const uid = identite.qui(req);
+    if (!uid || !(await estAdministrateur(uid))) return next();
+  } catch (e) { return next(); }
+  res.sendFile(path.join(__dirname, 'prive', 'rh.html'));
+});
+app.get('/rh-module.js', rhPagePrivee);
+
 // ─── DATABASE SETUP ───
 let db = null;
 let dbError = null;      // dernier message d'erreur de connexion (diagnostic)

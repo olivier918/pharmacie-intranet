@@ -474,9 +474,21 @@ function routes(app, getDb, deps) {
           habilitations: habilitationsDues(habs, auj)
         };
       });
+      // L'ANNUAIRE VOYAGE AVEC LES FICHES. La page du suivi RH vit a part : elle
+      // n'a aucune raison de telecharger les onze megaoctets de l'etat complet
+      // de PILOT pour afficher des prenoms. Ni code, ni empreinte, ni photo --
+      // de quoi nommer une ligne, rien de plus.
+      let annuaire = [];
+      try {
+        annuaire = ((await deps.equipe()) || []).map(function (x) {
+          return { id: x.id, prenom: x.prenom || '', nom: x.nom || '',
+                   poste: x.poste || '', admin: x.admin === true };
+        });
+      } catch (e) { annuaire = []; }
       // On ne journalise pas cet ecran : il ne montre aucun contenu, seulement
       // des compteurs. Journaliser ce qui ne revele rien noie ce qui revele.
-      res.json({ ok: true, fiches: fiches, silenceJours: SILENCE_JOURS });
+      res.json({ ok: true, fiches: fiches, silenceJours: SILENCE_JOURS,
+                 annuaire: annuaire, moi: moi });
     } catch (e) { rate(res, e); }
   });
 

@@ -45,7 +45,14 @@
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
     return m ? m[3] + '/' + m[2] + '/' + m[1] : '—';
   }
+  // L'ANNUAIRE VIENT DU SERVEUR, derriere la meme porte que les fiches. Le
+  // module vivait dans le planning, ou `staffDB` etait deja charge ; sur sa
+  // page a part, il n'y a aucune raison de telecharger l'etat complet de PILOT
+  // pour afficher des prenoms. Le repli sur `staffDB` reste, au cas ou le
+  // module serait un jour rehebergé dans une page qui le porte.
+  let rhAnnuaire = null;
   function rhStaff() {
+    if (Array.isArray(rhAnnuaire)) return rhAnnuaire;
     return (typeof staffDB !== 'undefined' && Array.isArray(staffDB)) ? staffDB : [];
   }
   function rhNom(uid) {
@@ -55,7 +62,9 @@
   }
   // ON NE TIENT PAS DE FICHE SUR SOI-MEME. Sa propre carte, au milieu de celles
   // de l'equipe, n'apporte rien et donne a l'ecran un air de miroir.
+  let rhMoiUid = null;
   function rhMoi() {
+    if (rhMoiUid) return rhMoiUid;
     return (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
   }
   function rhPrenom(uid) {
@@ -214,7 +223,11 @@
     if (!rhJeton) return;
     const j = rhJeton;
     rhJeton = null;
-    fetch('/api/session/rh/fermer', { method: 'POST', headers: { 'X-RH-Jeton': j } }).catch(function () {});
+    // `keepalive` : cet appel part souvent au moment ou l'onglet se ferme, et
+    // un fetch ordinaire est alors annule par le navigateur. Le jeton resterait
+    // ouvert cote serveur jusqu'a son echeance.
+    fetch('/api/session/rh/fermer', { method: 'POST', keepalive: true,
+                                      headers: { 'X-RH-Jeton': j } }).catch(function () {});
   };
 
   window.rhRendreEquipe = async function () {
@@ -230,7 +243,11 @@
       }
       rhJeton = jeton;
     }
-    try { rhEquipe = await rhGet('/api/rh/equipe'); }
+    try {
+      rhEquipe = await rhGet('/api/rh/equipe');
+      if (Array.isArray(rhEquipe.annuaire) && rhEquipe.annuaire.length) rhAnnuaire = rhEquipe.annuaire;
+      if (rhEquipe.moi) rhMoiUid = rhEquipe.moi;
+    }
     catch (e) {
       z.innerHTML = '<div class="rh-vide">Suivi RH indisponible : ' + E(e.message) + '</div>';
       return;
