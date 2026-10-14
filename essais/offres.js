@@ -256,7 +256,7 @@ async function lancer() {
   // ci-dessus est vraie dans le module et fausse en production.
   const svc = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   t('server.js transmet bien le domaine patient comme repli',
-    /basePatients:\s*\(\)\s*=>\s*renouvBase\(\)/.test(svc));
+    /basePatients:\s*\(\)\s*=>\s*basePatients\(\)/.test(svc));
   t('... et sait qu’elle ne peut pas écrire', j.redacteur === false);
   t('une non-administratrice se voit refuser l’écriture',
     (await poster('/api/offres', { code: 'x', titre: 'x', mime: 'image/jpeg', data: img })).code === 403);

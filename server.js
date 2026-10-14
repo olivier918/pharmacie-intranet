@@ -403,14 +403,29 @@ async function initDB() {
 }
 
 // ─── Configuration publique lue par le front ───
-// RENOUV_BASE_URL : adresse sous laquelle les liens envoyes aux PATIENTS sont
-// construits (ex. https://renouvellement.pharmacie-mondeville.fr). Elle doit
-// pointer sur ce meme serveur — c'est un simple alias, pas un autre service.
-// Non definie, le front retombe sur l'adresse courante : le lien reste valide,
+//
+// L'ADRESSE SOUS LAQUELLE LES PATIENTS NOUS VOIENT. Un seul domaine pour tout
+// ce qui leur est adresse : la confirmation de renouvellement (/r/), le depot
+// d'ordonnance (/o/) et l'affiche du moment (/offre). L'application repond par
+// CHEMIN, pas par nom d'hote — un domaine de plus par usage ne servirait a rien
+// qu'a consommer un domaine personnalise de plus chez l'hebergeur.
+//
+// Elle doit pointer sur ce meme serveur : c'est un alias, pas un autre service.
+// Non definie, le front retombe sur l'adresse courante — le lien reste valide,
 // il porte seulement le nom du back-office.
-function renouvBase() {
-  const v = (process.env.RENOUV_BASE_URL || '').trim().replace(/\/+$/, '');
-  return /^https?:\/\//i.test(v) ? v : null;
+//
+// DEUX NOMS DE VARIABLE, ET C'EST VOULU. `RENOUV_BASE_URL` date de l'epoque ou
+// seuls les renouvellements partaient par SMS ; le nom ne dit plus ce qu'elle
+// porte. `PUBLIC_BASE_URL` la remplace, et l'ancienne continue de servir tant
+// qu'elle est seule definie : renommer une variable d'environnement ne doit pas
+// pouvoir couper les liens patients entre deux redemarrages.
+// La lecture d'une adresse (protocole exige, barre finale otee) vit dans
+// offres.js et nulle part ailleurs : deux copies de la meme regle finissent
+// toujours par diverger sur un cas limite.
+function basePatients() {
+  return offres.adressePublique(process.env.PUBLIC_BASE_URL)
+      || offres.adressePublique(process.env.RENOUV_BASE_URL)
+      || null;
 }
 // ─── IMAGES ────────────────────────────────────────────────────────────────
 // Stockees hors du blob metier, et adressees par le CONDENSAT de leur contenu.
@@ -942,7 +957,7 @@ offres.routes(app, () => db, {
   // UN SEUL DOMAINE FACE AUX PATIENTS. Celui qui porte deja /r/ et /o/ porte
   // /offre sans rien de plus : l'application repond par chemin, pas par nom
   // d'hote. OFFRE_BASE_URL n'existe que pour l'en separer un jour.
-  basePatients: () => renouvBase()
+  basePatients: () => basePatients()
 });
 
 // ─── Identite des operateurs (voir identite.js) ───
@@ -1012,7 +1027,11 @@ app.get('/api/config', (req, res) => {
   res.set('Cache-Control', 'no-store');
   // `version` sert aux demandes des operateurs : savoir sur quelle version une
   // anomalie a ete vue evite de chercher un defaut deja corrige.
-  res.json({ renouvBase: renouvBase(), version: BUILD_ID });
+  // LES DEUX CLEFS PARTENT ENSEMBLE. Les postes ne sont pas tous sur la meme
+  // version — un poste du comptoir reste ouvert des journees entieres. Retirer
+  // `renouvBase` ferait construire les liens d'un ancien poste sur l'adresse du
+  // back-office, sans que rien ne le signale.
+  res.json({ basePatients: basePatients(), renouvBase: basePatients(), version: BUILD_ID });
 });
 
 // ─── Version déployée (pour l'auto-rafraîchissement des postes) ───
@@ -2136,9 +2155,9 @@ async function start() {
   }
   initMail();
   logSmsStatus();
-  console.log(renouvBase()
-    ? '  🔗 Liens patients construits sur ' + renouvBase()
-    : '  🔗 Liens patients sur l\'adresse courante (definir RENOUV_BASE_URL pour un sous-domaine dedie)');
+  console.log(basePatients()
+    ? '  🔗 Liens patients construits sur ' + basePatients()
+    : '  🔗 Liens patients sur l\'adresse courante (definir PUBLIC_BASE_URL pour un sous-domaine dedie)');
   paiement.logStatus();
   (() => {
     const d = coffre.diagnostic();

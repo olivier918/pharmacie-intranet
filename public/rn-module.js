@@ -984,7 +984,10 @@
   // confiance dans un SMS que le nom du back-office, et ne revele pas l'outil
   // interne. Repli sur l'adresse courante : le lien fonctionne dans tous les cas.
   function rnBaseLien() {
-    const b = window.APP_CONFIG && window.APP_CONFIG.renouvBase;
+    // `basePatients` d'abord, `renouvBase` ensuite : un poste ouvert depuis
+    // ce matin parle peut-etre encore a un serveur d'avant le renommage.
+    const c = window.APP_CONFIG || {};
+    const b = c.basePatients || c.renouvBase;
     return (typeof b === 'string' && /^https?:\/\//i.test(b)) ? b.replace(/\/+$/, '') : location.origin;
   }
   function rnJeton() {

@@ -547,7 +547,10 @@
   // Même adresse que les liens de renouvellement : un sous-domaine dédié
   // inspire plus confiance dans un SMS que le nom du back-office.
   function odBaseLien() {
-    const b = window.APP_CONFIG && window.APP_CONFIG.renouvBase;
+    // `basePatients` d'abord, `renouvBase` ensuite : un poste ouvert depuis
+    // ce matin parle peut-etre encore a un serveur d'avant le renommage.
+    const c = window.APP_CONFIG || {};
+    const b = c.basePatients || c.renouvBase;
     return (typeof b === 'string' && /^https?:\/\//i.test(b)) ? b.replace(/\/+$/, '') : location.origin;
   }
   // Un seul caractère accentué ferait basculer tout le message en Unicode,
@@ -577,7 +580,8 @@
     const sig = ' Pharmacie du Centre';
     const p = odAscii(prenom);
     const avec = 'Bonjour ' + p + ', ' + m.txt + ' : ' + lien + sig;
-    // Le lien pèse déjà 62 caractères. Si le prénom fait déborder le segment,
+    // Le lien pèse une soixantaine de caractères — sa longueur exacte dépend du
+    // domaine patient, qui se règle hors du code. Si le prénom fait déborder le segment,
     // on le laisse tomber plutôt que de payer un crédit de plus : le patient
     // reconnaît l'expéditeur, affiché en tête du SMS.
     return (p && avec.length <= 160) ? avec : ('Bonjour, ' + m.txt + ' : ' + lien + sig);

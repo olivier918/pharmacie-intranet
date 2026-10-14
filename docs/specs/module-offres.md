@@ -99,9 +99,15 @@ porte les liens de renouvellement (`/r/`) *et* ceux du dépôt d'ordonnance
 qu'on lui demande rien. Une affiche ne coûte donc **aucun domaine personnalisé
 supplémentaire**.
 
-L'ordre est : `OFFRE_BASE_URL` si elle est définie, sinon `RENOUV_BASE_URL`,
-sinon l'adresse par laquelle le poste est arrivé (le lien reste valide, il porte
-seulement le nom du back-office, et le pied de l'écran le dit).
+Ce domaine se règle par **`PUBLIC_BASE_URL`** (ex.
+`https://client.pharmacie-mondeville.fr`). `RENOUV_BASE_URL` est son ancien nom,
+encore lu tant que la nouvelle n'est pas définie — renommer une variable ne doit
+pas pouvoir couper les liens patients entre deux redémarrages.
+
+L'ordre complet : `OFFRE_BASE_URL`, sinon `PUBLIC_BASE_URL`, sinon
+`RENOUV_BASE_URL`, sinon l'adresse par laquelle le poste est arrivé (le lien
+reste valide, il porte seulement le nom du back-office, et le pied de l'écran
+le dit).
 
 `OFFRE_BASE_URL` n'existe que pour **séparer** l'affiche du domaine patient, le
 jour où le nom de celui-ci ne conviendrait plus à une opération commerciale.
@@ -160,4 +166,5 @@ prévient en orange quand le message déborde.
 | `offres.js` | Table, fonctions pures, page publique, routes d'administration |
 | `public/of-module.js` | La rubrique **Offres** dans PILOT |
 | `essais/offres.js` | 79 vérifications, dont l'ordre de montage dans `server.js` |
+| `essais/domaine-patient.js` | 23 vérifications — le renommage du domaine ne coupe aucun lien |
 | `docs/affiche-veille.jpg` | L'image de veille livrée avec le dépôt |
