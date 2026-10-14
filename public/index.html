@@ -3737,6 +3737,9 @@ function showSec(name,btn){
   if(name==='reunion'&&window.reRender)reRender();
   if(name==='depots'&&window.odRender)odRender();
   if(name==='mp'&&window.mpRender)mpRender();
+  // La rubrique Offres relit le serveur a chaque ouverture : le compteur
+  // d'ouvertures et l'offre du jour changent sans qu'on y touche.
+  if(name==='offres'&&window.ofCharger)ofCharger();
 }
 
 // Bascule le volet : desktop = collapse/expand persistant ; mobile = drawer open/close
@@ -13034,6 +13037,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="rp-module.js"></script>
 <script src="vq-module.js"></script>
 <script src="et-module.js"></script>
+<script src="of-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>

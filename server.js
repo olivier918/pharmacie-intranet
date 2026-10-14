@@ -26,6 +26,7 @@ const paiement = require('./paiement');
 const temperatures = require('./temperatures');
 const commandes = require('./commandes');
 const rh = require('./rh');
+const offres = require('./offres');
 const smsProgrammes = require('./sms-programmes');
 const identite = require('./identite');
 const traces = require('./traces');
@@ -57,6 +58,16 @@ accuses.installer(app, { getDb: () => db, lireEtat: lireEtatBrut, ecrireEtat: ec
 // n'a pas de session, sa route est donc montee AVANT le portail, et un secret
 // remplace la session. Sans ASCA_HOOK_SECRET, la route repond 503.
 commandes.installerCourrier(app, { getDb: () => db });
+
+// ─── Offres : l'affiche publique diffusee par SMS (voir offres.js) ───
+// Meme famille que /o : la personne qui ouvre le lien n'a pas de session, la
+// route est donc montee AVANT le portail. Rien n'y est protege parce que rien
+// n'y est prive — une affiche est faite pour etre vue. Le frein est la contre
+// l'aspiration, pas contre le patient.
+const freinOffre = securite.limiteur('Page offre',
+  [{ fenetreMs: 60 * 1000, max: 120 }, { fenetreMs: 3600 * 1000, max: 1200 }],
+  (req) => String(req.headers['x-forwarded-for'] || req.ip || '?').split(',')[0].trim());
+offres.publiques(app, { getDb: () => db, frein: freinOffre });
 
 // Depot d'ordonnance par les patients. Comme les accuses Brevo : un patient n'a
 // pas de session, sa route est donc montee AVANT le portail. Elle a son propre
@@ -919,6 +930,15 @@ rh.routes(app, () => db, {
   // prendre effet tout de suite.
   equipe: async () => (await lireEtatBrut()).staffDB || [],
   noter: (uid, action, objet, ref, detail) => traces.noter(db, uid, action, objet, ref, detail)
+});
+
+// ─── Offres : la rubrique de l'officine (voir offres.js) ───
+// La LECTURE est ouverte a toute session : une affiche est publique par
+// destination, et le comptoir doit pouvoir donner le lien. L'ECRITURE est
+// reservee aux administrateurs.
+offres.routes(app, () => db, {
+  qui: identite.qui,
+  estAdmin: (uid) => estAdministrateur(uid)
 });
 
 // ─── Identite des operateurs (voir identite.js) ───
@@ -2160,6 +2180,8 @@ async function start() {
   await commandes.demarrer(db);
   try { await rh.creerTables(db); }
   catch (e) { console.error('  ⛔ Suivi RH indisponible :', e.message); }
+  try { if (db) await offres.preparer(db); }
+  catch (e) { console.error('  ⛔ Offres indisponibles :', e.message); }
   if (db) smsProg.demarrer();
   await snapshotCurrent();   // point de restauration AVANT la purge de rétention
   if (await maint.pruneStored(db, DATA_FILE)) {
