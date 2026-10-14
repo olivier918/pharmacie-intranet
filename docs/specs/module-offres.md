@@ -90,7 +90,21 @@ données personnelles.
 
 ---
 
-## 6. Le DNS — le seul geste qui reste
+## 6. L'adresse de diffusion — un réglage, pas du code
+
+`OFFRE_BASE_URL` (Railway → Variables) porte l'adresse publique sous laquelle
+les liens sont construits dans l'écran, par exemple
+`https://offres.pharmacie-mondeville.fr`. Changer de domaine ne demande donc ni
+ligne à réécrire ni version à pousser.
+
+Non définie, l'écran diffuse sous l'adresse par laquelle le poste est arrivé :
+le lien reste valide, il porte seulement le nom du back-office.
+
+**Apex ou sous-domaine, c'est le même coût** : Railway compte un domaine
+personnalisé dans les deux cas. Le quota (Hobby : 2 par service ; Pro : 20) ne
+départage donc pas les deux.
+
+## 7. Le DNS — le seul geste qui reste
 
 Pour que `pharmacie-mondeville.fr/offre` réponde, le **domaine nu** doit pointer
 sur l'application Railway.
@@ -115,7 +129,7 @@ L'écran a un bouton pour basculer sur cette adresse de secours.
 
 ---
 
-## 7. Ce qui n'est pas fait, et pourquoi
+## 8. Ce qui n'est pas fait, et pourquoi
 
 **Le module n'envoie pas le SMS.** Une campagne commerciale vers des patients
 n'est pas un rappel de vaccination : la prospection par SMS suppose un
@@ -132,11 +146,11 @@ prévient en orange quand le message déborde.
 
 ---
 
-## 8. Les fichiers
+## 9. Les fichiers
 
 | Fichier | Rôle |
 |---|---|
 | `offres.js` | Table, fonctions pures, page publique, routes d'administration |
 | `public/of-module.js` | La rubrique **Offres** dans PILOT |
-| `essais/offres.js` | 71 vérifications, dont l'ordre de montage dans `server.js` |
+| `essais/offres.js` | 75 vérifications, dont l'ordre de montage dans `server.js` |
 | `docs/affiche-veille.jpg` | L'image de veille livrée avec le dépôt |

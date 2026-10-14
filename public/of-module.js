@@ -15,11 +15,13 @@
 (function () {
   'use strict';
 
-  // L'ADRESSE DE DIFFUSION. C'est elle qui part dans les SMS. Elle vaut le
-  // domaine nu tant que celui-ci pointe sur ce serveur ; si l'enregistrement
-  // DNS n'est pas encore posé, le bouton « adresse de secours » bascule sur
-  // l'hôte courant, qui lui répond toujours.
-  const OF_DIFFUSION = 'https://pharmacie-mondeville.fr';
+  // L'ADRESSE DE DIFFUSION. C'est elle qui part dans les SMS, et elle vient du
+  // SERVEUR (variable OFFRE_BASE_URL), pas d'ici : changer de domaine ne doit
+  // pas demander de reécrire une ligne et de pousser une version. Tant qu'elle
+  // n'est pas réglée, on diffuse sous l'adresse courante — le lien est valide,
+  // il porte seulement le nom du back-office. Le bouton bascule de l'une à
+  // l'autre, pour vérifier avant que le DNS ne soit posé.
+  let OF_DIFFUSION = '';
   const OF_CLE_HOTE = 'pilot_offre_hote';
   const OF_MAX_PX = 1400;      // côté long de l'affiche servie aux téléphones
 
@@ -34,6 +36,7 @@
   let ofCodeTouche = false;
 
   function ofBase() {
+    if (!OF_DIFFUSION) return location.origin;
     try { if (localStorage.getItem(OF_CLE_HOTE) === 'local') return location.origin; } catch (e) {}
     return OF_DIFFUSION;
   }
@@ -189,9 +192,12 @@
             + '<div class="cb of-liste">' + ofListe.map(ofLigne).join('') + '</div></div>'
           : '')
       + '<div class="of-hote">Adresse de diffusion : <b>' + E(ofBase().replace(/^https?:\/\//, '')) + '</b>'
-      +   ' <button class="btn bs sm" onclick="ofBasculerHote()">'
-      +   (ofBase() === OF_DIFFUSION ? 'Utiliser l’adresse de secours' : 'Revenir au domaine principal')
-      +   '</button></div>';
+      +   (OF_DIFFUSION
+            ? ' <button class="btn bs sm" onclick="ofBasculerHote()">'
+              + (ofBase() === OF_DIFFUSION ? 'Utiliser l’adresse de secours' : 'Revenir au domaine principal')
+              + '</button>'
+            : ' — aucun domaine public réglé (variable <code>OFFRE_BASE_URL</code>)')
+      +   '</div>';
   };
 
   window.ofRecompter = function () {
@@ -346,6 +352,7 @@
       const j = await r.json();
       if (r.ok && j.ok) {
         ofListe = j.offres || []; ofRedacteur = !!j.redacteur; ofJourServeur = j.jour || '';
+        OF_DIFFUSION = j.base || '';
       }
     } catch (e) {}
     window.ofRender();

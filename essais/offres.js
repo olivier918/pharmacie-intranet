@@ -225,6 +225,19 @@ async function lancer() {
   r = await fetch(A + '/api/offres');
   let j = await r.json();
   t('TOUTE SESSION LIT — le comptoir doit pouvoir donner le lien', r.status === 200 && j.ok);
+  // L'ADRESSE DE DIFFUSION VIENT DU SERVEUR. Si elle vivait dans l'écran, un
+  // changement de domaine demanderait de reécrire une ligne et de pousser.
+  t('... et reçoit l’adresse de diffusion, réglée hors du code',
+    Object.prototype.hasOwnProperty.call(j, 'base'));
+  t('non réglée, elle vaut null — l’écran retombe sur l’adresse courante',
+    j.base === null && of.diffusion() === null);
+  process.env.OFFRE_BASE_URL = 'https://pharmacie-mondeville.fr/';
+  t('réglée, elle est reprise sans sa barre finale',
+    of.diffusion() === 'https://pharmacie-mondeville.fr');
+  process.env.OFFRE_BASE_URL = 'pharmacie-mondeville.fr';
+  t('une adresse sans protocole est ignorée plutôt que servie de travers',
+    of.diffusion() === null);
+  delete process.env.OFFRE_BASE_URL;
   t('... et sait qu’elle ne peut pas écrire', j.redacteur === false);
   t('une non-administratrice se voit refuser l’écriture',
     (await poster('/api/offres', { code: 'x', titre: 'x', mime: 'image/jpeg', data: img })).code === 403);
