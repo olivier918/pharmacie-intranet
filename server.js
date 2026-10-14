@@ -938,7 +938,11 @@ rh.routes(app, () => db, {
 // reservee aux administrateurs.
 offres.routes(app, () => db, {
   qui: identite.qui,
-  estAdmin: (uid) => estAdministrateur(uid)
+  estAdmin: (uid) => estAdministrateur(uid),
+  // UN SEUL DOMAINE FACE AUX PATIENTS. Celui qui porte deja /r/ et /o/ porte
+  // /offre sans rien de plus : l'application repond par chemin, pas par nom
+  // d'hote. OFFRE_BASE_URL n'existe que pour l'en separer un jour.
+  basePatients: () => renouvBase()
 });
 
 // ─── Identite des operateurs (voir identite.js) ───

@@ -165,15 +165,25 @@ function origine(req) {
   return hote ? proto + '://' + hote : '';
 }
 
-// L'ADRESSE SOUS LAQUELLE ON DIFFUSE. Elle n'est pas dans le code : le jour ou
-// le domaine change -- un sous-domaine plutot que le domaine nu, un autre
-// hebergeur -- il n'y a pas de ligne a reecrire ni de version a pousser, une
-// variable d'environnement suffit. Non definie, l'ecran retombe sur l'adresse
-// par laquelle le poste est arrive : le lien reste valide, il porte seulement
-// le nom du back-office.
-function diffusion() {
-  const v = String(process.env.OFFRE_BASE_URL || '').trim().replace(/\/+$/, '');
-  return /^https?:\/\//i.test(v) ? v : null;
+// L'ADRESSE SOUS LAQUELLE ON DIFFUSE.
+//
+// UN SEUL DOMAINE FACE AUX PATIENTS, et c'est deja le cas : RENOUV_BASE_URL
+// porte les liens de renouvellement (/r/) ET ceux du depot d'ordonnance (/o/).
+// Les routes vivent toutes dans la meme application, et l'application repond
+// par CHEMIN, pas par nom d'hote : le domaine qui sert /r/ sert /offre sans
+// qu'on lui demande rien. Une offre n'a donc aucune raison de coûter un
+// domaine personnalise de plus -- elle se range derriere celui qui existe.
+//
+// OFFRE_BASE_URL ne sert qu'a l'en separer, le jour ou le nom du domaine
+// patient ne conviendrait plus a une affiche commerciale. Ni l'une ni l'autre
+// n'est definie : on diffuse sous l'adresse par laquelle le poste est arrive.
+// Le lien reste valide, il porte seulement le nom du back-office.
+function adressePublique(v) {
+  const a = String(v == null ? '' : v).trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(a) ? a : null;
+}
+function diffusion(repli) {
+  return adressePublique(process.env.OFFRE_BASE_URL) || adressePublique(repli) || null;
 }
 
 function urlImage(base, o) {
@@ -244,7 +254,7 @@ function pageHtml(o, opts) {
 module.exports = {
   TYPES, MAX_OCTETS, CODE_MAX, OFFICINE,
   normCode, jourValide, enCours, terminee, choisir, laVeille, jourParis, pageHtml, urlImage,
-  diffusion,
+  diffusion, adressePublique,
 
   /* ──────────────────────────────────────────────────────────────────────────
      Les tables. `CREATE TABLE IF NOT EXISTS` au démarrage, comme partout ici :
@@ -384,7 +394,8 @@ module.exports = {
                   debut, fin, veille, vues, par, cree, maj
              FROM app_offres ORDER BY veille, cree DESC`);
         const peut = (typeof d.estAdmin === 'function') ? await d.estAdmin(uid) : false;
-        res.json({ ok: true, jour: jourParis(), redacteur: peut, base: diffusion(),
+        const repli = (typeof d.basePatients === 'function') ? d.basePatients() : null;
+        res.json({ ok: true, jour: jourParis(), redacteur: peut, base: diffusion(repli),
                    offres: r.rows || [] });
       } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
     });

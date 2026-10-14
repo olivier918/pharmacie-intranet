@@ -90,21 +90,28 @@ données personnelles.
 
 ---
 
-## 6. L'adresse de diffusion — un réglage, pas du code
+## 6. L'adresse de diffusion — aucun domaine de plus
 
-`OFFRE_BASE_URL` (Railway → Variables) porte l'adresse publique sous laquelle
-les liens sont construits dans l'écran, par exemple
-`https://offres.pharmacie-mondeville.fr`. Changer de domaine ne demande donc ni
-ligne à réécrire ni version à pousser.
+**Un seul domaine face aux patients, et il existe déjà.** `RENOUV_BASE_URL`
+porte les liens de renouvellement (`/r/`) *et* ceux du dépôt d'ordonnance
+(`/o/`). Toutes ces routes vivent dans la même application, qui répond par
+**chemin**, pas par nom d'hôte : le domaine qui sert `/r/` sert `/offre` sans
+qu'on lui demande rien. Une affiche ne coûte donc **aucun domaine personnalisé
+supplémentaire**.
 
-Non définie, l'écran diffuse sous l'adresse par laquelle le poste est arrivé :
-le lien reste valide, il porte seulement le nom du back-office.
+L'ordre est : `OFFRE_BASE_URL` si elle est définie, sinon `RENOUV_BASE_URL`,
+sinon l'adresse par laquelle le poste est arrivé (le lien reste valide, il porte
+seulement le nom du back-office, et le pied de l'écran le dit).
 
-**Apex ou sous-domaine, c'est le même coût** : Railway compte un domaine
-personnalisé dans les deux cas. Le quota (Hobby : 2 par service ; Pro : 20) ne
-départage donc pas les deux.
+`OFFRE_BASE_URL` n'existe que pour **séparer** l'affiche du domaine patient, le
+jour où le nom de celui-ci ne conviendrait plus à une opération commerciale.
 
-## 7. Le DNS — le seul geste qui reste
+Si un domaine dédié est malgré tout voulu : **apex ou sous-domaine, c'est le
+même coût** — Railway compte un domaine personnalisé dans les deux cas (Hobby :
+2 par service ; Pro : 20). Le quota ne départage donc pas les deux ; c'est la
+technique qui le fait (voir ci-dessous).
+
+## 7. Le DNS — si un domaine dédié est voulu
 
 Pour que `pharmacie-mondeville.fr/offre` réponde, le **domaine nu** doit pointer
 sur l'application Railway.
@@ -152,5 +159,5 @@ prévient en orange quand le message déborde.
 |---|---|
 | `offres.js` | Table, fonctions pures, page publique, routes d'administration |
 | `public/of-module.js` | La rubrique **Offres** dans PILOT |
-| `essais/offres.js` | 75 vérifications, dont l'ordre de montage dans `server.js` |
+| `essais/offres.js` | 79 vérifications, dont l'ordre de montage dans `server.js` |
 | `docs/affiche-veille.jpg` | L'image de veille livrée avec le dépôt |
