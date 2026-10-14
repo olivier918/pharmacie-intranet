@@ -117,6 +117,25 @@ même coût** — Railway compte un domaine personnalisé dans les deux cas (Hob
 2 par service ; Pro : 20). Le quota ne départage donc pas les deux ; c'est la
 technique qui le fait (voir ci-dessous).
 
+### Le domaine patient ne montre pas le back-office
+
+Une seule application sert deux publics sous deux noms, et elle répond par
+chemin : `client.pharmacie-mondeville.fr` rendait donc, à la racine, **l'écran
+de connexion de l'officine**. Un patient qui tronque le lien de son SMS tombait
+sur « PILOT — Accès officine ».
+
+`domaine-patient.js` ferme la porte : sur le domaine patient — et là seulement —
+tout ce qui n'est pas `/offre`, `/r/`, `/o`, leurs API et l'identité visuelle
+**renvoie (302) vers `/offre`**, qui porte le nom, l'adresse et le téléphone de
+la pharmacie et fait donc une page d'accueil honnête même sans offre en cours.
+
+**Ce n'est pas une sécurité.** Le portail d'accès reste seul juge de qui entre :
+un redirecteur ne protège rien, il range.
+
+Un essai relit `renouv.html` et `depot.html` et vérifie que **tout ce qu'elles
+demandent** figure dans la liste autorisée : le jour où l'une d'elles chargera
+une ressource de plus, l'essai le dira avant que la page ne s'affiche cassée.
+
 ## 7. Le DNS — si un domaine dédié est voulu
 
 Pour que `pharmacie-mondeville.fr/offre` réponde, le **domaine nu** doit pointer
@@ -166,5 +185,6 @@ prévient en orange quand le message déborde.
 | `offres.js` | Table, fonctions pures, page publique, routes d'administration |
 | `public/of-module.js` | La rubrique **Offres** dans PILOT |
 | `essais/offres.js` | 79 vérifications, dont l'ordre de montage dans `server.js` |
-| `essais/domaine-patient.js` | 23 vérifications — le renommage du domaine ne coupe aucun lien |
+| `domaine-patient.js` | Sur le domaine patient, tout le reste renvoie vers `/offre` |
+| `essais/domaine-patient.js` | 67 vérifications — le renommage ne coupe aucun lien, et le back-office ne fuit pas |
 | `docs/affiche-veille.jpg` | L'image de veille livrée avec le dépôt |

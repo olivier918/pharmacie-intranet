@@ -27,6 +27,7 @@ const temperatures = require('./temperatures');
 const commandes = require('./commandes');
 const rh = require('./rh');
 const offres = require('./offres');
+const domainePatient = require('./domaine-patient');
 const smsProgrammes = require('./sms-programmes');
 const identite = require('./identite');
 const traces = require('./traces');
@@ -92,6 +93,13 @@ depots.installer(app, express, {
   // pas un acces de collaborateur. On se contente donc d'une ligne de service.
   tracer: (quoi, ref) => console.log('  \u{1F4E5} ' + quoi + ' (' + ref + ')')
 });
+
+// ─── Le domaine patient ne montre pas le back-office (voir domaine-patient.js) ───
+// MONTE ICI, et pas ailleurs : apres les routes publiques — elles sont dans sa
+// liste, elles passent — et AVANT le portail, pour qu'un patient arrive sur
+// l'affiche du moment plutot que sur l'ecran de connexion de l'officine.
+// Ce n'est pas une securite : le portail reste seul juge de qui entre.
+domainePatient.installer(app, { base: () => basePatients() });
 
 app.use(auth.gate);           // portail : à placer avant le static et les routes /api de données
 console.log(auth.AUTH_DISABLED
@@ -2158,6 +2166,13 @@ async function start() {
   console.log(basePatients()
     ? '  🔗 Liens patients construits sur ' + basePatients()
     : '  🔗 Liens patients sur l\'adresse courante (definir PUBLIC_BASE_URL pour un sous-domaine dedie)');
+  // ON LE DIT FORT. Si PUBLIC_BASE_URL portait par erreur le nom du back-office,
+  // tout l'intranet renverrait sur /offre : cette ligne est le seul endroit ou
+  // la bevue se voit avant que l'equipe ne la decouvre a l'ecran.
+  if (basePatients()) {
+    console.log('  🚪 Sur ' + basePatients().replace(/^https?:\/\//, '')
+      + ', tout chemin qui n\'est pas destine a un patient renvoie vers /offre');
+  }
   paiement.logStatus();
   (() => {
     const d = coffre.diagnostic();
