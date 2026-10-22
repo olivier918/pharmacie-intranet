@@ -37,7 +37,7 @@ dépannages · `fc-` formulaires · `dm-` boîte à idées · `pl-` planning.
 
 ---
 
-## Les huit pièges de ce dépôt
+## Les neuf pièges de ce dépôt
 
 Chacun a déjà causé une perte de données en production. Les lire avant d'écrire
 une ligne.
@@ -138,6 +138,38 @@ résolveur exposé par `index.html`, ou par son nom nu. Jamais par `window`.
 
 (`pl-core.js` fait exception : il est le noyau de `planning.html`, une autre
 page, où c'est lui qui crée les globales avec `window.x = …`.)
+
+### 9. Un redessin efface la saisie en cours
+
+La boucle de resynchronisation redessine l'écran toutes les huit secondes, à
+partir des **données enregistrées**. Si un formulaire se trouve dans le morceau
+reconstruit, tout ce qui vient d'y être tapé disparaît, et le curseur avec. On a
+donc huit secondes, montre en main, pour remplir un champ.
+
+Le symptôme n'est jamais « ça efface » : c'est « ça bug », « je n'arrive pas à
+saisir », « le calendrier se referme tout seul ». Deux fois le défaut est passé
+en production — la date de réunion d'équipe, et la fiche laboratoire.
+
+**Règle** : une fonction de rendu ne reconstruit pas un formulaire déjà ouvert.
+
+```js
+if (reEditDate && reAdmin()) {
+  if (document.getElementById('re-d-date')) return;   // déjà ouvert : on n'y touche pas
+  el.innerHTML = …
+}
+```
+
+Tant que la saisie est ouverte, elle appartient à la personne qui écrit. Ce
+qu'un autre poste a posé entre-temps s'affichera à la fermeture : c'est le
+dernier qui enregistre qui l'emporte, comme partout ailleurs ici.
+
+Deux corollaires. Un redessin **délibéré** du formulaire (ajouter une ligne,
+changer d'onglet) doit pouvoir passer la garde — `lbRendBO(true)` — et emporter
+ce qui est déjà tapé (`lbChampsDuDom`). Et un champ qui ne répondrait plus à
+cause de la garde ne doit pas rester affiché : mieux vaut le masquer pendant la
+saisie qu'offrir une case morte.
+
+`essais/saisie-en-cours.js` garde les deux corrections.
 
 ---
 

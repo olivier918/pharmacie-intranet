@@ -389,6 +389,22 @@
     // reverifie ici, pour qu'une perte de droits en cours de session referme la
     // saisie au lieu de la laisser ouverte.
     if (reEditDate && reAdmin()) {
+      // ON NE REDESSINE JAMAIS UN FORMULAIRE DÉJÀ OUVERT.
+      //
+      // `reRender()` est rappelee par la boucle de resynchronisation, toutes
+      // les huit secondes. Elle repassait ici et reconstruisait le formulaire a
+      // partir de la valeur ENREGISTREE : la date qu'on etait en train de
+      // choisir disparaissait, et le calendrier du navigateur se refermait avec
+      // le champ qui le portait. On avait donc huit secondes, montre en main,
+      // pour choisir un jour, une heure et un lieu -- autant dire que poser une
+      // date etait impossible.
+      //
+      // Tant que la saisie est ouverte, elle appartient a la personne qui
+      // ecrit. Une date posee entre-temps depuis un autre poste ne s'affichera
+      // qu'a la fermeture du formulaire : c'est le dernier qui enregistre qui
+      // l'emporte, comme partout ailleurs dans cette application.
+      if (document.getElementById('re-d-date')) return;
+
       el.className = 're-date re-date-edit';
       el.innerHTML =
         '<div class="re-d-f">'

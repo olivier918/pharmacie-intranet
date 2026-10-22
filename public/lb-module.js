@@ -187,10 +187,32 @@
   let lbEdite = null;          // id en cours de modification, 0 pour un nouveau
   let lbBrouillon = null;      // la fiche en cours de saisie
 
-  window.lbOnglet = function (v) { lbVue = v; lbRendBO(); };
+  // Changer d'onglet pendant une saisie ne doit pas la perdre : on emporte ce
+  // qui est tape avant de redessiner.
+  window.lbOnglet = function (v) {
+    if (lbBrouillon && document.getElementById('lb-f-nom')) lbChampsDuDom(lbBrouillon);
+    lbVue = v; lbRendBO(true);
+  };
 
-  window.lbRendBO = function () {
+  // `refaireLaSaisie` : seuls les redessins DELIBERES reconstruisent un
+  // formulaire ouvert. Voir la garde ci-dessous.
+  window.lbRendBO = function (refaireLaSaisie) {
     const el = document.getElementById('lb-bo'); if (!el) return;
+
+    // ON NE REDESSINE JAMAIS UN FORMULAIRE DÉJÀ OUVERT.
+    //
+    // Cette fonction est rappelee par la boucle de resynchronisation, toutes
+    // les huit secondes, et par la recherche a chaque frappe. Elle reconstruit
+    // la fiche a partir du BROUILLON, pas du formulaire : tout ce qu'on venait
+    // de taper — une adresse, un telephone, un courriel — disparaissait, et le
+    // curseur avec. Remplir une fiche laboratoire tenait de la course contre la
+    // montre.
+    //
+    // Meme defaut, meme cause et meme remede que la date de reunion d'equipe
+    // (voir reRendDate dans re-module.js). Tant que la saisie est ouverte, elle
+    // appartient a la personne qui ecrit.
+    if (lbEdite !== null && !refaireLaSaisie && document.getElementById('lb-f-nom')) return;
+
     const idx = lbIndex();
     const dossiers = lbDossiers();
     const rat = lbARattacher(dossiers, idx);
@@ -218,8 +240,14 @@
     let h = lbEdite !== null ? lbFormulaire() : (lbAdmin()
       ? '<div style="margin:0 0 14px"><button class="btn bp" onclick="lbNouveau()">+ Nouveau laboratoire</button></div>'
       : '');
-    h += '<div class="lb-barre"><input type="text" id="lb-q" placeholder="Rechercher un laboratoire, un délégué…" '
-      + 'value="' + E(q) + '" oninput="lbRendBO()"></div>';
+    // PAS DE RECHERCHE PENDANT UNE SAISIE. Chaque frappe redessinait la page et
+    // emportait le formulaire ; maintenant que la garde le protege, le champ ne
+    // ferait plus rien du tout — une case qui ne repond pas est pire qu'une
+    // case absente. Elle revient des que la fiche est enregistree ou annulee.
+    if (lbEdite === null) {
+      h += '<div class="lb-barre"><input type="text" id="lb-q" placeholder="Rechercher un laboratoire, un délégué…" '
+        + 'value="' + E(q) + '" oninput="lbRendBO()"></div>';
+    }
     const l = lbListe().filter(function (f) {
       if (!q) return true;
       const c = (f.contacts || []).map(x => (x.nom || '') + ' ' + (x.prenom || '') + ' ' + (x.mail || '')).join(' ');
@@ -308,12 +336,12 @@
   function lbVide() {
     return { id: 0, nom: '', adresse: '', cp: '', ville: '', tel: '', mail: '', alias: [], contacts: [], note: '' };
   }
-  window.lbNouveau = function () { lbEdite = 0; lbBrouillon = lbVide(); lbRendBO(); lbFocus(); };
+  window.lbNouveau = function () { lbEdite = 0; lbBrouillon = lbVide(); lbRendBO(true); lbFocus(); };
   window.lbCreerDepuis = function (clef) {
     const e = lbNomsDesDossiers(lbDossiers()).get(clef);
     lbEdite = 0; lbBrouillon = lbVide();
     if (e) lbBrouillon.nom = e.texte;
-    lbVue = 'fiches'; lbRendBO(); lbFocus();
+    lbVue = 'fiches'; lbRendBO(true); lbFocus();
   };
   window.lbEditer = function (id) {
     const f = lbParId(id); if (!f) return;
@@ -321,7 +349,7 @@
     lbBrouillon = JSON.parse(JSON.stringify(f));
     lbBrouillon.alias = lbBrouillon.alias || [];
     lbBrouillon.contacts = lbBrouillon.contacts || [];
-    lbVue = 'fiches'; lbRendBO(); lbFocus();
+    lbVue = 'fiches'; lbRendBO(true); lbFocus();
   };
   window.lbAnnuler = function () { lbEdite = null; lbBrouillon = null; lbRendBO(); };
   function lbFocus() { setTimeout(function () { const e = document.getElementById('lb-f-nom'); if (e) e.focus(); }, 60); }
@@ -398,7 +426,9 @@
   };
   window.lbAliasRetirer = function (i) {
     if (!lbBrouillon) return;
-    lbBrouillon.alias.splice(i, 1); lbRendBO();
+    // Retirer un alias redessine la fiche : on emporte d'abord ce qui est tape.
+    lbChampsDuDom(lbBrouillon);
+    lbBrouillon.alias.splice(i, 1); lbRendBO(true);
   };
 
   function lbChampsDuDom(b) {
