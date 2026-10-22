@@ -73,6 +73,27 @@
   window.lbParNom = lbParNom;
   window.lbClef = lbClef;
 
+  // ── LES RELIQUATS DE LIVRAISON ──────────────────────────────────────────
+  //
+  // Un laboratoire qui GERE les reliquats renverra plus tard ce qui manquait a
+  // la livraison : il n'y a rien a faire. Un laboratoire qui ne les gere PAS
+  // considere la commande soldee — ce qui manque ne viendra jamais, il faut le
+  // recommander. Entre les deux, c'est la journee d'un patient qui attend.
+  //
+  // TROIS ETATS, ET NON DEUX. « Pas renseigne » n'est pas « ne gere pas » :
+  // affirmer qu'un laboratoire ne reliquate pas alors que personne ne l'a
+  // verifie ferait recommander pour rien, et repondre a un patient de travers.
+  // Les fiches d'avant ce champ sont dans ce troisieme etat, a la lecture, sans
+  // qu'on reecrive une seule ligne du bloc de donnees.
+  const LB_RELIQUATS = { oui: 'reliquats gérés', non: 'pas de reliquats' };
+  function lbReliquats(f) {
+    const v = f && f.reliquats;
+    return (v === 'oui' || v === 'non') ? v : '';
+  }
+  function lbReliquatsLbl(f) { return LB_RELIQUATS[lbReliquats(f)] || ''; }
+  window.lbReliquats = lbReliquats;
+  window.lbReliquatsLbl = lbReliquatsLbl;
+
   // Le contact à qui on écrit pour un litige : celui qui est marqué, sinon le
   // premier qui a une adresse, sinon l'adresse générale du laboratoire.
   function lbContactLitige(f) {
@@ -261,7 +282,7 @@
         : 'Le répertoire est vide. L’onglet « À rattacher » liste les laboratoires déjà cités dans vos litiges : c’est le plus court chemin pour le remplir.') + '</div>';
     }
     return h + '<div class="twrap"><table><thead><tr>'
-      + '<th>Laboratoire</th><th>Ville</th><th>Téléphone</th><th>Contact litiges</th><th>Dossiers</th><th></th>'
+      + '<th>Laboratoire</th><th>Ville</th><th>Reliquats</th><th>Contact litiges</th><th>Dossiers</th><th></th>'
       + '</tr></thead><tbody>'
       + l.map(function (f) {
           const c = lbContactLitige(f);
@@ -270,7 +291,9 @@
             + ((f.alias || []).length ? '<div class="lb-alias">aussi écrit : ' + E(f.alias.join(', ')) + '</div>' : '')
             + '</td>'
             + '<td>' + E(f.ville || '—') + '</td>'
-            + '<td>' + E(f.tel || '—') + '</td>'
+            + '<td>' + (lbReliquats(f)
+                ? '<span class="lb-rel lb-rel-' + lbReliquats(f) + '">' + E(lbReliquatsLbl(f)) + '</span>'
+                : '<span class="lb-manque">non renseigné</span>') + '</td>'
             + '<td>' + (c ? E(((c.prenom || '') + ' ' + (c.nom || '')).trim() || c.mail || '—')
                   + (c.mail ? '<div class="lb-alias">' + E(c.mail) + '</div>' : '')
                 : (f.mail ? E(f.mail) : '<span class="lb-manque">aucun</span>')) + '</td>'
@@ -334,7 +357,8 @@
 
   // ── Le formulaire ─────────────────────────────────────────────────────────
   function lbVide() {
-    return { id: 0, nom: '', adresse: '', cp: '', ville: '', tel: '', mail: '', alias: [], contacts: [], note: '' };
+    return { id: 0, nom: '', adresse: '', cp: '', ville: '', tel: '', mail: '', alias: [],
+             contacts: [], note: '', reliquats: '' };
   }
   window.lbNouveau = function () { lbEdite = 0; lbBrouillon = lbVide(); lbRendBO(true); lbFocus(); };
   window.lbCreerDepuis = function (clef) {
@@ -369,6 +393,17 @@
       + ch('lb-f-cp', 'Code postal', b.cp, 'text', '14000')
       + ch('lb-f-ville', 'Ville', b.ville, 'text', 'Caen')
       + '</div>'
+      + '<div class="fg"><label>Reliquats de livraison</label>'
+      + '<select class="inp" id="lb-f-reliquats">'
+      + ['', 'oui', 'non'].map(function (v) {
+          return '<option value="' + v + '"' + (lbReliquats(b) === v ? ' selected' : '') + '>'
+            + (v === 'oui' ? 'Oui — ce qui manque est renvoyé plus tard'
+             : v === 'non' ? 'Non — ce qui manque est à recommander'
+             : 'Non renseigné') + '</option>';
+        }).join('')
+      + '</select>'
+      + '<div class="lb-expl" style="margin-top:4px">Savoir lequel des deux évite de '
+      + 'recommander pour rien, ou d’attendre une boîte qui ne viendra jamais.</div></div>'
       + '<div class="lb-sh">Contacts</div>'
       + '<p class="lb-expl" style="margin-top:0">Le délégué, et tous ceux à qui l’on écrit : ADV, service litiges, transporteur. '
       + 'Celui qui est coché est l’interlocuteur proposé par défaut sur un litige.</p>'
@@ -436,6 +471,8 @@
     b.nom = v('lb-f-nom'); b.tel = v('lb-f-tel'); b.mail = v('lb-f-mail');
     b.adresse = v('lb-f-adresse'); b.cp = v('lb-f-cp'); b.ville = v('lb-f-ville');
     b.note = v('lb-f-note');
+    const r = document.getElementById('lb-f-reliquats');
+    if (r) b.reliquats = (r.value === 'oui' || r.value === 'non') ? r.value : '';
     return b;
   }
 
@@ -519,7 +556,7 @@
     (a.alias || []).forEach(poser);
     // Ce que la fiche conservée n'a pas, elle le prend. Ce qu'elle a, elle le
     // garde : c'est elle qu'on a choisi de conserver.
-    ['adresse', 'cp', 'ville', 'tel', 'mail', 'note'].forEach(function (k) {
+    ['adresse', 'cp', 'ville', 'tel', 'mail', 'note', 'reliquats'].forEach(function (k) {
       if (!g[k] && a[k]) g[k] = a[k];
     });
     g.contacts = (g.contacts || []).concat((a.contacts || []).filter(function (c) {
@@ -547,6 +584,10 @@
   .lb-expl{font-size:.8rem;color:var(--gray-500);line-height:1.55;margin:0 0 12px}
   .lb-alias{font-size:.72rem;color:var(--gray-500);margin-top:2px}
   .lb-manque{color:var(--red);font-size:.78rem}
+  .lb-rel{display:inline-block;font-size:.72rem;font-weight:600;border-radius:999px;padding:2px 9px;
+    white-space:nowrap}
+  .lb-rel-oui{background:var(--g-pale,#E8F5E9);color:var(--g-dark,#1D5C3A)}
+  .lb-rel-non{background:var(--amber-pale,#FFF3E0);color:var(--amber,#E65100)}
   .lb-sel{border:1px solid var(--gray-200);border-radius:7px;padding:5px 8px;font:inherit;font-size:.78rem;background:#fff}
   .lb-sh{font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--gray-700);margin:16px 0 6px}
   .lb-ct{display:grid;grid-template-columns:1fr 1fr 1.2fr .9fr 1.4fr auto auto;gap:6px;align-items:center;margin-bottom:6px}

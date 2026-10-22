@@ -305,6 +305,15 @@
     const z = document.getElementById('co-liste');
     if (!z) return;
     document.getElementById('co-entete').innerHTML = coEntete();
+    // REPLIEE, LA BARRE DOIT DIRE QUELQUE CHOSE. Sans ce chiffre, on la deplie
+    // chaque matin juste pour savoir s'il y a quelque chose dedans.
+    const nb = document.getElementById('co-plier-n');
+    if (nb) {
+      const n = coEtat ? coEtat.labos.length : 0;
+      nb.textContent = coEtat
+        ? (n + ' laboratoire' + (n > 1 ? 's' : ''))
+        : 'aucune synthèse importée';
+    }
     if (!coEtat) {
       z.innerHTML = '<div class="co-vide">Aucune synthèse importée.<br>'
         + 'Déposez les PDF du courriel ASCA ci-dessus — la date est dans les fichiers, '
@@ -457,6 +466,28 @@
     if (coAutres !== true) { coAutres = true; window.coRender(); }
   });
 
+  // ── LE REPLIAGE ───────────────────────────────────────────────────────────
+  // L'analyse ASCA tient une page entiere et se consulte, elle ne se tient pas.
+  // Repliee par defaut, elle laisse la place a ce qu'on ouvre le matin : le
+  // suivi des commandes a passer. L'etat est retenu PAR POSTE : le comptoir et
+  // le bureau ne regardent pas la meme chose, et un reglage partage obligerait
+  // l'un des deux a replier ce que l'autre vient d'ouvrir.
+  const CO_CLE_PLI = 'pilot_co_asca_plie';
+  function coEstPlie() {
+    try { return localStorage.getItem(CO_CLE_PLI) !== '0'; } catch (e) { return true; }
+  }
+  function coAppliquerPli() {
+    const plie = coEstPlie();
+    const c = document.getElementById('co-corps'); if (c) c.style.display = plie ? 'none' : '';
+    const ch = document.getElementById('co-chev'); if (ch) ch.textContent = plie ? '▸' : '▾';
+    const b = document.getElementById('co-plier');
+    if (b) b.setAttribute('aria-expanded', plie ? 'false' : 'true');
+  }
+  window.coPlier = function () {
+    try { localStorage.setItem(CO_CLE_PLI, coEstPlie() ? '0' : '1'); } catch (e) {}
+    coAppliquerPli();
+  };
+
   window.coRafraichir = async function () {
     try { await coCharger(); window.coRender(); }
     catch (e) {
@@ -465,10 +496,19 @@
     }
   };
 
+  // `cp-host` : le suivi des commandes a passer s'y installe (cp-module.js).
+  // Il est DECLARE ICI, et en premier, parce que c'est cette carte-la qu'on
+  // ouvre le matin -- l'analyse ASCA se consulte, le suivi se tient.
   const CO_SECTION =
-    '<div class="card">'
-  +   '<div class="ch"><span class="ct"><svg class="ico"><use href="#ic-commandes"></use></svg> '
-  +     'Commandes à passer</span>'
+    '<div id="cp-host"></div>'
+  + '<div class="card">'
+  +   '<div class="ch">'
+  +     '<button class="co-plier" id="co-plier" onclick="coPlier()" aria-expanded="false">'
+  +       '<span class="co-chev" id="co-chev">▸</span>'
+  +       '<span class="ct"><svg class="ico"><use href="#ic-commandes"></use></svg> '
+  +       'Analyse ASCA</span>'
+  +       '<span class="co-plier-n" id="co-plier-n"></span>'
+  +     '</button>'
   +     '<div style="display:flex;gap:7px;flex-wrap:wrap">'
   +       '<label class="btn bs sm no-print" style="cursor:pointer;margin:0">'
   +         'Importer les PDF ASCA'
@@ -477,13 +517,15 @@
   +       '<button class="btn bs sm no-print" onclick="coCopier()">Copier la liste</button>'
   +       '<button class="btn bs sm no-print" onclick="window.print()">Imprimer</button>'
   +     '</div></div>'
-  +   '<div id="co-msg" class="co-msg"></div>'
-  +   '<div id="co-entete"></div>'
-  +   '<div id="co-rappr" class="co-rappr"></div>'
-  +   '<div class="fbar"><input type="text" id="co-q" class="ctl-search" data-rc="recherche"'
-  +     ' placeholder="Rechercher un laboratoire ou un produit…" oninput="coChercher()"'
-  +     ' style="flex:1;min-width:200px"></div>'
-  +   '<div id="co-liste"></div>'
+  +   '<div id="co-corps" style="display:none">'
+  +     '<div id="co-msg" class="co-msg"></div>'
+  +     '<div id="co-entete"></div>'
+  +     '<div id="co-rappr" class="co-rappr"></div>'
+  +     '<div class="fbar"><input type="text" id="co-q" class="ctl-search" data-rc="recherche"'
+  +       ' placeholder="Rechercher un laboratoire ou un produit…" oninput="coChercher()"'
+  +       ' style="flex:1;min-width:200px"></div>'
+  +     '<div id="co-liste"></div>'
+  +   '</div>'
   + '</div>';
 
   const CO_CSS = `
@@ -597,6 +639,14 @@
   .co-p-a{flex:none;display:flex;gap:5px}
   .co-b{width:30px;height:30px;border:1px solid #d8e2dc;background:#fff;border-radius:8px;
     cursor:pointer;font:inherit;font-size:.9rem;font-weight:700;color:#9bb0a4;line-height:1}
+  .co-plier{display:flex;align-items:center;gap:9px;background:none;border:none;padding:0;
+    cursor:pointer;font:inherit;text-align:left;color:inherit}
+  .co-plier .ct{margin:0}
+  .co-chev{color:var(--gray-500,#6b7280);font-size:.9rem;width:12px;flex:none}
+  .co-plier:hover .ct{color:var(--g-mid,#2E7D54)}
+  .co-plier:focus-visible{outline:2px solid var(--g-mid,#2E7D54);outline-offset:3px;border-radius:6px}
+  .co-plier-n{font-size:.76rem;color:var(--gray-500,#6b7280);font-weight:500;
+    background:var(--gray-100,#f5f5f5);border-radius:999px;padding:2px 10px}
   .co-b:hover{border-color:var(--g-mid,#2E7D54);color:var(--g-dark,#1D5C3A)}
   .co-b.on{background:var(--g-mid,#2E7D54);border-color:var(--g-mid,#2E7D54);color:#fff}
   .co-b:focus-visible{outline:2px solid var(--g-mid,#2E7D54);outline-offset:1px}
@@ -631,6 +681,7 @@
       sec.id = 'sec-commandes'; sec.className = 'sec';
       sec.innerHTML = CO_SECTION;
       secRef.parentNode.appendChild(sec);
+      coAppliquerPli();
       window.coRafraichir();
       if (typeof window.rcInfobulles === 'function') window.rcInfobulles();
     }
