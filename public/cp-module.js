@@ -42,7 +42,13 @@
   const cpLabos = () => (typeof window._collRef === 'function' ? window._collRef('laboratoires') : null) || [];
   const cpSave = () => { try { if (typeof saveNow === 'function') saveNow(); } catch (e) {} };
 
-  const CP_ETATS = ['a_passer', 'commande', 'recu'];
+  // QUATRE ÉTATS, TROIS ÉTAPES. « Reçue partiellement » n'est pas une étape de
+  // plus : c'est une AUTRE FAÇON de franchir la dernière. Un quatrième rond
+  // laisserait croire qu'on y passe toujours, alors que c'est l'exception.
+  const CP_ETATS = ['a_passer', 'commande', 'recu_partiel', 'recu'];
+  const CP_ETAPE = { a_passer: 0, commande: 1, recu_partiel: 2, recu: 2 };
+  // Revenir en arrière, d'un cran et pas plus — comme sur les livraisons.
+  const CP_AVANT = { commande: 'a_passer', recu_partiel: 'commande', recu: 'commande' };
   const CP_HISTO_JOURS = 30;
 
   function cpPrenom(id) {
@@ -62,6 +68,11 @@
   function cpEtat(c) {
     return (c && CP_ETATS.indexOf(c.etat) >= 0) ? c.etat : 'a_passer';
   }
+  function cpEtape(c) { return CP_ETAPE[cpEtat(c)] || 0; }
+  function cpPartielle(c) { return cpEtat(c) === 'recu_partiel'; }
+  // Une ligne est close quand tout est arrivé. Une réception partielle, non :
+  // il reste quelque chose à attendre, ou à recommander.
+  function cpClose(c) { return cpEtat(c) === 'recu'; }
 
   // Le laboratoire est retrouvé DANS LE RÉPERTOIRE À CHAQUE AFFICHAGE, et non
   // figé à la saisie : une fiche créée ce soir fera apparaître la pastille sur
@@ -103,12 +114,21 @@
     // « reçue » à « commandée », on ne resigne donc pas la commande : elle garde
     // le nom et l'heure de qui l'a réellement passée.
     if (etat === 'commande' && !c.commandeLe) { c.commandeLe = now; c.commandePar = uid; }
+    if (etat === 'recu_partiel') { c.partielLe = now; c.partielPar = uid; c.recuLe = null; c.recuPar = null; }
+    // COMPLÉTER NE RENIE PAS LA RÉCEPTION PARTIELLE : la ligne garde la trace
+    // qu'une partie était arrivée avant le reste. C'est ce qu'on relit quand on
+    // se demande si ce laboratoire livre complet.
     if (etat === 'recu') { c.recuLe = now; c.recuPar = uid; }
     // REVENIR EN ARRIÈRE EFFACE CE QUI N'EST PLUS VRAI. Une ligne remise « à
     // commander » qui garderait « commandée par Julie à 9h12 » ferait croire
     // que la commande est partie.
-    if (etat === 'a_passer') { c.commandeLe = null; c.commandePar = null; c.recuLe = null; c.recuPar = null; }
-    if (etat === 'commande') { c.recuLe = null; c.recuPar = null; }
+    if (etat === 'a_passer') {
+      c.commandeLe = null; c.commandePar = null;
+      c.partielLe = null; c.partielPar = null; c.recuLe = null; c.recuPar = null;
+    }
+    if (etat === 'commande') {
+      c.partielLe = null; c.partielPar = null; c.recuLe = null; c.recuPar = null;
+    }
     c.updatedAt = now;
     return c;
   }
@@ -163,30 +183,98 @@
       + (r === 'oui' ? 'reliquats gérés' : 'pas de reliquats') + '</span>';
   }
 
-  function cpLigne(c) {
+  // ── L'ESCALIER, COMME SUR LES LIVRAISONS ──────────────────────────────────
+  //
+  // Les mêmes classes que le stepper des livraisons : le style vit dans
+  // index.html, et les deux écrans se ressemblent sans qu'on ait rien recopié.
+  // Quelqu'un qui sait lire une livraison sait lire une commande.
+  //
+  // ON N'AVANCE PAS EN CLIQUANT SUR UN ROND. Aller à la dernière étape
+  // demanderait « complète ou partielle ? », et un rond ne pose pas de
+  // question : ce sont les boutons de droite qui le font, en toutes lettres.
+  // Le rond sert à REVENIR, d'un cran et pas plus — le reste est désactivé
+  // plutôt que muet, pour qu'un clic sans effet ne soit jamais une surprise.
+  const CP_PAS = [
+    { e: 'a_passer', lbl: 'À commander', ico: 'rupture' },
+    { e: 'commande', lbl: 'Commandée', ico: 'commandes' },
+    { e: 'recu', lbl: 'Réceptionnée', ico: 'boite-reception' }
+  ];
+  function cpIco(n) {
+    return (typeof ico === 'function') ? ico(n)
+      : '<svg class="ico"><use href="#ic-' + n + '"></use></svg>';
+  }
+  function cpStepper(c) {
+    const cur = cpEtape(c), part = cpPartielle(c);
+    const retour = CP_AVANT[cpEtat(c)] || null;
+    let h = '<div class="status-stepper is-readonly cp-step"><div class="status-stepper__track">';
+    CP_PAS.forEach(function (p, i) {
+      if (i) {
+        const plein = (i <= cur) ? '100%' : '0';
+        h += '<div class="status-stepper__connector">'
+          + '<div class="status-stepper__connector-fill" style="width:' + plein + '"></div></div>';
+      }
+      // Le dernier rond porte la nuance : partielle, il est ambré et le dit.
+      const dernier = (i === 2);
+      const fait = (i < cur) || (i === cur && (!dernier || !part));
+      const cls = fait ? 'is-done' : (i === cur + 1 ? 'is-next' : 'is-pending');
+      const cible = retour && CP_PAS[i].e === retour;
+      h += '<button type="button" class="status-stepper__step ' + cls
+        + (dernier && part && i === cur ? ' cp-part' : '') + '"'
+        + (cible ? ' onclick="cpMarquer(' + (+c.id) + ',\'' + retour + '\')"'
+                   + ' title="Revenir à cette étape"'
+                 : ' disabled')
+        + '>'
+        + '<span class="status-stepper__circle">' + cpIco(dernier && part ? 'alerte' : p.ico) + '</span>'
+        + '<span class="status-stepper__label">'
+        + E(dernier && part ? 'Partielle' : p.lbl) + '</span>'
+        + '</button>';
+    });
+    return h + '</div></div>';
+  }
+
+  function cpActions(c) {
     const e = cpEtat(c);
-    const suite = e === 'a_passer'
-      ? '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'commande\')">Commandé</button>'
-      : e === 'commande'
-        ? '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'recu\')">Réceptionné</button>'
-        : '';
-    const retour = e === 'commande'
-      ? '<button class="cp-undo" onclick="cpMarquer(' + (+c.id) + ',\'a_passer\')" title="Finalement, pas encore commandé">↩</button>'
-      : e === 'recu'
-        ? '<button class="cp-undo" onclick="cpMarquer(' + (+c.id) + ',\'commande\')" title="Finalement, pas encore reçu">↩</button>'
-        : '';
-    const trace = e === 'recu'
-      ? 'reçu par ' + E(cpPrenom(c.recuPar)) + ' · ' + E(cpQuand(c.recuLe))
-      : e === 'commande'
-        ? 'commandé par ' + E(cpPrenom(c.commandePar)) + ' · ' + E(cpQuand(c.commandeLe))
-        : 'noté par ' + E(cpPrenom(c.par)) + ' · ' + E(cpQuand(c.ts));
-    return '<div class="cp-l cp-l-' + e + '">'
+    if (e === 'a_passer') {
+      return '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'commande\')">Commandé</button>';
+    }
+    if (e === 'commande') {
+      return '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'recu\')">Tout reçu</button>'
+        + '<button class="btn bs sm" onclick="cpMarquer(' + (+c.id) + ',\'recu_partiel\')">Reçu en partie</button>';
+    }
+    if (e === 'recu_partiel') {
+      // DEUX SORTIES, ET LA PASTILLE DIT LAQUELLE. Le laboratoire gère les
+      // reliquats : le reste viendra seul, on complétera. Il ne les gère pas :
+      // ce qui manque ne viendra jamais, il faut le recommander.
+      return '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'recu\')">Le reste est arrivé</button>'
+        + '<button class="btn bs sm" onclick="cpMarquer(' + (+c.id) + ',\'a_passer\')">À recommander</button>';
+    }
+    return '';
+  }
+
+  function cpTrace(c) {
+    const e = cpEtat(c);
+    if (e === 'recu') {
+      return 'reçu par ' + E(cpPrenom(c.recuPar)) + ' · ' + E(cpQuand(c.recuLe))
+        + (c.partielLe ? ' · arrivé en deux fois' : '');
+    }
+    if (e === 'recu_partiel') {
+      return 'reçu en partie par ' + E(cpPrenom(c.partielPar)) + ' · ' + E(cpQuand(c.partielLe));
+    }
+    if (e === 'commande') {
+      return 'commandé par ' + E(cpPrenom(c.commandePar)) + ' · ' + E(cpQuand(c.commandeLe));
+    }
+    return 'noté par ' + E(cpPrenom(c.par)) + ' · ' + E(cpQuand(c.ts));
+  }
+
+  function cpLigne(c) {
+    return '<div class="cp-l cp-l-' + cpEtat(c) + '">'
       + '<div class="cp-l-c">'
       +   '<div class="cp-l-h"><span class="cp-labo">' + E(c.labo || '') + '</span>' + cpPastille(c) + '</div>'
       +   (c.produits ? '<div class="cp-prod">' + E(c.produits) + '</div>' : '')
-      +   '<div class="cp-trace">' + trace + '</div>'
+      +   '<div class="cp-trace">' + cpTrace(c) + '</div>'
       + '</div>'
-      + '<div class="cp-l-a">' + suite + retour
+      + cpStepper(c)
+      + '<div class="cp-l-a">' + cpActions(c)
       +   '<button class="cp-x" onclick="cpRetirer(' + (+c.id) + ')" title="Retirer">✕</button>'
       + '</div></div>';
   }
@@ -204,6 +292,10 @@
     let h = cpBloc('À commander', cpParEtat(l, 'a_passer'),
       'Rien à commander. Une rupture constatée au comptoir se note ci-dessus, en deux mots.');
     h += cpBloc('Commandées, en attente de réception', cpParEtat(l, 'commande'), '');
+    // SON PROPRE GROUPE, ET PAS LA FIN DE L'HISTORIQUE. Une réception partielle
+    // reste un travail en cours : la ranger avec les lignes closes, c'est
+    // oublier ce qui manque.
+    h += cpBloc('Reçues en partie — reste à recevoir', cpParEtat(l, 'recu_partiel'), '');
     if (histo.recentes.length || histo.anciennes) {
       h += '<button type="button" class="cp-h cp-repli" onclick="cpBasculerHisto()">'
         + (cpHistoOuvert ? '▾' : '▸') + ' Déjà reçues <b>' + histo.recentes.length + '</b>'
@@ -270,7 +362,21 @@
     '.cp-labo{font-weight:700;font-size:.95rem}',
     '.cp-prod{font-size:.86rem;color:var(--gray-700,#444);margin-top:2px;line-height:1.5}',
     '.cp-trace{font-size:.74rem;color:var(--gray-500,#777);margin-top:3px}',
-    '.cp-l-a{display:flex;align-items:center;gap:6px;flex:none}',
+    '.cp-l-a{display:flex;align-items:center;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}',
+    '.cp-step{flex:none;margin:0;padding:0;background:none;border:none;box-shadow:none}',
+    '.cp-step .status-stepper__track{gap:0}',
+    '.cp-step .status-stepper__step{width:62px}',
+    '.cp-step .status-stepper__connector{min-width:14px}',
+    '.cp-step .status-stepper__step[disabled]{cursor:default}',
+    // LA RECEPTION PARTIELLE SE VOIT AU PREMIER COUP D OEIL. Ambre, comme toutes
+    // les alertes douces de la maison : ce n est pas une faute, c est un reste.
+    // La specificite compte : `.status-stepper__step.is-pending .circle` d'index.html
+    // l'emporterait sur une regle plus courte, et le rond resterait gris.
+    '.status-stepper__step.cp-part .status-stepper__circle{background:var(--amber-pale,#FFF3E0);',
+    '  border-color:var(--amber,#E65100)}',
+    '.status-stepper__step.cp-part .status-stepper__circle svg{color:var(--amber,#E65100)}',
+    '.status-stepper__step.cp-part .status-stepper__label{color:var(--amber,#E65100);font-weight:700}',
+    '.cp-l-recu_partiel{background:linear-gradient(90deg,var(--amber-pale,#FFF3E0) 0,rgba(255,255,255,0) 160px)}',
     '.cp-l-recu .cp-labo,.cp-l-recu .cp-prod{color:var(--gray-500,#777)}',
     '.cp-l-recu .cp-labo{text-decoration:line-through}',
     '.cp-rel{display:inline-block;font-size:.68rem;font-weight:700;border-radius:999px;',
@@ -283,8 +389,9 @@
     '.cp-undo:hover{color:var(--g-dark,#1D5C3A)}',
     '.cp-x:hover{color:var(--red,#C62828)}',
     '.cp-vide{padding:18px 2px;color:var(--gray-500,#777);font-size:.88rem;line-height:1.6}',
-    '@media(max-width:600px){.cp-l{flex-direction:column;gap:7px}.cp-l-a{align-self:flex-end}}',
-    '@media print{.cp-saisie,.cp-l-a,.cp-repli{display:none}.cp-l{break-inside:avoid}}'
+    '@media(max-width:600px){.cp-l{flex-direction:column;gap:9px}',
+    '  .cp-l-a{align-self:stretch;justify-content:flex-start}.cp-step{align-self:flex-start}}',
+    '@media print{.cp-saisie,.cp-l-a,.cp-repli,.cp-step{display:none}.cp-l{break-inside:avoid}}'
   ].join('\n');
 
   // ── Injection ─────────────────────────────────────────────────────────────

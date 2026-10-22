@@ -20,9 +20,14 @@ function extraire(nom) {
   if (f < 0) throw new Error('fin introuvable : ' + nom);
   return src.slice(d, f + 4);
 }
-const CP_ETATS = ['a_passer', 'commande', 'recu'];
+const CP_ETATS = ['a_passer', 'commande', 'recu_partiel', 'recu'];
+const CP_ETAPE = { a_passer: 0, commande: 1, recu_partiel: 2, recu: 2 };
+const CP_AVANT = { commande: 'a_passer', recu_partiel: 'commande', recu: 'commande' };
 const CP_HISTO_JOURS = 30;
 eval(extraire('cpEtat'));
+eval(extraire('cpEtape'));
+eval(extraire('cpPartielle'));
+eval(extraire('cpClose'));
 eval(extraire('cpTrier'));
 eval(extraire('cpParEtat'));
 eval(extraire('cpHistorique'));
@@ -39,9 +44,20 @@ t('les trois états sont reconnus',
   cpEtat({ etat: 'a_passer' }) === 'a_passer'
   && cpEtat({ etat: 'commande' }) === 'commande'
   && cpEtat({ etat: 'recu' }) === 'recu');
+t('la réception partielle en est un', cpEtat({ etat: 'recu_partiel' }) === 'recu_partiel');
 t('UN ÉTAT INVENTÉ RETOMBE SUR « À COMMANDER » — jamais sur « reçu »',
   cpEtat({ etat: 'livree' }) === 'a_passer');
 t('une ligne absente ne fait pas tomber la lecture', cpEtat(null) === 'a_passer');
+
+console.log('\nQuatre états, mais trois marches');
+t('à commander, commandée : deux premières marches',
+  cpEtape({ etat: 'a_passer' }) === 0 && cpEtape({ etat: 'commande' }) === 1);
+t('LA RÉCEPTION PARTIELLE EST SUR LA DERNIÈRE MARCHE, pas sur une de plus',
+  cpEtape({ etat: 'recu_partiel' }) === 2 && cpEtape({ etat: 'recu' }) === 2);
+t('... mais elle ne la franchit pas : la ligne reste ouverte',
+  cpPartielle({ etat: 'recu_partiel' }) === true && cpClose({ etat: 'recu_partiel' }) === false);
+t('seule une réception complète clôt la ligne',
+  cpClose({ etat: 'recu' }) === true && cpClose({ etat: 'commande' }) === false);
 
 // ── Le parcours ─────────────────────────────────────────────────────────────
 console.log('\nLe parcours d’une ligne');
@@ -58,6 +74,24 @@ t('« réceptionné » retient qui et quand',
   c.etat === 'recu' && c.recuPar === 'QD' && c.recuLe === T + 2000);
 t('... sans effacer qui avait commandé', c.commandePar === 'JN');
 
+console.log('\nLa réception partielle');
+let d = { id: 2, labo: 'Gilbert', ts: T };
+cpPar(d, 'commande', 'JN', T + 1000);
+cpPar(d, 'recu_partiel', 'QD', T + 2000);
+t('elle retient qui et quand',
+  d.etat === 'recu_partiel' && d.partielPar === 'QD' && d.partielLe === T + 2000);
+t('... et la ligne n’est PAS reçue', !d.recuLe && !d.recuPar && cpClose(d) === false);
+t('... la commande reste au nom de qui l’a passée', d.commandePar === 'JN');
+cpPar(d, 'recu', 'JC', T + 3000);
+t('compléter clôt la ligne', d.etat === 'recu' && d.recuPar === 'JC');
+t('COMPLÉTER NE RENIE PAS LA PARTIELLE — la ligne garde qu’elle est arrivée en deux fois',
+  d.partielLe === T + 2000 && d.partielPar === 'QD');
+let r = { id: 3, labo: 'Pierre Fabre', ts: T, etat: 'recu_partiel', partielLe: T, partielPar: 'QD',
+          commandeLe: T, commandePar: 'JN' };
+cpPar(r, 'a_passer', 'ER', T + 9000);
+t('RECOMMANDER REPART DE ZÉRO — plus de commande, plus de réception partielle',
+  r.etat === 'a_passer' && !r.commandeLe && !r.partielLe && !r.partielPar && !r.recuLe);
+
 console.log('\nRevenir en arrière efface ce qui n’est plus vrai');
 cpPar(c, 'commande', 'OF', T + 3000);
 t('DÉFAIRE UNE RÉCEPTION EFFACE LA RÉCEPTION — sinon la ligne dirait qu’elle est arrivée',
@@ -67,6 +101,9 @@ cpPar(c, 'a_passer', 'OF', T + 4000);
 t('REMISE À COMMANDER, ELLE N’EST PLUS COMMANDÉE PAR PERSONNE',
   c.etat === 'a_passer' && c.commandeLe === null && c.commandePar === null
   && c.recuLe === null && c.recuPar === null);
+t('on ne recule que d’un cran, comme sur les livraisons',
+  CP_AVANT.commande === 'a_passer' && CP_AVANT.recu_partiel === 'commande'
+  && CP_AVANT.recu === 'commande' && CP_AVANT.a_passer === undefined);
 
 // ── Le tri et les groupes ───────────────────────────────────────────────────
 console.log('\nCe que chaque groupe contient');
@@ -139,6 +176,28 @@ t('la saisie est posée une seule fois, à l’injection',
 t('l’autocomplétion ne retouche le DOM que si le répertoire a changé',
   /if \(dl\.dataset\.sig === sig\) return;/.test(src));
 
+console.log('\nL’escalier est celui des livraisons');
+t('les mêmes classes, donc le même dessin — rien n’a été recopié',
+  /status-stepper__track/.test(src) && /status-stepper__connector-fill/.test(src)
+  && /is-done/.test(src) && /is-next/.test(src) && /is-pending/.test(src));
+t('le style vient d’index.html, le module n’en redéfinit pas',
+  /\.status-stepper\{/.test(ix) && !/'\.status-stepper\{/.test(src));
+t('TROIS RONDS, PAS QUATRE', (src.match(/\{ e: '/g) || []).length === 3);
+t('ON N’AVANCE PAS EN CLIQUANT SUR UN ROND — « complète ou partielle » se demande en toutes lettres',
+  /: ' disabled'/.test(src) && /Tout reçu/.test(src) && /Reçu en partie/.test(src));
+t('le rond qui fait reculer est le seul cliquable, et il le dit',
+  /title="Revenir à cette étape"/.test(src));
+t('la marche partielle est ambrée et nommée',
+  /cp-part/.test(src) && /'Partielle'/.test(src));
+
+console.log('\nUne réception partielle reste un travail en cours');
+t('elle a son propre groupe, avant l’historique',
+  /Reçues en partie — reste à recevoir/.test(src));
+t('... et deux sorties : compléter, ou recommander',
+  /Le reste est arrivé/.test(src) && /À recommander/.test(src));
+t('l’historique ne retient que les lignes closes',
+  /cpParEtat\(l, 'recu'\)/.test(src.slice(src.indexOf('function cpHistorique'), src.indexOf('// ── Les gestes'))));
+
 console.log('\nLes reliquats sont affichés, pas déduits');
 t('le laboratoire est retrouvé dans le répertoire à chaque affichage',
   /window\.lbParNom\(c\.labo\)/.test(src));
@@ -149,8 +208,16 @@ t('TROIS ÉTATS CÔTÉ RÉPERTOIRE : oui, non, et pas renseigné',
   /\(v === 'oui' \|\| v === 'non'\) \? v : ''/.test(lire('public/lb-module.js')));
 t('« pas renseigné » se voit sur la ligne, au lieu de se taire',
   /cp-rel-x/.test(src) && /reliquats \?/.test(src));
-t('le module n’en déduit aucune action — il n’y a pas de recommande automatique',
-  !/recommand/i.test(src));
+// LE DRAPEAU ÉCLAIRE, IL NE DÉCIDE PAS. « À recommander » est un bouton que
+// quelqu'un presse ; rien ne doit changer d'état tout seul parce qu'un
+// laboratoire est marqué « pas de reliquats ». C'est l'opérateur qui sait si la
+// livraison était complète, et lui seul.
+const appels = (src.match(/cpReliquats\(/g) || []).length;
+const pastille = src.slice(src.indexOf('function cpPastille'), src.indexOf('function cpLigne'));
+t('LE DRAPEAU N’EST LU QU’À L’AFFICHAGE — il ne déclenche jamais un changement d’état',
+  appels === 2 && /cpReliquats\(c\)/.test(pastille));
+t('... aucune transition ne le consulte',
+  !/cpReliquats[\s\S]{0,120}cpPar\(/.test(src) && !/cpPar\([\s\S]{0,60}cpReliquats/.test(src));
 
 console.log('\nL’analyse ASCA est repliée par défaut');
 const co = lire('public/co-module.js');
