@@ -812,6 +812,11 @@
     const nom = lu('od-n-nom').toUpperCase();
     const prenom = (typeof capPrenom === 'function') ? capPrenom(lu('od-n-prenom')) : lu('od-n-prenom');
     if (!nom) { dire('Le nom est nécessaire.'); return; }
+    // LA DATE DE NAISSANCE AUSSI. C'est une création : elle est ce qui
+    // distinguera cette personne de son homonyme, aujourd'hui et dans six mois.
+    const dob = (typeof dobIso === 'function') ? dobIso(lu('od-n-dob')) : lu('od-n-dob');
+    if (!lu('od-n-dob')) { dire('La date de naissance est nécessaire — c’est elle qui distingue deux homonymes.'); return; }
+    if (!dob) { dire('Date de naissance : écrivez-la en JJ/MM/AAAA, par exemple 12/03/1948.'); return; }
     // LE MOBILE EST LA CONDITION, PAS UN DÉTAIL. Une fiche sans mobile ne
     // pourrait recevoir aucune demande : on la refuserait ici, et personne ne
     // comprendrait pourquoi la demande n'est jamais partie.
@@ -823,7 +828,7 @@
     // même nom, date compatible — il la complète au lieu d'en faire une seconde.
     // C'est ce qu'on veut : le geste s'appelle « créer », son résultat est
     // « avoir la bonne fiche ».
-    const p = upsertPatient({ nom: nom, prenom: prenom, tel: lu('od-n-tel'), dob: lu('od-n-dob') });
+    const p = upsertPatient({ nom: nom, prenom: prenom, tel: lu('od-n-tel'), dob: dob });
     if (!p || p.id == null) { dire('Création impossible.'); return; }
     if (typeof logAction === 'function') logAction('Fiche patient créée depuis une demande', nom + ' ' + prenom);
     // Une création est une action délibérée et rare : elle part tout de suite,
@@ -1582,7 +1587,7 @@
     +         '<input id="od-n-nom" placeholder="NOM" autocomplete="off" spellcheck="false">'
     +         '<input id="od-n-prenom" placeholder="Prénom" autocomplete="off" spellcheck="false">'
     +         '<input id="od-n-tel" placeholder="Mobile — 06 12 34 56 78" inputmode="tel" autocomplete="off">'
-    +         '<input id="od-n-dob" type="date" title="Date de naissance (facultative)">'
+    +         '<input id="od-n-dob" type="text" inputmode="numeric" maxlength="10" placeholder="Date de naissance — JJ/MM/AAAA" oninput="dobMasque(this)">'
     +       '</div>'
     +       '<div class="od-neuf-e" id="od-n-err"></div>'
     +       '<div class="od-neuf-b">'
@@ -1590,7 +1595,7 @@
     +         '<button class="btn bs" onclick="odAnnulerNeuf()">Annuler</button>'
     +       '</div>'
     +       '<div class="od-d-pied">Le <b>mobile est obligatoire</b> : c’est par SMS que part la '
-    +         'demande. La date de naissance est facultative, mais elle évite de confondre deux '
+    +         'demande, et la <b>date de naissance</b> distingue deux '
     +         'homonymes — aujourd’hui ou dans six mois.</div>'
     +     '</div>'
     +     '<div class="od-d-pied" id="od-d-pied">'

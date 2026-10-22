@@ -134,7 +134,7 @@
         <label>Nom<input type="text" id="f-nom" maxlength="60" autocomplete="family-name" placeholder="DUPONT"></label>
         <label>Prénom<input type="text" id="f-prenom" maxlength="60" autocomplete="given-name" placeholder="Marie"></label>
       </div>
-      <label class="qui-n">Date de naissance <span class="fac">facultatif, utile en cas d’homonyme</span>
+      <label class="qui-n">Date de naissance
         <input type="date" id="f-naissance" autocomplete="bday"></label>
     </div>
 
@@ -445,13 +445,17 @@
     // sur le champ lui-même plutôt que par un message général.
     if (!JETON) {
       var manque = false;
-      ['f-nom', 'f-prenom'].forEach(function (id) {
+      // LA DATE DE NAISSANCE EN FAIT PARTIE. Deux patients du même nom, ça
+      // arrive ; le document arriverait au mauvais dossier, et personne ne le
+      // verrait. C'est la seule chose qui les sépare, et le patient la connaît.
+      ['f-nom', 'f-prenom', 'f-naissance'].forEach(function (id) {
         var e = $(id), vide = !String(e.value || '').trim();
         e.classList[vide ? 'add' : 'remove']('manque');
         if (vide) manque = true;
       });
       if (manque) {
-        erreur('Merci d’indiquer votre nom et votre prénom, pour que nous sachions à qui est ce document.');
+        erreur('Merci d’indiquer vos nom, prénom et date de naissance, pour que ce document '
+          + 'arrive au bon dossier.');
         $('f-nom').focus();
         return;
       }

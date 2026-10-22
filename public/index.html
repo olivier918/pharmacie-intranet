@@ -692,6 +692,7 @@ tr:hover td{background:#fafffe}
         <div class="fgrid">
           <div class="fg"><label>Nom <span class="req">*</span></label><input type="text" id="d-nom" placeholder="NOM"></div>
           <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="d-prenom" placeholder="Prénom"></div>
+          <div class="fg"><label>Date de naissance <span class="req">*</span></label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="d-dob"></div>
           <div class="fg"><label>Adresse</label><input type="text" id="d-adresse" placeholder="Adresse complète"></div>
           <div class="fg"><label>Commune</label><input type="text" id="d-commune" placeholder="Mondeville"></div>
           <div class="fg"><label>Téléphone</label><input type="tel" id="d-tel" placeholder="06 …"></div>
@@ -768,7 +769,7 @@ tr:hover td{background:#fafffe}
             <div id="p-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="p-prenom" placeholder="Prénom"></div>
-          <div class="fg"><label>Date de naissance</label><input type="date" id="p-dob"></div>
+          <div class="fg"><label>Date de naissance <span class="req">*</span></label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="p-dob"></div>
           <div class="fg"><label>Téléphone portable</label><input type="tel" id="p-tel" placeholder="06 …" inputmode="tel"></div>
           <div class="fg" style="position:relative">
             <label>Médecin prescripteur</label>
@@ -862,7 +863,7 @@ tr:hover td{background:#fafffe}
             <div id="lc-pat-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="lc-prenom" placeholder="Prénom"></div>
-          <div class="fg"><label>Date de naissance</label><input type="date" id="lc-dob-pat"></div>
+          <div class="fg"><label>Date de naissance <span class="req">*</span></label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="lc-dob-pat"></div>
           <div class="fg"><label>Téléphone patient</label><input type="tel" id="lc-tel" placeholder="06 …"></div>
           <div class="fg"><label>E-mail patient</label><input type="email" id="lc-mail" placeholder="patient@mail.fr"></div>
           <div class="fg"><label>Adresse</label><input type="text" id="lc-adresse" placeholder="12 rue des Lilas"></div>
@@ -1069,7 +1070,7 @@ tr:hover td{background:#fafffe}
           <!-- Deux homonymes dans la meme commune, ca arrive. La date de naissance
                est ce qui distingue, et c'est elle qu'on verifie avant de reclamer
                de l'argent a quelqu'un. -->
-          <div class="fg"><label>Date de naissance</label><input type="date" id="cr-dob"></div>
+          <div class="fg"><label>Date de naissance <span class="req">*</span></label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="cr-dob"></div>
           <div class="fg"><label>Téléphone</label><input type="tel" id="cr-tel" placeholder="06 …"></div>
           <div class="fg"><label>E-mail</label><input type="email" id="cr-mail" placeholder="patient@mail.fr"></div>
           <div class="fg" style="grid-column:1/-1"><label>Adresse</label><input type="text" id="cr-adresse" placeholder="N° et rue"></div>
@@ -1802,7 +1803,7 @@ tr:hover td{background:#fafffe}
           <div class="fgrid">
             <div class="fg"><label>Nom</label><input type="text" id="bp-nom" placeholder="NOM"></div>
             <div class="fg"><label>Prénom</label><input type="text" id="bp-prenom" placeholder="Prénom"></div>
-            <div class="fg"><label>Date de naissance</label><input type="date" id="bp-dob"></div>
+            <div class="fg"><label>Date de naissance <span class="req">*</span></label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="bp-dob"></div>
             <div class="fg"><label>Adresse</label><input type="text" id="bp-adresse" placeholder="Adresse complète"></div>
             <div class="fg"><label>Commune</label><input type="text" id="bp-commune" placeholder="Mondeville"></div>
             <div class="fg"><label>Téléphone</label><input type="tel" id="bp-tel" placeholder="06 …"></div>
@@ -1936,7 +1937,7 @@ tr:hover td{background:#fafffe}
             <div id="nt-ac" class="ac-drop"></div>
           </div>
           <div class="fg"><label>Prénom</label><input type="text" id="nt-prenom" placeholder="Prénom"></div>
-          <div class="fg"><label>Date de naissance</label><input type="date" id="nt-dob"></div>
+          <div class="fg"><label>Date de naissance</label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="nt-dob"></div>
           <div class="fg"><label>Téléphone</label><input type="tel" id="nt-tel" placeholder="06 …"></div>
           <div class="fg"><label>E-mail</label><input type="email" id="nt-mail" placeholder="patient@mail.fr"></div>
           <div class="fg">
@@ -2441,7 +2442,7 @@ tr:hover td{background:#fafffe}
         <div id="bon-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
       </div>
       <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="bon-prenom" placeholder="Prénom"></div>
-      <div class="fg"><label>Date de naissance</label><input type="date" id="bon-dob"></div>
+      <div class="fg"><label>Date de naissance</label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="bon-dob"></div>
       <div class="fg"><label>Rang de naissance</label><input type="number" id="bon-rang" value="1" min="1" max="9"></div>
       <div class="fg"><label>N° d'immatriculation (sécu)</label><input type="text" id="bon-ss" placeholder="1 85 05 14 XXX XXX XX" inputmode="numeric"></div>
     </div>
@@ -2473,7 +2474,7 @@ tr:hover td{background:#fafffe}
         <div id="gir-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
       </div>
       <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="gir-prenom" placeholder="Prénom"></div>
-      <div class="fg"><label>Date de naissance</label><input type="date" id="gir-dob"></div>
+      <div class="fg"><label>Date de naissance</label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="gir-dob"></div>
       <div class="fg"><label>Date de passation</label><input type="date" id="gir-date"></div>
     </div>
     <div style="font-weight:700;color:var(--b-dark);font-size:.9rem;margin:1.1rem 0 .2rem">Les 6 questions</div>
@@ -2510,7 +2511,7 @@ tr:hover td{background:#fafffe}
         <div id="ap-psugg" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--gray-200);border-radius:8px;margin-top:2px;display:none;max-height:170px;overflow-y:auto;box-shadow:var(--shadow)"></div>
       </div>
       <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="ap-prenom" placeholder="Prénom"></div>
-      <div class="fg"><label>Date de naissance</label><input type="date" id="ap-dob"></div>
+      <div class="fg"><label>Date de naissance</label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="ap-dob"></div>
     </div>
     <div class="fgrid" style="margin-top:.9rem">
       <div class="fg" style="grid-column:1/-1"><label>Sexe</label>
@@ -4727,8 +4728,9 @@ function saveD(){
   const prenom=document.getElementById('d-prenom').value.trim();
   if(!nom||!prenom){alert('Le nom et le prénom sont obligatoires.');return}
   const editId=document.getElementById('dform').dataset.editId;
+  const dob=dobExigee('d-dob', !!editId); if(dob===null) return;
   const obj={
-    nom,prenom,
+    nom,prenom,dob,
     adresse:document.getElementById('d-adresse').value.trim(),
     commune:document.getElementById('d-commune').value.trim(),
     tel:document.getElementById('d-tel').value.trim(),
@@ -4975,7 +4977,7 @@ function closeThread(){
 function newThread(){
   // Reset form
   ['nt-nom','nt-prenom','nt-tel','nt-mail','nt-med','nt-subj'].forEach(i=>document.getElementById(i).value='');
-  document.getElementById('nt-dob').value='';
+  dobPoser('nt-dob','');
   document.getElementById('nt-patient').checked=true;
   document.getElementById('nt-pat-section').style.display='block';
   openModal('newthread-modal');
@@ -4991,7 +4993,11 @@ function createThread(){
   const type=document.getElementById('nt-patient').checked?'Patient':'Médecin';
   // At least patient name OR subject required
   if(!nom&&!prenom&&!subj){alert('Saisissez au moins un nom de patient ou un sujet.');return}
-  const dob=document.getElementById('nt-dob').value;
+  // CE FORMULAIRE ACCEPTE UNE ENTRÉE SANS PATIENT — un sujet, un médecin. La
+  // date n'est donc exigée que si l'on nomme quelqu'un : l'imposer bloquerait
+  // une note qui ne parle de personne.
+  const dob=(nom&&prenom)?dobExigee('nt-dob', false):document.getElementById('nt-dob').value;
+  if(dob===null) return;
   const tel=document.getElementById('nt-tel').value.trim();
   const mail=document.getElementById('nt-mail').value.trim();
   const med=document.getElementById('nt-med').value.trim();
@@ -5108,7 +5114,7 @@ function editPrep(id){
   prepEditId = id;
   document.getElementById('p-nom').value    = p.nom || '';
   document.getElementById('p-prenom').value = p.prenom || '';
-  document.getElementById('p-dob').value    = p.dob || '';
+  dobPoser('p-dob', p.dob);
   document.getElementById('p-tel').value    = p.tel || '';
   document.getElementById('p-med').value    = p.med || '';
   document.getElementById('p-type').value   = PREP_TYPES[p.type] ? p.type : 'realisation-kerangal';
@@ -5125,7 +5131,7 @@ function savePrep(){
   const prenom=document.getElementById('p-prenom').value.trim();
   if(!nom||!prenom){alert('Le nom et le prénom du patient sont obligatoires.');return}
   const type=document.getElementById('p-type').value;
-  const dob=document.getElementById('p-dob').value;
+  const dob=dobExigee('p-dob', !!prepEditId); if(dob===null) return;
   const tel=document.getElementById('p-tel').value.trim();
   const med=document.getElementById('p-med').value.trim();
   const prep=document.getElementById('p-prep').value.trim();
@@ -5492,7 +5498,8 @@ function addPatientBO(){
   const nom=document.getElementById('bp-nom').value.trim().toUpperCase();
   const prenom=document.getElementById('bp-prenom').value.trim();
   if(!nom||!prenom){alert('Nom et prénom requis.');return}
-  const data={nom,prenom,dob:document.getElementById('bp-dob').value,adresse:document.getElementById('bp-adresse').value,commune:document.getElementById('bp-commune').value,tel:document.getElementById('bp-tel').value,mail:document.getElementById('bp-mail').value};
+  const dobBp=dobExigee('bp-dob', patEditIdx!==null); if(dobBp===null) return;
+  const data={nom,prenom,dob:dobBp,adresse:document.getElementById('bp-adresse').value,commune:document.getElementById('bp-commune').value,tel:document.getElementById('bp-tel').value,mail:document.getElementById('bp-mail').value};
   if(patEditIdx!==null){
     // Mode édition : remplacer le patient
     Object.assign(patients[patEditIdx],data);
@@ -5511,7 +5518,7 @@ function editPatient(i){
   patEditIdx=i;
   document.getElementById('bp-nom').value=p.nom||'';
   document.getElementById('bp-prenom').value=p.prenom||'';
-  document.getElementById('bp-dob').value=p.dob||'';
+  dobPoser('bp-dob', p.dob);
   document.getElementById('bp-adresse').value=p.adresse||'';
   document.getElementById('bp-commune').value=p.commune||'';
   document.getElementById('bp-tel').value=p.tel||'';
@@ -5541,6 +5548,73 @@ function cancelEditPatient(){
 // MARTIN Jean nés en 1940 et en 1972 sont deux personnes, et les réunir
 // mélangerait leurs ordonnances. À nom identique et date différente, on crée
 // une SECONDE fiche — c'est le seul cas où un doublon apparent est voulu.
+// ── LE FORMAT FRANÇAIS D'UNE DATE DE NAISSANCE ──────────────────────────────
+//
+// `<input type="date">` s'affiche dans la langue du NAVIGATEUR, pas dans celle
+// de la page. Sur un poste réglé en anglais — et il y en a — une date de
+// naissance se saisit en mm/jj/aaaa : le 3 avril devient le 4 mars sans que
+// personne ne le voie passer. Dans une officine, c'est exactement l'erreur qui
+// range une ordonnance au dossier de l'homonyme.
+//
+// On tape donc la date à la main, en JJ/MM/AAAA, avec les barres posées toutes
+// seules. EN BASE, RIEN NE CHANGE : on continue de stocker AAAA-MM-JJ, le seul
+// format qui se trie et se compare. La conversion vit ici, et nulle part
+// ailleurs — deux conversions finiraient par diverger.
+function dobFr(iso){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||''));
+  return m?(m[3]+'/'+m[2]+'/'+m[1]):'';
+}
+function dobIso(fr){
+  const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(fr||'').trim());
+  if(!m) return null;
+  const j=+m[1], mo=+m[2], a=+m[3];
+  if(mo<1||mo>12||j<1||a<1900||a>2100) return null;
+  // LE 31 FÉVRIER N'EXISTE PAS. `new Date` le ramènerait au 3 mars sans un mot,
+  // et la fiche porterait une date que personne n'a jamais saisie.
+  const d=new Date(a,mo-1,j,12,0,0);
+  if(d.getFullYear()!==a||d.getMonth()!==mo-1||d.getDate()!==j) return null;
+  if(d>new Date()) return null;          // on ne naît pas demain
+  return a+'-'+String(mo).padStart(2,'0')+'-'+String(j).padStart(2,'0');
+}
+// Les barres se posent pendant la frappe : on tape huit chiffres, rien d'autre.
+function dobMasque(e){
+  if(!e) return;
+  const n=String(e.value||'').replace(/\D/g,'').slice(0,8);
+  e.value=n.replace(/^(\d{2})(\d)/,'$1/$2').replace(/^(\d{2}\/\d{2})(\d)/,'$1/$2');
+}
+// Poser une date VENUE DE LA BASE dans un champ : elle y entre en français.
+function dobPoser(id, iso){ const e=document.getElementById(id); if(e) e.value=dobFr(iso); }
+
+// ── LA DATE DE NAISSANCE ────────────────────────────────────────────────────
+//
+// POURQUOI ELLE EST EXIGÉE. Deux homonymes dans une officine, ça arrive toutes
+// les semaines — et dans une famille, le père et le fils portent souvent le
+// même prénom. Sans date, rien ne les sépare : une ordonnance se range au
+// mauvais dossier, un crédit se réclame à la mauvaise personne, un SMS part au
+// mauvais numéro. C'est la seule donnée qui distingue, et elle ne change jamais.
+//
+// ON NE BLOQUE JAMAIS L'EXISTANT. Les dossiers ouverts avant cette règle n'ont
+// pas de date, et personne ne la connaît forcément. Rouvrir une fiche pour
+// corriger un téléphone ne doit pas se solder par un refus : l'exigence ne vaut
+// qu'à la CRÉATION. Une fiche ancienne qui reçoit une date la garde, bien sûr.
+//
+// Rend la date, '' si on laisse passer, et null s'il faut s'arrêter.
+function dobExigee(id, modification){
+  const e=document.getElementById(id);
+  const brut=e?String(e.value||'').trim():'';
+  const arreter=(m)=>{ alert(m); if(e){ try{ e.focus(); }catch(err){} } return null; };
+  if(!brut){
+    if(modification) return '';
+    return arreter('La date de naissance est nécessaire.\n\nC\'est elle qui distingue deux '
+      +'homonymes — et dans six mois, personne ne s\'en souviendra autrement.');
+  }
+  const iso=dobIso(brut);
+  // UNE DATE ILLISIBLE N'EST PAS UNE DATE VIDE. La laisser passer mettrait en
+  // base une chaîne que plus rien ne saurait relire.
+  if(!iso) return arreter('Date de naissance : écrivez-la en JJ/MM/AAAA.\n\nPar exemple 12/03/1948.');
+  return iso;
+}
+
 function upsertPatient(p){
   if(!p||(!p.nom&&!p.prenom)) return null;
   const clef=(typeof ptClef==='function')?ptClef(p.nom,p.prenom):((p.nom||'')+'|'+(p.prenom||''));
@@ -5719,7 +5793,11 @@ function fillPatient(i){
   if(!p||!c) return;
   const poser=(id,v)=>{ const el=id&&document.getElementById(id); if(el) el.value=v||''; };
   poser(c.nomId,p.nom); poser(c.prenomId,p.prenom);
-  poser(c.dobId,p.dob); poser(c.telId,p.tel); poser(c.mailId,p.mail);
+  // LA DATE ENTRE EN FRANÇAIS. Poser l'ISO telle quelle afficherait
+  // « 1948-03-12 » dans un champ qui attend « 12/03/1948 », et la validation
+  // refuserait ce que l'autocomplétion vient d'écrire.
+  if(c.dobId) dobPoser(c.dobId, p.dob);
+  poser(c.telId,p.tel); poser(c.mailId,p.mail);
   poser(c.adresseId,p.adresse); poser(c.communeId,p.commune);
   // Le formulaire de livraison a ses propres champs adresse et téléphone.
   if(document.getElementById('d-adresse')&&c.nomId==='d-nom'){
@@ -6541,7 +6619,7 @@ function saveLoc(){
   if(!nom||!prenom){alert('Nom et prénom requis.');return}
   const tel=document.getElementById('lc-tel').value;
   const mail=document.getElementById('lc-mail').value;
-  const dob=document.getElementById('lc-dob-pat').value;
+  const dob=dobExigee('lc-dob-pat', !!locEditId); if(dob===null) return;
   const prescripteur=document.getElementById('lc-prescripteur').value;
   const obj={
     nom,prenom,tel,mail,dob,
@@ -8095,7 +8173,7 @@ function editLoc(id){
   // restaient vides et l'enregistrement effaçait le téléphone et le mail.
   document.getElementById('lc-tel').value=locTel(l);
   document.getElementById('lc-mail').value=locMail(l);
-  document.getElementById('lc-dob-pat').value=locDob(l);
+  dobPoser('lc-dob-pat', locDob(l));
   const adrL=locAdresseLignes(l);
   document.getElementById('lc-adresse').value=adrL[0]||'';
   document.getElementById('lc-commune').value=adrL[1]||'';
@@ -8623,7 +8701,7 @@ function editCred(id){
   document.getElementById('cred-form-title').textContent='Modifier le crédit';
   document.getElementById('cr-nom').value=c.nom||'';
   document.getElementById('cr-prenom').value=c.prenom||'';
-  document.getElementById('cr-dob').value=credDob(c)||'';
+  dobPoser('cr-dob', credDob(c));
   document.getElementById('cr-tel').value=c.tel||'';
   document.getElementById('cr-mail').value=c.mail||'';
   document.getElementById('cr-adresse').value=c.adresse||'';
@@ -8645,9 +8723,10 @@ function saveCred(){
   const motif=document.getElementById('cr-motif').value;
   const montant=parseFloat(document.getElementById('cr-montant').value)||0;
   if(motif!=='avance' && montant<=0){alert('Le montant doit être supérieur à 0.');return}
+  const dobCr=dobExigee('cr-dob', !!credEditId); if(dobCr===null) return;
   const obj={
     nom, prenom,
-    dob:document.getElementById('cr-dob').value||'',
+    dob:dobCr,
     tel:document.getElementById('cr-tel').value.trim(),
     mail:document.getElementById('cr-mail').value.trim(),
     adresse:document.getElementById('cr-adresse').value.trim(),
@@ -10068,7 +10147,7 @@ function openBonForm(){
   if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
   bonDraft={patientRef:null};
   ['bon-nom','bon-prenom','bon-ss','bon-vaccin'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
-  document.getElementById('bon-dob').value='';
+  dobPoser('bon-dob','');
   document.getElementById('bon-rang').value='1';
   document.getElementById('bon-date').value=todayStr();
   document.getElementById('bon-form-error').style.display='none';
@@ -10099,7 +10178,7 @@ function bonFillPatient(i){
   const p=bonResPatients[i]; if(!p) return;
   document.getElementById('bon-nom').value=p.nom||'';
   document.getElementById('bon-prenom').value=p.prenom||'';
-  if(p.dob)document.getElementById('bon-dob').value=p.dob;
+  if(p.dob)dobPoser('bon-dob', p.dob);
   document.getElementById('bon-psugg').style.display='none';
   if(bonDraft)bonDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }
@@ -10116,7 +10195,7 @@ function validateBon(){
   if(!me.sig){ if(!confirm('Vous n\'avez pas de signature enregistrée (Back Office → Collaborateurs → Signature). Générer le bon avec une zone de signature vide ?'))return; }
   const w=window.open('','_blank'); // onglet ouvert dans le geste du clic (évite le blocage des pop-ups)
   const now=new Date();
-  const dob=document.getElementById('bon-dob').value;
+  const dob=dobIso(document.getElementById('bon-dob').value)||'';
   const datePresc=document.getElementById('bon-date').value||todayStr();
   const rec={
     id:Date.now(), num:bonNextNum(),
@@ -10220,7 +10299,7 @@ function openGirerdForm(){
   if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
   girDraft={patientRef:null};
   ['gir-nom','gir-prenom'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
-  document.getElementById('gir-dob').value='';
+  dobPoser('gir-dob','');
   document.getElementById('gir-date').value=todayStr();
   document.getElementById('gir-form-error').style.display='none';
   const sug=document.getElementById('gir-psugg'); if(sug)sug.style.display='none';
@@ -10249,7 +10328,7 @@ function girFillPatient(i){
   const p=girResPatients[i]; if(!p) return;
   document.getElementById('gir-nom').value=p.nom||'';
   document.getElementById('gir-prenom').value=p.prenom||'';
-  if(p.dob)document.getElementById('gir-dob').value=p.dob;
+  if(p.dob)dobPoser('gir-dob', p.dob);
   document.getElementById('gir-psugg').style.display='none';
   if(girDraft)girDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }
@@ -10265,7 +10344,7 @@ function validateGirerd(){
   err.style.display='none';
   const w=window.open('','_blank'); // onglet ouvert dans le geste du clic (évite le blocage des pop-ups)
   const now=new Date();
-  const dob=document.getElementById('gir-dob').value;
+  const dob=dobIso(document.getElementById('gir-dob').value)||'';
   const dpass=document.getElementById('gir-date').value||todayStr();
   const nOui=ans.filter(a=>a==='oui').length;
   const rec={
@@ -10473,7 +10552,7 @@ function openApForm(){
   if(!currentUser){ alert('Veuillez vous identifier avec votre code PIN.'); return; }
   apDraft={patientRef:null};
   ['ap-vaccin','ap-nom','ap-prenom','ap-ss','ap-cp','ap-p1','ap-t1','ap-p2','ap-t2','ap-emp','ap-acc'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
-  document.getElementById('ap-dob').value='';
+  dobPoser('ap-dob','');
   document.getElementById('ap-date').value=todayStr();
   const sx=document.querySelector('input[name="ap-sexe"][value=""]'); if(sx)sx.checked=true;
   const st=document.querySelector('input[name="ap-sit"][value="deux"]'); if(st)st.checked=true;
@@ -10503,7 +10582,7 @@ function apFillPatient(i){
   const p=apResPatients[i]; if(!p) return;
   document.getElementById('ap-nom').value=p.nom||'';
   document.getElementById('ap-prenom').value=p.prenom||'';
-  if(p.dob)document.getElementById('ap-dob').value=p.dob;
+  if(p.dob)dobPoser('ap-dob', p.dob);
   document.getElementById('ap-psugg').style.display='none';
   if(apDraft)apDraft.patientRef={nom:p.nom,prenom:p.prenom};
 }

@@ -249,7 +249,7 @@
         <div class="rn-fg"><label>Prénom <span class="rn-req">*</span></label><input class="rn-inp" id="rn-prenom" placeholder="Prénom"></div>
       </div>
       <div class="rn-row2">
-        <div class="rn-fg"><label>Date de naissance <span class="rn-req">*</span></label><input class="rn-inp" id="rn-dob" type="date"></div>
+        <div class="rn-fg"><label>Date de naissance <span class="rn-req">*</span></label><input class="rn-inp" id="rn-dob" type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)"></div>
         <div class="rn-fg"><label>Téléphone</label><input class="rn-inp" id="rn-tel" placeholder="06 …"></div>
       </div>
       <div class="rn-row2">
@@ -605,7 +605,7 @@
     if (it && typeof tracer === 'function') tracer('consultation', 'renouvellement', it.id, 'Fiche ouverte en modification');
     document.getElementById('rn-form-title').textContent = it ? "Modifier l'ordonnance" : 'Nouvelle ordonnance à préparer';
     const g = i => document.getElementById(i); const v = (k, d = '') => it ? (it[k] == null ? d : it[k]) : d;
-    g('rn-civ').value = v('civilite'); g('rn-nom').value = v('nom'); g('rn-prenom').value = v('prenom'); g('rn-dob').value = v('dob'); g('rn-tel').value = v('tel');
+    g('rn-civ').value = v('civilite'); g('rn-nom').value = v('nom'); g('rn-prenom').value = v('prenom'); if(typeof dobPoser==='function') dobPoser('rn-dob', v('dob')); else g('rn-dob').value = v('dob'); g('rn-tel').value = v('tel');
     g('rn-mail').value = v('mail'); g('rn-adresse').value = v('adresse'); g('rn-lib').value = v('lib');
     g('rn-date').value = it ? it.date : rnIso(rnAddDays(rnToday(), 28)); g('rn-cycle').value = it ? it.cycle : 28;
     g('rn-presc').value = v('presc'); g('rn-remise').value = v('remise', 'comptoir'); g('rn-notes').value = v('notes');
@@ -654,7 +654,7 @@
     const p = rnResCherche[i]; if (!p) return;
     const g = id => document.getElementById(id);
     g('rn-nom').value = p.nom || ''; g('rn-prenom').value = p.prenom || '';
-    if (p.dob) g('rn-dob').value = p.dob;
+    if (p.dob) { if(typeof dobPoser==='function') dobPoser('rn-dob', p.dob); else g('rn-dob').value = p.dob; }
     if (p.tel) g('rn-tel').value = p.tel;
     if (p.mail) g('rn-mail').value = p.mail;
     if (p.adresse) g('rn-adresse').value = p.adresse;
@@ -699,7 +699,7 @@
       return;
     }
     const obj = {
-      civilite: g('rn-civ').value, nom: g('rn-nom').value.trim().toUpperCase(), prenom: g('rn-prenom').value.trim(), dob: g('rn-dob').value,
+      civilite: g('rn-civ').value, nom: g('rn-nom').value.trim().toUpperCase(), prenom: g('rn-prenom').value.trim(), dob: (typeof dobIso==='function' ? (dobIso(g('rn-dob').value)||'') : g('rn-dob').value),
       tel: g('rn-tel').value.trim(), mail: g('rn-mail').value.trim(), adresse: g('rn-adresse').value.trim(),
       lib: g('rn-lib').value.trim(), date: g('rn-date').value,
       cycle: ponctuel ? 0 : parseInt(g('rn-cycle').value || '28', 10),

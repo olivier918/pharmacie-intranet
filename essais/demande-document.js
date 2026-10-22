@@ -145,14 +145,14 @@ t('LE MOBILE AUSSI — une fiche sans mobile ne pourrait recevoir aucune demande
   /if \(!ms\) \{ dire\('Un mobile français est nécessaire/.test(od));
 t('... et il est validé par le même filtre que les envois SMS',
   /smsMsisdn\(lu\('od-n-tel'\)\)/.test(od) && /function smsMsisdn/.test(ix));
-t('la date de naissance reste facultative',
-  /title="Date de naissance \(facultative\)"/.test(od));
+t('LA DATE DE NAISSANCE EST EXIGÉE ELLE AUSSI — c’est une création',
+  /if \(!lu\('od-n-dob'\)\) \{ dire\('La date de naissance est nécessaire/.test(od));
 t('les conventions de la maison sont tenues : NOM en capitales, Prénom capitalisé',
   /lu\('od-n-nom'\)\.toUpperCase\(\)/.test(od) && /capPrenom\(lu\('od-n-prenom'\)\)/.test(od));
 
 console.log('\nCe qu’elle fait ensuite');
 t('elle passe par upsertPatient, qui COMPLÈTE une fiche existante au lieu d’en faire une seconde',
-  /upsertPatient\(\{ nom: nom, prenom: prenom, tel: lu\('od-n-tel'\), dob: lu\('od-n-dob'\) \}\)/.test(od)
+  /upsertPatient\(\{ nom: nom, prenom: prenom, tel: lu\('od-n-tel'\), dob: dob \}\)/.test(od)
   && /function upsertPatient/.test(ix));
 t('la création part tout de suite, sans attendre le regroupement (piège n°6)',
   /typeof saveNow === 'function'\) saveNow\(\)/.test(od));
