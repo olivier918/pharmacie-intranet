@@ -126,5 +126,54 @@ t('deux types différents ne le sont pas',
 t('une cible absente ne correspond à rien',
   !odMemeCible(null, { type: 'location', ref: 5 }) && !odMemeCible({ type: 'location', ref: 5 }, null));
 
+// ── CRÉER LA FICHE SANS QUITTER LA DEMANDE ──────────────────────────────────
+//
+// Le cas qui manquait : la personne à qui l'on demande un document n'est pas
+// dans la base. Il fallait sortir, ouvrir le Back Office, créer la fiche,
+// revenir, retaper le nom — et entre les deux on oublie, ou on envoie la
+// demande au mauvais homonyme.
+console.log('\nCréer la fiche depuis la demande');
+t('la création est proposée dès deux lettres tapées',
+  /const creer = q\.length < 2 \? ''/.test(od) && /odNouveauPatient\(\)/.test(od));
+t('ELLE EST PROPOSÉE MÊME QUAND LA LISTE N’EST PAS VIDE — des homonymes peuvent répondre sans qu’aucun soit la bonne personne',
+  /\}\)\.join\(''\) \+ creer/.test(od) && /à ce nom\.<\/div>' \+ creer/.test(od));
+t('le nom tapé est repris dans la proposition', /Créer la fiche de « ' \+ E\(qBrut\)/.test(od));
+
+console.log('\nCe que le formulaire exige');
+t('le nom est obligatoire', /if \(!nom\) \{ dire\('Le nom est nécessaire\.'\)/.test(od));
+t('LE MOBILE AUSSI — une fiche sans mobile ne pourrait recevoir aucune demande',
+  /if \(!ms\) \{ dire\('Un mobile français est nécessaire/.test(od));
+t('... et il est validé par le même filtre que les envois SMS',
+  /smsMsisdn\(lu\('od-n-tel'\)\)/.test(od) && /function smsMsisdn/.test(ix));
+t('la date de naissance reste facultative',
+  /title="Date de naissance \(facultative\)"/.test(od));
+t('les conventions de la maison sont tenues : NOM en capitales, Prénom capitalisé',
+  /lu\('od-n-nom'\)\.toUpperCase\(\)/.test(od) && /capPrenom\(lu\('od-n-prenom'\)\)/.test(od));
+
+console.log('\nCe qu’elle fait ensuite');
+t('elle passe par upsertPatient, qui COMPLÈTE une fiche existante au lieu d’en faire une seconde',
+  /upsertPatient\(\{ nom: nom, prenom: prenom, tel: lu\('od-n-tel'\), dob: lu\('od-n-dob'\) \}\)/.test(od)
+  && /function upsertPatient/.test(ix));
+t('la création part tout de suite, sans attendre le regroupement (piège n°6)',
+  /typeof saveNow === 'function'\) saveNow\(\)/.test(od));
+t('elle est journalisée', /logAction\('Fiche patient créée depuis une demande'/.test(od));
+t('ET LA DEMANDE ENCHAÎNE — sinon on aurait créé une fiche pour rien',
+  /window\.odDemander\(\{ nom: p\.nom, prenom: p\.prenom, tel: p\.tel,[\s\S]{0,120}type: 'patient', ref: p\.id/.test(od));
+
+console.log('\nLà où vit le formulaire');
+// PIÈGE N°9. `odRendDemander` reconstruit #od-d-liste à chaque frappe dans la
+// recherche. Un formulaire placé dedans perdrait ce qu'on vient d'y taper.
+const zListe = od.slice(od.indexOf('window.odRendDemander = function'), od.indexOf('function odTel'));
+t('LE FORMULAIRE N’EST PAS DANS LA LISTE RECONSTRUITE À CHAQUE FRAPPE',
+  !/od-n-nom/.test(zListe) && !/od-n-tel/.test(zListe));
+t('il est déclaré à part dans la fenêtre', /id="od-d-neuf"/.test(od));
+t('taper dans la recherche le referme — il était prérempli d’un autre nom',
+  /window\.odAnnulerNeuf\(\);/.test(zListe));
+t('rouvrir la fenêtre la montre sur la recherche, jamais sur un formulaire resté ouvert',
+  /odRendMotifs\(\);\s*\n\s*window\.odAnnulerNeuf\(\);/.test(od));
+t('un gestionnaire ne reçoit aucun texte saisi : odNouveauPatient relit le champ',
+  /window\.odNouveauPatient = function \(\) \{/.test(od)
+  && /getElementById\('od-d-q'\) \|\| \{\}\)\.value/.test(od));
+
 console.log('\n' + (ok + ko) + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

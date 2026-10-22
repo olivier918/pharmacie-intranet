@@ -696,6 +696,7 @@
   window.odFormDemander = function () {
     odDemMotif = 'document';
     odRendMotifs();
+    window.odAnnulerNeuf();
     const q = document.getElementById('od-d-q'); if (q) q.value = '';
     odRendDemander();
     document.getElementById('od-ov-dem').classList.add('open');
@@ -706,7 +707,8 @@
   window.odFermerDemander = function () { document.getElementById('od-ov-dem').classList.remove('open'); };
 
   window.odRendDemander = function () {
-    const q = String((document.getElementById('od-d-q') || {}).value || '').trim().toLowerCase();
+    const qBrut = String((document.getElementById('od-d-q') || {}).value || '').trim();
+    const q = qBrut.toLowerCase();
     const cand = [];
     // Les dossiers d'abord : c'est là que le rattachement automatique a le plus
     // de valeur. La fiche patient ensuite, pour tout le reste.
@@ -733,6 +735,18 @@
     odDemCand = l;                                    // un gestionnaire ne reçoit qu'un indice
     const el = document.getElementById('od-d-liste');
     if (!el) return;
+    // Taper dans la recherche referme le formulaire : il a ete prerempli a
+    // partir d'un autre nom, le garder ouvert servirait a creer la mauvaise fiche.
+    window.odAnnulerNeuf();
+    // ON PROPOSE DE CREER MEME QUAND LA LISTE N'EST PAS VIDE. Des homonymes
+    // peuvent repondre a la recherche sans qu'aucun soit la bonne personne ;
+    // n'offrir la creation qu'en cas de liste vide obligerait a inventer une
+    // faute de frappe pour y arriver.
+    const creer = q.length < 2 ? ''
+      : '<button class="od-r-item od-creer" onclick="odNouveauPatient()">'
+        + '<span><span class="od-r-qui">+ Créer la fiche de « ' + E(qBrut) + ' »</span>'
+        + '<br><span class="od-d-tel">Le patient n’est pas encore dans la base</span></span>'
+        + '</button>';
     el.innerHTML = q.length < 2
       ? '<div class="od-vide">Tapez les premières lettres d’un nom.</div>'
       : (l.length
@@ -748,14 +762,80 @@
                 + '</span>'
                 + '<span class="od-d-bad ' + (c.type === 'location' ? 'loc' : c.type === 'renouvellement' ? 'ren' : 'pat') + '">'
                 + E(c.quoi) + '</span></button>';
-            }).join('')
-          : '<div class="od-vide">Aucun dossier avec un mobile à ce nom.</div>');
+            }).join('') + creer
+          : '<div class="od-vide">Aucun dossier avec un mobile à ce nom.</div>' + creer);
   };
   // 0601020304 se lit mal d'un coup d'œil ; 06 01 02 03 04 se vérifie.
   function odTel(t) {
     const n = String(t || '').replace(/\D/g, '');
     return n.length === 10 ? n.replace(/(\d\d)(?=\d)/g, '$1 ') : String(t || '');
   }
+  // ── CRÉER LA FICHE SANS QUITTER LA DEMANDE ────────────────────────────────
+  //
+  // Le cas qui manquait : quelqu'un demande un document à une personne qui
+  // n'est pas encore dans la base. Il fallait sortir, ouvrir le Back Office,
+  // créer la fiche, revenir, retaper le nom. Entre les deux, on oublie, ou on
+  // envoie la demande au mauvais homonyme.
+  //
+  // Un gestionnaire ne reçoit jamais de texte saisi : `odNouveauPatient` ne
+  // prend aucun argument et relit le champ de recherche lui-même.
+  window.odNouveauPatient = function () {
+    const q = String((document.getElementById('od-d-q') || {}).value || '').trim();
+    // Dans CE champ-là, on tape le nom d'abord : « dupont jean ». Le premier
+    // mot part donc dans NOM, le reste dans Prénom. C'est une proposition, pas
+    // une décision — les deux champs restent modifiables.
+    const mots = q.split(/\s+/).filter(Boolean);
+    const v = function (id, val) { const e = document.getElementById(id); if (e) e.value = val; };
+    v('od-n-nom', (mots[0] || '').toUpperCase());
+    v('od-n-prenom', typeof capPrenom === 'function'
+        ? capPrenom(mots.slice(1).join(' ')) : mots.slice(1).join(' '));
+    v('od-n-tel', ''); v('od-n-dob', '');
+    const e = document.getElementById('od-n-err'); if (e) e.textContent = '';
+    const b = document.getElementById('od-d-neuf'); if (b) b.style.display = '';
+    const li = document.getElementById('od-d-liste'); if (li) li.style.display = 'none';
+    const pi = document.getElementById('od-d-pied'); if (pi) pi.style.display = 'none';
+    // Le curseur sur le mobile : c'est la seule chose qu'on n'a pas devinée.
+    setTimeout(function () { const t = document.getElementById('od-n-tel'); if (t) t.focus(); }, 60);
+  };
+
+  window.odAnnulerNeuf = function () {
+    const b = document.getElementById('od-d-neuf'); if (b) b.style.display = 'none';
+    const li = document.getElementById('od-d-liste'); if (li) li.style.display = '';
+    const pi = document.getElementById('od-d-pied'); if (pi) pi.style.display = '';
+  };
+
+  window.odCreerEtDemander = function () {
+    const lu = function (id) {
+      const e = document.getElementById(id); return e ? String(e.value || '').trim() : '';
+    };
+    const dire = function (m) { const e = document.getElementById('od-n-err'); if (e) e.textContent = m; };
+    const nom = lu('od-n-nom').toUpperCase();
+    const prenom = (typeof capPrenom === 'function') ? capPrenom(lu('od-n-prenom')) : lu('od-n-prenom');
+    if (!nom) { dire('Le nom est nécessaire.'); return; }
+    // LE MOBILE EST LA CONDITION, PAS UN DÉTAIL. Une fiche sans mobile ne
+    // pourrait recevoir aucune demande : on la refuserait ici, et personne ne
+    // comprendrait pourquoi la demande n'est jamais partie.
+    const ms = (typeof smsMsisdn === 'function') ? smsMsisdn(lu('od-n-tel')) : lu('od-n-tel');
+    if (!ms) { dire('Un mobile français est nécessaire : c’est par SMS que part la demande.'); return; }
+    if (typeof upsertPatient !== 'function') { dire('Création indisponible sur ce poste.'); return; }
+
+    // `upsertPatient` NE CRÉE PAS TOUJOURS. S'il reconnaît une fiche existante —
+    // même nom, date compatible — il la complète au lieu d'en faire une seconde.
+    // C'est ce qu'on veut : le geste s'appelle « créer », son résultat est
+    // « avoir la bonne fiche ».
+    const p = upsertPatient({ nom: nom, prenom: prenom, tel: lu('od-n-tel'), dob: lu('od-n-dob') });
+    if (!p || p.id == null) { dire('Création impossible.'); return; }
+    if (typeof logAction === 'function') logAction('Fiche patient créée depuis une demande', nom + ' ' + prenom);
+    // Une création est une action délibérée et rare : elle part tout de suite,
+    // sans attendre le regroupement de 600 ms (piège n°6).
+    try { if (typeof saveNow === 'function') saveNow(); } catch (e) {}
+
+    window.odAnnulerNeuf();
+    window.odFermerDemander();
+    window.odDemander({ nom: p.nom, prenom: p.prenom, tel: p.tel,
+                        cible: { type: 'patient', ref: p.id }, motif: odDemMotif });
+  };
+
   window.odDemanderA = function (i) {
     const c = odDemCand[i]; if (!c) return;
     window.odFermerDemander();
@@ -1343,6 +1423,17 @@
   .od-r-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
     font:inherit;background:#fff;border:1px solid #e7ece9;border-radius:10px;
     padding:11px 13px;margin-bottom:7px;cursor:pointer}
+  /* La creation se distingue des resultats : c'est un geste, pas un choix. */
+  .od-creer{border-style:dashed !important}
+  .od-creer .od-r-qui{color:var(--g-dark,#1D5C3A)}
+  .od-neuf{margin-top:4px}
+  .od-neuf-g{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .od-neuf-g input{padding:10px 12px;font-size:.92rem;font-family:inherit;
+    border:1px solid var(--gray-300,#ccc);border-radius:8px;width:100%}
+  .od-neuf-g input:focus{outline:none;border-color:var(--g-mid,#2E7D54)}
+  .od-neuf-e{color:var(--red,#C62828);font-size:.82rem;min-height:18px;margin-top:7px}
+  .od-neuf-b{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  @media(max-width:520px){.od-neuf-g{grid-template-columns:1fr}}
   .od-r-item:hover{border-color:#1D5C3A;background:#F7FBF9}
   .od-r-qui{font-weight:700;font-size:.92rem}
   .od-i-choisir{display:block;margin-top:14px;padding:13px;border:1px dashed #cfdbd3;
@@ -1482,7 +1573,27 @@
     +         ' autocomplete="off" spellcheck="false">'
     +     '</div>'
     +     '<div class="od-r-liste kb-liste" id="od-d-liste"></div>'
-    +     '<div class="od-d-pied">'
+    // LA CREATION VIT HORS DE LA LISTE, et c'est volontaire : `odRendDemander`
+    // reconstruit `#od-d-liste` a chaque frappe dans la recherche. Un formulaire
+    // place dedans perdrait ce qu'on vient d'y taper (piege n°9).
+    +     '<div class="od-neuf" id="od-d-neuf" style="display:none">'
+    +       '<div class="od-d-lbl">Nouvelle fiche patient</div>'
+    +       '<div class="od-neuf-g">'
+    +         '<input id="od-n-nom" placeholder="NOM" autocomplete="off" spellcheck="false">'
+    +         '<input id="od-n-prenom" placeholder="Prénom" autocomplete="off" spellcheck="false">'
+    +         '<input id="od-n-tel" placeholder="Mobile — 06 12 34 56 78" inputmode="tel" autocomplete="off">'
+    +         '<input id="od-n-dob" type="date" title="Date de naissance (facultative)">'
+    +       '</div>'
+    +       '<div class="od-neuf-e" id="od-n-err"></div>'
+    +       '<div class="od-neuf-b">'
+    +         '<button class="btn bp" onclick="odCreerEtDemander()">Créer la fiche et envoyer la demande</button>'
+    +         '<button class="btn bs" onclick="odAnnulerNeuf()">Annuler</button>'
+    +       '</div>'
+    +       '<div class="od-d-pied">Le <b>mobile est obligatoire</b> : c’est par SMS que part la '
+    +         'demande. La date de naissance est facultative, mais elle évite de confondre deux '
+    +         'homonymes — aujourd’hui ou dans six mois.</div>'
+    +     '</div>'
+    +     '<div class="od-d-pied" id="od-d-pied">'
     +       'Le lien envoyé est <b>nominatif</b> : ce que le patient enverra arrivera à son nom et '
     +       'déjà rattaché à son dossier. Il reste valable sept jours. '
     +       'Seuls les dossiers portant un mobile apparaissent ici.</div>'
