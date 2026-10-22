@@ -912,10 +912,17 @@ tr:hover td{background:#fafffe}
         <div style="margin-top:.9rem">
           <div class="fg" style="margin-bottom:.6rem"><label id="lc-caut-lbl">Caution</label></div>
           <div class="cbrow">
-            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-oui" value="oui" onchange="lcMajLiv()"> <span id="lc-caut-oui-lbl">Oui — reçue</span></label>
-            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-att" value="attente" onchange="lcMajLiv()"> <span id="lc-caut-att-lbl">En attente</span></label>
-            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-non" value="non" checked onchange="lcMajLiv()"> Non</label>
+            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-oui" value="oui" onchange="lcMajCaution()"> <span id="lc-caut-oui-lbl">Oui — reçue</span></label>
+            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-att" value="attente" onchange="lcMajCaution()"> <span id="lc-caut-att-lbl">En attente</span></label>
+            <label class="cbl"><input type="radio" name="lc-caution" id="lc-caut-non" value="non" checked onchange="lcMajCaution()"> Non</label>
           </div>
+          <div class="cbrow" id="lc-caut-mode" style="margin-top:.55rem;display:none">
+            <label class="cbl"><input type="radio" name="lc-caut-moyen" id="lc-mode-cheque" value="cheque" checked onchange="lcMajCaution()"> Chèque conservé, non encaissé</label>
+            <label class="cbl"><input type="radio" name="lc-caut-moyen" id="lc-mode-cb" value="cb" onchange="lcMajCaution()"> Préautorisation bancaire</label>
+          </div>
+          <div style="font-size:.74rem;color:var(--gray-500);margin-top:.4rem;line-height:1.5" id="lc-caut-aide">
+            La caution n'est jamais encaissée : le chèque est gardé en garantie et rendu au retour,
+            ou la somme est bloquée sur la carte sans être débitée.</div>
         </div>
 
         <!-- La livraison du matériel -->
@@ -942,7 +949,7 @@ tr:hover td{background:#fafffe}
               <div id="lc-liv-mat" style="font-size:.85rem;line-height:1.7"></div>
             </div>
             <div class="cbrow" style="margin-top:.7rem">
-              <label class="cbl"><input type="checkbox" id="lc-liv-cheque" onchange="this.dataset.touche=1"> Récupérer le chèque de caution</label>
+              <label class="cbl" id="lc-liv-cheque-l"><input type="checkbox" id="lc-liv-cheque" onchange="this.dataset.touche=1"> Récupérer le chèque de caution</label>
               <label class="cbl"><input type="checkbox" id="lc-liv-ordo" onchange="this.dataset.touche=1"> Récupérer l'ordonnance</label>
             </div>
             <div style="font-size:.74rem;color:var(--gray-500);margin-top:.6rem;line-height:1.5">
@@ -1989,8 +1996,8 @@ tr:hover td{background:#fafffe}
     <div class="fg" id="ret-caution-wrap" style="margin-bottom:.9rem;display:none">
       <label id="ret-caut-lbl">Caution restituée ?</label>
       <div class="cbrow">
-        <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-oui" value="oui" checked> Oui, rendue au patient</label>
-        <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-non" value="non"> Non, conservée</label>
+        <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-oui" value="oui" checked> <span id="ret-caut-oui-lbl">Oui, rendue au patient</span></label>
+        <label class="cbl"><input type="radio" name="ret-caution" id="ret-caut-non" value="non"> <span id="ret-caut-non-lbl">Non, conservée</span></label>
       </div>
     </div>
     <div class="fgrid" style="grid-template-columns:1fr">
@@ -6396,6 +6403,37 @@ function locCautionEtat(l){
   if(l.cautionEtat==='oui'||l.cautionEtat==='attente'||l.cautionEtat==='non') return l.cautionEtat;
   return l.caution ? 'oui' : 'non';
 }
+// ── Comment la caution est bloquée ──────────────────────────────────────────
+// DEUX MOYENS, ET ILS N'APPELLENT PAS LES MÊMES GESTES. Un chèque se garde
+// dans le tiroir et se REND ; une préautorisation bancaire se LIBÈRE. Au retour
+// du matériel, demander « avez-vous rendu le chèque ? » pour une carte
+// bancaire, c'est envoyer quelqu'un chercher un papier qui n'existe pas.
+//
+// LECTURE AU LIEU DE MIGRATION : les dossiers déjà ouverts n'ont pas de
+// `cautionMode`. Ils datent de l'époque où il n'y avait que le chèque — c'est
+// donc ce qu'on répond pour eux, sans réécrire le bloc de données.
+function locCautionMode(l){ return (l && l.cautionMode==='cb') ? 'cb' : 'cheque'; }
+const CAUTION_MODE_LBL={ cheque:'chèque conservé, non encaissé',
+                         cb:'préautorisation bancaire' };
+function lcCautionMode(){
+  return (document.getElementById('lc-mode-cb')||{}).checked ? 'cb' : 'cheque';
+}
+// Appelée par les boutons de caution. `lcMajLiv` ne peut pas s'en charger :
+// elle abandonne dès que la livraison n'est pas programmée, et le choix du
+// moyen doit s'afficher dans tous les cas.
+window.lcMajCaution=function(){
+  const due=lcCautionChoisie()!=='non';
+  const m=document.getElementById('lc-caut-mode');
+  if(m) m.style.display=due?'':'none';
+  // Pas de chèque à récupérer quand la garantie est une préautorisation : on
+  // retire la case plutôt que de la laisser cocher une tâche impossible.
+  const cb=lcCautionMode()==='cb';
+  const l=document.getElementById('lc-liv-cheque-l');
+  if(l) l.style.display=(due&&!cb)?'':'none';
+  const c=document.getElementById('lc-liv-cheque');
+  if(c&&(cb||!due)) c.checked=false;
+  if(typeof lcMajLiv==='function') lcMajLiv();
+};
 function lcCautionChoisie(){
   if((document.getElementById('lc-caut-oui')||{}).checked) return 'oui';
   if((document.getElementById('lc-caut-att')||{}).checked) return 'attente';
@@ -6513,6 +6551,7 @@ function saveLoc(){
     // plus si le cheque est dans le tiroir ou toujours attendu.
     caution:(lcCautionChoisie()!=='non'),
     cautionEtat:lcCautionChoisie(),
+    cautionMode:lcCautionMode(),
     status:'nouveau'   // dossier débuté, pas encore saisi dans le logiciel de facturation
   };
   // Date de fin : on ne stocke un écart que si elle diffère du calcul —
@@ -6794,6 +6833,37 @@ function delMatType(id){
 }
 
 function locCautionMontant(l){ return (l&&l.cautionMontant)||((LOC_TYPES[l&&l.type]||{}).caution)||200; }
+// CE QUE LE CONTRAT DIT DE LA CAUTION — un seul endroit. Le tableau du haut et
+// les conditions générales ne doivent jamais pouvoir se contredire : c'est un
+// document que le patient signe en deux exemplaires.
+//
+// LA CAUTION N'EST PAS ENCAISSÉE, et c'est tout l'objet de ce texte. Le chèque
+// est gardé en garantie ; la carte est bloquée sans être débitée. Le contrat
+// dit aussi dans quels cas elle peut l'être — sans cette phrase, la garantie
+// n'en est pas une.
+function locCautionContrat(l){
+  const m=locCautionMontant(l).toFixed(2).replace('.',',');
+  const cas='en cas de non-restitution, de perte ou de détérioration du matériel, '
+    + 'ou de période de location non couverte par l\'Assurance Maladie restée impayée';
+  if(locCautionMode(l)==='cb'){
+    return {
+      cellule:m+' € — préautorisation bancaire (somme bloquée, non débitée)',
+      clause:'La caution de <strong>'+m+' €</strong> fait l\'objet d\'une <strong>préautorisation '
+        + 'sur la carte bancaire</strong> du patient : la somme est bloquée, elle n\'est pas débitée. '
+        + 'L\'autorisation est libérée au retour du matériel complet et en bon état. '
+        + 'La durée d\'une préautorisation étant limitée par la banque, la pharmacie pourra en demander '
+        + 'le renouvellement si la location se prolonge au-delà de cette durée. '
+        + 'La somme ne pourra être débitée qu\''+cas+'.'
+    };
+  }
+  return {
+    cellule:m+' € — chèque conservé, non encaissé',
+    clause:'La caution de <strong>'+m+' €</strong> est remise par <strong>chèque, qui n\'est pas '
+      + 'encaissé</strong> : il est conservé par la pharmacie à titre de garantie pendant toute la durée '
+      + 'de la location, puis restitué au patient au retour du matériel complet et en bon état. '
+      + 'Il ne pourra être encaissé qu\''+cas+'.'
+  };
+}
 function locTypeLabel(t){ return (LOC_TYPES[t]&&LOC_TYPES[t].lbl)||t||'—'; }
 
 // ── Lien vivant avec l'annuaire patients ──
@@ -6943,7 +7013,17 @@ function openRetour(id){
   // Une caution restee EN ATTENTE n'a jamais ete encaissee : demander si on la
   // rend n'a aucun sens, et la question laisserait croire qu'un cheque existe.
   document.getElementById('ret-caution-wrap').style.display=(locCautionEtat(l)==='oui')?'block':'none';
-  const rcl=document.getElementById('ret-caut-lbl'); if(rcl) rcl.textContent='Caution de '+locCautionMontant(l)+' € restituée ?';
+  // RENDRE UN CHÈQUE ET LIBÉRER UNE PRÉAUTORISATION NE SONT PAS LE MÊME GESTE.
+  // Demander « avez-vous rendu le chèque ? » sur un dossier garanti par carte,
+  // c'est envoyer quelqu'un chercher un papier qui n'existe pas.
+  const parCb=locCautionMode(l)==='cb';
+  const rcl=document.getElementById('ret-caut-lbl');
+  if(rcl) rcl.textContent=(parCb?'Préautorisation de ':'Chèque de caution de ')
+    +locCautionMontant(l)+' € '+(parCb?'libérée ?':'rendu ?');
+  const rco=document.getElementById('ret-caut-oui-lbl');
+  if(rco) rco.textContent=parCb?'Oui, préautorisation libérée':'Oui, chèque rendu au patient';
+  const rcn=document.getElementById('ret-caut-non-lbl');
+  if(rcn) rcn.textContent=parCb?'Non, toujours bloquée':'Non, chèque conservé';
   document.getElementById('retour-info').innerHTML=
     `<strong>${l.nom} ${l.prenom}</strong> · ${locTypeLabel(l.type)}${l.num?' · N° '+l.num:''}<br>
      <span style="font-size:.78rem;color:var(--gray-500)">${locTel(l)?ico('telephone')+' '+locTel(l)+' · ':''}Début : ${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'} · Fin théorique : ${locDateFin(l)}</span>`;
@@ -8057,6 +8137,7 @@ function genContrat(){
     // pas encore encaissee.
     caution:(lcCautionChoisie()!=='non'),
     cautionEtat:lcCautionChoisie(),
+    cautionMode:lcCautionMode(),
   };
   printContrat(l);
 }
@@ -8132,7 +8213,7 @@ ${[1,2].map(ex=>`
       <tr><td>Date de début</td><td>${l.dateDebut?new Date(l.dateDebut).toLocaleDateString('fr-FR'):'—'}</td></tr>
       <tr><td>Durée prescrite</td><td>${l.duree?l.duree+' semaine(s)':'—'}</td></tr>
       <tr><td>Date de fin théorique</td><td>${fin}</td></tr>
-      <tr><td>Caution</td><td>${l.caution?locCautionMontant(l).toFixed(2).replace('.',',')+' € (encaissée à la remise du matériel)':'Non applicable'}</td></tr>
+      <tr><td>Caution</td><td>${l.caution?locCautionContrat(l).cellule:'Non applicable'}</td></tr>
     </table>
   </div>
 
@@ -8143,7 +8224,7 @@ ${[1,2].map(ex=>`
       <br><br>
       À défaut de restitution dans ce délai, chaque semaine de location supplémentaire sera facturée au tarif en vigueur et sera à la charge exclusive du patient, en dehors de toute prise en charge par l'Assurance Maladie.
       <br><br>
-      ${l.caution?`La caution de <strong>${locCautionMontant(l).toFixed(2).replace('.',',')} €</strong> est encaissée à la remise du matériel. Elle sera intégralement restituée lors du retour du matériel complet et en bon état, et après règlement de toute période de location non couverte par l'Assurance Maladie.`:''}
+      ${l.caution?locCautionContrat(l).clause:''}
       <br><br>
       Le patient reconnaît avoir pris connaissance des présentes conditions et s'engage à les respecter.
     </div>
