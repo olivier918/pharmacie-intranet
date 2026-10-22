@@ -165,6 +165,19 @@ t('un changement d’état part tout de suite, sans attendre les 600 ms (piège 
 // LE PIÈGE N°9. La resynchronisation rappelle cpRender toutes les huit
 // secondes. Si la saisie se trouvait dans le morceau redessiné, le nom du
 // laboratoire qu'on est en train de taper disparaîtrait sous les doigts.
+console.log('\nLa question « tout ou en partie »');
+t('elle est posée en toutes lettres, pas devinée',
+  /Tout ce qui était commandé est-il arrivé \?/.test(src)
+  && /Oui, tout est arrivé/.test(src) && /Non, il en manque/.test(src));
+t('ELLE VIT SUR LE CORPS DE LA PAGE, PAS DANS LA LISTE — sinon elle s’évapore en huit secondes',
+  /document\.body\.appendChild/.test(src)
+  && !/CP_SECTION[\s\S]{0,400}cp-ov/.test(src));
+t('répondre « tout » archive la ligne',
+  /window\.cpMarquer\(id, tout \? 'recu' : 'recu_partiel'\);/.test(src));
+t('recevoir sans commande notée comble le trou au lieu de refuser le geste',
+  /if \(!c\.commandeLe\) \{ c\.commandeLe = Date\.now\(\)/.test(src));
+t('une ligne close s’appelle « archivée »', /' Archivées <b>'/.test(src));
+
 console.log('\nLa saisie n’est pas dans la partie redessinée (piège n°9)');
 const rendu = src.slice(src.indexOf('window.cpRender = function'), src.indexOf('function cpRemplirAnnuaire'));
 t('cpRender ne touche qu’aux listes', /z\.innerHTML = h;/.test(rendu)
@@ -183,18 +196,24 @@ t('les mêmes classes, donc le même dessin — rien n’a été recopié',
 t('le style vient d’index.html, le module n’en redéfinit pas',
   /\.status-stepper\{/.test(ix) && !/'\.status-stepper\{/.test(src));
 t('TROIS RONDS, PAS QUATRE', (src.match(/\{ e: '/g) || []).length === 3);
-t('ON N’AVANCE PAS EN CLIQUANT SUR UN ROND — « complète ou partielle » se demande en toutes lettres',
-  /: ' disabled'/.test(src) && /Tout reçu/.test(src) && /Reçu en partie/.test(src));
-t('le rond qui fait reculer est le seul cliquable, et il le dit',
-  /title="Revenir à cette étape"/.test(src));
+// L'ESCALIER EST LA COMMANDE, PAS UN VOYANT. Aucun bouton d'action à côté de
+// la ligne : on clique sur la marche pour la valider, comme sur les livraisons.
+t('CLIQUER SUR UNE MARCHE LA VALIDE',
+  /onclick="cpEtapeClic\(/.test(src) && /window\.cpEtapeClic = function/.test(src));
+t('... et il n’y a plus aucun bouton d’action à côté', !/cpActions/.test(src));
+t('la marche qu’on occupe ne répond pas — sauf la partielle, par où l’on complète',
+  /const inerte = \(i === cur\) && !\(dernier && part\);/.test(src));
+t('chaque marche cliquable dit ce qu’elle fera', /title="' \+ E\(CP_TITRE\[i\]\)/.test(src));
+t('RECULER DE PLUS D’UN CRAN SE CONFIRME — ça efface une commande déjà passée',
+  /Remettre « ' \+ \(c\.labo \|\| ''\) \+ ' » à commander/.test(src));
 t('la marche partielle est ambrée et nommée',
   /cp-part/.test(src) && /'Partielle'/.test(src));
 
 console.log('\nUne réception partielle reste un travail en cours');
 t('elle a son propre groupe, avant l’historique',
   /Reçues en partie — reste à recevoir/.test(src));
-t('... et deux sorties : compléter, ou recommander',
-  /Le reste est arrivé/.test(src) && /À recommander/.test(src));
+t('... et on la complète en recliquant sur sa marche',
+  /dernier && part/.test(src));
 t('l’historique ne retient que les lignes closes',
   /cpParEtat\(l, 'recu'\)/.test(src.slice(src.indexOf('function cpHistorique'), src.indexOf('// ── Les gestes'))));
 

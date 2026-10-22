@@ -199,14 +199,14 @@
     { e: 'commande', lbl: 'Commandée', ico: 'commandes' },
     { e: 'recu', lbl: 'Réceptionnée', ico: 'boite-reception' }
   ];
+  const CP_TITRE = ['Remettre à commander', 'Marquer comme commandée', 'Marquer la réception'];
   function cpIco(n) {
     return (typeof ico === 'function') ? ico(n)
       : '<svg class="ico"><use href="#ic-' + n + '"></use></svg>';
   }
   function cpStepper(c) {
     const cur = cpEtape(c), part = cpPartielle(c);
-    const retour = CP_AVANT[cpEtat(c)] || null;
-    let h = '<div class="status-stepper is-readonly cp-step"><div class="status-stepper__track">';
+    let h = '<div class="status-stepper cp-step"><div class="status-stepper__track">';
     CP_PAS.forEach(function (p, i) {
       if (i) {
         const plein = (i <= cur) ? '100%' : '0';
@@ -217,12 +217,14 @@
       const dernier = (i === 2);
       const fait = (i < cur) || (i === cur && (!dernier || !part));
       const cls = fait ? 'is-done' : (i === cur + 1 ? 'is-next' : 'is-pending');
-      const cible = retour && CP_PAS[i].e === retour;
+      // Cliquer sur la marche qu'on occupe ne fait rien — sauf la dernière en
+      // réception partielle : c'est par là qu'on dit « finalement, tout est là ».
+      const inerte = (i === cur) && !(dernier && part);
       h += '<button type="button" class="status-stepper__step ' + cls
         + (dernier && part && i === cur ? ' cp-part' : '') + '"'
-        + (cible ? ' onclick="cpMarquer(' + (+c.id) + ',\'' + retour + '\')"'
-                   + ' title="Revenir à cette étape"'
-                 : ' disabled')
+        + (inerte ? ' disabled'
+                  : ' onclick="cpEtapeClic(' + (+c.id) + ',' + i + ')"'
+                    + ' title="' + E(CP_TITRE[i]) + '"')
         + '>'
         + '<span class="status-stepper__circle">' + cpIco(dernier && part ? 'alerte' : p.ico) + '</span>'
         + '<span class="status-stepper__label">'
@@ -232,24 +234,54 @@
     return h + '</div></div>';
   }
 
-  function cpActions(c) {
-    const e = cpEtat(c);
-    if (e === 'a_passer') {
-      return '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'commande\')">Commandé</button>';
+  // ── CLIQUER SUR UNE MARCHE, C'EST LA VALIDER ──────────────────────────────
+  //
+  // Comme sur les livraisons : l'escalier n'est pas un voyant, c'est la
+  // commande. Il n'y a donc aucun bouton à côté — la ligne ne porte que ce
+  // qu'elle raconte.
+  //
+  // Reculer de plus d'un cran se confirme. C'est le geste « à recommander »
+  // d'un laboratoire qui ne reliquate pas : légitime, fréquent, mais il efface
+  // une commande déjà passée, et ça ne doit pas se faire d'un clic distrait.
+  window.cpEtapeClic = function (id, pas) {
+    if (!cpUser()) { alert('Identifiez-vous avec votre code PIN.'); return; }
+    const c = cpListe().find(x => x && x.id === id); if (!c) return;
+    const cur = cpEtape(c);
+    if (pas === 2) { cpDemanderReception(id); return; }
+    if (pas === cur) return;
+    if (pas === 0 && cpEtat(c) !== 'commande') {
+      if (!confirm('Remettre « ' + (c.labo || '') + ' » à commander ?\n\n'
+        + 'La commande et la réception déjà notées seront effacées.')) return;
     }
-    if (e === 'commande') {
-      return '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'recu\')">Tout reçu</button>'
-        + '<button class="btn bs sm" onclick="cpMarquer(' + (+c.id) + ',\'recu_partiel\')">Reçu en partie</button>';
-    }
-    if (e === 'recu_partiel') {
-      // DEUX SORTIES, ET LA PASTILLE DIT LAQUELLE. Le laboratoire gère les
-      // reliquats : le reste viendra seul, on complétera. Il ne les gère pas :
-      // ce qui manque ne viendra jamais, il faut le recommander.
-      return '<button class="btn bp sm" onclick="cpMarquer(' + (+c.id) + ',\'recu\')">Le reste est arrivé</button>'
-        + '<button class="btn bs sm" onclick="cpMarquer(' + (+c.id) + ',\'a_passer\')">À recommander</button>';
-    }
-    return '';
+    window.cpMarquer(id, pas === 0 ? 'a_passer' : 'commande');
+  };
+
+  // Le choix « tout ou en partie » vit dans une fenêtre posée sur le corps de
+  // la page, et non dans la liste : la liste est redessinée toutes les huit
+  // secondes, et une question qui disparaît en cours de lecture ne vaut rien.
+  let cpQuestionPour = null;
+  function cpDemanderReception(id) {
+    const c = cpListe().find(x => x && x.id === id); if (!c) return;
+    cpQuestionPour = id;
+    const q = document.getElementById('cp-ov-q');
+    if (q) q.textContent = c.labo || '';
+    const ov = document.getElementById('cp-ov');
+    if (ov) ov.style.display = 'flex';
   }
+  window.cpFermerReception = function () {
+    cpQuestionPour = null;
+    const ov = document.getElementById('cp-ov'); if (ov) ov.style.display = 'none';
+  };
+  window.cpRepondreReception = function (tout) {
+    const id = cpQuestionPour;
+    window.cpFermerReception();
+    if (id == null) return;
+    const c = cpListe().find(x => x && x.id === id); if (!c) return;
+    // Recevoir sans avoir noté la commande, ça arrive : elle a été passée au
+    // téléphone. On comble le trou plutôt que de refuser le geste.
+    if (!c.commandeLe) { c.commandeLe = Date.now(); c.commandePar = cpUser() ? cpUser().id : null; }
+    window.cpMarquer(id, tout ? 'recu' : 'recu_partiel');
+  };
 
   function cpTrace(c) {
     const e = cpEtat(c);
@@ -274,9 +306,8 @@
       +   '<div class="cp-trace">' + cpTrace(c) + '</div>'
       + '</div>'
       + cpStepper(c)
-      + '<div class="cp-l-a">' + cpActions(c)
-      +   '<button class="cp-x" onclick="cpRetirer(' + (+c.id) + ')" title="Retirer">✕</button>'
-      + '</div></div>';
+      + '<button class="cp-x" onclick="cpRetirer(' + (+c.id) + ')" title="Retirer cette ligne">✕</button>'
+      + '</div>';
   }
 
   function cpBloc(titre, l, vide) {
@@ -298,7 +329,7 @@
     h += cpBloc('Reçues en partie — reste à recevoir', cpParEtat(l, 'recu_partiel'), '');
     if (histo.recentes.length || histo.anciennes) {
       h += '<button type="button" class="cp-h cp-repli" onclick="cpBasculerHisto()">'
-        + (cpHistoOuvert ? '▾' : '▸') + ' Déjà reçues <b>' + histo.recentes.length + '</b>'
+        + (cpHistoOuvert ? '▾' : '▸') + ' Archivées <b>' + histo.recentes.length + '</b>'
         + (histo.anciennes ? '<span class="cp-vieux">+ ' + histo.anciennes + ' il y a plus de '
             + CP_HISTO_JOURS + ' jours</span>' : '')
         + '</button>';
@@ -342,6 +373,20 @@
   +   '<div id="cp-listes"></div>'
   + '</div>';
 
+  // Posée sur le corps de la page, JAMAIS dans la liste : la liste est
+  // redessinée toutes les huit secondes (piège n°9), et une question qui
+  // s'évapore en cours de lecture ne vaut rien.
+  const CP_FENETRE =
+    '<div class="cp-ov" id="cp-ov" style="display:none" onclick="if(event.target===this)cpFermerReception()">'
+  +   '<div class="cp-ov-b">'
+  +     '<div class="cp-ov-t">Réception — <span id="cp-ov-q"></span></div>'
+  +     '<div class="cp-ov-s">Tout ce qui était commandé est-il arrivé ?</div>'
+  +     '<button class="btn bp" onclick="cpRepondreReception(true)">Oui, tout est arrivé</button>'
+  +     '<button class="btn bs" onclick="cpRepondreReception(false)">Non, il en manque</button>'
+  +     '<button class="cp-ov-a" onclick="cpFermerReception()">Annuler</button>'
+  +   '</div>'
+  + '</div>';
+
   const CP_CSS = [
     '.cp-saisie{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}',
     '.cp-saisie input{flex:1;min-width:180px;padding:10px 12px;font-size:.92rem;font-family:inherit;',
@@ -362,7 +407,16 @@
     '.cp-labo{font-weight:700;font-size:.95rem}',
     '.cp-prod{font-size:.86rem;color:var(--gray-700,#444);margin-top:2px;line-height:1.5}',
     '.cp-trace{font-size:.74rem;color:var(--gray-500,#777);margin-top:3px}',
-    '.cp-l-a{display:flex;align-items:center;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}',
+    '.cp-ov{position:fixed;inset:0;background:rgba(20,30,25,.45);z-index:9500;',
+    '  display:flex;align-items:center;justify-content:center;padding:20px}',
+    '.cp-ov-b{background:#fff;border-radius:16px;padding:24px;width:min(92vw,380px);',
+    '  box-shadow:0 18px 50px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:9px}',
+    '.cp-ov-t{font-weight:700;font-size:1.05rem;color:var(--g-dark,#1D5C3A)}',
+    '.cp-ov-s{font-size:.88rem;color:var(--gray-500,#777);margin-bottom:7px;line-height:1.5}',
+    '.cp-ov-b .btn{width:100%;justify-content:center;padding:12px}',
+    '.cp-ov-a{background:none;border:none;color:var(--gray-500,#777);font:inherit;font-size:.84rem;',
+    '  cursor:pointer;padding:8px;margin-top:2px}',
+    '.cp-ov-a:hover{color:var(--gray-900,#1a1a1a)}',
     '.cp-step{flex:none;margin:0;padding:0;background:none;border:none;box-shadow:none}',
     '.cp-step .status-stepper__track{gap:0}',
     '.cp-step .status-stepper__step{width:62px}',
@@ -404,6 +458,9 @@
     st.id = 'cp-css'; st.textContent = CP_CSS;
     document.head.appendChild(st);
     hote.innerHTML = CP_SECTION;
+    const f = document.createElement('div');
+    f.innerHTML = CP_FENETRE;
+    while (f.firstChild) document.body.appendChild(f.firstChild);
     window.cpRender();
   }
   // co-module.js s'injecte sur le même événement ; l'ordre des balises `script`
