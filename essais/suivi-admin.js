@@ -43,7 +43,7 @@ const global_ = (d, f) => eval(bloc(d, f).replace(/^const /, 'globalThis.'));
 global_('const SA_ETATS =', "'fait'];");
 global_('const SA_MOIS_LBL =', "'décembre'];");
 global_('const SA_MOIS_COURT =', "'Déc'];");
-global_('const SA_GROUPES =', "'Relation Cabinet comptable'];");
+global_('const SA_GROUPES =', "Anouck'];");
 global_('const SA_INDICS = [', "\n  ];");
 
 // UN SEUL eval, AU PREMIER NIVEAU. Evaluer dans le rappel d'un `forEach`
@@ -320,10 +320,16 @@ t('un mois archivé ne se retouche que par un administrateur',
   /return mois === saMoisDe\(new Date\(\)\) \|\| saAdmin\(\);/.test(src));
 
 console.log('\nLe modèle ne se sème pas tout seul');
-t('LES VINGT LIGNES DU TABLEAU PAPIER SONT PROPOSÉES, JAMAIS IMPOSÉES',
-  /window\.saInstallerDepart = function/.test(src) && SA_DEPART_LONGUEUR() === 20);
-t('... et seulement si le modèle est vide',
-  /if \(l\.length\) \{ alert\('Le modèle contient déjà des tâches\.'\); return; \}/.test(src));
+t('les dix-neuf lignes du tableau papier sont là',
+  /window\.saInstallerDepart = function/.test(src) && SA_DEPART_LONGUEUR() === 19);
+// LA DERNIERE LIGNE VIOLETTE DE LA FEUILLE EST UN INTITULE DE RUBRIQUE, pas une
+// tache : elle porte la couleur des bandeaux, pas celle des lignes. La prendre
+// pour une tache aurait donne une case a cocher pour un titre de chapitre.
+t('« Organisation de la transmission… » est une rubrique, pas une tâche',
+  SA_GROUPES.indexOf('Organisation de la transmission mensuelle avec Olivier & Anouck') > 0
+  && !/\['Relation Cabinet comptable', 'Organisation/.test(src));
+t('... et le bouton manuel ne sert qu’à REPARTIR d’une liste vidée',
+  /if \(saVraisModeles\(\)\.length\) \{ alert\('Le modèle contient déjà des tâches\.'\); return; \}/.test(src));
 function SA_DEPART_LONGUEUR() {
   const b = src.slice(src.indexOf('const SA_DEPART = ['), src.indexOf('\n  ];', src.indexOf('const SA_DEPART = [')));
   return (b.match(/\n    \['/g) || []).length;
@@ -347,8 +353,8 @@ const saModeles = () => FIX_M;
 const saIndics = () => FIX_I;
 const saStaff = () => FIX_S;
 const saAdmin = () => FIX_ADMIN;
-eval(['saInitiales', 'saCouleur', 'saQuand', 'saPastille', 'saQui', 'saLigne',
-      'saVueMois', 'saVueGrille', 'saVueIndic', 'saVueModele'].map(extraire).join('\n'));
+eval(['saVraisModeles', 'saInitiales', 'saCouleur', 'saQuand', 'saPastille', 'saQui',
+      'saLigne', 'saVueMois', 'saVueGrille', 'saVueIndic', 'saVueModele'].map(extraire).join('\n'));
 
 console.log('\nLa to-do list s’affiche');
 FIX_S = [{ id: 'JN', prenom: 'Jeanne', nom: 'Normand', col: '#2E7D54' }];
@@ -485,6 +491,60 @@ t('les ' + CITEES.size + ' gestionnaires cités sont tous exposés sur window'
   + (orphelines.length ? ' — ORPHELINES : ' + orphelines.join(', ') : ''),
   orphelines.length === 0);
 t('... et il y en a bien, sinon l’essai ne vérifierait rien', CITEES.size >= 8);
+
+
+// ── Le semis ────────────────────────────────────────────────────────────────
+// CE QUI SE JOUE. Poser les tâches du tableau papier à la première ouverture
+// est commode. Les reposer à chaque ouverture serait une catastrophe
+// tranquille : une tâche supprimée exprès reviendrait le lendemain, et au
+// troisième retour plus personne ne croirait la liste.
+console.log('\nLe semis a lieu une fois, et une seule');
+global_('const SA_REPERE =', "'sam:graine';");
+const saJournal = () => {};
+eval(extraire('saSemer'));
+
+FIX_M = [];
+t('à la première ouverture, les dix-neuf tâches sont posées', saSemer(T0) === 19);
+t('... et le repère de semis avec elles', FIX_M.some(m => m.id === SA_REPERE));
+t('... qui ne compte pas pour une tâche', saVraisModeles().length === 19);
+t('les rubriques de la feuille sont respectées',
+  saVraisModeles().filter(m => m.groupe === 'Grossistes').length === 3
+  && saVraisModeles().filter(m => m.groupe === 'Clients en compte').length === 5
+  && saVraisModeles().filter(m => m.groupe === 'Trades et mises en avant').length === 6
+  && saVraisModeles().filter(m => m.groupe === 'Relation Cabinet comptable').length === 3
+  && saVraisModeles().filter(m => !m.groupe).length === 2);
+t('elles partent toutes mensuelles, à régler ensuite ligne par ligne',
+  saVraisModeles().every(m => saMoisDuModele(m).length === 12));
+
+t('À LA DEUXIÈME OUVERTURE, RIEN N’EST REPOSÉ', saSemer(T0 + 60000) === 0);
+t('... et rien n’a bougé', saVraisModeles().length === 19);
+
+console.log('\nCe qu’on supprime exprès ne revient pas');
+FIX_M = FIX_M.filter(m => m.graine);          // on efface les dix-neuf, on garde le repère
+t('LE LENDEMAIN, LA LISTE EST TOUJOURS VIDE — c’est tout l’intérêt du repère',
+  saSemer(T0 + 86400000) === 0 && saVraisModeles().length === 0);
+
+console.log('\nUne liste écrite à la main n’est pas écrasée');
+FIX_M = [{ id: 'mien', titre: 'Ma propre tâche', ordre: 10, actif: true }];
+t('le semis se contente de poser son repère', saSemer(T0) === 0);
+t('... et la tâche écrite à la main reste seule',
+  saVraisModeles().length === 1 && saVraisModeles()[0].titre === 'Ma propre tâche');
+
+console.log('\nLe repère n’est jamais pris pour une tâche');
+t('IL NE GÉNÈRE AUCUNE LIGNE DE MOIS — il n’a pas de titre à afficher',
+  saAGenerer([{ id: SA_REPERE, graine: true, titre: '', actif: false }], [], '2026-11', T0).length === 0);
+t('... même si quelqu’un le réactivait par mégarde',
+  saAGenerer([{ id: SA_REPERE, graine: true, titre: '', actif: true }], [], '2026-11', T0).length === 0);
+FIX_M = [{ id: SA_REPERE, graine: true, actif: false },
+         { id: 'm1', titre: 'Relance des impayés', groupe: '', ordre: 10, actif: true }];
+t('il ne s’affiche pas dans le panneau des tâches récurrentes',
+  (saVueModele().match(/class="sa-mr /g) || saVueModele().match(/class="sa-mr"/g) || []).length === 1);
+
+console.log('\nL’ouverture sème avant de clôturer');
+t('L’ORDRE COMPTE : sans lui, le premier mois serait vide jusqu’au 1er suivant',
+  src.indexOf('if (saSemer(Date.now()))') < src.indexOf('saCloturer();', src.indexOf('window.saOuvrir')));
+t('et une erreur de semis ne fait pas tomber l’ouverture',
+  /catch \(e\) \{ console\.error\('saOuvrir', e\); \}/.test(src));
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

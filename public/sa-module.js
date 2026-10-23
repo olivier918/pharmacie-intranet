@@ -53,7 +53,8 @@
   // Les rubriques du tableau papier, dans son ordre. Une tâche sans rubrique
   // se range en tête : c'est là que vivent les deux lignes d'en-tête.
   const SA_GROUPES = ['', 'Grossistes', 'Clients en compte', 'Trades et mises en avant',
-                      'Relation Cabinet comptable'];
+                      'Relation Cabinet comptable',
+                      'Organisation de la transmission mensuelle avec Olivier & Anouck'];
 
   let saVue = 'todo';         // 'todo' | 'indic'
   let saMois = null;          // le mois affiché, 'AAAA-MM'
@@ -146,6 +147,7 @@
     const neuves = [];
 
     (Array.isArray(modeles) ? modeles : []).forEach(function (mod, i) {
+      if (!mod || mod.graine) return;          // le repere de semis n'est pas une tache
       if (!saDuMois(mod, mois)) return;
       // En retard depuis quand ? On remonte la chaîne des mois précédents tant
       // que l'instance du modèle existe et n'est pas faite.
@@ -436,14 +438,43 @@
     ['Trades et mises en avant', 'Suivi des paiements des opérations', null],
     ['Relation Cabinet comptable', 'Déclaration TVA sur DIGI', null],
     ['Relation Cabinet comptable', 'Envoi des relevés bancaires sur DIGI', null],
-    ['Relation Cabinet comptable', 'Pointage des factures manquantes (tableau Brunilde + suivi LCR)', null],
-    ['Relation Cabinet comptable', 'Organisation de la transmission mensuelle avec Olivier & Anouck', null]
+    ['Relation Cabinet comptable', 'Pointage des factures manquantes (tableau Brunilde + suivi LCR)', null]
   ];
+
+  // LA GRAINE NE SE RESSEME PAS. Poser les taches du tableau papier a la
+  // premiere ouverture est commode ; les reposer a chaque ouverture serait une
+  // catastrophe tranquille — une tache supprimee expres reviendrait le
+  // lendemain, et on finirait par ne plus croire la liste.
+  //
+  // Un repere invisible dit que le semis a eu lieu. Il vit dans la meme
+  // collection, il se synchronise comme le reste, et il survit a la suppression
+  // de toutes les taches : c'est exactement ce qu'on lui demande.
+  const SA_REPERE = 'sam:graine';
+  function saVraisModeles() {
+    return saModeles().filter(m => m && !m.graine);
+  }
+  function saSemer(maintenant) {
+    const l = saModeles();
+    if (l.some(m => m && (m.graine || m.id === SA_REPERE))) return 0;
+    const now = Number(maintenant) || Date.now();
+    l.push({ id: SA_REPERE, graine: true, titre: '', actif: false, cree: now, updatedAt: now });
+    // DEJA DES TACHES A LA MAIN ? On pose le repere et on ne seme rien : la
+    // liste appartient a qui l'a ecrite.
+    if (l.length > 1) return 0;
+    SA_DEPART.forEach(function (d, i) {
+      l.push({
+        id: 'sam' + now.toString(36) + i.toString(36),
+        groupe: d[0], titre: d[1], mois: d[2], ordre: (i + 1) * 10,
+        actif: true, cree: now, updatedAt: now + i
+      });
+    });
+    return SA_DEPART.length;
+  }
 
   window.saInstallerDepart = function () {
     if (!saAdmin()) { alert('Action réservée aux administrateurs.'); return; }
     const l = saModeles();
-    if (l.length) { alert('Le modèle contient déjà des tâches.'); return; }
+    if (saVraisModeles().length) { alert('Le modèle contient déjà des tâches.'); return; }
     if (!confirm('Installer les ' + SA_DEPART.length + ' tâches du tableau papier ?\n\n'
       + 'Elles seront toutes mensuelles ; chacune se règle ensuite ligne par ligne.')) return;
     const now = Date.now();
@@ -654,9 +685,9 @@
     const av = saAvancement(l);
     if (!l.length) {
       return '<div class="sa-vide">'
-        + (saModeles().length
+        + (saVraisModeles().length
             ? 'Aucune tâche pour ' + E(saMoisLbl(saMois)) + '.'
-            : 'Le modèle des tâches récurrentes est vide — ouvrez « Tâches récurrentes » ci-dessous pour partir du tableau papier.')
+            : 'Le modèle des tâches récurrentes est vide — ouvrez « Tâches récurrentes » ci-dessous pour repartir du tableau papier.')
         + '</div>';
     }
     let h = '<div class="sa-bar"><div class="sa-jauge"><i style="width:' + av.pct + '%"></i></div>'
@@ -687,7 +718,7 @@
   function saVueGrille() {
     const an = saAnnee || new Date().getFullYear();
     const tous = saTaches();
-    const mods = saTrier(saModeles());
+    const mods = saTrier(saVraisModeles());
     // Les lignes de la grille : les modèles, plus les titres ponctuels vus
     // dans l'année. Une tâche créée à la main en mars doit s'y lire aussi.
     const lignes = mods.map(m => ({ cle: 'm:' + m.id, titre: m.titre, groupe: m.groupe || '', mod: m }));
@@ -731,7 +762,7 @@
 
   function saVueModele() {
     if (!saAdmin()) return '';
-    const l = saTrier(saModeles());
+    const l = saTrier(saVraisModeles());
     let h = '<div class="sa-mod">'
       + '<button class="sa-mod-t" onclick="saModeleBasculer()">'
       +   (saModeleOuvert ? '▾' : '▸') + ' Tâches récurrentes'
@@ -1003,7 +1034,13 @@
   // L'ouverture de la rubrique clôture le mois écoulé si c'est encore à faire,
   // puis dessine. `showSec` appelle `saOuvrir` (index.html).
   window.saOuvrir = function () {
-    try { saCloturer(); } catch (e) {}
+    try {
+      // L'ORDRE COMPTE : semer d'abord, clore ensuite. Le mois en cours doit
+      // etre genere a partir des taches qu'on vient de poser, sans quoi il
+      // faudrait attendre le 1er du mois suivant pour voir quoi que ce soit.
+      if (saSemer(Date.now())) { saSave(); saJournal('Suivi admin — modèle installé', SA_DEPART.length + ' tâches récurrentes'); }
+      saCloturer();
+    } catch (e) { console.error('saOuvrir', e); }
     saMois = saMoisDe(new Date());
     saAnnee = +saMois.slice(0, 4);
     saRender(true);
