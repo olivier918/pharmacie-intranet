@@ -51,7 +51,7 @@ global_('const SA_INDICS = [', "\n  ];");
 // l'essai tomberait sur « saMoisValide is not defined » des la premiere ligne.
 eval(['saMoisDe', 'saMoisValide', 'saMoisDecale', 'saMoisLbl', 'saMoisDuModele', 'saDuMois',
  'saPeriodeLbl', 'saEtat', 'saEtatSuivant', 'saIdModele', 'saIdReport', 'saOrigine',
- 'saAGenerer', 'saTrier', 'saDuMoisListe', 'saSousActions', 'saGroupes', 'saAvancement',
+ 'saAGenerer', 'saTrier', 'saOrdreDeplace', 'saDuMoisListe', 'saSousActions', 'saGroupes', 'saAvancement',
  'saNombre', 'saEuro', 'saValeur', 'saPct', 'saReleve', 'saDateFr', 'saDateIso'
 ].map(extraire).join('\n'));
 
@@ -131,11 +131,24 @@ t('L’IDENTIFIANT EST CALCULÉ, PAS TIRÉ AU SORT — la fusion n’en garde qu
 t('... et il porte le mois et le modèle, donc il se lit',
   g[0].id === saIdModele('2026-11', g[0].modeleId));
 
-console.log('\nUn mois déjà commencé ne se regénère pas');
-t('LA PRÉSENCE D’UNE SEULE TÂCHE SUFFIT À ARRÊTER LA GÉNÉRATION',
-  saAGenerer(MODS, [{ id: 'x', mois: '2026-11' }], '2026-11', T0).length === 0);
-t('... sinon une tâche supprimée exprès reviendrait le lendemain',
+console.log('\nChaque récurrente due a sa ligne, même dans un mois commencé');
+// Le défaut du 23/10 : une action écrite à la main dans le mois, et aucune
+// récurrente ne s'affichait plus dans la to-do list.
+const AMAIN = [{ id: 'x', mois: '2026-11', titre: 'Écrite à la main' }];
+t('UNE ACTION ÉCRITE À LA MAIN N’EMPÊCHE PLUS LES RÉCURRENTES D’APPARAÎTRE',
+  saAGenerer(MODS, AMAIN, '2026-11', T0).filter(x => x.modeleId).length === 2);
+t('un mois complet ne produit rien de plus — compléter deux fois ne double rien',
   saAGenerer(MODS, g, '2026-11', T0).length === 0);
+t('UNE RÉCURRENTE CRÉÉE EN COURS DE MOIS EST À FAIRE CE MOIS-CI',
+  (() => { const n = saAGenerer(MODS.concat([{ id: 'm5', titre: 'Nouvelle', ordre: 50 }]), g, '2026-11', T0);
+           return n.length === 1 && n[0].modeleId === 'm5' && n[0].id === saIdModele('2026-11', 'm5'); })());
+t('une ligne déjà là sous l’ancien identifiant n’est pas doublée',
+  saAGenerer(MODS, [{ id: 'autre', mois: '2026-11', modeleId: 'm1' }], '2026-11', T0)
+    .filter(x => x.modeleId === 'm1').length === 0);
+t('LE REPORT D’UNE PONCTUELLE NE SE REPOSE PAS DANS UN MOIS COMMENCÉ — effacé, il ne revient pas',
+  !saAGenerer(MODS, [{ id: 'p9', mois: '2026-10', titre: 'Ponctuelle', etat: 'a_faire' },
+                     { id: 'y', mois: '2026-11', modeleId: 'm1' }], '2026-11', T0)
+    .some(x => x.titre === 'Ponctuelle'));
 t('un mois invalide ne produit rien', saAGenerer(MODS, [], 'octobre', T0).length === 0);
 
 // ── Le report, et c'est le cœur ─────────────────────────────────────────────
@@ -186,6 +199,33 @@ t('L’ORIGINE RESTE LA PREMIÈRE — sinon l’identifiant s’allonge chaque m
   rep2.id === saIdReport('2026-12', 'p1') && rep2.origine === 'p1');
 t('... et il ne contient pas l’identifiant du mois précédent',
   rep2.id.indexOf('2026-11') < 0);
+
+// ── L'ordre réglé à la main ─────────────────────────────────────────────────
+console.log('\nL’ordre des récurrentes se règle');
+const ORD = [
+  { id: 'a', titre: 'A', groupe: 'Grossistes', ordre: 10 },
+  { id: 'b', titre: 'B', groupe: 'Clients en compte', ordre: 20 },
+  { id: 'c', titre: 'C', groupe: 'Grossistes', ordre: 30 },
+  { id: 'd', titre: 'D', groupe: 'Grossistes', ordre: 30 },
+  { id: 'sam:graine', graine: true, ordre: 0 }
+];
+const od = saOrdreDeplace(ORD, 'c', -1);
+const rg = id => od.find(o => o.id === id).ordre;
+t('MONTER UNE TÂCHE LA FAIT PASSER DEVANT LA PRÉCÉDENTE DE SA RUBRIQUE', rg('c') < rg('a'));
+t('... sans sauter par-dessus une autre rubrique', rg('c') === 10 && rg('b') === 20 && rg('a') === 30);
+t('TOUTE LA LISTE EST RENUMÉROTÉE, sans rang égal', new Set(od.map(o => o.ordre)).size === od.length && od.length === 4);
+t('le repère de semis n’est pas rangé', !od.some(o => o.id === 'sam:graine'));
+t('la première de sa rubrique ne monte pas', saOrdreDeplace(ORD, 'a', -1) === null);
+t('la dernière de sa rubrique ne descend pas', saOrdreDeplace(ORD, 'b', 1) === null);
+t('descendre est l’inverse de monter',
+  (() => { const o = saOrdreDeplace(ORD, 'a', 1); const r = id => o.find(x => x.id === id).ordre; return r('a') > r('c'); })());
+const MOD2 = [{ id: 'm1', ordre: 20 }, { id: 'm2', ordre: 10 }];
+const LIG = [{ id: 'l1', mois: '2026-11', modeleId: 'm1', ordre: 10 }, { id: 'l2', mois: '2026-11', modeleId: 'm2', ordre: 20 },
+             { id: 'l3', mois: '2026-11', ordre: 900, titre: 'Ponctuelle' }];
+t('L’ORDRE DU MOIS SE LIT SUR LE MODÈLE — les lignes du mois ne sont pas réécrites',
+  saDuMoisListe(LIG, '2026-11', MOD2).map(x => x.id).join(',') === 'l2,l1,l3');
+t('sans modèle fourni, la ligne garde son propre rang',
+  saDuMoisListe(LIG, '2026-11').map(x => x.id).join(',') === 'l1,l2,l3');
 
 // ── Le classement ───────────────────────────────────────────────────────────
 console.log('\nL’écran suit l’ordre du tableau papier');

@@ -139,9 +139,17 @@
   function saAGenerer(modeles, taches, mois, maintenant) {
     if (!saMoisValide(mois)) return [];
     const t = Array.isArray(taches) ? taches : [];
-    // LE MOIS DÉJÀ COMMENCÉ NE SE REGÉNÈRE PAS. S'il porte une seule tâche,
-    // c'est qu'il a été généré — regénérer ressusciterait ce qu'on a supprimé.
-    if (t.some(x => x && x.mois === mois)) return [];
+    // CHAQUE TÂCHE RÉCURRENTE DUE A SA LIGNE, TÂCHE PAR TÂCHE — pas mois par
+    // mois. La première version s'arrêtait dès qu'un mois portait une seule
+    // ligne : une action ajoutée à la main avant l'installation du modèle, ou
+    // une tâche récurrente créée en cours de mois, et les récurrentes
+    // n'apparaissaient jamais dans la liste. Le modèle disait « à faire »,
+    // l'écran ne montrait rien.
+    //
+    // Compléter ne ressuscite rien : une instance de récurrente ne se supprime
+    // pas à l'écran (on suspend ou on retire le MODÈLE), et son identifiant est
+    // calculé — la compléter deux fois, sur deux postes, donne une seule ligne.
+    const dejaCommence = t.some(x => x && x.mois === mois);
     const now = Number(maintenant) || Date.now();
     const prec = saMoisDecale(mois, -1);
     const neuves = [];
@@ -149,6 +157,8 @@
     (Array.isArray(modeles) ? modeles : []).forEach(function (mod, i) {
       if (!mod || mod.graine) return;          // le repere de semis n'est pas une tache
       if (!saDuMois(mod, mois)) return;
+      const id = saIdModele(mois, mod.id);
+      if (t.some(x => x && x.mois === mois && (x.id === id || x.modeleId === mod.id))) return;
       // En retard depuis quand ? On remonte la chaîne des mois précédents tant
       // que l'instance du modèle existe et n'est pas faite.
       let retard = null, m = prec, garde = 0;
@@ -158,7 +168,7 @@
         retard = m; m = saMoisDecale(m, -1);
       }
       neuves.push({
-        id: saIdModele(mois, mod.id), mois: mois, modeleId: mod.id, parent: null,
+        id: id, mois: mois, modeleId: mod.id, parent: null,
         titre: String(mod.titre || ''), groupe: String(mod.groupe || ''),
         ordre: Number(mod.ordre) || (i + 1) * 10,
         etat: 'a_faire', par: '', le: null, reportDe: retard,
@@ -168,7 +178,10 @@
 
     // Les tâches ponctuelles non faites suivent, elles aussi. Une tâche créée à
     // la main pour un cas précis ne disparaît pas parce qu'on a changé de page.
-    t.forEach(function (x) {
+    // ELLES, EN REVANCHE, NE SE REPORTENT QU'À L'OUVERTURE DU MOIS : un report
+    // se supprime à l'écran, et le reposer à chaque ouverture ferait revenir
+    // le lendemain ce qu'on vient d'effacer.
+    if (!dejaCommence) t.forEach(function (x) {
       if (!x || x.mois !== prec || x.modeleId || x.parent) return;
       if (saEtat(x) === 'fait') return;
       const org = saOrigine(x);
@@ -186,16 +199,43 @@
   }
 
   // ── Le tri et les groupes ─────────────────────────────────────────────────
-  function saTrier(l) {
+  // L'ORDRE D'UNE RÉCURRENTE SE LIT SUR SON MODÈLE, pas sur la ligne du mois.
+  // Recopier le nouveau rang dans chaque ligne du mois les réécrirait toutes :
+  // la fusion garde l'enregistrement entier le plus récent, et la coche posée
+  // au même moment par un collègue serait perdue. Ranger le modèle suffit.
+  function saTrier(l, modeles) {
+    const mo = {};
+    (Array.isArray(modeles) ? modeles : []).forEach(function (m) { if (m && m.id != null) mo[m.id] = m; });
+    const rang = x => (x && x.modeleId && !x.parent && mo[x.modeleId])
+      ? (Number(mo[x.modeleId].ordre) || 0) : (Number(x && x.ordre) || 0);
     return (Array.isArray(l) ? l.slice() : []).sort(function (a, b) {
-      const oa = Number(a && a.ordre) || 0, ob = Number(b && b.ordre) || 0;
+      const oa = rang(a), ob = rang(b);
       if (oa !== ob) return oa - ob;
       return String((a && a.titre) || '').localeCompare(String((b && b.titre) || ''), 'fr');
     });
   }
-  function saDuMoisListe(taches, mois) {
+  function saDuMoisListe(taches, mois, modeles) {
     return saTrier((Array.isArray(taches) ? taches : [])
-      .filter(t => t && t.mois === mois && !t.parent));
+      .filter(t => t && t.mois === mois && !t.parent), modeles);
+  }
+
+  // UN SEUL ENDROIT ÉCRIT UN ORDRE. Rendue pure pour être éprouvée : elle rend
+  // la liste entière renumérotée, ou null si le déplacement est impossible.
+  // On déplace À L'INTÉRIEUR DE LA RUBRIQUE : l'écran range par rubrique, et
+  // passer devant une tâche d'une autre rubrique ne changerait rien à l'œil.
+  // TOUT est renuméroté, 10, 20, 30… : ne retoucher que les deux tâches
+  // échangées laisserait des rangs égaux départagés au hasard.
+  function saOrdreDeplace(modeles, id, sens) {
+    const l = saTrier((Array.isArray(modeles) ? modeles : []).filter(m => m && !m.graine));
+    const cible = l.find(m => m.id === id);
+    if (!cible) return null;
+    const g = String(cible.groupe || '');
+    const dans = l.filter(m => String(m.groupe || '') === g);
+    const i = dans.indexOf(cible), j = i + (Number(sens) < 0 ? -1 : 1);
+    if (j < 0 || j >= dans.length) return null;
+    const pa = l.indexOf(dans[i]), pb = l.indexOf(dans[j]);
+    l[pa] = dans[j]; l[pb] = dans[i];
+    return l.map((m, k) => ({ id: m.id, ordre: (k + 1) * 10 }));
   }
   function saSousActions(taches, parentId) {
     return saTrier((Array.isArray(taches) ? taches : [])
@@ -322,8 +362,10 @@
   }
 
   // La clôture n'est pas un bouton : c'est une conséquence du calendrier. Elle
-  // s'exécute à l'ouverture du module, et elle est sans effet si le mois est
-  // déjà là. Deux postes peuvent la lancer en même temps sans dégât.
+  // s'exécute à l'ouverture du module, et après chaque retouche du modèle :
+  // une récurrente créée ou réactivée le 23 est à faire ce mois-ci, pas
+  // seulement le mois prochain. Sans effet quand tout est déjà là ; deux
+  // postes peuvent la lancer en même temps sans dégât.
   function saCloturer() {
     const mois = saMoisDe(new Date());
     const l = saTaches();
@@ -331,7 +373,7 @@
     if (!neuves.length) return 0;
     neuves.forEach(t => l.push(t));
     saSave();
-    saJournal('Suivi admin — nouveau mois', saMoisLbl(mois) + ' : ' + neuves.length + ' tâche(s)');
+    saJournal('Suivi admin — tâches du mois posées', saMoisLbl(mois) + ' : ' + neuves.length + ' tâche(s)');
     return neuves.length;
   }
 
@@ -485,7 +527,7 @@
         actif: true, cree: now, updatedAt: now + i
       });
     });
-    saSave(); saRender(true);
+    saSave(); saCloturer(); saRender(true);
     saJournal('Suivi admin — modèle installé', SA_DEPART.length + ' tâches récurrentes');
   };
 
@@ -502,7 +544,7 @@
       ordre: (l.length + 1) * 10, actif: true, cree: now, updatedAt: now
     });
     if (champ) { champ.value = ''; champ.focus(); }
-    saSave(); saRender(true);
+    saSave(); saCloturer(); saRender(true);
   };
 
   window.saModeleMois = function (id, n) {
@@ -516,7 +558,7 @@
     // interprète la liste vide comme « tous les mois », et on le dit à l'écran.
     mod.mois = cur.length === 12 ? null : cur.slice().sort((a, b) => a - b);
     mod.updatedAt = Date.now();
-    saSave(); saRender(true);
+    saSave(); saCloturer(); saRender(true);
   };
 
   window.saModeleTous = function (id) {
@@ -524,7 +566,7 @@
     const mod = saModeles().find(x => x && x.id === id);
     if (!mod) return;
     mod.mois = null; mod.updatedAt = Date.now();
-    saSave(); saRender(true);
+    saSave(); saCloturer(); saRender(true);
   };
 
   window.saModeleActif = function (id) {
@@ -533,7 +575,7 @@
     if (!mod) return;
     mod.actif = (mod.actif === false);
     mod.updatedAt = Date.now();
-    saSave(); saRender(true);
+    saSave(); saCloturer(); saRender(true);
   };
 
   window.saModeleSupprimer = function (id) {
@@ -545,6 +587,21 @@
       + 'Les mois déjà passés gardent leur trace ; elle ne reviendra plus les mois suivants.')) return;
     if (typeof markDeleted === 'function') markDeleted('saModeles', l[i].id);
     l.splice(i, 1);
+    saSave(); saRender(true);
+  };
+
+  // Chaque modèle renuméroté reçoit un `updatedAt` neuf : sans lui, la copie
+  // d'un poste resté en arrière rétablirait l'ancien ordre quelques secondes
+  // après qu'on l'a réglé.
+  window.saModeleDeplacer = function (id, sens) {
+    if (!saAdmin()) return;
+    const ordre = saOrdreDeplace(saModeles(), id, sens);
+    if (!ordre) return;
+    const now = Date.now();
+    ordre.forEach(function (o) {
+      const m = saModeles().find(x => x && x.id === o.id);
+      if (m) { m.ordre = o.ordre; m.updatedAt = now; }
+    });
     saSave(); saRender(true);
   };
 
@@ -680,7 +737,7 @@
   }
 
   function saVueMois() {
-    const l = saDuMoisListe(saTaches(), saMois);
+    const l = saDuMoisListe(saTaches(), saMois, saModeles());
     const tous = saTaches();
     const av = saAvancement(l);
     if (!l.length) {
@@ -775,11 +832,22 @@
         + '<button class="btn bp sm" onclick="saInstallerDepart()">Partir du tableau papier (' + SA_DEPART.length + ' tâches)</button>'
         + '</div>';
     } else {
-      l.forEach(function (m) {
+      // Rangé comme la to-do list, rubrique par rubrique : les flèches
+      // déplacent à l'intérieur de la rubrique, ce qu'on voit est ce qu'on range.
+      saGroupes(l).forEach(function (g) {
+      const dans = l.filter(m => String(m.groupe || '') === g);
+      h += '<div class="sa-g">' + E(g || 'Sans rubrique') + '</div>';
+      dans.forEach(function (m, k) {
         const mois = saMoisDuModele(m);
         h += '<div class="sa-mr' + (m.actif === false ? ' sa-mr-off' : '') + '">'
-          + '<div class="sa-mr-h"><b>' + E(m.titre || '') + '</b>'
-          + (m.groupe ? '<span class="sa-mr-g">' + E(m.groupe) + '</span>' : '')
+          + '<div class="sa-mr-h">'
+          + '<span class="sa-mr-o">'
+          +   '<button class="sa-mini" title="Monter" aria-label="Monter"' + (k === 0 ? ' disabled' : '')
+          +     ' onclick="saModeleDeplacer(\'' + E(m.id) + '\',-1)">↑</button>'
+          +   '<button class="sa-mini" title="Descendre" aria-label="Descendre"' + (k === dans.length - 1 ? ' disabled' : '')
+          +     ' onclick="saModeleDeplacer(\'' + E(m.id) + '\',1)">↓</button>'
+          + '</span>'
+          + '<b>' + E(m.titre || '') + '</b>'
           + '<span class="sa-mr-p">' + E(saPeriodeLbl(m)) + '</span>'
           + '<button class="sa-mini" title="' + (m.actif === false ? 'Réactiver' : 'Suspendre') + '" '
           +   'onclick="saModeleActif(\'' + E(m.id) + '\')">' + (m.actif === false ? '▷' : '❙❙') + '</button>'
@@ -791,6 +859,7 @@
         }
         h += '<button class="sa-mm sa-mm-all" onclick="saModeleTous(\'' + E(m.id) + '\')">Tous</button>';
         h += '</div></div>';
+      });
       });
     }
     h += '<div class="sa-mr-add">'
@@ -958,6 +1027,8 @@
   .sa-mr-off{opacity:.5}
   .sa-mr-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
   .sa-mr-h b{font-size:.88rem;flex:1}
+  .sa-mr-o{display:inline-flex;gap:1px}
+  .sa-mini:disabled{opacity:.25;cursor:default;background:transparent;border-color:transparent}
   .sa-mr-g{font-size:.7rem;color:var(--gray-500,#7a8089);background:var(--gray-100,#f2f4f6);padding:2px 8px;border-radius:20px}
   .sa-mr-p{font-size:.7rem;color:var(--g-dark,#1D5C3A);background:#E6F2EA;padding:2px 8px;border-radius:20px}
   .sa-mr-m{display:flex;gap:3px;margin-top:7px;flex-wrap:wrap}
