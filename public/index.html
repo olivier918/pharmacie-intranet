@@ -2800,6 +2800,14 @@ let liens = [];
 let reunionThemes = [], reunions = [];
 // Les commandes a passer : le suivi en tete de la rubrique Commandes.
 let cmdPasser = [];
+// SUIVI ADMINISTRATIF. Trois collections, et UNE LIGNE PAR TACHE ET PAR MOIS :
+// le serveur fusionne enregistrement par enregistrement, donc deux personnes
+// qui cochent deux taches differentes dans la meme fenetre de huit secondes
+// doivent ecrire dans deux lignes differentes, sans quoi l'une des deux est
+// perdue sans message et sans trace.
+let saModeles = [];   // les taches recurrentes : le modele
+let saTaches = [];    // une tache d'un mois donne
+let saIndics = [];    // un releve chiffre par mois
 // Ordonnances deposees par les patients depuis /o. Collection a identifiant :
 // un depot non rattache est efface a sept jours par la purge serveur, un depot
 // rattache a un dossier devient une piece de ce dossier (voir depots.js).
@@ -2923,7 +2931,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','etiqLibres','ruptures','cmdPasser'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','etiqLibres','ruptures','cmdPasser','saModeles','saTaches','saIndics'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2944,6 +2952,9 @@ function _collRef(n){ switch(n){
   case 'liens':return liens;
   case 'reunionThemes':return reunionThemes; case 'reunions':return reunions;
   case 'cmdPasser':return cmdPasser;
+  case 'saModeles':return saModeles;
+  case 'saTaches':return saTaches;
+  case 'saIndics':return saIndics;
   case 'depots':return depots;
   case 'laboratoires':return laboratoires;
   case 'locProvenances':return locProvDB;
@@ -3001,7 +3012,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,etiqLibres,ruptures,cmdPasser,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,etiqLibres,ruptures,cmdPasser,saModeles,saTaches,saIndics,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -3099,6 +3110,9 @@ async function loadAll(){
     if(Array.isArray(data.reunionThemes))reunionThemes=data.reunionThemes;
     if(Array.isArray(data.reunions))reunions=data.reunions;
     if(Array.isArray(data.cmdPasser))cmdPasser=data.cmdPasser;
+    if(Array.isArray(data.saModeles))saModeles=data.saModeles;
+    if(Array.isArray(data.saTaches))saTaches=data.saTaches;
+    if(Array.isArray(data.saIndics))saIndics=data.saIndics;
     if(Array.isArray(data.depots))depots=data.depots;
     if(Array.isArray(data.laboratoires))laboratoires=data.laboratoires;
     if(Array.isArray(data.reactions))reactions=data.reactions;
@@ -3163,6 +3177,13 @@ setInterval(async()=>{
         // cpRender ne redessine QUE les listes : la saisie vit a cote, et ce
         // qu'on y tape ne peut pas etre efface (piege n°9).
         if(d.cmdPasser){ cmdPasser=d.cmdPasser; if(window.cpRender)cpRender(); }
+        if(d.saModeles){ saModeles=d.saModeles; }
+        if(d.saIndics){ saIndics=d.saIndics; }
+        // LE REDESSIN DU PLUS JEUNE MODULE NE DOIT PAS EMPORTER LES AUTRES.
+        // Ce qui suit dans cette boucle rafraichit les depots, les laboratoires
+        // et les reactions : une exception ici les laisserait tous sur la copie
+        // d'il y a huit secondes, sans que rien ne le dise.
+        if(d.saTaches){ saTaches=d.saTaches; try{ if(window.saRender)saRender(); }catch(e){ console.error('saRender',e); } }
         if(d.depots){ depots=d.depots; if(window.odRender)odRender(); }
         if(d.laboratoires){ laboratoires=d.laboratoires; if(window.lbRendBO)lbRendBO(); }
         // Les barres de reaction se redessinent seules : reconstruire la
@@ -3705,6 +3726,7 @@ const SEC_LABEL = {
   caisse:'Caisse — clôture du soir',
   temperatures:'Températures — armoires réfrigérées',
   litiges:'Litiges & factures manquantes',
+  suiviadmin:'Suivi administratif',
   backoffice:'Back Office'
 };
 
@@ -3755,6 +3777,10 @@ function showSec(name,btn){
   // La rubrique Offres relit le serveur a chaque ouverture : le compteur
   // d'ouvertures et l'offre du jour changent sans qu'on y touche.
   if(name==='offres'&&window.ofCharger)ofCharger();
+  // Le suivi administratif cloture le mois ecoule A L'OUVERTURE. Pas de minuterie :
+  // un poste laisse allume toute la nuit ne doit pas etre le seul a decider que
+  // novembre a commence, et l'operation est sans effet si le mois est deja la.
+  if(name==='suiviadmin'&&window.saOuvrir)saOuvrir();
 }
 
 // Bascule le volet : desktop = collapse/expand persistant ; mobile = drawer open/close
@@ -13202,6 +13228,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="rc-module.js"></script>
 <script src="co-module.js"></script>
 <script src="cp-module.js"></script>
+<script src="sa-module.js"></script>
 <script src="rp-module.js"></script>
 <script src="vq-module.js"></script>
 <script src="et-module.js"></script>

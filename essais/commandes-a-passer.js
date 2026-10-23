@@ -143,10 +143,12 @@ t('une ligne reçue sans date de réception se range sur sa date de création',
 console.log('\nLa collection est déclarée partout (piège n°4)');
 const ix = lire('public/index.html');
 t('la variable existe', /let cmdPasser = \[\];/.test(ix));
-t('elle est dans SYNCED_COLLS', /'ruptures','cmdPasser'\]/.test(ix));
+// On ne s'accroche PAS a la fin de la liste : une collection ajoutee apres
+// celle-ci ferait echouer un essai qui n'a rien a voir avec elle.
+t('elle est dans SYNCED_COLLS', /'ruptures','cmdPasser'/.test(ix));
 t('_collRef sait la rendre', /case 'cmdPasser':return cmdPasser;/.test(ix));
 t('saveAll l’envoie — SANS ÇA ELLE NE QUITTE JAMAIS LE NAVIGATEUR',
-  /ruptures,cmdPasser,modulesParPoste/.test(ix));
+  /ruptures,cmdPasser,/.test(ix));
 t('loadAll la relit', /if\(Array\.isArray\(data\.cmdPasser\)\)cmdPasser=data\.cmdPasser;/.test(ix));
 t('la resynchronisation aussi', /if\(d\.cmdPasser\)\{ cmdPasser=d\.cmdPasser;/.test(ix));
 t('et le serveur la fusionne par identifiant',

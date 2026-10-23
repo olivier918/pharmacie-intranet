@@ -1,0 +1,434 @@
+// LE SUIVI ADMINISTRATIF — ce que le mois doit produire, et ce qu'il a produit.
+// node essais/suivi-admin.js
+//
+// CE QUI SE JOUE. Une to-do list qui se renouvelle toute seule a deux façons
+// de trahir, et les deux sont silencieuses :
+//
+//   • elle oublie — une relance d'impayés non faite disparaît avec le mois,
+//     et personne ne saura jamais qu'elle a existé ;
+//   • elle double — deux postes ouvrent le module le 1er à la même seconde et
+//     génèrent chacun leur liste, qui se superposent.
+//
+// La première se tient par le report ; la seconde par des identifiants
+// CALCULÉS, que la fusion par id ramène à un seul exemplaire. Ces deux
+// mécaniques sont la raison d'être de cet essai.
+//
+// Les fonctions sont extraites de public/sa-module.js lui-même : un essai qui
+// recopierait la règle ne vérifierait que sa propre copie.
+const fs = require('fs'), path = require('path');
+const lire = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+const src = lire('public/sa-module.js');
+
+function extraire(nom) {
+  const d = src.indexOf('  function ' + nom + '(');
+  if (d < 0) throw new Error('fonction introuvable : ' + nom);
+  const f = src.indexOf('\n  }\n', d);
+  if (f < 0) throw new Error('fin introuvable : ' + nom);
+  return src.slice(d, f + 4);
+}
+function bloc(depart, fin) {
+  const d = src.indexOf(depart);
+  if (d < 0) throw new Error('bloc introuvable : ' + depart);
+  const f = src.indexOf(fin, d);
+  return src.slice(d, f + fin.length);
+}
+
+// Les constantes viennent AUSSI du module : la liste des indicateurs y est la
+// seule vérité, et un essai qui la recopierait ne verrait pas une ligne ajoutée.
+const pad = n => String(n).padStart(2, '0');
+// `const` declare dans un eval ne vit QUE dans cet eval : les fonctions
+// evaluees plus bas, dans un autre eval, ne le verraient pas. On les pose donc
+// en global, ou tout le monde les lit.
+const global_ = (d, f) => eval(bloc(d, f).replace(/^const /, 'globalThis.'));
+global_('const SA_ETATS =', "'fait'];");
+global_('const SA_MOIS_LBL =', "'décembre'];");
+global_('const SA_MOIS_COURT =', "'Déc'];");
+global_('const SA_GROUPES =', "'Relation Cabinet comptable'];");
+global_('const SA_INDICS = [', "\n  ];");
+
+// UN SEUL eval, AU PREMIER NIVEAU. Evaluer dans le rappel d'un `forEach`
+// declarerait chaque fonction dans la portee du rappel, et nulle part ailleurs :
+// l'essai tomberait sur « saMoisValide is not defined » des la premiere ligne.
+eval(['saMoisDe', 'saMoisValide', 'saMoisDecale', 'saMoisLbl', 'saMoisDuModele', 'saDuMois',
+ 'saPeriodeLbl', 'saEtat', 'saEtatSuivant', 'saIdModele', 'saIdReport', 'saOrigine',
+ 'saAGenerer', 'saTrier', 'saDuMoisListe', 'saSousActions', 'saGroupes', 'saAvancement',
+ 'saNombre', 'saEuro', 'saValeur', 'saPct', 'saReleve', 'saDateFr', 'saDateIso'
+].map(extraire).join('\n'));
+
+let ok = 0, ko = 0;
+const t = (n, c) => { c ? (ok++, console.log('  ✓ ' + n)) : (ko++, console.log('  ✗ ' + n)); };
+console.log('\nLE SUIVI ADMINISTRATIF\n');
+
+// ── Le calendrier ───────────────────────────────────────────────────────────
+console.log('Le calendrier, sans toISOString');
+t('un mois se lit AAAA-MM', saMoisValide('2026-10') && saMoisValide('2026-01'));
+t('un mois à 13 n’existe pas', !saMoisValide('2026-13') && !saMoisValide('2026-00'));
+t('le mois précédent de janvier est décembre de l’an d’avant',
+  saMoisDecale('2026-01', -1) === '2025-12');
+t('le mois suivant de décembre est janvier de l’an d’après',
+  saMoisDecale('2026-12', 1) === '2027-01');
+t('on peut reculer de plus d’un an', saMoisDecale('2026-03', -15) === '2024-12');
+// LE PIÈGE N°3 DU DÉPÔT. `toISOString()` sur une Date à minuit locale rend la
+// veille — et le 1er du mois, la veille, c'est le mois d'avant.
+t('LE 1ER À MINUIT RESTE LE MOIS EN COURS — pas celui d’avant',
+  saMoisDe(new Date(2026, 10, 1, 0, 0, 0)) === '2026-11');
+t('le 31 à 23h59 aussi', saMoisDe(new Date(2026, 9, 31, 23, 59, 59)) === '2026-10');
+t('le mois s’affiche en toutes lettres', saMoisLbl('2026-08') === 'août 2026');
+
+// ── La périodicité ──────────────────────────────────────────────────────────
+console.log('\nLa périodicité est portée par les mois eux-mêmes');
+t('une tâche sans liste de mois revient tous les mois',
+  saMoisDuModele({ titre: 'x' }).length === 12);
+t('... et elle est donc due en février comme en juillet',
+  saDuMois({ id: 1, titre: 'x' }, '2026-02') && saDuMois({ id: 1, titre: 'x' }, '2026-07'));
+t('UNE TÂCHE TRIMESTRIELLE N’EST DUE QUE SES QUATRE MOIS',
+  saDuMois({ id: 1, mois: [1, 4, 7, 10] }, '2026-04')
+  && !saDuMois({ id: 1, mois: [1, 4, 7, 10] }, '2026-05'));
+t('une tâche annuelle ne vient qu’une fois',
+  saDuMois({ id: 1, mois: [3] }, '2026-03') && !saDuMois({ id: 1, mois: [3] }, '2026-09'));
+t('UNE TÂCHE SUSPENDUE N’EST DUE NULLE PART', !saDuMois({ id: 1, actif: false }, '2026-03'));
+t('un mois hors bornes est ignoré au lieu de créer une colonne treize',
+  saMoisDuModele({ mois: [3, 13, 0, 7] }).join(',') === '3,7');
+t('l’étiquette dit « tous les mois »', saPeriodeLbl({}) === 'Tous les mois');
+t('... « une fois par an », avec le mois', /Une fois par an — mars/.test(saPeriodeLbl({ mois: [3] })));
+t('... et « trimestriel », avec les quatre', /Trimestriel/.test(saPeriodeLbl({ mois: [1, 4, 7, 10] })));
+
+// ── Les trois états ─────────────────────────────────────────────────────────
+console.log('\nTrois états, et le tour est rond');
+t('une tâche neuve est à faire', saEtat({ id: 1 }) === 'a_faire');
+t('UN ÉTAT INVENTÉ RETOMBE SUR « À FAIRE » — jamais sur « fait »',
+  saEtat({ etat: 'archivee' }) === 'a_faire');
+t('une ligne absente ne fait pas tomber la lecture', saEtat(null) === 'a_faire');
+t('le clic fait le tour : à faire → en cours → fait → à faire',
+  saEtatSuivant('a_faire') === 'en_cours'
+  && saEtatSuivant('en_cours') === 'fait'
+  && saEtatSuivant('fait') === 'a_faire');
+
+// ── La génération d'un mois ─────────────────────────────────────────────────
+console.log('\nLe 1er du mois : ce que PILOT fabrique');
+const MODS = [
+  { id: 'm1', titre: 'Relance des impayés', groupe: 'Clients en compte', ordre: 10 },
+  { id: 'm2', titre: 'Tableau des remises CERP', groupe: 'Grossistes', ordre: 20 },
+  { id: 'm3', titre: 'Classement récaps CERP', groupe: 'Grossistes', mois: [3], ordre: 30 },
+  { id: 'm4', titre: 'Tâche suspendue', groupe: '', actif: false, ordre: 40 }
+];
+const T0 = Date.UTC(2026, 10, 1);
+let g = saAGenerer(MODS, [], '2026-11', T0);
+t('les tâches dues du mois sont créées', g.length === 2);
+t('... la trimestrielle de mars n’en est pas', !g.some(x => x.modeleId === 'm3'));
+t('UNE TÂCHE SUSPENDUE N’EST PAS GÉNÉRÉE', !g.some(x => x.modeleId === 'm4'));
+t('elles naissent à faire, sans opérateur',
+  g.every(x => x.etat === 'a_faire' && !x.par && !x.le));
+t('elles gardent la rubrique du modèle',
+  g.find(x => x.modeleId === 'm1').groupe === 'Clients en compte');
+t('mars, lui, reçoit bien la trimestrielle',
+  saAGenerer(MODS, [], '2026-03', T0).some(x => x.modeleId === 'm3'));
+
+console.log('\nDeux postes au même instant ne font pas deux listes');
+const g2 = saAGenerer(MODS, [], '2026-11', T0 + 931);
+t('L’IDENTIFIANT EST CALCULÉ, PAS TIRÉ AU SORT — la fusion n’en garde qu’un',
+  g.map(x => x.id).join('|') === g2.map(x => x.id).join('|'));
+t('... et il porte le mois et le modèle, donc il se lit',
+  g[0].id === saIdModele('2026-11', g[0].modeleId));
+
+console.log('\nUn mois déjà commencé ne se regénère pas');
+t('LA PRÉSENCE D’UNE SEULE TÂCHE SUFFIT À ARRÊTER LA GÉNÉRATION',
+  saAGenerer(MODS, [{ id: 'x', mois: '2026-11' }], '2026-11', T0).length === 0);
+t('... sinon une tâche supprimée exprès reviendrait le lendemain',
+  saAGenerer(MODS, g, '2026-11', T0).length === 0);
+t('un mois invalide ne produit rien', saAGenerer(MODS, [], 'octobre', T0).length === 0);
+
+// ── Le report, et c'est le cœur ─────────────────────────────────────────────
+console.log('\nCe qui n’est pas fait ne disparaît pas');
+const OCT = [
+  { id: saIdModele('2026-10', 'm1'), mois: '2026-10', modeleId: 'm1', etat: 'a_faire' },
+  { id: saIdModele('2026-10', 'm2'), mois: '2026-10', modeleId: 'm2', etat: 'fait' }
+];
+let gr = saAGenerer(MODS, OCT, '2026-11', T0);
+const r1 = gr.find(x => x.modeleId === 'm1'), r2 = gr.find(x => x.modeleId === 'm2');
+t('UNE TÂCHE NON FAITE EN OCTOBRE REVIENT MARQUÉE EN RETARD', r1.reportDe === '2026-10');
+t('une tâche faite revient propre, sans retard', r2.reportDe === null);
+
+console.log('\nLe retard dit depuis QUAND, pas seulement qu’il y en a');
+const DEUX = [
+  { id: saIdModele('2026-09', 'm1'), mois: '2026-09', modeleId: 'm1', etat: 'a_faire' },
+  { id: saIdModele('2026-10', 'm1'), mois: '2026-10', modeleId: 'm1', etat: 'en_cours' }
+];
+t('DEUX MOIS OUBLIÉS REMONTENT AU PREMIER — « en retard depuis septembre »',
+  saAGenerer(MODS, DEUX, '2026-11', T0).find(x => x.modeleId === 'm1').reportDe === '2026-09');
+t('« en cours » n’est pas « fait » : le retard court toujours',
+  saAGenerer(MODS, [{ id: 'a', mois: '2026-10', modeleId: 'm1', etat: 'en_cours' }],
+             '2026-11', T0).find(x => x.modeleId === 'm1').reportDe === '2026-10');
+t('un mois fait coupe la remontée',
+  saAGenerer(MODS, [
+    { id: 'a', mois: '2026-09', modeleId: 'm1', etat: 'a_faire' },
+    { id: 'b', mois: '2026-10', modeleId: 'm1', etat: 'fait' }
+  ], '2026-11', T0).find(x => x.modeleId === 'm1').reportDe === null);
+
+console.log('\nUne tâche écrite à la main suit, elle aussi');
+const PONCT = [{ id: 'p1', mois: '2026-10', titre: 'Rappeler le cabinet', groupe: '', etat: 'a_faire' }];
+let gp = saAGenerer(MODS, PONCT, '2026-11', T0);
+const port = gp.find(x => x.titre === 'Rappeler le cabinet');
+t('UNE TÂCHE PONCTUELLE NON FAITE EST REPORTÉE', !!port);
+t('... en disant d’où elle vient', port.reportDe === '2026-10');
+t('... et son identifiant reste calculable', port.id === saIdReport('2026-11', 'p1'));
+t('une tâche ponctuelle FAITE ne revient pas',
+  !saAGenerer(MODS, [{ id: 'p2', mois: '2026-10', titre: 'Fini', etat: 'fait' }], '2026-11', T0)
+    .some(x => x.titre === 'Fini'));
+t('une sous-action ne se reporte pas toute seule — elle suit sa tâche',
+  !saAGenerer(MODS, [{ id: 'p3', mois: '2026-10', parent: 'p1', titre: 'Sous', etat: 'a_faire' }],
+              '2026-11', T0).some(x => x.titre === 'Sous'));
+
+console.log('\nUn report de report ne fait pas enfler l’identifiant');
+const rep1 = saAGenerer([], PONCT, '2026-11', T0)[0];
+const rep2 = saAGenerer([], [rep1], '2026-12', T0)[0];
+t('L’ORIGINE RESTE LA PREMIÈRE — sinon l’identifiant s’allonge chaque mois',
+  rep2.id === saIdReport('2026-12', 'p1') && rep2.origine === 'p1');
+t('... et il ne contient pas l’identifiant du mois précédent',
+  rep2.id.indexOf('2026-11') < 0);
+
+// ── Le classement ───────────────────────────────────────────────────────────
+console.log('\nL’écran suit l’ordre du tableau papier');
+const L = [
+  { id: 1, mois: '2026-11', titre: 'B', groupe: 'Grossistes', ordre: 20 },
+  { id: 2, mois: '2026-11', titre: 'A', groupe: '', ordre: 10 },
+  { id: 3, mois: '2026-10', titre: 'C', groupe: '', ordre: 5 },
+  { id: 4, mois: '2026-11', titre: 'D', groupe: 'Clients en compte', ordre: 30, parent: null },
+  { id: 5, mois: '2026-11', titre: 'sous', parent: 1, ordre: 21 }
+];
+t('un mois ne montre que ses tâches', saDuMoisListe(L, '2026-11').length === 3);
+t('... et pas les sous-actions, qui s’affichent sous leur tâche',
+  !saDuMoisListe(L, '2026-11').some(x => x.parent));
+t('les sous-actions se retrouvent par leur parent', saSousActions(L, 1).length === 1);
+t('LES RUBRIQUES GARDENT L’ORDRE DU TABLEAU PAPIER, pas l’alphabet',
+  saGroupes(saDuMoisListe(L, '2026-11')).join('|') === '|Grossistes|Clients en compte');
+t('une rubrique inventée se range après les connues',
+  saGroupes([{ groupe: 'Zèbre' }, { groupe: 'Grossistes' }]).join('|') === 'Grossistes|Zèbre');
+
+console.log('\nL’avancement se lit d’un coup d’œil');
+const AV = saAvancement([
+  { etat: 'fait' }, { etat: 'fait' }, { etat: 'en_cours' },
+  { etat: 'a_faire', reportDe: '2026-10' }
+]);
+t('il compte ce qui est fait', AV.fait === 2 && AV.total === 4 && AV.pct === 50);
+t('IL COMPTE AUSSI LES RETARDS — c’est le chiffre qui doit gêner', AV.retard === 1);
+t('une tâche en retard mais faite n’est plus en retard',
+  saAvancement([{ etat: 'fait', reportDe: '2026-10' }]).retard === 0);
+t('un mois vide ne divise pas par zéro', saAvancement([]).pct === 0);
+
+// ── Les chiffres ────────────────────────────────────────────────────────────
+console.log('\nLa saisie des chiffres accepte ce qu’on colle d’un tableur');
+t('un nombre français se lit', saNombre('40 987,22') === 40987.22);
+t('... avec l’espace fine insécable du copier-coller', saNombre('40 987,22') === 40987.22);
+t('... et l’insécable ordinaire', saNombre('40 987,22') === 40987.22);
+t('l’euro collé avec ne gêne pas', saNombre('1 234,50 €') === 1234.5);
+t('le point décimal passe aussi', saNombre('40987.22') === 40987.22);
+t('UN TEXTE N’EST PAS UN ZÉRO — il est refusé', saNombre('environ 400') === null);
+t('une case vide n’est pas zéro non plus', saNombre('') === null && saNombre(null) === null);
+t('un nombre s’affiche à la française', saEuro(40987.22) === '40 987,22 €');
+t('... y compris les petits', saEuro(784.1) === '784,10 €');
+t('... et la virgule, jamais le point', !/\d\.\d\d €/.test(saEuro(1234.56)));
+
+console.log('\nCe qui se calcule ne se saisit pas');
+const REL = { mois: '2026-10', v: {
+  encoursSecu: 51762.10, encoursMut: 13674.94,
+  vaTotal: 1567.92, va30: 575.26, vaMorts: 101.49,
+  stockTotal: 641401.64, stockTva21: 140242.92
+} };
+t('L’ENCOURS TOTAL EST LA SOMME DE SES DEUX LIGNES, pas une troisième saisie',
+  Math.abs(saValeur(REL, 'encoursTotal') - 65437.04) < 0.005);
+t('il reste vide si ses deux lignes le sont',
+  saValeur({ v: {} }, 'encoursTotal') === null);
+t('une seule des deux suffit à donner un total',
+  saValeur({ v: { encoursSecu: 100 } }, 'encoursTotal') === 100);
+t('VA > 30 jours vaut 37 % du total — le chiffre de la feuille', saPct(REL, 'va30') === 37);
+t('VA > 12 mois morts en vaut 6 %', saPct(REL, 'vaMorts') === 6);
+t('le stock à 2,1 % en vaut 22 %', saPct(REL, 'stockTva21') === 22);
+t('UN POURCENTAGE SANS TOTAL NE S’INVENTE PAS',
+  saPct({ v: { va30: 100 } }, 'va30') === null);
+t('... et on ne divise pas par zéro', saPct({ v: { va30: 10, vaTotal: 0 } }, 'va30') === null);
+t('une ligne qui n’a pas de pourcentage n’en reçoit pas', saPct(REL, 'vaTotal') === null);
+t('le relevé d’un mois se retrouve par son mois',
+  saReleve([REL], '2026-10') === REL && saReleve([REL], '2026-09') === null);
+t('les dix-huit lignes de la feuille sont là', SA_INDICS.length === 18);
+t('... et une seule est calculée', SA_INDICS.filter(d => d.somme).length === 1);
+
+console.log('\nLa date du relevé est au format de la maison');
+t('elle s’affiche en français', saDateFr('2026-10-12') === '12/10/2026');
+t('et revient en base au format qui se trie', saDateIso('12/10/2026') === '2026-10-12');
+t('LE 31 FÉVRIER EST REFUSÉ — une Date l’aurait ramené au 3 mars en silence',
+  saDateIso('31/02/2026') === null);
+t('un format américain ne passe pas en douce', saDateIso('2026-10-12') === null);
+
+// ── Ce que le module promet au reste de l'application ───────────────────────
+console.log('\nLes collections sont déclarées partout (piège n°4)');
+const ix = lire('public/index.html');
+['saModeles', 'saTaches', 'saIndics'].forEach(function (c) {
+  t(c + ' : la variable existe', new RegExp('let ' + c + ' = \\[\\];').test(ix));
+  t(c + ' : _collRef sait la rendre', ix.indexOf("case '" + c + "':return " + c + ';') > 0);
+  t(c + ' : loadAll la relit',
+    ix.indexOf('if(Array.isArray(data.' + c + '))' + c + '=data.' + c + ';') > 0);
+  t(c + ' : le serveur la fusionne par identifiant',
+    new RegExp("'" + c + "'").test(lire('server.js')));
+});
+t('les trois sont dans SYNCED_COLLS', /'saModeles','saTaches','saIndics'\]/.test(ix));
+t('saveAll les envoie — SANS ÇA ELLES NE QUITTENT JAMAIS LE NAVIGATEUR',
+  /cmdPasser,saModeles,saTaches,saIndics,modulesParPoste/.test(ix));
+t('la resynchronisation les relit, et redessine',
+  /if\(d\.saTaches\)\{ saTaches=d\.saTaches; try\{ if\(window\.saRender\)saRender\(\); \}/.test(ix));
+t('... DERRIÈRE UN FILET : une vue qui jetterait ne gèlerait pas les autres modules',
+  /catch\(e\)\{ console\.error\('saRender',e\); \}/.test(ix));
+t('le module est chargé par l’application', /<script src="sa-module\.js"><\/script>/.test(ix));
+t('la rubrique porte un nom dans le fil d’Ariane', /suiviadmin:'Suivi administratif'/.test(ix));
+t('et l’ouverture clôture le mois écoulé', /name==='suiviadmin'&&window\.saOuvrir/.test(ix));
+
+console.log('\nCe que le module fait bien');
+t('il lit les collections par _collRef, jamais par window (piège n°8)',
+  /window\._collRef\('saTaches'\)/.test(src)
+  && !/window\['sa(Taches|Modeles|Indics)'\]/.test(src));
+t('il pose une pierre tombale AVANT de retirer une ligne (sinon elle revient)',
+  src.indexOf("markDeleted('saTaches'") < src.indexOf('l.splice(k, 1)')
+  && /markDeleted\('saModeles'/.test(src));
+t('un changement d’état part tout de suite, sans attendre les 600 ms (piège n°6)',
+  /typeof saveNow === 'function'\) saveNow\(\)/.test(src) && !/schedSave/.test(src));
+t('AUCUNE MIGRATION N’EST ÉCRITE EN BASE (piège n°7) — on traduit à la lecture',
+  /LECTURE AU LIEU DE MIGRATION/.test(src));
+
+// LE PIÈGE N°9. La resynchronisation rappelle saRender toutes les huit
+// secondes. Une sous-action qu'on est en train d'écrire se trouve DANS la
+// partie redessinée : sans garde, elle disparaîtrait sous les doigts.
+console.log('\nLa saisie en cours est protégée (piège n°9)');
+t('un redessin automatique n’écrase pas une sous-action en cours d’écriture',
+  /if \(!delibere && document\.getElementById\('sa-sous-saisie'\)\) return;/.test(src));
+t('ni un relevé chiffré ouvert',
+  /if \(!delibere && document\.getElementById\('sa-i-vaTotal'\)\) return;/.test(src));
+t('UN REDESSIN DÉLIBÉRÉ PASSE LA GARDE — sinon le bouton serait mort',
+  /saRender\(true\)/.test(src));
+t('la ligne d’ajout est posée une seule fois, à l’injection',
+  /sec\.innerHTML = SA_SECTION;/.test(src) && !/sa-t-titre/.test(src.slice(src.indexOf('function saVueMois'), src.indexOf('function saVueGrille'))));
+
+console.log('\nLes chiffres restent aux administrateurs');
+t('l’onglet ne s’affiche que pour eux',
+  /saAdmin\(\) \? '<button class="sa-o'/.test(src));
+t('ON NE PASSE PAS PAR L’ONGLET : la vue elle-même refuse',
+  /if \(!saAdmin\(\)\) return '<div class="sa-vide">Les indicateurs sont réservés/.test(src));
+t('... et l’enregistrement aussi, au cas où',
+  /saIndicEnregistrer = function \(mois\) \{\n\s*if \(!saAdmin\(\)\) return;/.test(src));
+t('la to-do list, elle, est ouverte à toute l’équipe',
+  !/saBasculer = function \(id\) \{\n\s*if \(!saAdmin/.test(src));
+t('un mois archivé ne se retouche que par un administrateur',
+  /return mois === saMoisDe\(new Date\(\)\) \|\| saAdmin\(\);/.test(src));
+
+console.log('\nLe modèle ne se sème pas tout seul');
+t('LES VINGT LIGNES DU TABLEAU PAPIER SONT PROPOSÉES, JAMAIS IMPOSÉES',
+  /window\.saInstallerDepart = function/.test(src) && SA_DEPART_LONGUEUR() === 20);
+t('... et seulement si le modèle est vide',
+  /if \(l\.length\) \{ alert\('Le modèle contient déjà des tâches\.'\); return; \}/.test(src));
+function SA_DEPART_LONGUEUR() {
+  const b = src.slice(src.indexOf('const SA_DEPART = ['), src.indexOf('\n  ];', src.indexOf('const SA_DEPART = [')));
+  return (b.match(/\n    \['/g) || []).length;
+}
+
+
+// ── Le rendu, exécuté pour de vrai ──────────────────────────────────────────
+// CE QUI SE JOUE ICI. Les fonctions pures peuvent toutes être justes et l'écran
+// rester blanc : il suffit d'une apostrophe mal échappée dans un gabarit. On
+// exécute donc les quatre vues contre des données de poche, et on relit ce
+// qu'elles rendent. Si l'une jette, l'essai tombe — et c'est le but : une vue
+// qui jette dans la resynchronisation emporterait avec elle le rafraîchissement
+// des modules suivants.
+global_('const E = s =>', '}[c]));');
+global_('const SA_DEPART = [', '\n  ];');
+
+let FIX_T = [], FIX_M = [], FIX_I = [], FIX_S = [], FIX_ADMIN = true;
+let saSousDe = null, saModeleOuvert = true, saMois = '2026-11', saAnnee = 2026;
+const saTaches = () => FIX_T;
+const saModeles = () => FIX_M;
+const saIndics = () => FIX_I;
+const saStaff = () => FIX_S;
+const saAdmin = () => FIX_ADMIN;
+eval(['saInitiales', 'saCouleur', 'saQuand', 'saPastille', 'saQui', 'saLigne',
+      'saVueMois', 'saVueGrille', 'saVueIndic', 'saVueModele'].map(extraire).join('\n'));
+
+console.log('\nLa to-do list s’affiche');
+FIX_S = [{ id: 'JN', prenom: 'Jeanne', nom: 'Normand', col: '#2E7D54' }];
+FIX_M = MODS;
+FIX_T = [
+  { id: 'a', mois: '2026-11', modeleId: 'm1', titre: 'Relance des impayés',
+    groupe: 'Clients en compte', ordre: 10, etat: 'fait', par: 'JN', le: Date.UTC(2026, 10, 3) },
+  { id: 'b', mois: '2026-11', modeleId: 'm2', titre: 'Tableau des remises CERP',
+    groupe: 'Grossistes', ordre: 20, etat: 'a_faire', reportDe: '2026-09' },
+  { id: 'c', mois: '2026-11', titre: 'Rappeler « Les Tilleuls »', groupe: '', ordre: 900, etat: 'en_cours' },
+  { id: 'd', mois: '2026-11', parent: 'c', titre: 'Laisser un message', ordre: 901, etat: 'a_faire' }
+];
+let vue = saVueMois();
+t('les trois tâches du mois sont là',
+  /Relance des impayés/.test(vue) && /remises CERP/.test(vue) && /Rappeler/.test(vue));
+t('la sous-action s’affiche sous la sienne',
+  vue.indexOf('Laisser un message') > vue.indexOf('Rappeler'));
+t('LES INITIALES DE QUI A COCHÉ APPARAISSENT', /class="sa-qui"[^>]*>JN</.test(vue));
+t('... avec sa couleur de fiche', /background:#2E7D54/.test(vue));
+t('LE RETARD DIT DEPUIS QUAND', /en retard depuis septembre/.test(vue));
+t('... et pas sur une tâche faite', (vue.match(/sa-retard/g) || []).length === 1);
+t('l’avancement est affiché', /1 \/ 3 fait/.test(vue) && /1 en retard/.test(vue));
+t('les rubriques structurent la liste', /class="sa-g">Grossistes</.test(vue));
+// UN GESTIONNAIRE NE REÇOIT JAMAIS DE TEXTE SAISI (règle de la maison) : ce qui
+// traverse le HTML est un identifiant, et le titre n'est qu'affiché, échappé.
+t('les guillemets d’un titre ne sortent pas de l’attribut',
+  /Rappeler &laquo;|Rappeler « Les Tilleuls »/.test(vue) || /&quot;/.test(vue) || vue.indexOf('Les Tilleuls') > 0);
+t('les gestionnaires ne transportent que des identifiants',
+  !/onclick="sa[A-Za-z]+\('[^']*Tilleuls/.test(vue));
+
+console.log('\nLa saisie d’une sous-action n’est posée que là où on l’a demandée');
+t('aucune par défaut', !/id="sa-s-titre"/.test(saVueMois()));
+saSousDe = 'c';
+t('... et une seule quand on clique', (saVueMois().match(/id="sa-s-titre"/g) || []).length === 1);
+saSousDe = null;
+
+console.log('\nUn mois vide dit quoi faire');
+FIX_T = [];
+t('le mois non encore généré le dit, au lieu de rester blanc',
+  /Aucune tâche pour novembre 2026/.test(saVueMois()));
+FIX_M = [];
+t('... et le dit aussi quand le modèle est vide', /modèle des tâches récurrentes est vide/.test(saVueMois()));
+FIX_M = MODS;
+
+console.log('\nLa grille annuelle reprend le tableau papier');
+FIX_T = [
+  { id: 'a', mois: '2026-03', modeleId: 'm3', titre: 'Classement récaps CERP', etat: 'fait', par: 'JN' },
+  { id: 'b', mois: '2026-05', modeleId: 'm1', titre: 'Relance des impayés', etat: 'en_cours' }
+];
+const gr2 = saVueGrille();
+t('douze colonnes, une par mois', (gr2.match(/<th>/g) || []).length === 12);
+t('une tâche faite porte une croix', /class="sa-ok"/.test(gr2));
+t('une tâche en cours porte un demi-rond', /class="sa-mi"/.test(gr2));
+// Onze cases pour la trimestrielle de mars, douze pour la tache suspendue :
+// une tache qui n'est plus due garde son historique, mais sa ligne dit qu'on
+// ne l'attend plus. Une case vide aurait voulu dire « oubliee ».
+t('LES MOIS OÙ LA TÂCHE N’EST PAS DUE SONT HACHURÉS, pas vides',
+  (gr2.match(/sa-c-na/g) || []).length === 23);
+
+console.log('\nLe tableau d’indicateurs');
+FIX_I = [{ id: 'sai:2026-10', mois: '2026-10', releve: '2026-10-12', v: {
+  encoursSecu: 51762.10, encoursMut: 13674.94, vaTotal: 1567.92, va30: 575.26,
+  stockTotal: 641401.64, stockTva21: 140242.92 } }];
+const ind = saVueIndic();
+t('les dix-huit lignes y sont', (ind.match(/class="sa-ir /g) || ind.match(/sa-ir sa-ir-/g) || []).length === 18);
+t('LE TOTAL CALCULÉ S’AFFICHE SANS AVOIR ÉTÉ SAISI', /65 437,04 €/.test(ind));
+t('le pourcentage aussi', /37%/.test(ind) && /22%/.test(ind));
+t('la date du relevé est en français', /12\/10\/2026/.test(ind));
+t('un mois sans relevé montre un tiret, pas un zéro', /sa-iv-0/.test(ind));
+t('UN NON-ADMINISTRATEUR NE VOIT AUCUN CHIFFRE',
+  (function () { FIX_ADMIN = false; const h = saVueIndic(); FIX_ADMIN = true;
+    return /réservés aux administrateurs/.test(h) && !/641/.test(h); })());
+
+console.log('\nLe panneau des tâches récurrentes');
+const mo = saVueModele();
+t('chaque tâche montre sa périodicité', /Tous les mois/.test(mo) && /Une fois par an/.test(mo));
+t('les douze mois se cochent un par un', (mo.match(/class="sa-mm/g) || []).length >= 48);
+t('une tâche suspendue se voit', /sa-mr-off/.test(mo));
+t('IL EST INVISIBLE POUR QUI N’EST PAS ADMINISTRATEUR',
+  (function () { FIX_ADMIN = false; const h = saVueModele(); FIX_ADMIN = true; return h === ''; })());
+
+console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
+process.exit(ko ? 1 : 0);

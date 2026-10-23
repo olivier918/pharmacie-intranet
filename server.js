@@ -1683,6 +1683,7 @@ const SYNCED_COLLS = ['deliveries', 'staffDB', 'threads', 'preps',
   'todoPerso', 'moments', 'agenda', 'liens',
   // Reunion d'equipe : themes de l'ordre du jour, et calendrier des seances.
   'reunionThemes', 'reunions', 'cmdPasser',
+  'saModeles', 'saTaches', 'saIndics',
   // Depots d'ordonnances : la boite de reception, purgee a sept jours.
   'depots',
   // Repertoire des laboratoires (fournisseurs, leurs contacts, et les
