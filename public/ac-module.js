@@ -214,6 +214,11 @@
   .ac-td-t{font-size:.87rem;color:var(--gray-900);line-height:1.35}
   .ac-td-e{font-size:.74rem;color:var(--gray-500);margin-left:6px}
   .ac-td-e.tard{color:var(--red);font-weight:700}
+  .ac-td-lab{background:none;border:none;padding:0;font:inherit;font-weight:700;color:var(--g-dark,#1D5C3A);
+    cursor:pointer;text-align:left;text-decoration:underline;text-decoration-color:rgba(29,92,58,.3);text-underline-offset:2px}
+  .ac-td-lab:hover{text-decoration-color:currentColor}
+  .ac-urg{background:#FDECEA;color:#B3261E;border-radius:999px;padding:1px 8px;font-size:.66rem;
+    font-weight:800;letter-spacing:.02em;margin-left:7px;vertical-align:1px}
   .ac-ajout{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
   .ac-ongs{display:flex;gap:4px;margin-bottom:10px}
   .ac-vise{box-shadow:0 0 0 3px var(--g-mid,#2E7D54),0 8px 24px rgba(46,125,84,.18);transition:box-shadow .3s}
@@ -832,13 +837,34 @@
     acRendTodos();
   };
 
+  // Les commandes à passer chez mes laboratoires (co-module.js). Elles ne sont
+  // pas dans todoPerso : elles sont calculées depuis la liste du jour, et
+  // s'éteignent chez tout le monde dès que la commande est marquée passée.
+  function acCommandes() {
+    try { return (typeof window.coMesTaches === 'function') ? (window.coMesTaches() || []) : []; }
+    catch (e) { return []; }
+  }
+  function acLigneCommande(c) {
+    const n = (c.codes || []).length;
+    const lab = E(c.labo || '');
+    return '<div class="ac-td"><input type="checkbox" data-labo="' + lab + '"'
+      + ' onchange="coTachePassee(this)" title="Commande passée">'
+      + '<span class="ac-td-t">Commander chez '
+      + '<button type="button" class="ac-td-lab" data-labo="' + lab + '" onclick="coOuvrirLabo(this)"'
+      + ' title="Voir la carte du laboratoire">' + (c.labo ? lab : 'laboratoire à identifier') + '</button>'
+      + (c.urgence === 'rouge' ? '<span class="ac-urg">Urgent</span>' : '')
+      + '<span class="ac-td-e">' + n + ' produit' + (n > 1 ? 's' : '') + ' · liste du jour</span>'
+      + '</span></div>';
+  }
+
   function acRendTodos() {
     const el = document.getElementById('ac-todos'); if (!el) return;
     const u = acUser();
     const mien = acMesTodos(), conf = acReplier(acConfiees());
+    const cmd = acCommandes();
     const neuves = conf.filter(acLotNeuf).length;
     const cpt = document.getElementById('ac-td-n');
-    if (cpt) cpt.textContent = mien.length;
+    if (cpt) cpt.textContent = mien.length + cmd.length;
     // La pastille de la barre laterale suit la carte : cocher une tache doit la
     // faire baisser tout de suite, sans attendre un rechargement.
     if (typeof updateNavBadges === 'function') { try { updateNavBadges(); } catch (e) {} }
@@ -851,7 +877,7 @@
       // Chaque onglet n'apparait que s'il a quelque chose a montrer. Un onglet
       // vide en permanence n'apprend rien et prend de la place.
       let h = '<button class="ac-ong' + (acTodoVue === 'mien' ? ' sel' : '') + '" onclick="acTodoOnglet(\'mien\')">'
-        + 'À faire<span class="n">' + mien.length + '</span></button>';
+        + 'À faire<span class="n">' + (mien.length + cmd.length) + '</span></button>';
       if (conf.length) {
         h += '<button class="ac-ong' + (acTodoVue === 'confiees' ? ' sel' : '') + '" onclick="acTodoOnglet(\'confiees\')">'
           + 'Confiées<span class="n' + (neuves ? ' rouge' : '') + '">' + (neuves || conf.length) + '</span></button>';
@@ -889,8 +915,8 @@
     if (acTodoVue === 'confiees') { el.innerHTML = acListeConfiees(conf); return; }
     if (acTodoVue === 'faites') { el.innerHTML = acListeFaites(faites); return; }
 
-    if (!mien.length) { el.innerHTML = '<div class="ac-vide">Rien à faire pour le moment.</div>'; return; }
-    el.innerHTML = mien.map(function (t) {
+    if (!mien.length && !cmd.length) { el.innerHTML = '<div class="ac-vide">Rien à faire pour le moment.</div>'; return; }
+    el.innerHTML = cmd.map(acLigneCommande).join('') + mien.map(function (t) {
       const confiee = t.par && t.par !== acQui(t);
       return '<label class="ac-td"><input type="checkbox" onchange="acCocher(' + t.id + ')">'
         + '<span class="ac-td-t">' + E(t.texte || '')
@@ -912,6 +938,8 @@
     }
   }
   let acVuTimer = null;
+  // co-module.js redessine la liste quand les commandes du jour changent.
+  window.acRendTodos = acRendTodos;
 
   function acListeFaites(l) {
     if (!l.length) return '<div class="ac-vide">Rien de terminé ces derniers jours.</div>';
@@ -1338,14 +1366,16 @@
 
   // Nombre de taches en cours qui me reviennent. C'est ce que porte la pastille.
   window.acTodoCount = function () {
-    try { return acMesTodos().length; } catch (e) { return 0; }
+    try { return acMesTodos().length + acCommandes().length; } catch (e) { return 0; }
   };
   // Rouge s'il y a une tache qu'on m'a confiee et que je n'ai pas vue passer,
   // sinon ambre. Une pastille qui ne distingue rien ne dit rien.
   window.acTodoLevel = function () {
     try {
       if (!acTodoCount()) return '';
-      return acMesTodos().some(acNeuve) ? 'red' : 'orange';
+      // Une commande urgente allume le rouge aussi : c'est un appel à passer
+      // dans l'heure, pas une tâche qui peut attendre l'après-midi.
+      return (acMesTodos().some(acNeuve) || acCommandes().some(c => c.urgence === 'rouge')) ? 'red' : 'orange';
     } catch (e) { return ''; }
   };
 

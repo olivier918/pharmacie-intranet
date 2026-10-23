@@ -262,6 +262,52 @@ async function consolidee(db, id) {
            seuils: seuils, labos: labos2, fiches: fiches, propositions: propositions };
 }
 
+// ── LES TÂCHES DE COMMANDE ──────────────────────────────────────────────────
+//
+// Un laboratoire qui a quelque chose à commander pose une tâche dans la to-do
+// list de ceux qui l'appellent — ou des administrateurs s'il n'a personne,
+// même règle que la carte « à attribuer ».
+//
+// LA TÂCHE N'EST PAS ÉCRITE, ELLE EST CALCULÉE. Ce sont les statuts des
+// produits qui la portent : dès que quelqu'un marque la commande passée, elle
+// s'éteint chez TOUS ses destinataires — sinon le second rappellerait le
+// laboratoire. Et une synthèse réimportée ne peut rien doubler, puisqu'il n'y
+// a rien d'écrit à doubler. Écrire ces tâches dans le blob aurait demandé de
+// les éteindre une à une, sur chaque poste, sans jamais en oublier.
+//
+// Seuls comptent le rouge et l'orange : ce qui est « pas pressé » ne mérite
+// pas une case à cocher, et les relances sont une autre histoire.
+//
+// UNE LISTE PÉRIMÉE NE DONNE AUCUNE TÂCHE. Si le courriel du matin n'est pas
+// arrivé, on ne fait pas appeler les laboratoires d'avant-hier — l'écran
+// Commandes, lui, dit en clair que la synthèse est vieille.
+const TACHES_PERIME_H = 36;
+function tachesCommande(syn, maintenant) {
+  if (!syn || !Array.isArray(syn.labos)) return [];
+  const d = +new Date(syn.date);
+  const now = (maintenant == null) ? Date.now() : +maintenant;
+  if (!isFinite(d) || now - d > TACHES_PERIME_H * 3600e3) return [];
+  const out = [];
+  syn.labos.forEach(function (g) {
+    const reste = (g.produits || []).filter(function (p) {
+      return p && (p.urgence === 'rouge' || p.urgence === 'orange') && !p.statut;
+    });
+    if (!reste.length) return;
+    const f = (g.labo && syn.fiches) ? syn.fiches[g.labo] : null;
+    out.push({
+      labo: g.labo || null,
+      urgence: reste.some(function (p) { return p.urgence === 'rouge'; }) ? 'rouge' : 'orange',
+      codes: reste.map(function (p) { return p.code; }),
+      operateurs: (f && Array.isArray(f.operateurs)) ? f.operateurs : []
+    });
+  });
+  out.sort(function (a, b) {
+    return (a.urgence === b.urgence ? 0 : (a.urgence === 'rouge' ? -1 : 1))
+        || (b.codes.length - a.codes.length);
+  });
+  return out;
+}
+
 function routes(app, getDb, deps) {
   const db = function () {
     const d = getDb(); if (!d) { const e = new Error('base indisponible'); e.code = 503; throw e; }
@@ -277,6 +323,16 @@ function routes(app, getDb, deps) {
   app.get('/api/commandes/courant', async (req, res) => {
     try { res.json({ ok: true, synthese: await consolidee(db(), null) }); }
     catch (e) { rate(res, e); }
+  });
+
+  // Les tâches de commande, pour la to-do list de l'accueil. Le tri par
+  // destinataire se fait sur le poste, qui sait qui est connecté et qui est
+  // administrateur : la règle reste ainsi celle de la page Commandes.
+  app.get('/api/commandes/taches', async (req, res) => {
+    try {
+      const syn = await consolidee(db(), null);
+      res.json({ ok: true, syntheseId: syn ? syn.id : null, taches: tachesCommande(syn) });
+    } catch (e) { rate(res, e); }
   });
 
   app.get('/api/commandes/historique', async (req, res) => {
@@ -594,4 +650,4 @@ async function purger(db) {
 
 module.exports = { creerTables, demarrer, routes, installerCourrier, enregistrer, consolidee,
                    lireSeuils, quelTableau, normaliserNom, purger, TABLEAUX,
-                   CONSERVATION_JOURS };
+                   CONSERVATION_JOURS, tachesCommande, TACHES_PERIME_H };

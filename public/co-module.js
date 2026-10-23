@@ -43,7 +43,100 @@
     const j = await r.json();
     if (!j || !j.ok) throw new Error((j && j.error) || 'liste indisponible');
     coEtat = j.synthese;
+    // Tout ce qui recharge la liste (import, fiche, opérateurs) peut changer
+    // les tâches de quelqu'un : la to-do list suit.
+    coChargerTaches(true);
   }
+
+  // ── LES TÂCHES DANS LA TO-DO LIST ─────────────────────────────────────────
+  //
+  // Un laboratoire à commander apparaît dans la to-do list de ses opérateurs,
+  // ou des administrateurs s'il n'en a pas (Anouck et Olivier). Le serveur
+  // calcule la liste depuis les statuts des produits (voir tachesCommande) :
+  // rien n'est écrit dans la todo, donc rien à éteindre poste par poste. Dès
+  // que la commande est marquée passée — ici ou depuis la todo —, la tâche
+  // disparaît chez tous ses destinataires.
+  //
+  // Le module ne fait que tenir la liste à jour ; c'est l'accueil qui
+  // l'affiche (ac-module.js, acCommandes).
+  const CO_TACHES_MS = 120000;
+  let coTaches = { syn: null, l: [], at: 0 }, coTachesVol = false;
+  async function coChargerTaches(force) {
+    if (coTachesVol) return;
+    if (!force && Date.now() - coTaches.at < CO_TACHES_MS) return;
+    coTachesVol = true;
+    // L'horodatage est posé AVANT l'appel : l'accueil redessine souvent, et
+    // une liste indisponible ne doit pas déclencher un appel par redessin.
+    coTaches.at = Date.now();
+    try {
+      const r = await fetch('/api/commandes/taches', { cache: 'no-store' });
+      const j = await r.json();
+      if (!j || !j.ok) return;      // sans base ou sans synthèse : on garde ce qu'on a
+      const avant = JSON.stringify(coTaches.l);
+      coTaches = { syn: j.syntheseId, l: Array.isArray(j.taches) ? j.taches : [], at: coTaches.at };
+      if (JSON.stringify(coTaches.l) !== avant) coTachesSignaler();
+    } catch (e) { /* hors ligne : la todo garde la dernière liste connue */ }
+    finally { coTachesVol = false; }
+  }
+  function coTachesSignaler() {
+    try { if (typeof window.acRendTodos === 'function') window.acRendTodos(); } catch (e) {}
+    try { if (typeof updateNavBadges === 'function') updateNavBadges(); } catch (e) {}
+  }
+  function coPourMoi(t) {
+    const u = coUser(); if (!u || !t) return false;
+    const o = Array.isArray(t.operateurs) ? t.operateurs : [];
+    return o.length ? o.indexOf(u.id) >= 0 : coAdmin();
+  }
+  // Ce que l'accueil appelle à chaque redessin. Synchrone : il rend la
+  // dernière liste connue, et la rafraîchit en arrière-plan si elle a vieilli.
+  window.coMesTaches = function () {
+    coChargerTaches(false);
+    return coTaches.l.filter(coPourMoi);
+  };
+
+  // Cocher la tâche, c'est « commande passée » pour TOUT ce qui reste à
+  // commander chez ce laboratoire — le même geste que les ✓ un par un sur la
+  // page Commandes, où il se défait de la même façon. On demande confirmation :
+  // le nom de celui qui coche part dans la trace de chaque produit.
+  window.coTachePassee = async function (box) {
+    const labo = box ? (box.getAttribute('data-labo') || null) : null;
+    const t = coTaches.l.find(function (x) { return (x.labo || null) === labo; });
+    if (!t || !coUser()) { if (box) box.checked = false; return; }
+    const n = t.codes.length;
+    if (!confirm('Commande passée chez ' + (labo || 'ce laboratoire') + ' ?\n'
+        + n + ' produit' + (n > 1 ? 's seront marqués commandés' : ' sera marqué commandé')
+        + ' sur la page Commandes.')) { box.checked = false; return; }
+    // On ne garde que des codes à travers les attentes, jamais l'objet tâche
+    // (piège n° 5) : la liste peut être remplacée pendant les envois.
+    const codes = t.codes.slice(), syn = coTaches.syn;
+    let rate = 0;
+    for (const code of codes) {
+      try {
+        const r = await fetch('/api/commandes/statut', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: code, statut: 'commandee', syntheseId: syn })
+        });
+        const j = await r.json();
+        if (!j || !j.ok) rate++;
+      } catch (e) { rate++; }
+    }
+    if (rate) alert(rate + ' produit(s) n’ont pas pu être marqués. La tâche reste à faire : '
+      + 'terminez depuis la page Commandes.');
+    if (document.getElementById('co-liste')) { try { await coCharger(); window.coRender(); } catch (e) {} }
+    await coChargerTaches(true);
+    coTachesSignaler();
+  };
+
+  // Le nom du laboratoire, dans la todo, mène à sa carte.
+  window.coOuvrirLabo = function (el) {
+    const labo = el ? (el.getAttribute('data-labo') || '') : '';
+    if (typeof showSec === 'function') {
+      showSec('commandes', document.querySelector('.sb-item[data-sec="commandes"]'));
+    }
+    coFiltre = labo; coUrgence = '';
+    const q = document.getElementById('co-q'); if (q) q.value = labo;
+    if (coEtat) window.coRender(); else window.coRafraichir();
+  };
 
   // ── L'en-tête ─────────────────────────────────────────────────────────────
   //
@@ -405,6 +498,7 @@
       p.statut = neuf === 'a_faire' ? null : neuf;
       p.statutPar = neuf === 'a_faire' ? null : (coUser() || {}).id;
       window.coRender();
+      coChargerTaches(true);   // le dernier ✓ d'un laboratoire éteint sa tâche
     } catch (e) { coMsg('Enregistrement impossible : ' + e.message, true); }
   };
 
@@ -689,4 +783,7 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', coInject);
   else coInject();
+  // Les tâches se chargent dès l'ouverture de PILOT, indépendamment de la page
+  // Commandes : on arrive sur l'accueil, et c'est là qu'elles doivent être.
+  coChargerTaches(true);
 }());
