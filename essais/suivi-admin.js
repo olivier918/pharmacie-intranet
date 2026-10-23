@@ -430,5 +430,61 @@ t('une tâche suspendue se voit', /sa-mr-off/.test(mo));
 t('IL EST INVISIBLE POUR QUI N’EST PAS ADMINISTRATEUR',
   (function () { FIX_ADMIN = false; const h = saVueModele(); FIX_ADMIN = true; return h === ''; })());
 
+
+// ── saRender, exécutée pour de vrai ─────────────────────────────────────────
+// CE QUI SE JOUE ICI, ET POURQUOI CE BLOC EXISTE. Le 23/10/2026, le module est
+// parti en production avec une variable renommée à moitié : les quatre vues
+// étaient justes, leurs essais verts, et l'écran restait vide. `saRender`
+// jetait un ReferenceError à sa troisième ligne, avant d'avoir rien rempli.
+//
+// Un essai qui n'exécute que les morceaux ne voit pas tomber l'assemblage.
+// On lui donne donc un document de poche, et on la lance.
+console.log('\nL’écran s’assemble, pas seulement ses morceaux');
+const ELS = {};
+globalThis.window = globalThis.window || {};
+globalThis.document = {
+  getElementById: function (id) {
+    if (!ELS[id]) ELS[id] = { id: id, innerHTML: '', style: {} };
+    return ELS[id];
+  }
+};
+let saVue = 'todo', saVueAnnee = false;
+eval(extraire('saModifiable'));
+eval(bloc('window.saRender = function (delibere) {', '\n  };'));
+
+FIX_T = []; FIX_M = MODS; FIX_ADMIN = true;
+saMois = null; saAnnee = null;
+let jet = null;
+try { window.saRender(true); } catch (e) { jet = e.message; }
+t('ELLE NE JETTE PAS — c’est tout le défaut du 23/10', jet === null);
+t('les onglets sont posés', /To-do list/.test(ELS['sa-onglets'].innerHTML));
+t('la navigation du mois aussi', /sa-nb/.test(ELS['sa-nav'].innerHTML));
+t('et le corps est rempli', ELS['sa-corps'].innerHTML.length > 20);
+t('le mois affiché par défaut est le mois en cours',
+  ELS['sa-nav'].innerHTML.indexOf(saMoisLbl(saMoisDe(new Date()))) > 0);
+t('la ligne d’ajout est offerte sur le mois en cours', ELS['sa-saisie'].style.display === '');
+
+FIX_ADMIN = false; saVue = 'indic';
+jet = null; try { window.saRender(true); } catch (e) { jet = e.message; }
+t('elle ne jette pas non plus pour un non-administrateur', jet === null);
+t('L’ONGLET DES CHIFFRES N’EST MÊME PAS PROPOSÉ', !/Indicateurs/.test(ELS['sa-onglets'].innerHTML));
+t('... et la vue retombe sur la to-do list', saVue === 'todo');
+FIX_ADMIN = true;
+
+// ── Tout gestionnaire cité doit exister ─────────────────────────────────────
+// La racine du défaut : `onclick="saOnglet('todo')"` désignait une fonction qui
+// n'a jamais été exposée. Le navigateur ne le dit qu'au clic, et seulement dans
+// la console. On confronte donc les deux listes à la source.
+console.log('\nAucun bouton ne désigne une fonction qui n’existe pas');
+const EXPOSEES = new Set((src.match(/window\.(sa[A-Za-z]+)\s*=\s*function/g) || [])
+  .map(m => /window\.(sa[A-Za-z]+)/.exec(m)[1]));
+const CITEES = new Set((src.match(/onclick="(sa[A-Za-z]+)\(/g) || [])
+  .map(m => /onclick="(sa[A-Za-z]+)\(/.exec(m)[1]));
+const orphelines = [...CITEES].filter(f => !EXPOSEES.has(f));
+t('les ' + CITEES.size + ' gestionnaires cités sont tous exposés sur window'
+  + (orphelines.length ? ' — ORPHELINES : ' + orphelines.join(', ') : ''),
+  orphelines.length === 0);
+t('... et il y en a bien, sinon l’essai ne vérifierait rien', CITEES.size >= 8);
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

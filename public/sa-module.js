@@ -703,13 +703,11 @@
 
     let h = '<table class="sa-grid"><thead><tr><th class="sa-gh"></th>'
       + SA_MOIS_COURT.map(m => '<th>' + m + '</th>').join('') + '</tr></thead><tbody>';
-    let grpVu = null;
     saGroupes(lignes).forEach(function (g) {
-      lignes.filter(x => String(x.groupe || '') === g).forEach(function (ln) {
-        if (g && grpVu !== g) {
-          grpVu = g;
-          h += '<tr class="sa-grp"><td colspan="13">' + E(g) + '</td></tr>';
-        }
+      const dans = lignes.filter(x => String(x.groupe || '') === g);
+      if (!dans.length) return;
+      if (g) h += '<tr class="sa-grp"><td colspan="13">' + E(g) + '</td></tr>';
+      dans.forEach(function (ln) {
         h += '<tr><td class="sa-gh">' + E(ln.titre || '') + '</td>';
         for (let i = 1; i <= 12; i++) {
           const mois = an + '-' + pad(i);
@@ -821,22 +819,22 @@
 
     if (!saMois) saMois = saMoisDe(new Date());
     if (!saAnnee) saAnnee = +saMois.slice(0, 4);
-    if (saOnglet === 'indic' && !saAdmin()) saOnglet = 'todo';
+    if (saVue === 'indic' && !saAdmin()) saVue = 'todo';
 
     const ong = document.getElementById('sa-onglets');
     if (ong) {
       ong.innerHTML =
-        '<button class="sa-o' + (saOnglet === 'todo' ? ' on' : '') + '" onclick="saOnglet(\'todo\')">To-do list</button>'
-        + (saAdmin() ? '<button class="sa-o' + (saOnglet === 'indic' ? ' on' : '') + '" onclick="saOnglet(\'indic\')">Indicateurs</button>' : '');
+        '<button class="sa-o' + (saVue === 'todo' ? ' on' : '') + '" onclick="saAllerOnglet(\'todo\')">To-do list</button>'
+        + (saAdmin() ? '<button class="sa-o' + (saVue === 'indic' ? ' on' : '') + '" onclick="saAllerOnglet(\'indic\')">Indicateurs</button>' : '');
     }
 
     const nav = document.getElementById('sa-nav');
     if (nav) {
-      if (saOnglet === 'indic' || saVueAnnee) {
+      if (saVue === 'indic' || saVueAnnee) {
         nav.innerHTML = '<button class="sa-nb" onclick="saAnneeAller(-1)">‹</button>'
           + '<span class="sa-nt">' + (saAnnee || '') + '</span>'
           + '<button class="sa-nb" onclick="saAnneeAller(1)">›</button>'
-          + (saOnglet === 'todo' ? '<button class="btn bs sm" onclick="saVueBasculer()">Revenir au mois</button>' : '');
+          + (saVue === 'todo' ? '<button class="btn bs sm" onclick="saVueBasculer()">Revenir au mois</button>' : '');
       } else {
         const courant = saMois === saMoisDe(new Date());
         nav.innerHTML = '<button class="sa-nb" onclick="saMoisAller(-1)">‹</button>'
@@ -849,9 +847,9 @@
     }
 
     const sais = document.getElementById('sa-saisie');
-    if (sais) sais.style.display = (saOnglet === 'todo' && !saVueAnnee && saModifiable(saMois)) ? '' : 'none';
+    if (sais) sais.style.display = (saVue === 'todo' && !saVueAnnee && saModifiable(saMois)) ? '' : 'none';
 
-    corps.innerHTML = saOnglet === 'indic' ? saVueIndic()
+    corps.innerHTML = saVue === 'indic' ? saVueIndic()
                     : (saVueAnnee ? saVueGrille() : saVueMois() + saVueModele());
   };
 

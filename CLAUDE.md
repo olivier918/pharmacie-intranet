@@ -710,6 +710,27 @@ node --check public/dm-module.js     # et tout module modifié
 Le JavaScript de `index.html` est en ligne : l'extraire des balises `<script>`
 sans `src` et passer `node --check` sur le résultat.
 
+### `node --check` ne voit pas un nom qui n'existe pas
+
+23/10/2026 : le Suivi administratif part en production avec une variable
+renommée à moitié. Syntaxe valide, quarante-cinq suites vertes, et **l'écran
+reste vide** — `saRender` jetait un `ReferenceError` à sa troisième ligne, avant
+d'avoir rien rempli. Les quatre vues étaient justes et chacune avait son essai :
+l'assemblage, lui, n'était exécuté nulle part.
+
+Deux garde-fous en sont sortis, et ils valent pour tout module à écran :
+
+1. **Exécuter la fonction de rendu, pas seulement ses vues.** Un `document` de
+   poche (`getElementById` qui rend `{innerHTML:'', style:{}}`) suffit à la
+   lancer et à relire ce qu'elle a posé. Un essai qui n'éprouve que les morceaux
+   ne voit pas tomber l'assemblage.
+2. **Confronter les `onclick` aux fonctions exposées.** Tout nom cité dans un
+   gestionnaire doit se retrouver en `window.x = function`. Le navigateur ne
+   signale l'absence qu'au clic, et seulement dans la console — c'est-à-dire
+   jamais, au comptoir.
+
+`essais/suivi-admin.js` porte les deux.
+
 Pour une logique de tri, de date ou de fusion, écrire un petit script Node qui
 l'exerce sur des cas construits et montrer la sortie. C'est ainsi qu'ont été
 attrapés le décalage de date et la falaise du classement.
