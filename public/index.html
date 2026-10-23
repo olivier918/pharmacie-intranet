@@ -105,6 +105,10 @@ header{grid-area:hd;background:#fff;color:var(--gray-900);padding:0 1.5rem;displ
 .mo-i .mo-b button:hover{border-color:var(--g-mid);color:var(--g-dark)}
 .mo-i.mo-fige{background:var(--gray-100);cursor:default}
 .sb-item.active{background:var(--g-pale);color:var(--g-dark);border-left-color:var(--g-mid);font-weight:600}
+.sb-item.sb-ouvert{border-left-color:var(--g-mid);color:var(--g-dark)}
+.sb-sub{padding-left:2.9rem;font-size:.84rem;gap:10px}
+.sb-sub .sb-ico{width:15px;height:15px;opacity:.75}
+#app.sb-collapsed .sb-sub{padding-left:.5rem}
 .sb-ico{width:22px;height:22px;flex-shrink:0}
 .sb-label{overflow:hidden;text-overflow:ellipsis}
 .sb-badge{margin-left:auto;background:var(--amber);color:#fff;font-size:.66rem;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:none;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;line-height:1}
@@ -2808,6 +2812,10 @@ let cmdPasser = [];
 let saModeles = [];   // les taches recurrentes : le modele
 let saTaches = [];    // une tache d'un mois donne
 let saIndics = [];    // un releve chiffre par mois
+// CONTROLE DE COMMANDE. Une ligne par controle : deux personnes qui marquent
+// « vu » sur deux commandes differentes dans la meme fenetre de huit secondes
+// ecrivent dans deux lignes, et ne s'ecrasent donc pas.
+let ccControles = [];
 // Ordonnances deposees par les patients depuis /o. Collection a identifiant :
 // un depot non rattache est efface a sept jours par la purge serveur, un depot
 // rattache a un dossier devient une piece de ce dossier (voir depots.js).
@@ -2931,7 +2939,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','etiqLibres','ruptures','cmdPasser','saModeles','saTaches','saIndics'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','etiqLibres','ruptures','cmdPasser','saModeles','saTaches','saIndics','ccControles'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2955,6 +2963,7 @@ function _collRef(n){ switch(n){
   case 'saModeles':return saModeles;
   case 'saTaches':return saTaches;
   case 'saIndics':return saIndics;
+  case 'ccControles':return ccControles;
   case 'depots':return depots;
   case 'laboratoires':return laboratoires;
   case 'locProvenances':return locProvDB;
@@ -3012,7 +3021,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,etiqLibres,ruptures,cmdPasser,saModeles,saTaches,saIndics,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,etiqLibres,ruptures,cmdPasser,saModeles,saTaches,saIndics,ccControles,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -3113,6 +3122,7 @@ async function loadAll(){
     if(Array.isArray(data.saModeles))saModeles=data.saModeles;
     if(Array.isArray(data.saTaches))saTaches=data.saTaches;
     if(Array.isArray(data.saIndics))saIndics=data.saIndics;
+    if(Array.isArray(data.ccControles))ccControles=data.ccControles;
     if(Array.isArray(data.depots))depots=data.depots;
     if(Array.isArray(data.laboratoires))laboratoires=data.laboratoires;
     if(Array.isArray(data.reactions))reactions=data.reactions;
@@ -3184,6 +3194,7 @@ setInterval(async()=>{
         // et les reactions : une exception ici les laisserait tous sur la copie
         // d'il y a huit secondes, sans que rien ne le dise.
         if(d.saTaches){ saTaches=d.saTaches; try{ if(window.saRender)saRender(); }catch(e){ console.error('saRender',e); } }
+        if(d.ccControles){ ccControles=d.ccControles; try{ if(window.ccRender)ccRender(); }catch(e){ console.error('ccRender',e); } }
         if(d.depots){ depots=d.depots; if(window.odRender)odRender(); }
         if(d.laboratoires){ laboratoires=d.laboratoires; if(window.lbRendBO)lbRendBO(); }
         // Les barres de reaction se redessinent seules : reconstruire la
@@ -3727,6 +3738,7 @@ const SEC_LABEL = {
   temperatures:'Températures — armoires réfrigérées',
   litiges:'Litiges & factures manquantes',
   suiviadmin:'Suivi administratif',
+  ctrlcmd:'Contrôle de commande',
   backoffice:'Back Office'
 };
 
@@ -3746,12 +3758,19 @@ function ouvrirIdees(){ allerASection('demandes', function(){ if(window.dmRender
 function ouvrirAccueil(){ allerASection('accueil', function(){ if(window.acRender) acRender(); }); }
 function showSec(name,btn){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.sb-item').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.sb-item').forEach(b=>{b.classList.remove('active');b.classList.remove('sb-ouvert');});
   document.getElementById('sec-'+name).classList.add('active');
   if(btn) btn.classList.add('active');
   // Active visuellement le bon item même si on n'a pas reçu btn (ex. première ouverture)
   const sbBtn=document.querySelector('.sb-item[data-sec="'+name+'"]');
   if(sbBtn) sbBtn.classList.add('active');
+  // Une sous-entree allume aussi son parent : sans cela « Suivi administratif »
+  // semble eteint alors qu'on est dedans.
+  if(sbBtn && sbBtn.getAttribute('data-parent')){
+    const p=document.querySelector('.sb-item[data-sec="'
+      + sbBtn.getAttribute('data-parent') + '"]:not([data-parent])');
+    if(p) p.classList.add('sb-ouvert');
+  }
   // Mise à jour du fil d'Ariane
   const bc=document.getElementById('breadcrumb');
   if(bc) bc.textContent = SEC_LABEL[name] || name;
@@ -3781,6 +3800,7 @@ function showSec(name,btn){
   // un poste laisse allume toute la nuit ne doit pas etre le seul a decider que
   // novembre a commence, et l'operation est sans effet si le mois est deja la.
   if(name==='suiviadmin'&&window.saOuvrir)saOuvrir();
+  if(name==='ctrlcmd'&&window.ccOuvrir)ccOuvrir();
 }
 
 // Bascule le volet : desktop = collapse/expand persistant ; mobile = drawer open/close
@@ -12291,6 +12311,25 @@ function ordonnerSidebar(){
     bar.appendChild(b);
   });
   if(debutQueue < 0 && sep.parentNode) sep.parentNode.removeChild(sep);
+  rangerSousEntrees(bar);
+}
+
+// Une sous-entree (`data-parent`) se range juste sous son parent, quel que soit
+// l'ordre alphabetique : « Controle de commande » et « Litiges » n'ont de sens
+// que sous « Suivi administratif ». On les deplace EN BLOC et DANS L'ORDRE —
+// les inserer une par une en « afterend » les retournerait.
+function rangerSousEntrees(bar){
+  bar = bar || document.getElementById('sidebar'); if(!bar) return;
+  const familles = {};
+  bar.querySelectorAll('.sb-item[data-parent]').forEach(function(b){
+    const k = b.getAttribute('data-parent');
+    (familles[k] = familles[k] || []).push(b);
+  });
+  Object.keys(familles).forEach(function(k){
+    let ancre = bar.querySelector('.sb-item[data-sec="'+k+'"]:not([data-parent])');
+    if(!ancre) return;
+    familles[k].forEach(function(b){ ancre.insertAdjacentElement('afterend', b); ancre = b; });
+  });
 }
 
 function appliquerModules(){
@@ -12302,6 +12341,16 @@ function appliquerModules(){
     const visible = !liste || liste.indexOf(c)>=0 || MOD_TOUJOURS.indexOf(c)>=0 || modInedit(c);
     b.style.display = visible ? '' : 'none';
     if(!visible && b.classList.contains('active')) actifMasque = true;
+  });
+  // UNE SOUS-ENTREE DISPARAIT AVEC SON PARENT. La laisser seule donnerait une
+  // ligne indentee sous rien, et un ecran qu'on ouvre sans savoir d'ou.
+  document.querySelectorAll('.sidebar .sb-item[data-parent]').forEach(function(b){
+    const p = document.querySelector('.sidebar .sb-item[data-sec="'
+      + b.getAttribute('data-parent') + '"]:not([data-parent])');
+    if(p && p.style.display === 'none'){
+      b.style.display = 'none';
+      if(b.classList.contains('active')) actifMasque = true;
+    }
   });
   // Si l'on masque le module actuellement ouvert, on bascule sur le premier
   // visible plutot que de laisser un ecran vide sans moyen d'en sortir.
@@ -13229,6 +13278,7 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="co-module.js"></script>
 <script src="cp-module.js"></script>
 <script src="sa-module.js"></script>
+<script src="cc-module.js"></script>
 <script src="rp-module.js"></script>
 <script src="vq-module.js"></script>
 <script src="et-module.js"></script>

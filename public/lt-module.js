@@ -477,10 +477,15 @@
     const st = document.createElement('style'); st.id = 'lt-css'; st.textContent = LT_CSS;
     document.head.appendChild(st);
 
+    // LITIGES EST UNE SOUS-ENTREE DE « SUIVI ADMINISTRATIF ». Le point
+    // d'accrochage ne decide de rien : `rangerSousEntrees` ramene la ligne sous
+    // son parent a chaque classement. On s'accroche quand meme au Back Office
+    // comme avant, pour que l'entree existe si le parent manquait.
     const navRef = document.querySelector('.sb-item[data-sec="backoffice"]');
     if (navRef && !document.querySelector('.sb-item[data-sec="litiges"]')) {
       const b = document.createElement('button');
-      b.className = 'sb-item'; b.setAttribute('data-sec', 'litiges');
+      b.className = 'sb-item sb-sub'; b.setAttribute('data-sec', 'litiges');
+      b.setAttribute('data-parent', 'suiviadmin');
       b.setAttribute('onclick', "showSec('litiges',this); if(window.ltRender) ltRender();");
       b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-devis"></use></svg>'
         + '<span class="sb-label">Litiges</span><span class="sb-badge" id="navb-lt"></span>';

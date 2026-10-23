@@ -311,9 +311,12 @@ const ix = lire('public/index.html');
   t(c + ' : le serveur la fusionne par identifiant',
     new RegExp("'" + c + "'").test(lire('server.js')));
 });
-t('les trois sont dans SYNCED_COLLS', /'saModeles','saTaches','saIndics'\]/.test(ix));
+// ON NE S'ACCROCHE PAS A LA FIN DE LA LISTE. Une collection ajoutee apres
+// celles-ci ferait echouer un essai qui n'a rien a voir avec elle — c'est
+// arrive deux fois, le 23/10, a deux suites differentes.
+t('les trois sont dans SYNCED_COLLS', /'saModeles','saTaches','saIndics'/.test(ix));
 t('saveAll les envoie — SANS ÇA ELLES NE QUITTENT JAMAIS LE NAVIGATEUR',
-  /cmdPasser,saModeles,saTaches,saIndics,modulesParPoste/.test(ix));
+  /cmdPasser,saModeles,saTaches,saIndics,/.test(ix));
 t('la resynchronisation les relit, et redessine',
   /if\(d\.saTaches\)\{ saTaches=d\.saTaches; try\{ if\(window\.saRender\)saRender\(\); \}/.test(ix));
 t('... DERRIÈRE UN FILET : une vue qui jetterait ne gèlerait pas les autres modules',
