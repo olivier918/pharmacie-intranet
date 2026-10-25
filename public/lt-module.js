@@ -27,8 +27,9 @@
   };
   // L'état dit où en est l'argent, jamais où en est la paperasse.
   const LT_ETATS = {
+    constate: { lbl: 'Constaté',      col: '#5B6169', bg: '#EEF0F2', ouvert: true },
     encours:  { lbl: 'En cours',      col: '#B45309', bg: '#FAEEDA', ouvert: true },
-    avoir:    { lbl: 'Avoir attendu', col: '#1565C0', bg: '#E3F2FD', ouvert: true },
+    avoir:    { lbl: 'Avoir en cours', col: '#1565C0', bg: '#E3F2FD', ouvert: true },
     regle:    { lbl: 'Réglé',         col: '#0F6E56', bg: '#E1F5EE', ouvert: false },
     abandon:  { lbl: 'Abandon',       col: '#888780', bg: '#F1EFE8', ouvert: false }
   };
@@ -100,6 +101,10 @@
   function ltRender() {
     const z = document.getElementById('lt-liste'); if (!z) return;
     ltRenderStats();
+    // Le bouton de mise a jour n'apparait qu'aux administrateurs : il efface
+    // les deux listes, ce n'est pas un geste de comptoir.
+    const bmaj = document.getElementById('lt-maj');
+    if (bmaj) bmaj.style.display = ltAdmin() ? '' : 'none';
     document.querySelectorAll('.lt-ong').forEach(b => b.classList.toggle('on', b.dataset.ong === ltOnglet));
 
     const tiede = ltOnglet === 'litiges' ? LT_TIEDE : LT_FTIEDE;
@@ -125,7 +130,7 @@
     if (!lst.length) {
       const vierge = !(ltColl() || []).length;
       z.innerHTML = '<div class="lt-vide">' + (vierge
-        ? 'Aucun dossier enregistré.' + (ltAdmin() ? '<div style="margin-top:14px"><button class="btn bp" onclick="ltImporter()">Reprendre le tableau Excel</button></div><div class="lt-mini">26 litiges et 6 factures manquantes, repris une seule fois.</div>' : '')
+        ? 'Aucun dossier enregistré.' + (ltAdmin() ? '<div style="margin-top:14px"><button class="btn bp" onclick="ltImporter()">Reprendre le tableau Excel</button></div><div class="lt-mini">' + LT_SEED_LITIGES.length + ' litiges et ' + LT_SEED_FACTURES.length + ' factures manquantes, repris une seule fois.</div>' : '')
         : 'Aucun dossier ne correspond à ce filtre.') + '</div>';
       return;
     }
@@ -346,6 +351,84 @@
   // Ce n'est pas une migration (piège n°7) : aucune donnée existante n'est
   // réécrite. C'est une saisie initiale, déclenchée par un humain, refusée si
   // la liste n'est pas vide.
+  // ── METTRE A JOUR DEPUIS LE TABLEUR ───────────────────────────────────────
+  // Olivier : « supprime l'existant et applique le contenu du fichier ». C'est
+  // donc un REMPLACEMENT, pas une fusion : ce que le tableur dit fait foi, et
+  // un dossier absent du fichier disparait.
+  //
+  // UNE SEULE CHOSE SURVIT : le fil et les relances. Ce sont les traces de ce
+  // qui a ete fait DEPUIS PILOT — un appel passe, un mail envoye — et le
+  // tableur ne les connait pas, donc il ne les contredit pas. Les jeter serait
+  // perdre une information que le fichier ne remplace pas. Tout le reste
+  // (date, montant, etat, motif, commentaire) vient du fichier.
+  function ltClefReprise(r) {
+    return [String((r && r.labo) || '').trim().toLowerCase(),
+            String((r && r.cmd) || '').trim(),
+            String((r && r.facture) || '').trim()].join('|');
+  }
+  function ltMemoireDesFils(arr) {
+    const m = {};
+    (arr || []).forEach(function (r) {
+      if (!r) return;
+      const a = (r.fil || []).length, b = (r.relances || []).length;
+      if (a || b) m[ltClefReprise(r)] = { fil: r.fil || [], relances: r.relances || [] };
+    });
+    return m;
+  }
+  function ltVider(nom, arr) {
+    // LA PIERRE TOMBALE AVANT LE RETRAIT. Sans elle, les dossiers supprimes
+    // reviendraient a la prochaine resynchronisation, reposes par un poste qui
+    // les a encore en memoire — et on se retrouverait avec les deux listes.
+    (arr || []).forEach(function (r) {
+      if (r && r.id != null && typeof markDeleted === 'function') markDeleted(nom, r.id);
+    });
+    if (arr) arr.length = 0;
+  }
+
+  window.ltRemplacer = function () {
+    if (!ltAdmin()) { alert('Action réservée aux administrateurs.'); return; }
+    const nl = (litiges || []).length, nf = (facturesManq || []).length;
+    if (!confirm('Remplacer les ' + nl + ' litiges et ' + nf + ' factures manquantes '
+      + 'par le contenu du tableur ?\n\n'
+      + LT_SEED_LITIGES.length + ' litiges et ' + LT_SEED_FACTURES.length
+      + ' factures seront posés à la place.\n\n'
+      + 'Les dossiers absents du fichier disparaîtront. Les fils de discussion et '
+      + 'les relances enregistrés dans PILOT sont conservés pour les dossiers '
+      + 'reconnus.')) return;
+    if (!confirm('Dernière confirmation — cette opération ne se défait pas.')) return;
+
+    const memL = ltMemoireDesFils(litiges), memF = ltMemoireDesFils(facturesManq);
+    ltVider('litiges', litiges);
+    ltVider('facturesManq', facturesManq);
+    const now = Date.now();
+    let repris = 0;
+    const poser = (arr, graines, prefixe, nomColl) => graines.forEach(function (sg, i) {
+      const g = Object.assign({}, sg);
+      // Dans le tableur, la colonne libre des factures notait la référence reçue :
+      // elle rejoint le champ « n° de facture ou BL ».
+      if (g.ref) { g.facture = g.ref; delete g.ref; }
+      const r = Object.assign(
+        { id: prefixe + now.toString(36) + i.toString(36), tel: '', facture: '', cmd: '',
+          montant: null, aChiffrer: false, note: '', fil: [], relances: [],
+          repris: true, cree: now, updatedAt: now + i }, g);
+      const garde = (nomColl === 'litiges' ? memL : memF)[ltClefReprise(r)];
+      if (garde) { r.fil = garde.fil; r.relances = garde.relances; repris++; }
+      arr.push(r);
+    });
+    poser(litiges, LT_SEED_LITIGES, 'lt:r', 'litiges');
+    poser(facturesManq, LT_SEED_FACTURES, 'lf:r', 'facturesManq');
+
+    if (typeof saveNow === 'function') saveNow();
+    try {
+      if (typeof logAction === 'function') logAction('Litiges — remplacement depuis le tableur',
+        nl + '+' + nf + ' remplacés par ' + LT_SEED_LITIGES.length + '+' + LT_SEED_FACTURES.length);
+    } catch (e) {}
+    ltRender();
+    alert(LT_SEED_LITIGES.length + ' litiges et ' + LT_SEED_FACTURES.length
+      + ' factures manquantes sont en place.'
+      + (repris ? '\n\n' + repris + ' dossier(s) ont retrouvé leur fil de discussion.' : ''));
+  };
+
   window.ltImporter = function () {
     if ((litiges || []).length || (facturesManq || []).length) {
       alert('La reprise ne peut se faire que sur des listes vides.'); return;
@@ -446,6 +529,8 @@
       <span style="flex:1"></span>
       <input class="lt-ch" placeholder="Rechercher…" oninput="ltChercher(this.value)">
       <button class="btn bp" onclick="ltNouveau()">+ Nouveau</button>
+      <button class="btn bs" id="lt-maj" onclick="ltRemplacer()" style="display:none"
+              title="Remplacer les deux listes par le contenu du tableur">Mettre à jour depuis le tableur</button>
     </div>
     <div id="lt-liste"></div>
   </div>`;
@@ -464,12 +549,60 @@
     </div>
   </div>`;
 
-  // ── Reprise du tableau Excel : les données telles qu'elles y figuraient ────
-  // Deux dates (gsk vaccin, novo nordisk) sont postérieures à aujourd'hui dans
-  // le fichier d'origine ; elles sont reprises telles quelles et signalées
-  // « date ? » dans la liste plutôt que corrigées à l'aveugle.
-  const LT_SEED_LITIGES = [{"date":"2026-03-18","labo":"modilac","facture":"5406254401","cmd":"156868","montant":580.86,"type":"manquant","etat":"regle","note":"1 colis refusé"},{"date":"2026-03-27","labo":"gaba","tel":"0472700310","facture":"2130610022","montant":80.14,"type":"manquant","etat":"regle","note":"non reçu"},{"date":"2026-02-06","labo":"sanofi","cmd":"154145","montant":610.97,"type":"noncommande","etat":"abandon","note":"reçu par erreur"},{"date":"2026-03-31","labo":"mkl","facture":"2000252","cmd":"158211","montant":447.92,"type":"casse","etat":"encours","note":"palette reçue abimée/ note sur bon transporteur"},{"date":"2026-03-30","labo":"directlog","tel":"0972722781","facture":"1525790","cmd":"158301","montant":276.79,"type":"manquant","etat":"encours"},{"date":"2026-04-10","labo":"Vichy","tel":"0183772301","facture":"3301237093","cmd":"146207","montant":905.9,"type":"remise","etat":"regle","note":"avoir et refacturation OK (nouv fact 3301251541)"},{"date":"2026-04-22","labo":"ineldea","facture":"90170682","cmd":"157759","montant":513.72,"type":"manquant","etat":"encours","note":"manque 5 isn fertilia"},{"date":"2026-04-22","labo":"LRP","facture":"3301418393","cmd":"156998","montant":1431.69,"type":"manquant","etat":"encours","note":"manque 1 colis"},{"date":"2025-12-31","labo":"cooper","facture":"500975607","cmd":"150058","montant":2780.94,"type":"autre","etat":"encours","note":"toujours en litige"},{"date":"2026-05-04","labo":"Pranarom","tel":"0320077515","facture":"BE02-002491718","cmd":"160949","aChiffrer":true,"type":"manquant","etat":"regle","note":"manque calmigem - 05/05 mail envoyé"},{"date":"2026-05-04","labo":"URGO","tel":"0380447121","facture":"23222156","cmd":"160973","aChiffrer":true,"type":"manquant","etat":"regle","note":"manque 12 urgoverrues - Livraison en cours"},{"date":"2026-05-04","labo":"Respire","facture":"PMO/OUT/91109 - 985002578","cmd":"160937","aChiffrer":true,"type":"manquant","etat":"regle","note":"manque stick fraîcheur - en rupture"},{"date":"2026-05-20","labo":"SVR","cmd":"159106","aChiffrer":true,"type":"remise","etat":"regle","note":"pdts mini facturés à 39% au lieu de 48% : attente avoir à 39% et refact à 48%"},{"date":"2026-06-10","labo":"Alliance","aChiffrer":true,"type":"remise","etat":"avoir","note":"suivre avoir de 4 paires de dynaven"},{"date":"2026-06-12","labo":"Eurodep / Panda Tea","facture":"FV26228394","cmd":"162128","montant":220.25,"type":"manquant","etat":"regle","note":"commande non reçue - facture reçue - litige fait par commercial chez Eurodep"},{"date":"2026-05-05","labo":"3m","facture":"9000226378","cmd":"161044","montant":198.67,"type":"manquant","etat":"encours","note":"manque 6 tegaderm"},{"date":"2026-06-16","labo":"mkl","facture":"220188","cmd":"164555","aChiffrer":true,"type":"manquant","etat":"encours","note":"manque 1 carton de lingette"},{"date":"2026-07-06","labo":"Eurodep / Panda Tea","tel":"0160948585","facture":"FV26288384","cmd":"162128","montant":284.78,"type":"remise","etat":"regle","note":"reclamation car remise manquante sur deux lignes"},{"date":"2026-07-16","labo":"directlog","facture":"bl 8276573","cmd":"167480","aChiffrer":true,"type":"manquant","etat":"encours","note":"tel le 16"},{"date":"2026-07-17","labo":"La rosee","facture":"1E10054615","aChiffrer":true,"type":"casse","etat":"encours","note":"mail envoyé le 17/07/26"},{"date":"2026-07-21","labo":"Expanscience","facture":"012978941","cmd":"167592","aChiffrer":true,"type":"remise","etat":"regle","note":"mail envoyé pr demande refacturation à 24% des solaires au lieu de19%"},{"date":"2026-07-22","labo":"gilbert","tel":"0231471503","facture":"3633237","cmd":"167997","aChiffrer":true,"type":"manquant","etat":"encours","note":"manque 1 colis litige ouvert avec transporteur"},{"date":"2026-07-22","labo":"sanofi","cmd":"168400","aChiffrer":true,"type":"casse","etat":"encours","note":"1 colis refusé"},{"date":"2026-07-22","labo":"uriage","tel":"0892052828","facture":"5075411363","cmd":"167803","aChiffrer":true,"type":"manquant","etat":"encours","note":"manque 1 colis reçu a la place un colis super u  appel noyon sans réponse - 04/09 : appel uriage, demande un passage transporteur pour reprendre le colis qui ne nous était pas destiné et demande de recherche du colis manquant, sinon relivraison"},{"date":"2026-08-03","labo":"thuasne","facture":"58530891","aChiffrer":true,"type":"autre","etat":"avoir","note":"attente avoir 4 paires"},{"date":"2026-08-31","labo":"mayoly","tel":"0177937200","facture":"69372700","cmd":"162121","aChiffrer":true,"type":"manquant","etat":"encours","note":"manque 3 smectalia"}];
-  const LT_SEED_FACTURES = [{"date":"2026-12-01","cmd":"146678","labo":"gsk vaccin","montant":175.18,"etat":"demande","ref":"2130635251"},{"date":"2026-10-10","cmd":"142833","labo":"novo nordisk","montant":35.0,"etat":"demande","ref":"36466290"},{"date":"2026-06-05","cmd":"164248","labo":"movianto","montant":48.13,"etat":"manquante"},{"date":"2026-06-11","cmd":"164226","labo":"laphal","montant":100.55,"etat":"demande","ref":"liv2515762"},{"date":"2026-04-07","cmd":"158945","labo":"viatris","montant":8.38,"etat":"manquante"},{"date":"2026-06-12","cmd":"164653","labo":"viatris","montant":45.72,"etat":"manquante"}];
+  // ── LE TABLEUR, TEL QU'IL EST ─────────────────────────────────────────────
+  // Reprise du fichier « Factures / Litiges / RFA » du 25/10/2026 : trente
+  // litiges et six factures manquantes. Les lignes vides du tableur — celles
+  // qui ne portaient qu'un reste de liste deroulante — ne sont pas des dossiers
+  // et ne sont pas reprises.
+  //
+  // UNE DATE EST POSTERIEURE A AUJOURD'HUI (gsk vaccin, 01/12/2026, commande
+  // 146678). Elle est reprise telle quelle et signalee « date ? » dans la
+  // liste, plutot que corrigee a l'aveugle : c'est vraisemblablement 01/12/2025,
+  // mais personne ici ne peut en decider a la place de l'officine.
+  //
+  // Les montants absents du tableur deviennent « a chiffrer » — dix-huit des
+  // trente litiges. Un montant nul aurait fausse tous les totaux.
+  const LT_SEED_LITIGES = [
+    {"date":"2026-03-18","labo":"modilac","facture":"5406254401","cmd":"156868","montant":580.86,"type":"manquant","etat":"regle","note":"1 colis refusé"},
+    {"date":"2026-03-27","labo":"gaba","tel":"0472700310","facture":"2130610022","montant":80.14,"type":"manquant","etat":"regle","note":"non reçu"},
+    {"date":"2026-02-06","labo":"sanofi","cmd":"154145","montant":610.97,"type":"noncommande","etat":"abandon","note":"reçu par erreur"},
+    {"date":"2026-03-31","labo":"mkl","facture":"2000252","cmd":"158211","montant":447.92,"type":"casse","etat":"regle","note":"attente avoir"},
+    {"date":"2026-03-30","labo":"directlog","tel":"0972722781","facture":"1525790","cmd":"158301","montant":276.79,"type":"manquant","etat":"encours"},
+    {"date":"2026-04-10","labo":"Vichy","tel":"0183772301","facture":"3301237093","cmd":"146207","montant":905.9,"type":"remise","etat":"regle","note":"avoir et refacturation OK (nouv fact 3301251541)"},
+    {"date":"2026-04-22","labo":"ineldea","facture":"90170682","cmd":"157759","montant":513.72,"type":"manquant","etat":"regle","note":"manque 5 isn fertilia"},
+    {"date":"2026-04-22","labo":"LRP","facture":"3301418393","cmd":"156998","montant":1431.69,"type":"manquant","etat":"encours","note":"manque 1 colis"},
+    {"date":"2025-12-31","labo":"cooper","facture":"500975607","cmd":"150058","montant":2780.94,"type":"autre","etat":"encours","note":"toujours en litige"},
+    {"date":"2026-05-04","labo":"Pranarom","tel":"0320077515","facture":"BE02-002491718","cmd":"160949","aChiffrer":true,"type":"manquant","etat":"regle","note":"manque calmigem - 05/05 mail envoyé"},
+    {"date":"2026-05-04","labo":"URGO","tel":"0380447121","facture":"23222156","cmd":"160973","aChiffrer":true,"type":"manquant","etat":"regle","note":"manque 12 urgoverrues - Livraison en cours"},
+    {"date":"2026-05-04","labo":"Respire","facture":"PMO/OUT/91109 - 985002578","cmd":"160937","aChiffrer":true,"type":"manquant","etat":"regle","note":"manque stick fraîcheur - en rupture"},
+    {"date":"2026-05-20","labo":"SVR","cmd":"159106","aChiffrer":true,"type":"remise","etat":"regle","note":"pdts mini facturés à 39% au lieu de 48% : attente avoir à 39% et refact à 48%"},
+    {"date":"2026-06-10","labo":"Alliance","aChiffrer":true,"type":"remise","etat":"avoir","note":"suivre avoir de 4 paires de dynaven"},
+    {"date":"2026-06-12","labo":"Eurodep / Panda Tea","facture":"FV26228394","cmd":"162128","montant":220.25,"type":"manquant","etat":"regle","note":"commande non reçue - facture reçue - litige fait par commercial chez Eurodep"},
+    {"date":"2026-05-05","labo":"3m","facture":"9000226378","cmd":"161044","montant":198.67,"type":"manquant","etat":"encours","note":"manque 6 tegaderm"},
+    {"date":"2026-06-16","labo":"mkl","facture":"220188","cmd":"164555","aChiffrer":true,"type":"manquant","etat":"regle","note":"attente avoir"},
+    {"date":"2026-07-06","labo":"Eurodep / Panda Tea","tel":"0160948585","facture":"FV26288384","cmd":"162128","montant":284.78,"type":"remise","etat":"regle","note":"reclamation car remise manquante sur deux lignes"},
+    {"date":"2026-07-16","labo":"directlog","facture":"bl 8276573","cmd":"167480","aChiffrer":true,"type":"manquant","etat":"encours","note":"tel le 16"},
+    {"date":"2026-07-17","labo":"La rosee","facture":"1E10054615","aChiffrer":true,"type":"casse","etat":"regle","note":"mail envoyé le 17/07/26"},
+    {"date":"2026-07-21","labo":"Expanscience","facture":"012978941","cmd":"167592","aChiffrer":true,"type":"remise","etat":"regle","note":"mail envoyé pr demande refacturation à 24% des solaires au lieu de19%"},
+    {"date":"2026-07-22","labo":"gilbert","tel":"0231471503","facture":"3633237","cmd":"167997","aChiffrer":true,"type":"manquant","etat":"encours","note":"manque 1 colis litige ouvert avec transporteur"},
+    {"date":"2026-07-22","labo":"sanofi","cmd":"168400","aChiffrer":true,"type":"casse","etat":"encours","note":"1 colis refusé"},
+    {"date":"2026-07-22","labo":"uriage","tel":"0892052828","facture":"5075411363","cmd":"167803","aChiffrer":true,"type":"manquant","etat":"encours","note":"manque 1 colis reçu a la place un colis super u  appel noyon sans réponse - 04/09 : appel uriage, demande un passage transporteur pour reprendre le colis qui ne nous était pas destiné et demande de recherche du colis manquant, sinon relivraison"},
+    {"date":"2026-08-03","labo":"thuasne","facture":"58530891","aChiffrer":true,"type":"autre","etat":"regle","note":"attente avoir 4 paires"},
+    {"date":"2026-08-31","labo":"mayoly","tel":"0177937200","facture":"69372700","cmd":"162121","aChiffrer":true,"type":"manquant","etat":"regle","note":"manque 3 smectalia"},
+    {"date":"2026-09-21","labo":"svr","tel":"0805290030","facture":"SV6081693","cmd":"162756","aChiffrer":true,"type":"casse","etat":"avoir","note":"ampoule cassée et trousse tachée"},
+    {"date":"2026-09-21","labo":"mam","facture":"46818","cmd":"171818","aChiffrer":true,"type":"noncommande","etat":"encours","note":"demande de refacturation"},
+    {"date":"2026-09-24","labo":"Menarini","tel":"0800856767","facture":"491322450","cmd":"171823","aChiffrer":true,"type":"manquant","etat":"avoir","note":"Retard dans le ttt des litiges alloga, donc pas de retour avant début oct"},
+    {"date":"2026-10-20","labo":"Avène","cmd":"172292","aChiffrer":true,"type":"remise","etat":"constate","note":"C6 Cleanance Hydra facturés alors que nous devions les recevoir en echange"}
+  ];
+
+  const LT_SEED_FACTURES = [
+    {"date":"2026-12-01","cmd":"146678","labo":"gsk vaccin","montant":175.18,"etat":"demande","ref":"2130635251"},
+    {"date":"2026-10-10","cmd":"142833","labo":"novo nordisk","montant":35.0,"etat":"demande","ref":"36466290"},
+    {"date":"2026-06-05","cmd":"164248","labo":"movianto","montant":48.13,"etat":"manquante"},
+    {"date":"2026-06-11","cmd":"164226","labo":"laphal","montant":100.55,"etat":"demande","ref":"liv2515762"},
+    {"date":"2026-04-07","cmd":"158945","labo":"viatris","montant":8.38,"etat":"manquante"},
+    {"date":"2026-06-12","cmd":"164653","labo":"viatris","montant":45.72,"etat":"manquante"}
+  ];
 
   // ── Injection ─────────────────────────────────────────────────────────────
   function ltInject() {
