@@ -297,8 +297,8 @@ console.log('\nLe sous-menu de Suivi administratif');
 t('« Contrôle de commande » se range sous Logistique',
   /b\.setAttribute\('data-parent', 'logistique'\)/.test(src));
 t('« Commandes » aussi', /b\.setAttribute\('data-parent', 'logistique'\)/.test(lire('public/co-module.js')));
-t('« Litiges » reste sous Suivi administratif',
-  /b\.setAttribute\('data-parent', 'suiviadmin'\)/.test(lire('public/lt-module.js')));
+t('« Litiges » est la troisième, sous Logistique elle aussi',
+  /b\.setAttribute\('data-parent', 'logistique'\)/.test(lire('public/lt-module.js')));
 t('les trois portent la classe d’indentation',
   /'sb-item sb-sub'/.test(src) && /'sb-item sb-sub'/.test(lire('public/lt-module.js'))
   && /'sb-item sb-sub'/.test(lire('public/co-module.js')));
@@ -354,18 +354,25 @@ const BARRE = (function () {
 }());
 // Deux familles melangees, dans le desordre ou le classement alphabetique les
 // aurait laissees : c'est exactement le cas reel.
-const PARENTS = { commandes: 'logistique', ctrlcmd: 'logistique', litiges: 'suiviadmin' };
-['commandes', 'litiges', 'livraisons', 'logistique', 'ctrlcmd', 'suiviadmin', 'caisse']
+const PARENTS = { commandes: 'logistique', ctrlcmd: 'logistique', litiges: 'logistique' };
+// Les enfants arrivent DISPERSES, et dans l'ordre que le classement
+// alphabetique vient de leur donner : c'est exactement l'etat reel de la barre
+// au moment ou `rangerSousEntrees` passe.
+['livraisons', 'commandes', 'ctrlcmd', 'litiges', 'logistique', 'suiviadmin', 'caisse']
   .forEach(function (s) { BARRE.items.push(BARRE.el(s, PARENTS[s] || null)); });
 eval(bloc('function rangerSousEntrees(bar){', '\n}', ix));
 rangerSousEntrees(BARRE);
-t('CHAQUE FAMILLE SE REGROUPE SOUS SON PARENT',
+t('LES TROIS SE REGROUPENT SOUS LOGISTIQUE',
   BARRE.items.map(x => x.sec).join(',')
-  === 'livraisons,logistique,commandes,ctrlcmd,suiviadmin,litiges,caisse');
-t('... DANS LEUR ORDRE, pas à l’envers',
-  BARRE.items.findIndex(x => x.sec === 'commandes') < BARRE.items.findIndex(x => x.sec === 'ctrlcmd'));
-t('... et les deux familles ne se mélangent pas',
-  BARRE.items.findIndex(x => x.sec === 'ctrlcmd') < BARRE.items.findIndex(x => x.sec === 'suiviadmin'));
+  === 'livraisons,logistique,commandes,ctrlcmd,litiges,suiviadmin,caisse');
+t('... DANS LEUR ORDRE, pas à l’envers — on commande, on contrôle, puis on réclame',
+  BARRE.items.findIndex(x => x.sec === 'commandes')
+  < BARRE.items.findIndex(x => x.sec === 'ctrlcmd')
+  && BARRE.items.findIndex(x => x.sec === 'ctrlcmd')
+  < BARRE.items.findIndex(x => x.sec === 'litiges'));
+t('... et « Suivi administratif » n’en récupère aucune au passage',
+  BARRE.items.findIndex(x => x.sec === 'litiges')
+  < BARRE.items.findIndex(x => x.sec === 'suiviadmin'));
 t('un parent absent ne fait pas disparaître l’enfant', (function () {
   const B2 = Object.create(BARRE);
   const items = [BARRE.el('ctrlcmd', 'suiviadmin')];

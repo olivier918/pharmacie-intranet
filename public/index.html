@@ -108,6 +108,10 @@ header{grid-area:hd;background:#fff;color:var(--gray-900);padding:0 1.5rem;displ
 .sb-item.sb-ouvert{border-left-color:var(--g-mid);color:var(--g-dark)}
 .sb-sub{padding-left:2.9rem;font-size:.84rem;gap:10px}
 .sb-groupe{font-weight:600}
+.sb-chev{margin-left:auto;font-size:.72rem;line-height:1;color:var(--gray-400);
+         padding:3px 4px;border-radius:5px;cursor:pointer;user-select:none}
+.sb-chev:hover{color:var(--g-dark);background:var(--gray-100)}
+#app.sb-collapsed .sb-chev{display:none}
 .sb-sub .sb-ico{width:15px;height:15px;opacity:.75}
 #app.sb-collapsed .sb-sub{padding-left:.5rem}
 .sb-ico{width:22px;height:22px;flex-shrink:0}
@@ -3759,11 +3763,71 @@ function allerASection(sec, apres){
   showSec(sec);
   if(typeof apres==='function') apres();
 }
+// ═══════════ LE PLI DES MODULES A SOUS-DOSSIERS ═══════════
+// Le pli est un REGLAGE DE POSTE, pas une donnee partagee : replier Logistique
+// au comptoir ne doit pas la replier au preparatoire. Il vit donc dans le
+// navigateur, et un localStorage indisponible rend « tout deplie » plutot que
+// de faire tomber la barre.
+const SB_PLI_CLE = 'pilot_sb_replies';
+function sbReplies(){
+  try{ const v = JSON.parse(localStorage.getItem(SB_PLI_CLE) || '[]');
+       return Array.isArray(v) ? v : []; }catch(e){ return []; }
+}
+function sbEcrirePlis(l){
+  try{ localStorage.setItem(SB_PLI_CLE, JSON.stringify(l)); }catch(e){}
+}
+function sbReplie(cle){ return sbReplies().indexOf(cle) >= 0; }
+function sbDeplier(cle){
+  const l = sbReplies(), i = l.indexOf(cle);
+  if(i >= 0){ l.splice(i, 1); sbEcrirePlis(l); }
+}
+function sbBasculerPli(cle, ev){
+  // LE CHEVRON NE DOIT PAS OUVRIR LA RUBRIQUE. Sans cette coupure, replier
+  // Logistique vous emmenerait dans Commandes au passage.
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  const l = sbReplies(), i = l.indexOf(cle);
+  if(i >= 0) l.splice(i, 1); else l.push(cle);
+  sbEcrirePlis(l);
+  appliquerModules();
+}
+// Pose un chevron sur les items qui ont des sous-entrees, et le retire de ceux
+// qui n'en ont plus — un module peut etre masque pour cet operateur.
+function sbChevrons(){
+  const bar = document.getElementById('sidebar'); if(!bar) return;
+  const parents = {};
+  bar.querySelectorAll('.sb-item[data-parent]').forEach(function(b){
+    parents[b.getAttribute('data-parent')] = 1;
+  });
+  bar.querySelectorAll('.sb-item').forEach(function(b){
+    const c = b.getAttribute('data-sec');
+    let e = b.querySelector('.sb-chev');
+    if(!c || !parents[c] || b.getAttribute('data-parent')){
+      if(e && e.parentNode) e.parentNode.removeChild(e);
+      b.classList.remove('sb-plie');
+      return;
+    }
+    if(!e){
+      e = document.createElement('span');
+      e.className = 'sb-chev';
+      e.setAttribute('title', 'Replier ou déplier');
+      e.setAttribute('onclick', "sbBasculerPli('" + c + "',event)");
+      b.appendChild(e);
+    }
+    const plie = sbReplie(c);
+    e.textContent = plie ? '\u25B8' : '\u25BE';
+    b.classList.toggle('sb-plie', plie);
+  });
+}
+
 // Un item de groupe n'ouvre rien par lui-meme : il ouvre la PREMIERE de ses
 // sous-entrees encore visibles. Sans cela, le clic chercherait un `sec-logistique`
 // qui n'existe pas — et un operateur dont on a masque « Commandes » tomberait
 // sur un ecran vide au lieu du controle des commandes.
 function ouvrirGroupe(cle){
+  // ON DEPLIE D'ABORD. Cliquer le nom d'un groupe replie ne doit pas ne rien
+  // faire : la famille s'ouvre, puis on entre dans la premiere page.
+  sbDeplier(cle);
+  appliquerModules();
   const enfants = Array.prototype.slice.call(
     document.querySelectorAll('.sidebar .sb-item[data-parent="' + cle + '"]'))
     .filter(function(b){ return b.style.display !== 'none'; });
@@ -12334,6 +12398,7 @@ function ordonnerSidebar(){
   });
   if(debutQueue < 0 && sep.parentNode) sep.parentNode.removeChild(sep);
   rangerSousEntrees(bar);
+  sbChevrons();
 }
 
 // Une sous-entree (`data-parent`) se range juste sous son parent, quel que soit
@@ -12364,14 +12429,24 @@ function appliquerModules(){
     b.style.display = visible ? '' : 'none';
     if(!visible && b.classList.contains('active')) actifMasque = true;
   });
-  // UNE SOUS-ENTREE DISPARAIT AVEC SON PARENT. La laisser seule donnerait une
-  // ligne indentee sous rien, et un ecran qu'on ouvre sans savoir d'ou.
+  // UNE SOUS-ENTREE DISPARAIT AVEC SON PARENT — masque, ou replie. La laisser
+  // seule donnerait une ligne indentee sous rien.
+  //
+  // DEUX NUANCES, ET ELLES COMPTENT :
+  //   • la page OUVERTE reste visible meme sous un parent replie — on doit
+  //     toujours voir ou l'on est, sinon replier donne l'impression d'avoir
+  //     quitte l'ecran qu'on regarde ;
+  //   • un parent REPLIE ne declenche pas la bascule de secours. Masquer par
+  //     droits, c'est retirer un module ; replier, c'est ranger. Se faire
+  //     ejecter vers Livraisons parce qu'on a range la barre serait absurde.
   document.querySelectorAll('.sidebar .sb-item[data-parent]').forEach(function(b){
-    const p = document.querySelector('.sidebar .sb-item[data-sec="'
-      + b.getAttribute('data-parent') + '"]:not([data-parent])');
+    const k = b.getAttribute('data-parent');
+    const p = document.querySelector('.sidebar .sb-item[data-sec="' + k + '"]:not([data-parent])');
     if(p && p.style.display === 'none'){
       b.style.display = 'none';
       if(b.classList.contains('active')) actifMasque = true;
+    } else if(sbReplie(k) && !b.classList.contains('active')){
+      b.style.display = 'none';
     }
   });
   // Si l'on masque le module actuellement ouvert, on bascule sur le premier
