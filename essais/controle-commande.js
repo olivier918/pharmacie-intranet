@@ -41,7 +41,7 @@ global_('const CC_HISTO_JOURS =', '30;');
 eval(['ccNumCanon', 'ccNumValide', 'ccNumAttendu', 'ccProbs', 'ccSansProbleme',
       'ccDestinataires', 'ccVu', 'ccPour', 'ccEstPourMoi', 'ccPeutMarquer',
       'ccMarquer', 'ccTrier', 'ccARevoir', 'ccHistorique', 'ccDoublon',
-      'ccCompteurPour', 'ccMoisDe'].map(extraire).join('\n'));
+      'ccFiltrer', 'ccCompteurPour', 'ccMoisDe'].map(extraire).join('\n'));
 
 let ok = 0, ko = 0;
 const t = (n, c) => { c ? (ok++, console.log('  ✓ ' + n)) : (ko++, console.log('  ✗ ' + n)); };
@@ -179,6 +179,7 @@ globalThis.document = {
   }
 };
 let FIX = [], FIX_U = { id: 'OF' }, FIX_ADMIN = true, FIX_S = STAFF;
+let ccFiltre = '';
 const ccListe = () => FIX;
 const ccUser = () => FIX_U;
 const ccStaff = () => FIX_S;
@@ -226,6 +227,56 @@ jet = null; try { window.ccRender(true); } catch (e) { jet = e.message; }
 t('une liste vide le dit au lieu de rester blanche',
   jet === null && /Aucune commande en attente/.test(ELS['cc-listes'].innerHTML));
 
+// ── Le filtre par destinataire ──────────────────────────────────────────────
+// LE FILTRE REDUIT LA MATIERE, il ne change pas le classement. Filtrer sur
+// quelqu'un, c'est demander « que doit Olivier ? » — la question n'a plus de
+// « pour vous / pour les autres » a l'interieur.
+console.log('\nLe filtre Olivier / Anouck');
+t('sans filtre, tout passe', ccFiltrer(L, '').length === L.length);
+t('filtré sur Olivier, on ne garde que les siennes',
+  ccFiltrer(L, 'OF').map(x => x.num).join(',') === '170401,170403,170404');
+t('filtré sur Anouck, les siennes', ccFiltrer(L, 'AF').map(x => x.num).join(',') === '170402');
+t('un destinataire inconnu ne rend rien, plutôt que tout', ccFiltrer(L, 'ZZ').length === 0);
+t('une liste absente ne fait pas tomber la lecture', ccFiltrer(null, 'OF').length === 0);
+
+FIX = [
+  { id: '1', num: '170412', pour: 'OF', par: 'JN', le: T, remise: true },
+  { id: '2', num: '170413', pour: 'AF', par: 'JN', le: T + 60000 },
+  { id: '3', num: '170414', pour: 'AF', par: 'JN', le: T + 70000, prix: true }
+];
+ccFiltre = ''; FIX_U = { id: 'OF' };
+window.ccRender(true);
+const sansFiltre = ELS['cc-listes'].innerHTML;
+t('LA BARRE DE FILTRE EST LÀ, avec un bouton par destinataire',
+  /class="cc-filtre"/.test(sansFiltre) && /ccFiltrer2\('OF'\)/.test(sansFiltre)
+  && /ccFiltrer2\('AF'\)/.test(sansFiltre));
+t('... et « Tout le monde » est allumé par défaut',
+  /class="cc-fb on" onclick="ccFiltrer2\(''\)/.test(sansFiltre));
+t('CHAQUE BOUTON ANNONCE SON COMPTE — sinon on filtre pour rien',
+  sansFiltre.indexOf('Tout le monde<span class="cc-fn">3<') > 0);
+t('... et il compte ce qui RESTE A REVOIR, pas tout l\u2019historique',
+  sansFiltre.indexOf('>Anouck<span class="cc-fn">2<') > 0);
+
+ccFiltre = 'AF';
+window.ccRender(true);
+const surAnouck = ELS['cc-listes'].innerHTML;
+t('filtré sur Anouck, ses deux commandes sont là',
+  /170413/.test(surAnouck) && /170414/.test(surAnouck));
+t('... ET CELLE D’OLIVIER N’Y EST PAS', !/170412/.test(surAnouck));
+t('le titre dit pour qui', /Pour Anouck — 2 à revoir/.test(surAnouck));
+t('LE PARTAGE « POUR VOUS / POUR LES AUTRES » DISPARAÎT — il n’a plus de sens',
+  !/Pour vous/.test(surAnouck) && !/Pour les autres/.test(surAnouck));
+t('le bouton d’Anouck est allumé',
+  /class="cc-fb on" onclick="ccFiltrer2\('AF'\)/.test(surAnouck));
+t('la pastille du menu, elle, continue de compter LES MIENNES',
+  ELS['cc-navb'].textContent === '1');
+
+ccFiltre = 'ZZ';
+window.ccRender(true);
+t('un filtre sans résultat le dit, et dit pour qui',
+  /Aucune commande en attente de relecture/.test(ELS['cc-listes'].innerHTML));
+ccFiltre = ''; FIX_U = { id: 'OF' }; FIX_ADMIN = true;
+
 // ── Les gestionnaires cités existent ────────────────────────────────────────
 console.log('\nAucun bouton ne désigne une fonction qui n’existe pas');
 const EXPOSEES = new Set((src.match(/window\.(cc[A-Za-z]+)\s*=\s*function/g) || [])
@@ -243,11 +294,27 @@ t('... et il y en a bien, sinon l’essai ne vérifierait rien', CITEES.size >= 
 // niveau. Sans `rangerSousEntrees`, « Litiges » repartirait se ranger entre
 // « Livraisons » et « Locations ».
 console.log('\nLe sous-menu de Suivi administratif');
-t('« Contrôle de commande » se déclare sous son parent',
-  /b\.setAttribute\('data-parent', 'suiviadmin'\)/.test(src));
-t('« Litiges » aussi', /b\.setAttribute\('data-parent', 'suiviadmin'\)/.test(lire('public/lt-module.js')));
-t('les deux portent la classe d’indentation',
-  /'sb-item sb-sub'/.test(src) && /'sb-item sb-sub'/.test(lire('public/lt-module.js')));
+t('« Contrôle de commande » se range sous Logistique',
+  /b\.setAttribute\('data-parent', 'logistique'\)/.test(src));
+t('« Commandes » aussi', /b\.setAttribute\('data-parent', 'logistique'\)/.test(lire('public/co-module.js')));
+t('« Litiges » reste sous Suivi administratif',
+  /b\.setAttribute\('data-parent', 'suiviadmin'\)/.test(lire('public/lt-module.js')));
+t('les trois portent la classe d’indentation',
+  /'sb-item sb-sub'/.test(src) && /'sb-item sb-sub'/.test(lire('public/lt-module.js'))
+  && /'sb-item sb-sub'/.test(lire('public/co-module.js')));
+
+// UN ITEM DE GROUPE N'A PAS DE PAGE. « Logistique » n'abrite que ses
+// sous-entrees : cliquer dessus doit ouvrir la premiere, et `showSec` ne doit
+// pas jeter sur un `sec-logistique` qui n'existe pas — c'est `appliquerModules`,
+// cherchant le premier module visible, qui peut tomber dessus.
+t('« LOGISTIQUE » EST UN ITEM DE GROUPE, sans page à lui',
+  /data-sec="logistique" onclick="ouvrirGroupe\('logistique'\)"/.test(ix)
+  && !/id="sec-logistique"/.test(ix));
+t('... cliquer dessus ouvre sa première sous-entrée visible',
+  /function ouvrirGroupe\(cle\)/.test(ix)
+  && /b\.style\.display !== 'none'/.test(ix));
+t('... et showSec survit à un nom qui n’a pas de section',
+  /if\(!document\.getElementById\('sec-'\+name\)\)\{/.test(ix));
 t('la classe existe dans la feuille de style', /\.sb-sub\{padding-left/.test(ix));
 t('LE CLASSEMENT LES RAMÈNE SOUS LEUR PARENT, après son passage',
   /rangerSousEntrees\(bar\);/.test(ix) && /function rangerSousEntrees/.test(ix));
@@ -285,16 +352,20 @@ const BARRE = (function () {
     }
   };
 }());
-['livraisons', 'ctrlcmd', 'litiges', 'suiviadmin', 'caisse'].forEach(function (s) {
-  BARRE.items.push(BARRE.el(s, (s === 'ctrlcmd' || s === 'litiges') ? 'suiviadmin' : null));
-});
+// Deux familles melangees, dans le desordre ou le classement alphabetique les
+// aurait laissees : c'est exactement le cas reel.
+const PARENTS = { commandes: 'logistique', ctrlcmd: 'logistique', litiges: 'suiviadmin' };
+['commandes', 'litiges', 'livraisons', 'logistique', 'ctrlcmd', 'suiviadmin', 'caisse']
+  .forEach(function (s) { BARRE.items.push(BARRE.el(s, PARENTS[s] || null)); });
 eval(bloc('function rangerSousEntrees(bar){', '\n}', ix));
 rangerSousEntrees(BARRE);
-t('les deux sous-entrées suivent leur parent',
-  BARRE.items.map(x => x.sec).join(',') === 'livraisons,suiviadmin,ctrlcmd,litiges,caisse');
+t('CHAQUE FAMILLE SE REGROUPE SOUS SON PARENT',
+  BARRE.items.map(x => x.sec).join(',')
+  === 'livraisons,logistique,commandes,ctrlcmd,suiviadmin,litiges,caisse');
 t('... DANS LEUR ORDRE, pas à l’envers',
-  BARRE.items.indexOf(BARRE.items.find(x => x.sec === 'ctrlcmd'))
-  < BARRE.items.indexOf(BARRE.items.find(x => x.sec === 'litiges')));
+  BARRE.items.findIndex(x => x.sec === 'commandes') < BARRE.items.findIndex(x => x.sec === 'ctrlcmd'));
+t('... et les deux familles ne se mélangent pas',
+  BARRE.items.findIndex(x => x.sec === 'ctrlcmd') < BARRE.items.findIndex(x => x.sec === 'suiviadmin'));
 t('un parent absent ne fait pas disparaître l’enfant', (function () {
   const B2 = Object.create(BARRE);
   const items = [BARRE.el('ctrlcmd', 'suiviadmin')];

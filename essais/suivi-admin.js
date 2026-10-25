@@ -583,11 +583,97 @@ FIX_M = [{ id: SA_REPERE, graine: true, actif: false },
 t('il ne s’affiche pas dans le panneau des tâches récurrentes',
   (saVueModele().match(/class="sa-mr /g) || saVueModele().match(/class="sa-mr"/g) || []).length === 1);
 
+console.log('\nLes relevés se sèment comme les tâches : une fois');
+global_('const SA_INDICS_DEPART = [', '\n  ];');
+global_('const SA_REPERE_INDICS =', "'sai:graine';");
+eval(extraire('saSemerIndics'));
+FIX_I = [];
+t('les six relevés de la feuille sont posés', saSemerIndics(T0) === 6);
+t('... avec un identifiant calculé sur le mois',
+  FIX_I.some(r => r.id === 'sai:2026-10') && FIX_I.some(r => r.id === 'sai:2026-02'));
+t('... et le repère de semis', FIX_I.some(r => r.id === SA_REPERE_INDICS));
+t('À LA DEUXIÈME OUVERTURE, RIEN N’EST REPOSÉ', saSemerIndics(T0 + 60000) === 0);
+// CET ESSAI A TROUVE UN VRAI DEFAUT le 25/10 : les valeurs etaient posees PAR
+// REFERENCE, si bien qu'une correction a l'ecran modifiait la feuille d'origine
+// du module. On verifie donc les deux cotes.
+t('un relevé corrigé à la main ne sera pas écrasé', (function () {
+  const octobre = FIX_I.find(r => r.id === 'sai:2026-10');
+  octobre.v.encoursSecu = 1;
+  saSemerIndics(T0 + 120000);
+  return FIX_I.find(r => r.id === 'sai:2026-10').v.encoursSecu === 1;
+}()));
+t('... ET LA FEUILLE D’ORIGINE N’A PAS BOUGÉ — les valeurs sont copiées, pas partagées',
+  SA_INDICS_DEPART.find(d => d.mois === '2026-10').v.encoursSecu === 51762.10);
+FIX_I = FIX_I.filter(r => r.graine);
+t('et des relevés supprimés exprès ne reviennent pas',
+  saSemerIndics(T0 + 86400000) === 0 && FIX_I.length === 1);
+t('LE REPÈRE N’EST JAMAIS PRIS POUR UN RELEVÉ — il porte un mois vide',
+  saReleve(FIX_I, '') === null && saReleve(FIX_I, '2026-10') === null);
+FIX_I = [];
+t('une liste déjà saisie à la main n’est pas écrasée', (function () {
+  FIX_I = [{ id: 'sai:2026-01', mois: '2026-01', v: { vaTotal: 1 } }];
+  const n = saSemerIndics(T0);
+  return n === 0 && FIX_I.filter(r => !r.graine).length === 1;
+}()));
+FIX_I = [];
+
 console.log('\nL’ouverture sème avant de clôturer');
 t('L’ORDRE COMPTE : sans lui, le premier mois serait vide jusqu’au 1er suivant',
   src.indexOf('if (saSemer(Date.now()))') < src.indexOf('saCloturer();', src.indexOf('window.saOuvrir')));
 t('et une erreur de semis ne fait pas tomber l’ouverture',
   /catch \(e\) \{ console\.error\('saOuvrir', e\); \}/.test(src));
+
+
+// ── La feuille d'Olivier, et la relecture de sa transcription ───────────────
+// CE QUI SE JOUE ICI. Recopier six colonnes de chiffres à la main, c'est se
+// tromper quelque part. La feuille porte heureusement ses propres totaux et
+// ses propres pourcentages, qu'on N'A PAS repris — ils se recalculent. Les
+// confronter à ceux du tableur, c'est relire la transcription chiffre par
+// chiffre : un 181,27 tapé 18,27 ne donnerait plus 23 %.
+//
+// Trente-cinq pourcentages et cinq totaux. S'ils tombent tous juste, les
+// quatre-vingt-dix valeurs saisies sont justes aussi.
+console.log('\nLa feuille reprise, et relue par ses propres pourcentages');
+// Ce que la feuille affiche, colonne par colonne.
+const FEUILLE = {
+  '2026-03': { pct: { va30: 23, vaMorts: 40, diff30: 51, diffMorts: 24, att30: 12, attMorts: 1, stockTva21: 22 }, total: 54170.68 },
+  '2026-04': { pct: { va30: 43, vaMorts: 33, diff30: 28, diffMorts: 22, att30: 71, attMorts: 1, stockTva21: 21 }, total: 67249.56 },
+  '2026-07': { pct: { va30: 28, vaMorts: 15, diff30: 66, diffMorts: 33, att30: 11, attMorts: 1, stockTva21: 23 }, total: 90603.26 },
+  '2026-08': { pct: { va30: 52, vaMorts: 20, diff30: 25, diffMorts: 36, att30: 8, attMorts: 1, stockTva21: 22 }, total: 59995.20 },
+  '2026-10': { pct: { va30: 37, vaMorts: 6, diff30: 59, diffMorts: 20, att30: 20, attMorts: 1, stockTva21: 22 }, total: 65437.04 }
+};
+Object.keys(FEUILLE).forEach(function (m) {
+  const rel = SA_INDICS_DEPART.find(d => d.mois === m);
+  const attendu = FEUILLE[m].pct;
+  const faux = Object.keys(attendu).filter(k => saPct(rel, k) !== attendu[k])
+    .map(k => k + ' : ' + saPct(rel, k) + '% au lieu de ' + attendu[k] + '%');
+  t(saMoisLbl(m) + ' — les sept pourcentages retombent sur la feuille'
+    + (faux.length ? ' — ÉCART : ' + faux.join(', ') : ''), faux.length === 0);
+  t(saMoisLbl(m) + ' — et l’encours total aussi',
+    Math.abs(saValeur(rel, 'encoursTotal') - FEUILLE[m].total) < 0.005);
+});
+
+console.log('\nCe que la feuille ne dit pas, on ne l’invente pas');
+const fev = SA_INDICS_DEPART.find(d => d.mois === '2026-02');
+t('FÉVRIER EST PARTIEL — ni encours, ni rejets, ni stock',
+  saValeur(fev, 'encoursSecu') === null && saValeur(fev, 'rejets30') === null
+  && saValeur(fev, 'stockTotal') === null);
+t('... mais ce qu’il porte est là', saValeur(fev, 'vaTotal') === 497.12
+  && saValeur(fev, 'cec30') === 9897.84);
+t('... et son encours total reste vide plutôt que de valoir zéro',
+  saValeur(fev, 'encoursTotal') === null);
+t('MAI, JUIN, SEPTEMBRE, NOVEMBRE ET DÉCEMBRE N’ONT JAMAIS ÉTÉ RELEVÉS',
+  ['2026-05', '2026-06', '2026-09', '2026-11', '2026-12']
+    .every(m => !SA_INDICS_DEPART.some(d => d.mois === m)));
+t('la feuille dit « 00/04/2026 » : le jour manque, on ne l’invente pas',
+  SA_INDICS_DEPART.find(d => d.mois === '2026-04').releve === '');
+t('... alors que les quatre dates connues sont reprises',
+  SA_INDICS_DEPART.filter(d => d.releve).map(d => d.releve).join(',')
+  === '2026-03-05,2026-07-20,2026-08-11,2026-10-12');
+t('AUCUN CALCUL N’EST RECOPIÉ — ni total, ni pourcentage',
+  SA_INDICS_DEPART.every(d => d.v.encoursTotal === undefined)
+  && !/pct:|pourcent/.test(JSON.stringify(SA_INDICS_DEPART)));
+t('les six colonnes remplies de la feuille y sont', SA_INDICS_DEPART.length === 6);
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

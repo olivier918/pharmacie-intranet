@@ -50,6 +50,7 @@
   const CC_HISTO_JOURS = 30;
 
   let ccHistoOuvert = false;
+  let ccFiltre = '';          // '' = tout le monde, sinon l'identifiant d'un destinataire
 
   // ── Le numéro de commande ─────────────────────────────────────────────────
   // Six chiffres, et ceux d'aujourd'hui commencent par 17. On NE REFUSE PAS un
@@ -142,6 +143,13 @@
   function ccDoublon(liste, num) {
     const n = ccNumCanon(num);
     return (Array.isArray(liste) ? liste : []).find(c => c && ccNumCanon(c.num) === n && !ccVu(c)) || null;
+  }
+  // LE FILTRE NE CHANGE PAS LE CLASSEMENT, il réduit la matière. Filtrer sur
+  // quelqu'un, c'est demander « que doit Olivier ? » — la question n'a plus de
+  // « pour vous / pour les autres » à l'intérieur.
+  function ccFiltrer(liste, pour) {
+    const l = Array.isArray(liste) ? liste : [];
+    return pour ? l.filter(c => ccPour(c) === pour) : l;
   }
   function ccCompteurPour(liste, uid) {
     return (Array.isArray(liste) ? liste : []).filter(c => c && !ccVu(c) && ccEstPourMoi(c, uid)).length;
@@ -255,6 +263,7 @@
   };
 
   window.ccHistoBasculer = function () { ccHistoOuvert = !ccHistoOuvert; ccRender(true); };
+  window.ccFiltrer2 = function (pour) { ccFiltre = String(pour || ''); ccRender(true); };
 
   window.ccNumMasque = function (e) {
     if (e) e.value = ccNumCanon(e.value);
@@ -301,22 +310,42 @@
     if (!z) return;
     const u = ccUser(), uid = u ? u.id : '';
     const admin = ccAdmin();
-    const l = ccListe();
-    const av = ccARevoir(l, uid);
+    const tout = ccListe();
+    const l = ccFiltrer(tout, ccFiltre);
+    const av = ccARevoir(l, ccFiltre ? '\u0000' : uid);   // filtré : plus de « pour vous »
     const h = ccHistorique(l, Date.now());
 
+    // La barre de filtre : des boutons, jamais un champ — rien à y perdre quand
+    // la resynchronisation redessine (piège n°9).
     let s = '';
-    if (av.miennes.length) {
+    const dests = ccDestinataires(ccStaff());
+    if (dests.length > 1) {
+      s += '<div class="cc-filtre"><span class="cc-f-l">Pour</span>'
+        + '<button class="cc-fb' + (ccFiltre ? '' : ' on') + '" onclick="ccFiltrer2(\'\')">Tout le monde'
+        + '<span class="cc-fn">' + tout.filter(c => !ccVu(c)).length + '</span></button>'
+        + dests.map(function (d) {
+            const n = tout.filter(c => !ccVu(c) && ccPour(c) === d.id).length;
+            return '<button class="cc-fb' + (ccFiltre === d.id ? ' on' : '') + '" '
+              + 'onclick="ccFiltrer2(\'' + E(d.id) + '\')">' + E(d.prenom || d.id)
+              + '<span class="cc-fn">' + n + '</span></button>';
+          }).join('')
+        + '</div>';
+    }
+    if (ccFiltre && av.autres.length) {
+      s += '<div class="cc-g">Pour ' + E(ccPrenom(ccFiltre)) + ' — ' + av.autres.length + ' à revoir</div>'
+        + av.autres.map(c => ccLigne(c, uid, admin)).join('');
+    } else if (av.miennes.length) {
       s += '<div class="cc-g cc-g-moi">Pour vous — ' + av.miennes.length + ' à revoir</div>'
         + av.miennes.map(c => ccLigne(c, uid, admin)).join('');
     }
-    if (av.autres.length) {
+    if (!ccFiltre && av.autres.length) {
       s += '<div class="cc-g">' + (av.miennes.length ? 'Pour les autres' : 'À revoir')
         + ' — ' + av.autres.length + '</div>'
         + av.autres.map(c => ccLigne(c, uid, admin)).join('');
     }
     if (!av.miennes.length && !av.autres.length) {
-      s += '<div class="cc-vide">Aucune commande en attente de relecture.</div>';
+      s += '<div class="cc-vide">Aucune commande en attente de relecture'
+        + (ccFiltre ? ' pour ' + E(ccPrenom(ccFiltre)) : '') + '.</div>';
     }
     if (h.recentes.length || h.anciennes) {
       s += '<div class="cc-h"><button class="cc-h-t" onclick="ccHistoBasculer()">'
@@ -335,9 +364,12 @@
     z.innerHTML = s;
 
     // La pastille du menu : combien de commandes attendent CETTE personne.
+    // ELLE COMPTE DANS LA LISTE ENTIERE, jamais dans la liste filtree. Filtrer
+    // sur Anouck ne doit pas eteindre le compteur d'Olivier : la pastille dit ce
+    // qu'on lui doit, pas ce que l'ecran montre en ce moment.
     const b = document.getElementById('cc-navb');
     if (b) {
-      const n = ccCompteurPour(l, uid);
+      const n = ccCompteurPour(tout, uid);
       b.textContent = n ? String(n) : '';
       b.style.display = n ? '' : 'none';
     }
@@ -406,6 +438,16 @@
   .cc-s-3{display:flex;gap:9px;flex-wrap:wrap}
   .cc-s-3 input{flex:1 1 300px;min-width:200px;padding:8px 11px;border:1px solid var(--gray-300,#d7dade);
                 border-radius:8px;font-size:.88rem}
+  .cc-filtre{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+  .cc-f-l{font-size:.73rem;color:var(--gray-500,#7a8089);font-weight:600;margin-right:3px}
+  .cc-fb{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--gray-300,#d7dade);
+         background:#fff;color:var(--gray-600,#5b6169);border-radius:20px;padding:5px 13px;
+         font-size:.84rem;font-weight:600;cursor:pointer}
+  .cc-fb:hover{border-color:var(--g-mid,#2E7D54);color:var(--g-dark,#1D5C3A)}
+  .cc-fb.on{background:var(--g-mid,#2E7D54);border-color:var(--g-mid,#2E7D54);color:#fff}
+  .cc-fn{background:var(--gray-100,#f2f4f6);color:var(--gray-600,#5b6169);border-radius:20px;
+         padding:0 7px;font-size:.72rem;font-weight:800;min-width:1.2rem;text-align:center}
+  .cc-fb.on .cc-fn{background:rgba(255,255,255,.26);color:#fff}
   .cc-g{font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
         color:var(--gray-500,#7a8089);margin:18px 0 8px;padding-bottom:4px;
         border-bottom:1px solid var(--gray-200,#e7eaee)}
@@ -455,15 +497,16 @@
     st.id = 'cc-css'; st.textContent = CC_CSS;
     document.head.appendChild(st);
 
-    // SOUS-ENTRÉE DE « SUIVI ADMINISTRATIF ». `data-parent` suffit : c'est
+    // SOUS-ENTRÉE DE « LOGISTIQUE ». `data-parent` suffit : c'est
     // `ordonnerSidebar` qui ramène la ligne sous son parent à chaque passage,
     // et qui la masque si le parent l'est.
-    const ref = document.querySelector('.sb-item[data-sec="suiviadmin"]');
+    const ref = document.querySelector('.sb-item[data-sec="logistique"]')
+             || document.querySelector('.sb-item[data-sec="suiviadmin"]');
     if (ref && !document.querySelector('.sb-item[data-sec="ctrlcmd"]')) {
       const b = document.createElement('button');
       b.className = 'sb-item sb-sub';
       b.setAttribute('data-sec', 'ctrlcmd');
-      b.setAttribute('data-parent', 'suiviadmin');
+      b.setAttribute('data-parent', 'logistique');
       b.setAttribute('onclick', "showSec('ctrlcmd',this)");
       b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-valider"></use></svg>'
         + '<span class="sb-label">Contrôle de commande</span>'

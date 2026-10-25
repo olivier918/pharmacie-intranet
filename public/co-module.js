@@ -753,16 +753,16 @@
     st.id = 'co-css'; st.textContent = CO_CSS;
     document.head.appendChild(st);
 
-    // LA BARRE EST RECLASSÉE PAR ORDRE ALPHABÉTIQUE après l'injection : le point
-    // d'insertion ne décide de rien, « Commandes » se rangera entre « Caisse »
-    // et « Contrôle lits ». On s'accroche tout de même à Livraisons plutôt qu'à
-    // la fin de la liste, pour que l'entrée existe même si le reclassement ne
-    // passait pas — une entrée mal placée se trouve, une entrée absente, non.
+    // COMMANDES EST UNE SOUS-ENTRÉE DE « LOGISTIQUE ». Le point d'accrochage
+    // ne décide de rien : `rangerSousEntrees` ramène la ligne sous son parent à
+    // chaque classement. On s'accroche à Livraisons comme avant, pour que
+    // l'entrée existe même si le groupe manquait.
     const ref = document.querySelector('.sb-item[data-sec="livraisons"]');
     if (ref && !document.querySelector('.sb-item[data-sec="commandes"]')) {
       const b = document.createElement('button');
-      b.className = 'sb-item';
+      b.className = 'sb-item sb-sub';
       b.setAttribute('data-sec', 'commandes');
+      b.setAttribute('data-parent', 'logistique');
       b.setAttribute('onclick', "showSec('commandes',this)");
       b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-commandes"></use></svg>'
         + '<span class="sb-label">Commandes</span>';

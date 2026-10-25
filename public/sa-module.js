@@ -332,7 +332,8 @@
     return Math.round(part * 100 / tout);
   }
   function saReleve(liste, mois) {
-    return (Array.isArray(liste) ? liste : []).find(r => r && r.mois === mois) || null;
+    if (!mois) return null;              // le repere de semis porte un mois vide
+    return (Array.isArray(liste) ? liste : []).find(r => r && !r.graine && r.mois === mois) || null;
   }
 
   // ── Les initiales ─────────────────────────────────────────────────────────
@@ -511,6 +512,89 @@
       });
     });
     return SA_DEPART.length;
+  }
+
+  // ── LA FEUILLE D'OLIVIER, REPRISE TELLE QUELLE ──────────────────────────
+  // Six colonnes remplies : fevrier (partiel), mars, avril, juillet, aout,
+  // octobre 2026. Mai, juin, septembre, novembre et decembre n'ont jamais ete
+  // releves — ils restent vides, et l'ecran affiche un tiret plutot qu'un zero
+  // qui laisserait croire a un encours nul.
+  //
+  // FEVRIER EST PARTIEL, ET C'EST VOULU. La colonne ne porte que les VA, les
+  // differes, les attentes et les clients en compte : ni encours, ni rejets, ni
+  // stock. On ne complete pas ce qu'on ne sait pas.
+  //
+  // DEUX DATES DE RELEVE MANQUENT. La feuille dit « 00/04/2026 » : le jour n'a
+  // pas ete note. On laisse la case vide au lieu d'inventer le premier du mois.
+  //
+  // Ce qui est CALCULE n'est pas repris : ni l'encours total, ni aucun
+  // pourcentage. Ils se recalculent, et `essais/suivi-admin.js` verifie qu'ils
+  // retombent exactement sur les chiffres de la feuille — trente-cinq
+  // pourcentages et cinq totaux. C'est la relecture de la transcription.
+  const SA_INDICS_DEPART = [
+    { mois: '2026-02', releve: '', v: {
+        vaTotal: 497.12, va30: 57.02, vaMorts: 315.85,
+        diffTotal: 2402.92, diff30: 1525.81, diffMorts: 531.30,
+        attTotal: 3722.82, att30: 1017.87, attMorts: 215.22,
+        cec30: 9897.84 } },
+    { mois: '2026-03', releve: '2026-03-05', v: {
+        encoursSecu: 40987.22, encoursMut: 13183.46,
+        rejets30: 3778.60, rejetsMenacants: 710.36, rejetsMorts: 491.26,
+        vaTotal: 784.10, va30: 181.27, vaMorts: 315.85,
+        diffTotal: 3203.03, diff30: 1643.42, diffMorts: 760.39,
+        attTotal: 28146.93, att30: 3503.79, attMorts: 219.03,
+        cec30: 11594.73, stockTotal: 652653.97, stockTva21: 146287.58 } },
+    { mois: '2026-04', releve: '', v: {
+        encoursSecu: 53312.64, encoursMut: 13936.92,
+        rejets30: 3402.58, rejetsMenacants: 606.02, rejetsMorts: 565.34,
+        vaTotal: 948.34, va30: 405.03, vaMorts: 315.85,
+        diffTotal: 3289.60, diff30: 925.17, diffMorts: 732.11,
+        attTotal: 20062.56, att30: 14330.04, attMorts: 245.36,
+        cec30: 2098.44, stockTotal: 682696.74, stockTva21: 141743.44 } },
+    { mois: '2026-07', releve: '2026-07-20', v: {
+        encoursSecu: 76982.58, encoursMut: 13620.68,
+        rejets30: 7697.93, rejetsMenacants: 579.47, rejetsMorts: 816.00,
+        vaTotal: 2041.76, va30: 573.67, vaMorts: 296.74,
+        diffTotal: 3098.38, diff30: 2042.93, diffMorts: 1023.86,
+        attTotal: 23271.74, att30: 2527.53, attMorts: 253.43,
+        cec30: 10558.10, stockTotal: 656759.13, stockTva21: 151479.88 } },
+    { mois: '2026-08', releve: '2026-08-11', v: {
+        encoursSecu: 47701.58, encoursMut: 12293.62,
+        rejets30: 6209.44, rejetsMenacants: 114.46, rejetsMorts: 343.03,
+        vaTotal: 1437.08, va30: 740.20, vaMorts: 292.30,
+        diffTotal: 2838.23, diff30: 707.11, diffMorts: 1030.13,
+        attTotal: 34174.01, att30: 2809.44, attMorts: 253.43,
+        cec30: 2797.44, stockTotal: 611793.66, stockTva21: 133200.66 } },
+    { mois: '2026-10', releve: '2026-10-12', v: {
+        encoursSecu: 51762.10, encoursMut: 13674.94,
+        rejets30: 4737.77, rejetsMenacants: 206.41, rejetsMorts: 20.37,
+        vaTotal: 1567.92, va30: 575.26, vaMorts: 101.49,
+        diffTotal: 2961.17, diff30: 1754.88, diffMorts: 591.72,
+        attTotal: 38651.57, att30: 7557.32, attMorts: 336.81,
+        cec30: 9507.08, stockTotal: 641401.64, stockTva21: 140242.92 } }
+  ];
+  const SA_REPERE_INDICS = 'sai:graine';
+
+  // MEME REGLE QUE POUR LES TACHES : on pose une fois, et le repere interdit de
+  // reposer. Un releve corrige a la main, ou supprime, ne doit pas revenir a
+  // l'ouverture suivante ecraser la correction.
+  function saSemerIndics(maintenant) {
+    const l = saIndics();
+    if (l.some(r => r && (r.graine || r.id === SA_REPERE_INDICS))) return 0;
+    const now = Number(maintenant) || Date.now();
+    l.push({ id: SA_REPERE_INDICS, graine: true, mois: '', cree: now, updatedAt: now });
+    if (l.length > 1) return 0;            // des releves saisis a la main : on n'y touche pas
+    SA_INDICS_DEPART.forEach(function (d, i) {
+      // ON COPIE LES VALEURS. Les poser par reference ferait partager un seul
+      // objet entre la constante du module et l'enregistrement : corriger un
+      // chiffre a l'ecran modifierait la feuille d'origine, et un second semis
+      // reposerait la correction au lieu des chiffres du tableur. L'essai l'a
+      // attrape le 25/10 — octobre ne retombait plus sur son total.
+      l.push({ id: 'sai:' + d.mois, mois: d.mois, releve: d.releve || '',
+               v: Object.assign({}, d.v), par: '', source: 'feuille',
+               cree: now, updatedAt: now + i });
+    });
+    return SA_INDICS_DEPART.length;
   }
 
   window.saInstallerDepart = function () {
@@ -882,8 +966,9 @@
     let h = '<table class="sa-ind"><thead><tr><th class="sa-ih"></th>';
     for (let i = 1; i <= 12; i++) {
       const r = relevés[i - 1];
-      h += '<th><div class="sa-im">' + SA_MOIS_COURT[i - 1] + '</div>'
-        + '<div class="sa-id">' + E(r && r.releve ? saDateFr(r.releve) : '') + '</div>'
+      h += '<th' + (r && r.source === 'feuille' ? ' class="sa-th-f" title="Repris de la feuille"' : '') + '>'
+        + '<div class="sa-im">' + SA_MOIS_COURT[i - 1] + '</div>'
+        + '<div class="sa-id">' + E(r && r.releve ? saDateFr(r.releve) : (r ? '—' : '')) + '</div>'
         + '<button class="sa-mini" title="Saisir le relevé de ' + E(SA_MOIS_LBL[i - 1]) + '" '
         +   'onclick="saIndicSaisir(\'' + an + '-' + pad(i) + '\')">' + (r ? '✎' : '+') + '</button></th>';
     }
@@ -1062,6 +1147,8 @@
   .sa-ir-encours{background:#FFFBF0}.sa-ir-rejets{background:#FDF3EC}.sa-ir-va{background:#EFF4FC}
   .sa-ir-diff{background:#F3F1FA}.sa-ir-att{background:#FAF0F4}.sa-ir-cec{background:#FAF1EE}
   .sa-ir-stock{background:#F0F7F1}
+  .sa-th-f .sa-im{color:var(--g-dark,#1D5C3A)}
+  .sa-th-f .sa-id{font-style:italic}
   .sa-if{border:1px solid var(--g-mid,#2E7D54);border-radius:11px;padding:15px;margin-bottom:14px;background:#fff}
   .sa-if-t{font-weight:800;font-size:.98rem;color:var(--g-dark,#1D5C3A);margin-bottom:11px;text-transform:capitalize}
   .sa-if-d{margin-bottom:12px}
@@ -1110,6 +1197,7 @@
       // etre genere a partir des taches qu'on vient de poser, sans quoi il
       // faudrait attendre le 1er du mois suivant pour voir quoi que ce soit.
       if (saSemer(Date.now())) { saSave(); saJournal('Suivi admin — modèle installé', SA_DEPART.length + ' tâches récurrentes'); }
+      if (saSemerIndics(Date.now())) { saSave(); saJournal('Suivi admin — relevés repris', SA_INDICS_DEPART.length + ' mois de la feuille'); }
       saCloturer();
     } catch (e) { console.error('saOuvrir', e); }
     saMois = saMoisDe(new Date());
