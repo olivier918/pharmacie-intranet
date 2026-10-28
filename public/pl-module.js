@@ -25,7 +25,13 @@
   const PL_JOURS_FR = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
   const PL_MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   function plDayKey(d) { return PL_JOURS[(d.getDay() + 6) % 7]; }
-  function plFmtH(x) { if (x == null) return '—'; const h = Math.floor(x), m = Math.round((x - h) * 60); return m ? h + 'h' + String(m).padStart(2, '0') : h + ' h'; }
+  function plFmtH(x) {
+    if (x == null) return '—';
+    const neg = x < 0, v = Math.abs(x);
+    let h = Math.floor(v), m = Math.round((v - h) * 60);
+    if (m === 60) { h++; m = 0; }
+    return (neg ? '\u2212' : '') + (m ? h + 'h' + String(m).padStart(2, '0') : h + ' h');
+  }
   // "9h-12h30" → durée en heures (0 si illisible ou négative — protège des fautes de saisie type "14h-1h30")
   function plDurOf(s) {
     if (!s) return 0;
@@ -2721,6 +2727,63 @@
     return L('exceptions').filter(ex => ex.contratId === c.id && plExEstAjout(ex, c))
       .map(ex => ({ ex: ex, h: plDurOf(ex.horaire), imp: ex.imputation || 'hs' }));
   }
+  // Tous les ecarts d'un contrat, dans les deux sens, du plus recent au plus
+  // ancien. C'est ce que l'ecran des compteurs montre sous les soldes.
+  function plEcartsDe(c) {
+    return L('exceptions').filter(ex => ex && ex.contratId === c.id && plEcartEx(ex, c))
+      .map(ex => ({ ex: ex, h: plEcartEx(ex, c), imp: ex.imputation || 'hs' }))
+      .sort((a, b) => String(b.ex.date || '').localeCompare(String(a.ex.date || '')));
+  }
+  // ═══ LE COMPTE-TEMPS COMPTE DANS LES DEUX SENS ════════════════════════════
+  // Olivier, 28/10/2026 : « si je passe ensuite une plage horaire travaillee en
+  // repos, elle n'est pas decomptee du compte temps ». C'etait exact, et le
+  // defaut etait de construction : `plExEstAjout` ne reconnaissait QUE les
+  // creneaux poses sur un repos. Retirer des heures, ou raccourcir un creneau,
+  // ne produisait rien du tout — le compteur ne savait que monter.
+  //
+  // UNE EXCEPTION N'EST PAS UN AJOUT, C'EST UN ECART. Ce qui est pose moins ce
+  // que la trame prevoyait : positif on a travaille en plus, negatif en moins.
+  // Un creneau raccourci de deux heures vaut donc -2, et plus rien du tout.
+  //
+  // CE QUI N'EST PAS UN ECART : les conges, maladies et formations. Ils vivent
+  // dans `plAbsences`, pas dans les exceptions — une semaine de vacances ne
+  // fait donc pas plonger le compte-temps, et c'est ce qui rend ce calcul
+  // tenable.
+  function plEcartEx(ex, c) {
+    if (!ex || ex.type !== 'horaire' || !ex.date) return 0;
+    c = c || L('contrats').find(x => x.id === ex.contratId); if (!c) return 0;
+    const tr = plSlotsTrame(c, new Date(ex.date + 'T12:00'));
+    const base = plDurOf(tr[ex.demi === 'AM' ? 1 : 0] || '') || 0;
+    const pose = plDurOf(ex.horaire || '') || 0;
+    return pose - base;
+  }
+  // Les ecarts d'un contrat, regroupes par semaine : c'est la semaine qui est
+  // l'unite de compte, parce que c'est elle qu'Olivier a nommee.
+  function plEcartsParSemaine(c, exs) {
+    const sem = {};
+    (exs || []).forEach(function (ex) {
+      if (!ex || !c || ex.contratId !== c.id) return;
+      const e = plEcartEx(ex, c);
+      if (!e) return;
+      const lun = plIso(plMonday(new Date(ex.date + 'T12:00')));
+      if (!sem[lun]) sem[lun] = { hs: 0, compte: 0, moins: 0 };
+      if (e > 0) { if ((ex.imputation || 'hs') === 'compte') sem[lun].compte += e; else sem[lun].hs += e; }
+      else sem[lun].moins += -e;
+    });
+    return sem;
+  }
+  // LE SOLDE D'UNE SEMAINE. « le compte temps doit passer en negatif, sauf s'il
+  // y a des heures supplementaires calculees sur cette semaine » : un retrait
+  // mange donc d'abord les heures supplementaires de la MEME semaine, puis ce
+  // qui avait ete mis au compte-temps, et ce qui reste fait plonger le compte
+  // sous zero. Dans cet ordre, parce qu'une heure sup non faite n'a pas a etre
+  // payee, alors qu'une heure due reste due.
+  function plNetSemaine(s) {
+    let hs = (s && s.hs) || 0, compte = (s && s.compte) || 0, reste = (s && s.moins) || 0;
+    const a = Math.min(hs, reste); hs -= a; reste -= a;
+    const b = Math.min(compte, reste); compte -= b; reste -= b;
+    return { hs: hs, compte: compte - reste };
+  }
   // soldes d'un contrat
   function plSoldes(c) {
     let compte = 0, navette = 0, attente = 0;
@@ -2729,7 +2792,11 @@
       if (d.statut === 'attente') attente += +d.heures || 0;
       if (d.statut === 'validee') { if (d.affectation === 'compte') compte += +d.heures || 0; else navette += +d.heures || 0; }
     });
-    plAjoutsDe(c).forEach(a => { if (a.imp === 'compte') compte += a.h; else navette += a.h; });
+    const sem = plEcartsParSemaine(c, L('exceptions'));
+    Object.keys(sem).forEach(function (lun) {
+      const n = plNetSemaine(sem[lun]);
+      compte += n.compte; navette += n.hs;
+    });
     return { compte: compte, navette: navette, attente: attente };
   }
   // exposés pour l'inspection et les tests (lecture seule)
@@ -2738,7 +2805,13 @@
     const m = plIso(new Date()).slice(0, 7);
     let n = 0;
     L('heuresSup').forEach(d => { if (d.contratId === c.id && d.statut === 'validee' && d.affectation === 'navette' && (d.date || '').slice(0, 7) === m) n += +d.heures || 0; });
-    plAjoutsDe(c).forEach(a => { if (a.imp === 'hs' && (a.ex.date || '').slice(0, 7) === m) n += a.h; });
+    // Le net de la semaine, rattache au mois de son lundi : une semaine a
+    // cheval sur deux mois compte d'un seul cote, et toujours du meme.
+    const sem = plEcartsParSemaine(c, L('exceptions'));
+    Object.keys(sem).forEach(function (lun) {
+      if (lun.slice(0, 7) !== m) return;
+      n += plNetSemaine(sem[lun]).hs;
+    });
     return n;
   }
 
@@ -2843,22 +2916,36 @@
       + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Compte-temps</th><th>Heures sup ce mois</th><th>Heures sup cumulées</th><th>En attente</th></tr>'
       + listeC.map(c => { const s = plSoldes(c);
           return '<tr><td style="text-align:left"><b>' + plEsc(c.nom) + '</b></td>'
-            + '<td><b style="color:#0D47A1">' + plFmtH(s.compte) + '</b></td><td>' + plFmtH(plHsMoisCourant(c)) + '</td><td>' + plFmtH(s.navette) + '</td>'
+            + '<td><b style="color:' + (s.compte < 0 ? '#C62828' : '#0D47A1') + '">' + plFmtH(s.compte) + '</b></td><td>' + plFmtH(plHsMoisCourant(c)) + '</td><td>' + plFmtH(s.navette) + '</td>'
             + '<td>' + (s.attente ? '<span style="color:#E65100;font-weight:700">' + plFmtH(s.attente) + '</span>' : '—') + '</td></tr>'; }).join('')
       + '</table></div>');
 
-    // 4. Créneaux ajoutés sur un repos (imputation modifiable par l'admin)
+    // 4. Les écarts à la semaine type, dans les deux sens
     const ajouts = [];
-    listeC.forEach(c => plAjoutsDe(c).forEach(a => ajouts.push({ c: c, a: a })));
+    listeC.forEach(c => plEcartsDe(c).forEach(a => ajouts.push({ c: c, a: a })));
     ajouts.sort((x, y) => (y.a.ex.date || '').localeCompare(x.a.ex.date || ''));
     if (ajouts.length) {
-      H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Créneaux ajoutés sur un repos</b>'
-        + '<div class="pl-sub" style="margin:4px 0 10px">Saisis directement dans le planning. L\'imputation choisie à l\'ajout peut être changée ici' + (admin ? '' : ' par un administrateur') + '.</div>'
-        + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Date</th><th>Créneau</th><th>Durée</th><th>Imputation</th></tr>'
-        + ajouts.slice(0, 60).map(x => '<tr><td style="text-align:left"><b>' + plEsc(x.c.nom) + '</b></td><td>' + plJoliDate(x.a.ex.date) + (x.a.ex.demi === 'AM' ? ' ap.-midi' : ' matin') + '</td><td>' + plEsc(x.a.ex.horaire) + '</td><td>' + plFmtH(x.a.h) + '</td>'
-          + '<td>' + (admin ? '<select class="pl-inp" style="height:26px;font-size:11.5px" onchange="plImputChanger(\'' + x.a.ex.id + '\',this.value)">'
-              + Object.keys(PL_IMPUT).map(k => '<option value="' + k + '"' + (x.a.imp === k ? ' selected' : '') + '>' + PL_IMPUT[k] + '</option>').join('') + '</select>'
-            : chip(PL_IMPUT[x.a.imp], x.a.imp === 'compte' ? '#E3F2FD' : '#E8F5E9', x.a.imp === 'compte' ? '#0D47A1' : '#1D5C3A')) + '</td></tr>').join('')
+      H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px"><b style="font-size:14px">Écarts à la semaine type</b>'
+        + '<div class="pl-sub" style="margin:4px 0 10px">Saisis directement dans le planning. '
+        + 'Les heures en plus se répartissent entre compte-temps et heures supplémentaires'
+        + (admin ? ', et l\'imputation se change ici' : '') + ' ; '
+        + '<b>les heures en moins se déduisent d\'abord des heures supplémentaires de la même semaine</b>, '
+        + 'puis du compte-temps, qui peut passer en négatif.</div>'
+        + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Date</th><th>Créneau</th><th>Écart</th><th>Imputation</th></tr>'
+        + ajouts.slice(0, 60).map(function (x) {
+            const moins = x.a.h < 0;
+            return '<tr><td style="text-align:left"><b>' + plEsc(x.c.nom) + '</b></td>'
+              + '<td>' + plJoliDate(x.a.ex.date) + (x.a.ex.demi === 'AM' ? ' ap.-midi' : ' matin') + '</td>'
+              + '<td>' + plEsc(x.a.ex.horaire || 'repos') + '</td>'
+              + '<td><b style="color:' + (moins ? '#C62828' : '#1D5C3A') + '">'
+              +   (moins ? '' : '+') + plFmtH(x.a.h) + '</b></td>'
+              + '<td>' + (moins
+                  ? chip('déduit de la semaine', '#FDECEA', '#8a2a22')
+                  : (admin ? '<select class="pl-inp" style="height:26px;font-size:11.5px" onchange="plImputChanger(\'' + x.a.ex.id + '\',this.value)">'
+                      + Object.keys(PL_IMPUT).map(k => '<option value="' + k + '"' + (x.a.imp === k ? ' selected' : '') + '>' + PL_IMPUT[k] + '</option>').join('') + '</select>'
+                    : chip(PL_IMPUT[x.a.imp], x.a.imp === 'compte' ? '#E3F2FD' : '#E8F5E9', x.a.imp === 'compte' ? '#0D47A1' : '#1D5C3A')))
+              + '</td></tr>';
+          }).join('')
         + '</table></div>');
     }
 
