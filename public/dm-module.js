@@ -57,7 +57,6 @@
     agace:  { lbl: 'Ça m’agace',      rang: 2, col: '#E65100' },
     mieux:  { lbl: 'Ce serait mieux', rang: 1, col: '#6b7a72' }
   };
-  const DM_FAIT_JOURS = 45;   // durée d'affichage dans la colonne « Fait récemment »
 
   // ── Ordre d'affichage ───────────────────────────────────────────────────
   // Trois signaux, un seul score. Les soutiens priment (un « moi aussi » est un
@@ -305,9 +304,11 @@
   // Une demande « faite » quitte le tableau : elle est archivée. Son auteur en
   // est averti par la messagerie, il n'a donc pas besoin de la voir traîner —
   // et un tableau qui ne se vide jamais finit par ne plus être lu.
-  function dmArchivee(d, maintenant) {
-    if (!d || !d.archiveAt) return false;
-    return ((maintenant || Date.now()) - d.archiveAt) > DM_FAIT_JOURS * 86400000;
+  function dmArchivee(d) {
+    if (!d) return false;
+    if (d.archiveAt) return true;
+    const e = dmEtat(d);
+    return e.st === 'acceptee' && e.et === 'fait';
   }
   const DM_FILTRES = [
     { cle: 'nouveau',   lbl: 'Nouveau',     test: d => dmEtat(d).st === 'nouveau' },
@@ -335,15 +336,12 @@
     const fGene   = ((document.getElementById('dm-f-gene')   || {}).value || '');
     const fMoi    = ((document.getElementById('dm-f-moi')    || {}).value || '');
     const moi = (dmUser() || {}).id;
-    const limite = Date.now() - DM_FAIT_JOURS * 86400000;
 
     let l = dmListe().filter(function (d) {
       if (!d) return false;
       // Les archivées ne sortent que par leur propre filtre, ou par la recherche.
       if (dmArchivee(d) !== !!fEtat.archives && !(q && dmArchivee(d))) return false;
       if (!fEtat.test(d) && !fEtat.archives) return false;
-      const e0 = dmEtat(d);
-      if (!dmArchivee(d) && e0.st === 'acceptee' && e0.et === 'fait' && (d.majAt || d.ts || 0) < limite && !q) return false;
       if (fNature && d.nature !== fNature) return false;
       if (fGene && d.gene !== fGene) return false;
       if (fMoi === 'mien' && d.auteur !== moi) return false;
