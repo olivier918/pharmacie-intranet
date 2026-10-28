@@ -2955,6 +2955,32 @@ const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepEx
 const CAISSE_SUBS=['releves','remises','ajustements','commandesMonnaie'];
 // Sous-listes de plParams (module Planning) fusionnées finement côté serveur (clé tombstone 'plParams.<sub>').
 const PLPARAMS_SUBS=['periodes','seuilsComptoir','seuilsPharmaciens','seuilsPostes','motifsAbsence'];
+// ═══ LA LECTURE SURVIT A LA RESYNCHRONISATION ══════════════════════════════
+// Marquer lu n'ecrit pas tout de suite : `schedSave` groupe pendant 600 ms. Si
+// la resynchronisation (toutes les 8 s) passe dans cet intervalle, elle remplace
+// la collection par celle du serveur — qui ne connait pas encore la lecture.
+// La pastille revient, et on ne comprend pas pourquoi.
+//
+// Meme regle que cote serveur : la carte `vu` ne recule jamais. On recolle donc
+// ce que l'on sait deja par-dessus ce qui arrive, case par case.
+function fusionnerVus(local, distant){
+  if(!Array.isArray(distant)) return distant;
+  if(!Array.isArray(local) || !local.length) return distant;
+  const parId = {};
+  local.forEach(function(r){ if(r && r.id != null && r.vu && typeof r.vu==='object') parId[r.id]=r.vu; });
+  distant.forEach(function(r){
+    if(!r || r.id == null) return;
+    const a = parId[r.id]; if(!a) return;
+    const b = (r.vu && typeof r.vu==='object') ? r.vu : {};
+    const sortie = Object.assign({}, b);
+    Object.keys(a).forEach(function(uid){
+      const v = a[uid];
+      if(typeof v === 'number' && !(sortie[uid] > v)) sortie[uid] = v;
+    });
+    r.vu = sortie;
+  });
+  return distant;
+}
 function _collRef(n){ switch(n){
   case 'deliveries':return deliveries; case 'staffDB':return staffDB; case 'threads':return threads;
   case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
@@ -3118,7 +3144,7 @@ async function loadAll(){
     if(data.plNotifs)plNotifs=data.plNotifs;
     if(data.plClotures)plClotures=data.plClotures;
     if(Array.isArray(data.journal))journal=data.journal;
-    if(Array.isArray(data.demandes))demandes=data.demandes;
+    if(Array.isArray(data.demandes))demandes=fusionnerVus(demandes,data.demandes);
     if(data.modulesParPoste)modulesParPoste=data.modulesParPoste;
     if(data.sonnetteRpi)sonnetteRpi=data.sonnetteRpi;
     if(Array.isArray(data.todoPerso))todoPerso=data.todoPerso;
@@ -3135,7 +3161,7 @@ async function loadAll(){
     if(Array.isArray(data.depots))depots=data.depots;
     if(Array.isArray(data.laboratoires))laboratoires=data.laboratoires;
     if(Array.isArray(data.reactions))reactions=data.reactions;
-    if(Array.isArray(data.convos))convos=data.convos;
+    if(Array.isArray(data.convos))convos=fusionnerVus(convos,data.convos);
     if(Array.isArray(data.messages))messages=data.messages;
     if(Array.isArray(data.groupesMsg))groupesMsg=data.groupesMsg;
     if(Array.isArray(data.litiges))litiges=data.litiges;
@@ -3190,7 +3216,7 @@ setInterval(async()=>{
         if(d.plNotifs)plNotifs=d.plNotifs;
         if(d.plClotures)plClotures=d.plClotures;
         if(Array.isArray(d.journal))journal=d.journal;
-        if(Array.isArray(d.demandes))demandes=d.demandes;
+        if(Array.isArray(d.demandes))demandes=fusionnerVus(demandes,d.demandes);
         if(d.reunionThemes){ reunionThemes=d.reunionThemes; if(window.reRender)reRender(); }
         if(d.reunions){ reunions=d.reunions; if(window.reRender)reRender(); }
         // cpRender ne redessine QUE les listes : la saisie vit a cote, et ce
@@ -3215,7 +3241,7 @@ setInterval(async()=>{
         if(Array.isArray(d.moments))moments=d.moments;
         if(Array.isArray(d.agenda))agenda=d.agenda;
         if(Array.isArray(d.liens))liens=d.liens;
-        if(Array.isArray(d.convos))convos=d.convos;
+        if(Array.isArray(d.convos))convos=fusionnerVus(convos,d.convos);
         if(Array.isArray(d.messages))messages=d.messages;
         if(Array.isArray(d.groupesMsg))groupesMsg=d.groupesMsg;
         if(Array.isArray(d.litiges))litiges=d.litiges;

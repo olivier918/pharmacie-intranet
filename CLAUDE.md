@@ -37,7 +37,7 @@ dépannages · `fc-` formulaires · `dm-` boîte à idées · `pl-` planning.
 
 ---
 
-## Les dix pièges de ce dépôt
+## Les onze pièges de ce dépôt
 
 Chacun a déjà causé une perte de données en production. Les lire avant d'écrire
 une ligne.
@@ -204,6 +204,39 @@ le premier chargement déplacerait dix-neuf lignes de planning tout seul.
 Corollaire : un enregistrement supprimé d'un côté laisse l'autre orphelin.
 `deleteStaff` **refuse** tant qu'un contrat actif pointe sur le compte, en disant
 où retirer la personne du planning. `node essais/harmonisation-contrats.js`.
+
+### 11. Une donnée PAR PERSONNE dans un enregistrement PARTAGÉ
+
+Une conversation (`convos`) et une demande de la boîte à idées (`demandes`)
+portent une carte `vu` : `{ OF: 1762…, CB: 1762… }` — l'horodatage du dernier
+message lu **par chacun**. La fusion, elle, remplace l'enregistrement **entier**
+(`mergeById`). Les deux ne vont pas ensemble.
+
+Marquer lu ne rehausse volontairement pas `updatedAt` : sinon un poste qui se
+contente d'**ouvrir** une conversation écraserait, à la fusion, un message qu'un
+autre poste vient d'y écrire. Le compromis était assumé en commentaire — « au
+pire une pastille réapparaît » — mais à l'officine, où quatre postes
+enregistrent tout le dossier toute la journée, n'importe quel poste avec une
+copie plus ancienne et le **même** `updatedAt` repoussait sa carte vide et
+effaçait la lecture faite trente secondes plus tôt ailleurs. La pastille
+revenait presque à chaque fois.
+
+**Règle** : une carte par personne se fusionne **case par case**, jamais en
+bloc. `fusionnerVu` (server.js) garde le plus récent des deux côtés, pour le
+gagnant **et** pour le perdant de l'enregistrement ; `fusionnerVus`
+(index.html) fait la même chose au chargement et à la resynchronisation, parce
+que `schedSave` groupe pendant 600 ms et qu'une resynchro qui passe dans cet
+intervalle ramènerait la version du serveur, qui ne connaît pas encore la
+lecture.
+
+Ce que la règle exige du champ : **il ne doit jamais reculer**. Un horodatage de
+lecture ne fait que monter, et deux personnes n'écrivent jamais la même case —
+c'est ce qui rend l'union par maximum toujours correcte, quel que soit l'ordre
+d'arrivée des postes. Un champ par personne qui, lui, pourrait redescendre
+n'a pas sa place dans un enregistrement partagé : il lui faut une collection à
+part.
+
+`node essais/lecture-et-idees.js`.
 
 ## Secrets : rien ne sort, rien n'entre
 

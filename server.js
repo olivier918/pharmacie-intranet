@@ -1629,6 +1629,43 @@ function mergeStaff(existingArr, incomingArr) {
 // SANS perdre les enregistrements présents d'un seul côté et EN PRÉSERVANT l'ordre
 // (ordre de `existing` d'abord, puis les nouveaux de `incoming`). Un poste en retard qui
 // repousse une vieille copie ne peut donc plus écraser une modif plus récente d'un autre poste.
+// ═══ « LU » EST UNE DONNEE PAR PERSONNE DANS UN ENREGISTREMENT PARTAGE ══════
+// Olivier, le 28/10 : « les messages restent en non lus meme quand ils sont
+// lus. » Le defaut etait dans cette fusion-ci.
+//
+// Une conversation (et une demande de la boite a idees) porte une carte `vu` :
+// { OF: 1762..., CB: 1762... } — l'horodatage du dernier message lu PAR CHACUN.
+// Marquer lu ne rehausse volontairement pas `updatedAt` : sinon un poste qui se
+// contente d'OUVRIR une conversation ecraserait, a la fusion, un message qu'un
+// autre poste vient d'y ecrire. Perdre un message serait bien pire qu'une
+// pastille qui reapparait.
+//
+// Seulement voila : la fusion remplace l'enregistrement ENTIER. Le poste du
+// preparatoire, qui a une copie plus ancienne et le meme `updatedAt`, la
+// repousse telle quelle — et efface la lecture faite au comptoir trente
+// secondes plus tot. A l'officine, ou quatre postes enregistrent toute la
+// journee, la pastille revenait presque a chaque fois.
+//
+// LA CARTE `vu` NE RECULE JAMAIS. Un horodatage de lecture ne fait que monter,
+// et deux personnes n'ecrivent jamais la meme case. On la fusionne donc case
+// par case, en gardant le plus recent des deux cotes — quel que soit le
+// vainqueur de l'enregistrement. Plus de compromis : ni message perdu, ni
+// lecture oubliee.
+function fusionnerVu(gagnant, perdant) {
+  if (!gagnant || !perdant) return gagnant;
+  const a = gagnant.vu, b = perdant.vu;
+  if (!b || typeof b !== 'object') return gagnant;
+  const sortie = Object.assign({}, (a && typeof a === 'object') ? a : {});
+  let change = false;
+  Object.keys(b).forEach(uid => {
+    const v = b[uid];
+    if (typeof v !== 'number') return;
+    if (!(sortie[uid] > v)) { if (sortie[uid] !== v) change = true; sortie[uid] = Math.max(sortie[uid] || 0, v); }
+  });
+  if (!change && a && Object.keys(sortie).length === Object.keys(a).length) return gagnant;
+  return Object.assign({}, gagnant, { vu: sortie });
+}
+
 function mergeById(existingArr, incomingArr) {
   const inc = {};
   if (Array.isArray(incomingArr)) incomingArr.forEach(r => { if (r && r.id != null) inc[r.id] = r; });
@@ -1638,7 +1675,9 @@ function mergeById(existingArr, incomingArr) {
     if (!r || r.id == null) { out.push(r); return; }
     if (seen[r.id]) return; seen[r.id] = 1;
     const i = inc[r.id];
-    out.push((i && (i.updatedAt || 0) >= (r.updatedAt || 0)) ? i : r);
+    if (!i) { out.push(r); return; }
+    // Le gagnant emporte tout, SAUF la carte des lectures, qui se recolle.
+    out.push(((i.updatedAt || 0) >= (r.updatedAt || 0)) ? fusionnerVu(i, r) : fusionnerVu(r, i));
   });
   if (Array.isArray(incomingArr)) incomingArr.forEach(r => {
     if (!r || r.id == null) { out.push(r); return; }

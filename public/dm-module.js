@@ -233,9 +233,13 @@
   .dm-chip .n{opacity:.65;font-weight:600;margin-left:5px}
   .dm-moi{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--gray-200);background:#fff;border-radius:14px;padding:2px 10px;font-size:.72rem;font-weight:700;color:var(--gray-700);cursor:pointer}
   .dm-moi.on{background:var(--g-pale);border-color:var(--g-border);color:var(--g-dark)}
-  .dm-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:600;padding:1rem}
+  /* LE CADRE NE DEFILE PLUS TOUT SEUL : c'est la fenetre entiere qui defile.
+     Un cadre a sa hauteur maximale, sur telephone, oblige a faire defiler a
+     l'interieur pour atteindre les derniers champs — et le doigt qui sort du
+     cadre en fin de geste valait un clic sur le fond. */
+  .dm-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;z-index:600;padding:1rem;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .dm-ov.open{display:flex}
-  .dm-modal{background:#fff;border-radius:14px;width:min(760px,96vw);max-height:92vh;overflow:auto;padding:1.4rem}
+  .dm-modal{background:#fff;border-radius:14px;width:min(760px,96vw);padding:1.4rem;margin:auto}
   .dm-modal h3{font-size:1.05rem;color:var(--g-dark);margin-bottom:.2rem}
   .dm-fg{margin-bottom:13px}
   .dm-fg label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-700);margin-bottom:5px}
@@ -301,7 +305,10 @@
   // Une demande « faite » quitte le tableau : elle est archivée. Son auteur en
   // est averti par la messagerie, il n'a donc pas besoin de la voir traîner —
   // et un tableau qui ne se vide jamais finit par ne plus être lu.
-  function dmArchivee(d) { return !!(d && d.archiveAt); }
+  function dmArchivee(d, maintenant) {
+    if (!d || !d.archiveAt) return false;
+    return ((maintenant || Date.now()) - d.archiveAt) > DM_FAIT_JOURS * 86400000;
+  }
   const DM_FILTRES = [
     { cle: 'nouveau',   lbl: 'Nouveau',     test: d => dmEtat(d).st === 'nouveau' },
     { cle: 'acceptee',  lbl: 'Acceptées',   test: d => dmEtat(d).st === 'acceptee' },
@@ -476,7 +483,17 @@
     document.getElementById('dm-ov-form').classList.add('open');
     setTimeout(function () { g('dm-f-texte').focus(); }, 60);
   };
-  window.dmFermerForm = function () { document.getElementById('dm-ov-form').classList.remove('open'); };
+  // On ne jette pas une demande a moitie ecrite sans demander. C'est le seul
+  // chemin qui referme cette fenetre, et il est volontaire.
+  function dmFormRempli() {
+    const t = (document.getElementById('dm-f-texte') || {}).value || '';
+    return !!(t.trim() || dmForm.image);
+  }
+  window.dmFermerForm = function (force) {
+    if (!force && dmFormRempli()
+      && !confirm('Abandonner cette demande ?\n\nCe qui est écrit sera perdu.')) return;
+    document.getElementById('dm-ov-form').classList.remove('open');
+  };
   window.dmChoix = function (champ, val) { dmForm[champ] = val; dmMajChoix(); };
   function dmMajChoix() {
     document.querySelectorAll('#dm-ov-form [data-champ]').forEach(function (b) {
@@ -543,7 +560,7 @@
     });
     dmSave(true);
     if (typeof logAction === 'function') logAction('Demande déposée', '#' + num);
-    dmFermerForm(); dmRender();
+    dmFermerForm(true); dmRender();   // envoyee : on ne redemande pas
     dmToast('Demande #' + num + ' enregistrée. Vous serez prévenu dès qu’elle avance.');
   };
 
@@ -993,8 +1010,10 @@
       while (w.firstElementChild) document.body.appendChild(w.firstElementChild);
       dmRender();
     }
-    // Fermeture au clic sur le fond, comme les autres fenêtres de l'appli.
+    // Fermeture au clic sur le fond — SAUF pour le formulaire de dépôt, qui
+    // contient du texte qu'on ne saurait pas récupérer. Il a « Annuler ».
     document.querySelectorAll('.dm-ov').forEach(function (o) {
+      if (o.id === 'dm-ov-form') return;
       o.addEventListener('click', function (e) { if (e.target === o) o.classList.remove('open'); });
     });
   }
