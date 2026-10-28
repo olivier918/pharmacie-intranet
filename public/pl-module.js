@@ -104,6 +104,175 @@
   }
 
   let plVerEdit = null;    // id de la version éditée dans l'écran Trames (null = trame de base)
+
+  // ═══ REPRISE DU PLANNING DEPUIS LE TABLEUR ═══════════════════════════════
+  // Olivier : « voila le planning a jour, reprends ce fichier ». Le tableur
+  // donne les PRESENCES par demi-journee (0/1) sur trois semaines — S48, S49 et
+  // S50 de 2026 — et pas une seule heure.
+  //
+  // D'OU VIENT LE CYCLE DE SIX SEMAINES. Les preparateurs tournent sur deux
+  // semaines, les pharmaciens sur trois : le motif complet de l'equipe ne se
+  // repete donc qu'au bout de six. Mais on ne STOCKE pas six semaines — chacun
+  // garde le cycle de sa rotation, et les six emergent toutes seules. C'est
+  // d'ailleurs ce que le tableur confirme : pour les preparateurs, la S50 est
+  // identique a la S48.
+  //
+  //     preparateurs (cycle 2) : S1 = S48, S2 = S49
+  //     pharmaciens  (cycle 3) : S1 = S48, S2 = S49, S3 = S50
+  //
+  // La version est datee du 23/11/2026, premier jour du tableur, et chaque
+  // contrat y part avec `rang0 = 1` : a cette date, tout le monde est a la
+  // premiere semaine de son propre cycle. `plRangAt` fait le reste.
+  //
+  // LES HEURES NE S'INVENTENT PAS. Le fichier dit QUI travaille, pas QUAND. On
+  // reprend donc, pour chaque personne et chaque jour, l'horaire qu'elle a deja
+  // dans PILOT — meme rang de cycle d'abord, puis n'importe quel autre. C'est
+  // ce qui preserve « sauf une journee » (les apres-midi a 18h30) et les
+  // horaires des logisticiens (6h-13h30), que le tableur ignore. Quand aucun
+  // horaire n'est connu pour ce jour-la, on pose celui de l'officine et ON LE
+  // SIGNALE : une demi-journee inventee doit etre relue.
+  const PL_TAB_DEBUT = '2026-11-23';
+  const PL_TAB_DEF = { m: '9h-12h30', a: '14h-19h30' };
+  const PL_TAB_JOURS = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
+  // Colonnes du tableur sans contrat dans PILOT : rien a ecrire pour elles.
+  const PL_TAB_INCONNUS = ['Lisa', 'Lilou', 'Soraya', 'Enzo (seconde colonne)'];
+  // « lilou, violette, soraya et enzo peuvent etre supprimes ». Seule Violette
+  // avait un contrat : il est DESACTIVE, pas detruit — elle sort du planning et
+  // son historique reste lisible.
+  const PL_TAB_SORTANTS = ['ct:violette-gente'];
+  // Chaque ligne : les trois semaines du tableur (S48, S49, S50), six
+  // caracteres chacune — lundi a samedi. X = journee, m = matin seul,
+  // a = apres-midi seul, . = repos.
+  const PL_TAB_GRILLE = {
+    'ct:anouck': ['XX..X.','XX..X.','XX..X.'], // Anouck
+    'ct:olivier': ['X.X.a.','X.X.a.','X.X.a.'], // Olivier
+    'ct:hervine-lhullier': ['......','......','......'], // Hervine
+    'ct:alexis-baguelin': ['..XXXX','X.XXX.','X.XXX.'], // Alexis
+    'ct:jules-palvadeau': ['XXXX..','.X.XXX','.XXXX.'], // Jules
+    'ct:enzo-dor-': ['XXX.X.','XXX.X.','XXX..X'], // Enzo
+    'ct:c-line-bourdon': ['XXX.X.','.XX.XX','XXX.X.'], // Céline
+    'ct:elodie-rivognac': ['.X.XX.','...XXX','.X.XX.'], // Elodie
+    'ct:mathilde-binet': ['......','......','......'], // Mathilde
+    'ct:jean-claude-tran-van': ['X..XXX','XX.XX.','X..XXX'], // J-Claude
+    'ct:marion-noy-e': ['X.XXX.','.X.XXX','X.XXX.'], // Marion
+    'ct:julie-nicolas': ['..XXaX','X.XXa.','..XX.X'], // Julie
+    'ct:hortense-le-pont': ['.XXX.X','XXXX..','.XXX.X'], // Hortense
+    'ct:elise-lamy': ['.XXXX.','..XXXX','.XXXX.'], // Elise
+    'ct:allison-courvalet': ['XXX..X','XXX.X.','XXX..X'], // Allison
+    'ct:paloma-petit': ['XX.XX.','XX.XX.','XX.XX.'], // Paloma
+    'ct:brunilde-marti': ['mmmmm.','mmmmm.','mmmmm.'], // Brunilde
+    'ct:quentin-debons': ['aXXaX.','XXXaXm','aXXaX.'], // Quentin
+    'ct:mtigcvxb9hh62': ['.....X','.....X','.....X'], // Lise
+  };
+
+  // Tous les horaires connus d'un contrat, par jour et par demi-journee.
+  function plTabConnus(c) {
+    const out = {};
+    const sem = (c && c.sem) || {};
+    Object.keys(sem).forEach(function (rg) {
+      Object.keys(sem[rg] || {}).forEach(function (j) {
+        const v = sem[rg][j];
+        if (!Array.isArray(v)) return;
+        if (!out[j]) out[j] = { m: {}, a: {} };
+        if (v[0]) out[j].m[rg] = v[0];
+        if (v[1]) out[j].a[rg] = v[1];
+      });
+    });
+    return out;
+  }
+  // L'horaire a retenir : celui du meme rang, sinon le premier connu, sinon
+  // celui de l'officine — et dans ce dernier cas on rend aussi le drapeau.
+  function plTabHoraire(connus, jour, demi, rang) {
+    const d = (connus[jour] || {})[demi] || {};
+    if (d[rang]) return { h: d[rang], pose: false };
+    const autres = Object.keys(d);
+    if (autres.length) return { h: d[autres[0]], pose: false };
+    return { h: PL_TAB_DEF[demi], pose: true };
+  }
+  // La semaine type d'un contrat, rang par rang, lue dans la grille du tableur.
+  function plTabSem(c, lignes, longueur, rapport) {
+    const connus = plTabConnus(c);
+    const sem = {};
+    for (let rang = 1; rang <= longueur; rang++) {
+      // Le rang 1 lit la S48, le 2 la S49, le 3 la S50. Au-dela d'un cycle de
+      // trois, on retomberait sur la premiere — mais aucune rotation ne
+      // depasse quatre, et seule la PDA est a quatre, sans ligne ici.
+      const mot = lignes[(rang - 1) % lignes.length] || '';
+      const jours = {};
+      PL_TAB_JOURS.forEach(function (j, i) {
+        const ch = mot[i] || '.';
+        if (ch === '.') { jours[j] = [null, null]; return; }
+        const m = (ch === 'X' || ch === 'm');
+        const a = (ch === 'X' || ch === 'a');
+        const hm = m ? plTabHoraire(connus, j, 'm', String(rang)) : null;
+        const ha = a ? plTabHoraire(connus, j, 'a', String(rang)) : null;
+        if (hm && hm.pose && rapport) rapport.push(c.nom + ' — S' + rang + ' ' + j + ' matin');
+        if (ha && ha.pose && rapport) rapport.push(c.nom + ' — S' + rang + ' ' + j + ' après-midi');
+        jours[j] = [hm ? hm.h : null, ha ? ha.h : null];
+      });
+      sem[String(rang)] = jours;
+    }
+    return sem;
+  }
+
+  window.plAppliquerTableur = function () {
+    if (typeof isAdmin === 'function' && !isAdmin()) {
+      alert('Action réservée aux administrateurs.'); return;
+    }
+    const lignes = Object.keys(PL_TAB_GRILLE).length;
+    if (!confirm('Reprendre le planning du tableur ?\n\n'
+      + lignes + ' collaborateurs, à partir du lundi 23 novembre 2026.\n\n'
+      + 'Une nouvelle version datée est créée. Les semaines d\'ici là ne bougent pas, '
+      + 'et la trame actuelle reste consultable.')) return;
+
+    const rapport = [];
+    const data = {};
+    L('contrats').filter(c => c.actif !== false).forEach(function (c) {
+      const lg = PL_TAB_GRILLE[c.id];
+      const rot = plRotOf(c);
+      const longueur = (rot && rot.longueur) || 1;
+      if (lg) {
+        data[c.id] = { rang0: 1, sem: plTabSem(c, lg, longueur, rapport),
+                       pos: JSON.parse(JSON.stringify(c.pos || {})) };
+      } else {
+        // Pas de colonne exploitable dans le tableur (Corinne) : on recopie ce
+        // qui existe plutot que de vider sa semaine par omission.
+        data[c.id] = { rang0: 1, sem: JSON.parse(JSON.stringify(c.sem || {})),
+                       pos: JSON.parse(JSON.stringify(c.pos || {})) };
+      }
+    });
+
+    const v = { id: plNewId('tr'), nom: 'Planning du tableur — 23/11/2026',
+      statut: 'actif', debut: PL_TAB_DEBUT, fin: null, typeDebut: 1,
+      data: data, updatedAt: Date.now() };
+    plTrames.push(v);
+    // La version precedente s'arrete la veille, pour ne pas se chevaucher.
+    const veille = plIso(plAddD(new Date(PL_TAB_DEBUT + 'T12:00'), -1));
+    plVerActives().forEach(function (o) {
+      if (o.id === v.id) return;
+      if (o.debut < v.debut && (!o.fin || o.fin >= v.debut)) { o.fin = veille; plStamp(o); }
+    });
+    // Les sortants quittent le planning sans etre detruits.
+    let sortis = 0;
+    PL_TAB_SORTANTS.forEach(function (cid) {
+      const c = L('contrats').find(x => x.id === cid);
+      if (c && c.actif !== false) { c.actif = false; plStamp(c); sortis++; }
+    });
+    plPersist();
+
+    alert('Planning repris — ' + Object.keys(data).length + ' collaborateurs à partir du 23/11/2026.'
+      + (sortis ? '\n\n' + sortis + ' contrat(s) sorti(s) du planning, conservé(s) en base.' : '')
+      + (rapport.length
+          ? '\n\n' + rapport.length + ' demi-journée(s) sans horaire connu ont reçu '
+            + PL_TAB_DEF.m + ' / ' + PL_TAB_DEF.a + ' :\n  · ' + rapport.slice(0, 12).join('\n  · ')
+            + (rapport.length > 12 ? '\n  · … et ' + (rapport.length - 12) + ' autres' : '')
+            + '\n\nÀ relire.'
+          : '\n\nTous les horaires étaient déjà connus.')
+      + (PL_TAB_INCONNUS.length
+          ? '\n\nSans contrat dans PILOT, donc ignorés : ' + PL_TAB_INCONNUS.join(', ') + '.'
+          : ''));
+  };
+
   // ═══ VERSIONS DE TRAME ═══════════════════════════════════════════════════
   // Une modification de la semaine type ne doit pas réécrire le passé : chaque trame est
   // datée. Une version porte { debut, fin (ou null), typeDebut } et le contenu de toute
@@ -1848,6 +2017,14 @@
           + '<td>Semaine ' + plRang(r, new Date()) + '</td>'
           + '<td><input type="date" class="pl-inp" style="height:30px" value="' + plEsc(r.ancrage) + '" onchange="plSetAncrage(\'' + r.id + '\',this.value)"> = semaine ' + (r.rangAncrage || 1) + '</td></tr>';
       });
+      h += '<div style="margin-top:14px;padding:12px 14px;border:1px solid #e6e4dc;border-radius:10px">'
+        + '<b style="font-size:12.5px">Reprendre le planning du tableur</b>'
+        + '<div class="pl-note" style="margin:6px 0 10px">Les trois semaines du fichier (23/11 au 13/12/2026) '
+        + 'deviennent une trame datée : semaines 1 et 2 du cycle pour les préparateurs, 1 à 3 pour les '
+        + 'pharmaciens. Les horaires déjà connus de chacun sont conservés ; une demi-journée nouvelle '
+        + 'reçoit ' + PL_TAB_DEF.m + ' / ' + PL_TAB_DEF.a + ', et vous est signalée.</div>'
+        + '<button class="pl-btn" onclick="plAppliquerTableur()">Reprendre le planning du tableur</button>'
+        + '</div>';
       h += '</table><div class="pl-note">Le cycle se règle de 1 à 4 semaines : 2 pour l’alternance du samedi des préparateurs, 3 pour les pharmaciens. La semaine en cours est calculée depuis l’ancrage — plus rien à recopier à la main (ancrage importé : semaine du 07/09/2026 = Prép S1 · Ph S1 · PDA S4).</div>';
       el.innerHTML = h;
     } else {
