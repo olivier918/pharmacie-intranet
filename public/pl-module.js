@@ -937,6 +937,7 @@
   .pl-vars{--plbg:#F8F5F4;--plink:#25282A;--plmut:#71787A;--plline:#E9E2E1;
     --plac:#348466;--placs:#E6F1EB;--plrose:#D26E96;--plroses:#FAEAF1;--plrosei:#B04A74;
     --plok:#2E8564;--plwarn:#B8821C;--plcrit:#C4544A;
+    --platt:#7B4FC9;--plattb:#F0EAFB;--platti:#50308C;
     --plcp:#4173AC;--plcpb:#E8EFF7;--plmal:#C4544A;--plmalb:#FAE9E7;
     --plrec:#8A63C9;--plrecb:#F0EAFA;--plfor:#B8821C;--plforb:#F8F0DE;--plmat:#C2559A;--plmatb:#F9E7F1}
   .pl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
@@ -997,7 +998,7 @@
   .pl-who small{color:var(--plmut);font-size:10px;font-weight:500}
   .pl-hrs{margin-top:3px;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums}
   .pl-hrs.good{color:var(--plok)}.pl-hrs.bad{color:var(--plcrit)}
-  .pl-vide{font-size:9px;font-weight:600;color:transparent;text-align:center;border:1px dashed transparent;
+  .pl-vide{position:relative;font-size:9px;font-weight:600;color:transparent;text-align:center;border:1px dashed transparent;
     border-radius:6px;padding:1px 0;margin:1px 0;letter-spacing:.2px;transition:color .12s,border-color .12s}
   .pl-cell:hover .pl-vide{color:#B9C2BD;border-color:var(--plline)}
   .pl-cell .pl-vide:hover{border-color:var(--plac);color:var(--plac);background:var(--placs)}
@@ -1017,8 +1018,7 @@
     border-left:4px solid var(--plwarn);border-radius:11px;padding:9px 14px;margin-bottom:12px;font-size:12.5px;color:#6E5210}
   .pl-aval b{color:#5A430C}
   .pl-aval .pl-btn{padding:5px 12px;font-size:12px}
-  .pl-shift.pl-echatt{border-style:dashed;box-shadow:inset 0 0 0 1px rgba(52,132,102,.35)}
-  .pl-echdot.pl-att{background:#fff;color:var(--plac);border:1.5px dashed var(--plac)}
+  .pl-echdot.pl-att{background:var(--platt);color:#fff;border:1.5px solid #fff}
   .pl-echdot{position:absolute;left:-4px;bottom:-4px;width:12px;height:12px;border-radius:50%;background:var(--plac);
     color:#fff;font-style:normal;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;
     border:1.5px solid #fff}
@@ -1035,13 +1035,14 @@
   .pl-abs.cp{background:var(--plcpb);color:var(--plcp)}.pl-abs.mal{background:var(--plmalb);color:var(--plmal)}
   .pl-abs.rec{background:var(--plrecb);color:var(--plrec)}.pl-abs.for{background:var(--plforb);color:var(--plfor)}
   .pl-abs.mat{background:var(--plmatb);color:var(--plmat)}
-  .pl-abs.pl-dem{background:repeating-linear-gradient(135deg,#fff 0 4px,var(--plcpb) 4px 8px);color:var(--plcp);border:1px dashed var(--plcp);opacity:.9}
+  .pl-abs.pl-dem{background:repeating-linear-gradient(135deg,#fff 0 4px,var(--plcpb) 4px 8px);color:var(--plcp);
+    box-shadow:inset 0 0 0 1.5px var(--plcp);opacity:.95}
   .pl-impact{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
   .pl-impact span{font-size:10.5px;border-radius:6px;padding:2px 7px;background:#F1F3F2;color:#4A5250;white-space:nowrap}
   .pl-impact span.bad{background:#FAE9E7;color:#B23A2F;font-weight:700}.pl-impact span.lim{background:#FFF3E0;color:#B26A00}
   .pl-shift.pl-formation{background:#EDEDED;color:#8E9395;border-left-color:#B9BEC0;text-decoration:none}
   .pl-shift.pl-formation .pl-fortag{display:block;font-style:normal;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--plfor);margin-top:1px}
-  .pl-off{color:#C3CDC7;font-size:10px;padding:6px 7px}
+  .pl-off{position:relative;color:#C3CDC7;font-size:10px;padding:6px 7px}
   .pl-cntrow td{background:#FBFAF9;border-bottom:2px solid var(--plline);padding:5px 6px}
   .pl-cntlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
   .pl-pill.nt{background:#EDF0F4;color:#4A5B74}
@@ -1054,15 +1055,23 @@
     font-weight:800;width:13px;height:13px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
   .pl-pos-C{background:#CFE7DA;color:#0B5B44}.pl-pos-B{background:#C9D8EC;color:#2C4A78}.pl-pos-A{background:#F2CBDC;color:var(--plrosei)}
   .pl-shift.pl-part{border-left-color:var(--plwarn);background:var(--plforb);color:#7A5A10}
-  .pl-shift.pl-mod{box-shadow:none;border:2px dotted currentColor;border-left-width:3px;padding:1px 5px}
-  /* En attente de validation : le planning montre l'horaire HABITUEL, pas le
-     demande. Le trait creux dit qu'une decision est en suspens sur cette case. */
-  .pl-shift.pl-att{border:2px dashed currentColor;border-left-width:3px;padding:1px 5px;opacity:.78}
-  .pl-attdot{position:absolute;left:-4px;top:-4px;width:11px;height:11px;border-radius:50%;
-    background:#E65100;border:1.5px solid #fff;font-style:normal}
-  /* Les deux plages d'un meme echange portent le meme lisere plein. */
+  /* MODIFICATION PONCTUELLE : lisere interieur dans la couleur du creneau,
+     donc deja la teinte foncee de sa position — vert au comptoir, bleu au
+     back-office, rose au poste avance. AUCUNE BORDURE, AUCUN REMPLISSAGE
+     TOUCHE : la case garde la taille de toutes les autres. */
+  .pl-shift.pl-mod{box-shadow:inset 0 0 0 2px currentColor}
+  .pl-off.pl-mod{box-shadow:inset 0 0 0 2px var(--plwarn);border-radius:6px;color:#8A6410}
+  /* Les deux plages d'un meme echange portent le meme lisere vert. */
   .pl-shift.pl-echpair{box-shadow:inset 0 0 0 2px var(--plac)}
-  .pl-vide.pl-att{border-color:#E65100;color:#E65100}
+  /* EN ATTENTE DE VALIDATION : VIOLET, et apres l'echange pour que le violet
+     gagne quand les deux se superposent — c'est l'attente qu'il faut voir.
+     Le planning continue d'afficher l'horaire HABITUEL : tant que la decision
+     n'est pas prise, c'est lui qui fait foi, et personne ne se presente sur un
+     horaire qui n'a pas ete accorde. Le nouveau est dans l'infobulle. */
+  .pl-shift.pl-echatt,.pl-shift.pl-att{background:var(--plattb);color:var(--platti);
+    border-left-color:var(--platt);box-shadow:inset 0 0 0 2px var(--platt)}
+  .pl-cell .pl-vide.pl-att,.pl-cell:hover .pl-vide.pl-att,.pl-cell .pl-vide.pl-att:hover{
+    border:1px solid var(--platt);color:var(--platti);background:var(--plattb)}
   .pl-echmode{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:95;
     background:#1D5C3A;color:#fff;border-radius:11px;padding:10px 16px;font-size:12.5px;font-weight:600;
     box-shadow:0 8px 26px rgba(0,0,0,.28);display:flex;gap:12px;align-items:center}
@@ -1082,7 +1091,7 @@
   .pl-cell.pl-click:hover{background:#FBF8F6}
   .pl-shift.pl-click{cursor:pointer}
   .pl-abs.pl-click{cursor:pointer}.pl-abs.pl-click:hover{filter:brightness(.94)}
-  .pl-shift.pl-click:hover{filter:brightness(.94);box-shadow:0 1px 4px rgba(70,40,55,.18)}
+  .pl-shift.pl-click:hover{filter:brightness(.94) drop-shadow(0 1px 3px rgba(70,40,55,.18))}
   .pl-chip.pl-ch-part{background:var(--plforb);color:var(--plwarn)}.pl-chip.pl-ch-part i{background:var(--plwarn)}
   .pl-empty{color:var(--plmut);text-align:center;padding:44px 12px;line-height:1.6}
   .pl-empty b{font-size:1rem;color:var(--plink)}
@@ -1627,7 +1636,6 @@
             cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '')
               + (exAtt ? ' pl-att' : '') + (ex && ex.echangeId ? ' pl-echpair' : '') + (echAtt ? ' pl-echatt' : '') + kl + '"' + clic
               + ' title="' + plEsc(tt + ttAtt + (ech ? ' — journée issue d\'un échange' : (echAtt ? ' — échange demandé, en attente de validation' : ''))) + '">' + plEsc(sl[hh]) + posBadge
-              + (exAtt ? '<i class="pl-attdot" title="Modification en attente de validation"></i>' : '')
               + (ex && ex.echangeId ? '<i class="pl-echdot" title="Plage échangée">⇄</i>' : '')
               + (ex && !ech ? '<i class="pl-exdot" title="Exception du jour"></i>' : '')
               + (ech ? '<i class="pl-echdot" title="Échange de jours validé">⇄</i>' : '')
@@ -1635,11 +1643,11 @@
           } else {
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
             const exAtt = !ex && plExAttOf(c, iso, hh ? 'AM' : 'M');
-            if (ex) cell += '<div class="pl-off pl-mod' + (ex.echangeId ? ' pl-echpair' : '') + kl + '"' + clic + ' style="border:2px dotted var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')' + (ex.echangeId ? ' — plage échangée' : '') + '">absent' + (ex.echangeId ? '<i class="pl-echdot">⇄</i>' : '') + '<i class="pl-exdot"></i></div>';
+            if (ex) cell += '<div class="pl-off pl-mod' + (ex.echangeId ? ' pl-echpair' : '') + kl + '"' + clic + ' title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')' + (ex.echangeId ? ' — plage échangée' : '') + '">absent' + (ex.echangeId ? '<i class="pl-echdot">⇄</i>' : '') + '<i class="pl-exdot"></i></div>';
             else cell += '<div class="pl-vide' + (exAtt ? ' pl-att' : '') + kl + '"' + clic + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — repos'
               + (exAtt ? ' ; MODIFICATION EN ATTENTE : ' + plEsc(exAtt.horaire || 'repos') : '')
               + (admin ? ' ; cliquer pour ajouter un créneau' : '') + '">' + (hh ? 'après-midi' : 'matin')
-              + (exAtt ? '<i class="pl-attdot"></i>' : '') + '</div>';
+              + '</div>';
           }
         }
         // journée entièrement libre : on affiche « repos », et les deux demi-journées
@@ -2936,7 +2944,7 @@
       + bout(dem, 'demande de congés', 'demandes de congés', 'conges')
       + bout(hs, 'déclaration d’heures', 'déclarations d’heures', 'compteurs')
       + bout(mods, 'modification du planning', 'modifications du planning', 'compteurs')
-      + '<span style="opacity:.85">Tant qu’une modification n’est pas validée, le planning affiche l’horaire habituel.</span></div>';
+      + '<span style="opacity:.85">Tant qu’une modification n’est pas validée, la case passe au <b>violet</b> et le planning affiche l’horaire habituel.</span></div>';
   }
   // bascule vers un écran du menu latéral (page dédiée) ; sans effet dans l'intranet
   window.plAllerVue = function (v) {

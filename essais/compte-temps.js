@@ -199,24 +199,109 @@ console.log('\nCe que l’écran promet');
 t('LE PLANNING AFFICHE L’HORAIRE HABITUEL, pas celui qui est demandé',
   /MODIFICATION EN ATTENTE DE VALIDATION/.test(src)
   && /l\\'horaire affiché reste celui qui fait foi/.test(src));
-t('... derrière une pastille orange', /\.pl-attdot\{/.test(src) && /pl-att' : ''/.test(src));
+t('... et la case porte la marque de l’attente', /pl-att' : ''/.test(src));
 t('la lecture du planning ignore ce qui attend',
   /&& !plExEnAttente\(x\)\) \|\| null;/.test(src));
 t('le bandeau d’accueil les compte', /bout\(mods, 'modification du planning'/.test(src));
+t('... et dit où regarder : la case passe au violet',
+  /la case passe au <b>violet<\/b>/.test(src));
 t('et l’administrateur peut valider ou refuser',
   /window\.plModValider = function/.test(src) && /window\.plModRefuser = function/.test(src));
 t('UN REFUS RETIRE LA LIGNE, avec sa pierre tombale',
   /markDeleted\('plExceptions', exId\)/.test(src));
 
-console.log('\nLa modification ponctuelle se voit');
-// `currentColor` est la couleur du texte du creneau — donc deja la teinte
-// foncee de sa position. Le pointille reprend la couleur du creneau sans qu'on
-// ait a la nommer, et suivra toute nouvelle position sans retouche.
-t('LE POINTILLÉ REPREND LA COULEUR DU CRÉNEAU, en plus foncé',
-  /\.pl-shift\.pl-mod\{box-shadow:none;border:2px dotted currentColor/.test(src));
-t('... et il est gras, pas un filet', /border:2px dotted currentColor/.test(src));
-t('l’attente se distingue du validé : tirets contre points',
-  /\.pl-shift\.pl-att\{border:2px dashed currentColor/.test(src));
+console.log('\nLa modification ponctuelle se voit — sans changer de taille');
+// OLIVIER, LE 28/10 : « attention a bien harmoniser la taille des cartouches
+// dans le planning. on abandonne l'idee des contours en pointille. c'est pas
+// lisible. les modification avant validation doivent apparaitre en violet. »
+//
+// Le contour en pointille coutait DEUX fois. Il posait des bordures (2 px en
+// haut, a droite, en bas) et, surtout, son `padding:1px 5px` ecrasait le
+// `padding-right:20px` de la regle de base : le cartouche maigrissait d'une
+// quinzaine de pixels, et la pastille de poste — en position absolue a droite —
+// venait recouvrir l'horaire. Trois cases cote a cote n'avaient plus la meme
+// largeur.
+//
+// D'ou l'invariant verifie ici, mecaniquement : AUCUNE VARIANTE DE CARTOUCHE NE
+// TOUCHE A SA GEOMETRIE. Seuls la couleur, le fond et l'ombre INTERIEURE — qui
+// ne prend aucune place — distinguent les etats.
+const CSS = bloc('.pl-cell{padding', '.pl-chip.pl-ch-part');
+// On ne retient que les variantes du cartouche LUI-MEME : un selecteur a
+// descendant (`.pl-shift.pl-formation .pl-fortag`) habille un element interieur,
+// qui a le droit d'avoir sa propre taille.
+const REGLES = CSS.split('\n').map(l => l.trim())
+  .filter(l => /^\.pl-(shift|off|vide|abs)\./.test(l) && l.indexOf('{') > 0)
+  .filter(l => !/\s/.test(l.slice(0, l.indexOf('{')).trim()));
+// L'ARRONDI N'OCCUPE AUCUNE PLACE : il n'est pas de la geometrie. Ne sont
+// interdites que les proprietes qui changent la TAILLE de la boite.
+const GEOMETRIE = /(^|;|\{)\s*(padding|border-width|border-top|border-right|border-bottom|font-size|margin|width|height)\s*:/;
+const fautives = REGLES.filter(l => {
+  const corps = l.slice(l.indexOf('{'));
+  // `border:` nu change la largeur, sauf s'il ne fait que remplacer un filet
+  // deja present de meme epaisseur (la case de repos, qui porte 1 px).
+  const bordureNue = /(^|;|\{)\s*border\s*:/.test(corps) && !/^\{border:1px solid/.test(corps);
+  return GEOMETRIE.test(corps) || bordureNue;
+});
+t('les ' + REGLES.length + ' variantes de cartouche ne touchent pas à la géométrie'
+  + (fautives.length ? ' — FAUTIVES : ' + fautives.map(l => l.slice(0, l.indexOf('{'))).join(', ') : ''),
+  fautives.length === 0);
+t('... et l’essai en a bien examiné une poignée, sinon il ne vérifie rien',
+  REGLES.length >= 8);
+t('PLUS AUCUN POINTILLÉ NI TIRET SUR UN CARTOUCHE',
+  !/\.pl-(shift|off|abs)\.[^{]*\{[^}]*(dotted|dashed)/.test(CSS)
+  && !/style="border:2px dotted/.test(src));
+
+t('LA MODIFICATION VALIDÉE PORTE UN LISERÉ INTÉRIEUR, dans la couleur du créneau',
+  /\.pl-shift\.pl-mod\{box-shadow:inset 0 0 0 2px currentColor\}/.test(src));
+t('... donc vert au comptoir, bleu au back-office, rose au poste avancé, sans le nommer',
+  /currentColor/.test(bloc('.pl-shift.pl-mod{', '}')));
+t('un créneau supprimé ce jour le dit aussi, et de la même façon',
+  /\.pl-off\.pl-mod\{box-shadow:inset 0 0 0 2px var\(--plwarn\)/.test(src));
+
+console.log('\nL’attente de validation est violette');
+t('LE VIOLET EST DÉFINI UNE FOIS, avec son fond et sa teinte foncée',
+  /--platt:#7B4FC9;--plattb:#F0EAFB;--platti:#50308C;/.test(src));
+t('... et c’est une couleur qu’aucun poste n’utilise',
+  !/--pl(ac|rose|pB|pA):#7B4FC9/.test(src));
+t('UNE MODIFICATION EN ATTENTE EST VIOLETTE, fond et liseré',
+  /\.pl-shift\.pl-echatt,\.pl-shift\.pl-att\{background:var\(--plattb\);color:var\(--platti\);\n\s*border-left-color:var\(--platt\);box-shadow:inset 0 0 0 2px var\(--platt\)\}/.test(src));
+t('un échange demandé l’est aussi — « en attente » ne se dit pas de deux façons',
+  /\.pl-shift\.pl-echatt,/.test(src) && /\.pl-echdot\.pl-att\{background:var\(--platt\)/.test(src));
+// LA PASTILLE D'ATTENTE A DISPARU. Posee a -4px du coin superieur gauche, elle
+// recouvrait le debut de « 9h-12h30 » — sur un texte de 10,5 px, exactement le
+// chiffre qu'on vient lire. Et elle ne disait rien de plus : le cartouche est
+// deja violet de fond, de texte et de lisere, et l'infobulle porte deja
+// « MODIFICATION EN ATTENTE DE VALIDATION ». Un repere redondant qui gene la
+// lecture n'est pas un repere.
+t('LA PASTILLE QUI RECOUVRAIT L’HORAIRE A DISPARU — le violet suffit',
+  !/pl-attdot/.test(src));
+// Les pastilles qui restent (creneau supprime, echange) sont en position
+// ABSOLUE : sans `position:relative` sur leur parent elles se calaient sur le
+// coin de la PAGE, a l'autre bout de l'ecran.
+t('LES PASTILLES RESTANTES NE S’ÉCHAPPENT PLUS DE LEUR CASE',
+  /\.pl-off\{position:relative;/.test(src) && /\.pl-vide\{position:relative;/.test(src));
+t('et une demi-journée de repos en attente aussi',
+  /\.pl-cell \.pl-vide\.pl-att,[^{]*\{\n\s*border:1px solid var\(--platt\);color:var\(--platti\)/.test(src));
+// MEME PIEGE QUE LE SURVOL DU CARTOUCHE : `.pl-cell:hover .pl-vide` est plus
+// specifique que `.pl-vide.pl-att`. Survoler la case — le geste par lequel on
+// va justement la lire — remplacait le violet par le vert du bouton « ajouter ».
+t('... ET LE SURVOL NE LA REPEINT PLUS EN VERT',
+  /\.pl-cell:hover \.pl-vide\.pl-att/.test(src)
+  && /\.pl-cell \.pl-vide\.pl-att:hover/.test(src));
+// L'ORDRE DECIDE QUI GAGNE : une case peut porter une modification validee ET
+// un echange demande. A specificite egale, la derniere regle s'applique.
+t('LE VIOLET PASSE APRÈS LE VERT — sinon on croirait la case acquise',
+  src.indexOf('.pl-shift.pl-echpair{') < src.indexOf('.pl-shift.pl-echatt,.pl-shift.pl-att{')
+  && src.indexOf('.pl-shift.pl-mod{') < src.indexOf('.pl-shift.pl-echatt,.pl-shift.pl-att{'));
+// LE SURVOL EFFACAIT LE LISERE : `.pl-shift.pl-click:hover` est plus specifique
+// que `.pl-shift.pl-mod`, et son box-shadow d'elevation remplacait l'ombre
+// interieure — a l'instant ou l'on cherche justement a lire la case.
+t('LE SURVOL N’EFFACE PLUS LE LISERÉ — l’élévation passe par un filtre',
+  /\.pl-shift\.pl-click:hover\{filter:brightness\(\.94\) drop-shadow/.test(src)
+  && !/pl-click:hover\{[^}]*box-shadow/.test(src));
+t('une demande d’absence ne grossit plus sa pastille',
+  /\.pl-abs\.pl-dem\{[^}]*box-shadow:inset 0 0 0 1\.5px var\(--plcp\)/.test(src)
+  && !/\.pl-abs\.pl-dem\{[^}]*border:1px dashed/.test(src));
 
 console.log('\nL’échange apparie deux plages');
 t('un troisième motif est proposé', /onclick="plImputChoisir\('echange'\)"/.test(src));
