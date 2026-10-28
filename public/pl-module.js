@@ -481,9 +481,43 @@
   window.plSlotsTrame = plSlotsTrame; window.plVerAt = plVerAt; window.plTrameAt = plTrameAt;
   window.plAbs = plAbs; window.plSlots = plSlots; window.plEffectif = plEffectif;
   // exception d'horaire du jour (type 'horaire') pour une demi-journée : record ou null
-  function plExOf(c, iso, demi) {
-    return L('exceptions').find(x => x.contratId === c.id && x.date === iso && x.type === 'horaire' && x.demi === demi) || null;
+  // ═══ UNE MODIFICATION PROCHE SE FAIT VALIDER ══════════════════════════════
+  // Olivier : « quand on fait une modification dans les 30 prochains jours, il
+  // faut que cette modification soit validee pour etre effective ». Loin devant,
+  // on organise ; a trente jours, on derange quelqu'un — et ca se decide.
+  //
+  // EN ATTENDANT, LE PLANNING MONTRE L'HORAIRE HABITUEL. C'est le choix
+  // d'Olivier, et c'est le seul qui protege : personne ne se presente sur un
+  // horaire qui n'a pas encore ete accorde. Le nouvel horaire est dans
+  // l'infobulle, derriere une pastille orange.
+  const PL_VALID_JOURS = 30;
+  // UNE SEULE LIGNE A RETOURNER le jour ou les administrateurs devront passer
+  // par la file eux aussi : « pour l'instant que l'administrateur, on pourra
+  // changer par la suite ».
+  const PL_ADMIN_DISPENSE = true;
+  function plJoursJusqua(iso, ref) {
+    if (!iso) return null;
+    const a = new Date((ref || plIso(new Date())) + 'T12:00'), b = new Date(iso + 'T12:00');
+    return Math.round((b - a) / 86400000);
   }
+  // LE PASSE ET LE LOINTAIN SONT FERMES. Corriger hier n'est pas deranger
+  // quelqu'un, et organiser dans trois mois non plus.
+  function plDoitValider(iso, admin, ref) {
+    const j = plJoursJusqua(iso, ref);
+    if (j == null || j < 0 || j > PL_VALID_JOURS) return false;
+    return !(admin && PL_ADMIN_DISPENSE);
+  }
+  function plExEnAttente(x) { return !!(x && x.statut === 'attente'); }
+  function plExOf(c, iso, demi) {
+    return L('exceptions').find(x => x.contratId === c.id && x.date === iso && x.type === 'horaire'
+      && x.demi === demi && !plExEnAttente(x)) || null;
+  }
+  // La modification demandee sur cette demi-journee, pas encore accordee.
+  function plExAttOf(c, iso, demi) {
+    return L('exceptions').find(x => x.contratId === c.id && x.date === iso && x.type === 'horaire'
+      && x.demi === demi && plExEnAttente(x)) || null;
+  }
+  window.plExAttOf = plExAttOf;
   // horaires EFFECTIFS : trame + exceptions du jour (départ anticipé, créneau ajouté/supprimé…)
   function plSlots(c, date) {
     const t = plSlotsTrame(c, date), iso = plIso(date);
@@ -744,7 +778,20 @@
     font-weight:800;width:13px;height:13px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
   .pl-pos-C{background:#CFE7DA;color:#0B5B44}.pl-pos-B{background:#C9D8EC;color:#2C4A78}.pl-pos-A{background:#F2CBDC;color:var(--plrosei)}
   .pl-shift.pl-part{border-left-color:var(--plwarn);background:var(--plforb);color:#7A5A10}
-  .pl-shift.pl-mod{box-shadow:inset 0 0 0 1.5px var(--plwarn)}
+  .pl-shift.pl-mod{box-shadow:none;border:2px dotted currentColor;border-left-width:3px;padding:1px 5px}
+  /* En attente de validation : le planning montre l'horaire HABITUEL, pas le
+     demande. Le trait creux dit qu'une decision est en suspens sur cette case. */
+  .pl-shift.pl-att{border:2px dashed currentColor;border-left-width:3px;padding:1px 5px;opacity:.78}
+  .pl-attdot{position:absolute;left:-4px;top:-4px;width:11px;height:11px;border-radius:50%;
+    background:#E65100;border:1.5px solid #fff;font-style:normal}
+  /* Les deux plages d'un meme echange portent le meme lisere plein. */
+  .pl-shift.pl-echpair{box-shadow:inset 0 0 0 2px var(--plac)}
+  .pl-vide.pl-att{border-color:#E65100;color:#E65100}
+  .pl-echmode{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:95;
+    background:#1D5C3A;color:#fff;border-radius:11px;padding:10px 16px;font-size:12.5px;font-weight:600;
+    box-shadow:0 8px 26px rgba(0,0,0,.28);display:flex;gap:12px;align-items:center}
+  .pl-echmode button{background:#fff;color:#1D5C3A;border:none;border-radius:7px;padding:5px 11px;
+    font-weight:700;cursor:pointer;font-size:12px}
   .pl-exdot{position:absolute;left:-4px;top:-4px;width:9px;height:9px;border-radius:50%;background:var(--plwarn);
     border:1.5px solid #fff;font-style:normal}
   .pl-cell.pl-click{cursor:pointer}
@@ -1049,6 +1096,8 @@
         <b>Heures supplémentaires</b><br><span style="font-weight:400;font-size:11.5px;opacity:.9">S'ajoutent aux heures habituelles, remontées sur la navette des salaires.</span></button>
       <button class="pl-btn pl-ghost" style="display:block;width:100%;padding:12px 14px;height:auto;text-align:left;line-height:1.35" onclick="plImputChoisir('compte')">
         <b>Compte-temps</b><br><span style="font-weight:400;font-size:11.5px;color:var(--plmut)">Créditées sur le compte-temps du collaborateur, à récupérer plus tard.</span></button>
+      <button class="pl-btn pl-ghost" style="display:block;width:100%;padding:12px 14px;height:auto;text-align:left;line-height:1.35" onclick="plImputChoisir('echange')">
+        <b>Échange</b><br><span style="font-weight:400;font-size:11.5px;color:var(--plmut)">Ces heures en remplacent d'autres : cliquez ensuite sur la plage horaire à échanger. Les deux porteront le même repère ⇄.</span></button>
     </div>
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-jour"><div class="pl-box" style="width:min(560px,96vw)">
@@ -1274,15 +1323,28 @@
               + (part ? plPartielTitle(sl[hh], hh ? 'AM' : 'M') + ' — ' : '')
               + PL_POS_LBL[pos] + (admin ? ' · cliquer pour modifier ce jour' : '');
             const ech = plEchOf(c.id, iso), echAtt = !ech && plEchAttenteOf(c.id, iso);
-            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '') + (echAtt ? ' pl-echatt' : '') + kl + '"' + clic
-              + ' title="' + plEsc(tt + (ech ? ' — journée issue d\'un échange' : (echAtt ? ' — échange demandé, en attente de validation' : ''))) + '">' + plEsc(sl[hh]) + posBadge
+            // UNE MODIFICATION DEMANDEE MAIS PAS ENCORE ACCORDEE : la case
+            // continue d'afficher l'horaire habituel, et la pastille orange dit
+            // qu'une decision est en suspens. Le demande est dans l'infobulle.
+            const exAtt = !ex && plExAttOf(c, iso, hh ? 'AM' : 'M');
+            const ttAtt = exAtt ? ' — MODIFICATION EN ATTENTE DE VALIDATION : '
+              + (exAtt.horaire || 'repos') + ' (l\'horaire affiché reste celui qui fait foi)' : '';
+            cell += '<div class="pl-shift pl-p' + pos + (part ? ' pl-part' : '') + (ex ? ' pl-mod' : '')
+              + (exAtt ? ' pl-att' : '') + (ex && ex.echangeId ? ' pl-echpair' : '') + (echAtt ? ' pl-echatt' : '') + kl + '"' + clic
+              + ' title="' + plEsc(tt + ttAtt + (ech ? ' — journée issue d\'un échange' : (echAtt ? ' — échange demandé, en attente de validation' : ''))) + '">' + plEsc(sl[hh]) + posBadge
+              + (exAtt ? '<i class="pl-attdot" title="Modification en attente de validation"></i>' : '')
+              + (ex && ex.echangeId ? '<i class="pl-echdot" title="Plage échangée">⇄</i>' : '')
               + (ex && !ech ? '<i class="pl-exdot" title="Exception du jour"></i>' : '')
               + (ech ? '<i class="pl-echdot" title="Échange de jours validé">⇄</i>' : '')
               + (echAtt ? '<i class="pl-echdot pl-att" title="Échange demandé — en attente de validation">⇄</i>' : '') + '</div>';
           } else {
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
-            if (ex) cell += '<div class="pl-off pl-mod' + kl + '"' + clic + ' style="border:1px dashed var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')">absent<i class="pl-exdot"></i></div>';
-            else cell += '<div class="pl-vide' + kl + '"' + clic + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — repos' + (admin ? ' ; cliquer pour ajouter un créneau' : '') + '">' + (hh ? 'après-midi' : 'matin') + '</div>';
+            const exAtt = !ex && plExAttOf(c, iso, hh ? 'AM' : 'M');
+            if (ex) cell += '<div class="pl-off pl-mod' + (ex.echangeId ? ' pl-echpair' : '') + kl + '"' + clic + ' style="border:2px dotted var(--plwarn);border-radius:6px" title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')' + (ex.echangeId ? ' — plage échangée' : '') + '">absent' + (ex.echangeId ? '<i class="pl-echdot">⇄</i>' : '') + '<i class="pl-exdot"></i></div>';
+            else cell += '<div class="pl-vide' + (exAtt ? ' pl-att' : '') + kl + '"' + clic + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — repos'
+              + (exAtt ? ' ; MODIFICATION EN ATTENTE : ' + plEsc(exAtt.horaire || 'repos') : '')
+              + (admin ? ' ; cliquer pour ajouter un créneau' : '') + '">' + (hh ? 'après-midi' : 'matin')
+              + (exAtt ? '<i class="pl-attdot"></i>' : '') + '</div>';
           }
         }
         // journée entièrement libre : on affiche « repos », et les deux demi-journées
@@ -2048,7 +2110,8 @@
           + '<td><input class="pl-inp" style="width:70px;height:30px" value="' + (c.base != null ? c.base : '') + '"' + (plHorsTemps(c) ? ' disabled title="Contrat hors décompte de temps"' : '') + ' onchange="plSetBase(\'' + c.id + '\',this.value)"> h</td>'
           + '<td style="text-align:center"><input type="checkbox"' + (plHorsTemps(c) ? '' : ' checked') + ' title="Décocher pour un titulaire : il reste compté dans les effectifs mais sort des heures, des compteurs et de la navette" onchange="plSetTemps(\'' + c.id + '\',this.checked)"></td>'
           + '<td>' + (rot ? plEsc(rot.lbl) + ' (' + rot.longueur + ' sem)' : '—') + '</td>'
-          + '<td><button class="pl-btn pl-ghost pl-mini" onclick="plEditTrame(\'' + c.id + '\')">✎ Horaires</button></td></tr>';
+          + '<td><button class="pl-btn pl-ghost pl-mini" onclick="plEditTrame(\'' + c.id + '\')">✎ Horaires</button> '
+          + '<button class="pl-btn pl-ghost pl-mini" style="color:#C62828" title="Retirer du planning" onclick="plContratRetirer(\'' + c.id + '\')">✕</button></td></tr>';
       });
       h += '</table>';
       const sansContrat = staff.filter(s2 => !L('contrats').some(c => c.actif !== false && c.staffId === s2.id));
@@ -2176,6 +2239,22 @@
     if (t === (c.role || '')) return;
     c.role = t; plStamp(c); plPersist(); plRegRender();
   };
+  // RETIRER QUELQU'UN DU PLANNING, SANS RIEN DETRUIRE. Le contrat est
+  // desactive : il sort des ecrans, des compteurs et de la navette, mais son
+  // historique reste lisible et la personne reapparait dans « Collaborateurs du
+  // site sans contrat au planning » — un clic suffit a la remettre. Supprimer
+  // la ligne, c'est perdre les heures deja comptees, et on ne les retrouve pas.
+  window.plContratRetirer = function (cid) {
+    if (!plGarde()) return;
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    if (!confirm('Retirer ' + c.nom + ' du planning ?\n\n'
+      + 'Sa ligne disparaît des plannings, des compteurs et de la navette.\n\n'
+      + 'Rien n’est détruit : son historique reste lisible, et elle réapparaîtra dans '
+      + '« Collaborateurs du site sans contrat au planning », en bas de cet écran, '
+      + 'pour être remise d’un clic.')) return;
+    c.actif = false; plStamp(c); plPersist(); plRegRender(); plRender();
+    plToast(c.nom.split(' ')[0] + ' · retiré du planning');
+  };
   window.plSetBase = function (cid, v) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const n = parseFloat(String(v).replace(',', '.'));
@@ -2205,6 +2284,8 @@
   window.plJourPick = function (ev, cid, iso, hh) {
     if (ev) ev.stopPropagation();
     if (!plGarde()) return;
+    // EN MODE ECHANGE, LE CLIC APPARIE AU LIEU D'OUVRIR L'EDITEUR.
+    if (plEchSlot) { plEchApparier(cid, iso, hh); return; }
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const anc = (ev && ev.currentTarget) || document.body;
     const d = new Date(iso + 'T12:00'), demi = hh ? 'AM' : 'M';
@@ -2219,6 +2300,7 @@
       plDropEx(c.id, iso, demi);
       if (!memeH || !memeP) {
         const ex = { id: plNewId('ex'), contratId: c.id, date: iso, demi: demi, type: 'horaire',
+          statut: plDoitValider(iso, plIsAdmin()) ? 'attente' : 'valide',
           horaire: horaire || null, pos: memeP ? null : pos,
           saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() };
         if (ancienne && ancienne.imputation) ex.imputation = ancienne.imputation;
@@ -2299,6 +2381,7 @@
       plDropEx(c.id, plJourIso, demi);
       if (!memeHoraire || !memePos) {
         const ex = { id: plNewId('ex'), contratId: c.id, date: plJourIso, demi: demi, type: 'horaire',
+          statut: plDoitValider(plJourIso, plIsAdmin()) ? 'attente' : 'valide',
           horaire: val, pos: (pEl && !memePos) ? posVal : null,
           saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null, updatedAt: Date.now() };
         if (ancienne && ancienne.imputation) ex.imputation = ancienne.imputation;
@@ -2516,14 +2599,16 @@
     const dem = L('demandes').filter(d => d.statut === 'attente').length;
     const ech = L('echanges').filter(e => e.statut === 'attente').length;
     const hs = L('heuresSup').filter(d => d.statut === 'attente').length;
-    if (!dem && !ech && !hs) { el.innerHTML = ''; return; }
+    const mods = plModsEnAttente().length;
+    if (!dem && !ech && !hs && !mods) { el.innerHTML = ''; return; }
     const bout = (n, sing, plur, vue) => n
       ? '<button class="pl-btn pl-ghost" onclick="plAllerVue(\'' + vue + '\')">' + n + ' ' + (n > 1 ? plur : sing) + ' →</button>' : '';
     el.innerHTML = '<div class="pl-aval"><b>En attente de votre validation</b>'
       + bout(ech, 'échange de jours', 'échanges de jours', 'echanges')
       + bout(dem, 'demande de congés', 'demandes de congés', 'conges')
       + bout(hs, 'déclaration d’heures', 'déclarations d’heures', 'compteurs')
-      + '<span style="opacity:.85">Les échanges proposés n’entrent dans le planning qu’après validation.</span></div>';
+      + bout(mods, 'modification du planning', 'modifications du planning', 'compteurs')
+      + '<span style="opacity:.85">Tant qu’une modification n’est pas validée, le planning affiche l’horaire habituel.</span></div>';
   }
   // bascule vers un écran du menu latéral (page dédiée) ; sans effet dans l'intranet
   window.plAllerVue = function (v) {
@@ -2697,16 +2782,106 @@
     plImputFile.push(ex);
     if (plImputFile.length === 1) setTimeout(plImputOuvrir, 60);
   }
+  // ═══ L'ECHANGE DE DEUX PLAGES ════════════════════════════════════════════
+  // Olivier : « quand on fait une modification ponctuelle, il faut ajouter un
+  // 3e motif : Echange, dans ce cas, on clique ensuite sur la plage horaire
+  // qu'on souhaite echanger ».
+  //
+  // Un echange n'est pas un troisieme mode de comptage : c'est DEUX ECARTS
+  // APPARIES — des heures posees ici, des heures retirees la. Le compte-temps
+  // les lit comme les autres, et la difference de duree compte normalement
+  // (decision du 28/10). Ce que l'appariement ajoute, c'est la LISIBILITE :
+  // les deux plages portent le meme repere, et on retrouve l'une depuis l'autre.
+  let plEchSlot = null;          // exception en attente de sa jumelle
+  function plEchBarre() {
+    const vieux = document.getElementById('pl-echmode');
+    if (vieux && vieux.parentNode) vieux.parentNode.removeChild(vieux);
+    if (!plEchSlot) return;
+    const b = document.createElement('div');
+    b.id = 'pl-echmode'; b.className = 'pl-echmode';
+    b.innerHTML = '<span>⇄ Cliquez maintenant sur la plage horaire à échanger</span>'
+      + '<button onclick="plEchAnnulerAppariement()">Annuler</button>';
+    document.body.appendChild(b);
+  }
+  window.plEchAnnulerAppariement = function () { plEchSlot = null; plEchBarre(); };
+  // Apparie la plage cliquee avec celle qui attend : la seconde devient un
+  // repos, et les deux portent le meme identifiant d'echange.
+  window.plEchApparier = function (cid, iso, hh) {
+    const prem = L('exceptions').find(x => x.id === plEchSlot);
+    if (!prem) { plEchSlot = null; plEchBarre(); return; }
+    const demi = hh ? 'AM' : 'M';
+    if (prem.contratId === cid && prem.date === iso && prem.demi === demi) {
+      plToast('Choisissez une AUTRE plage horaire'); return;
+    }
+    const c = L('contrats').find(x => x.id === cid);
+    if (!c) { plEchSlot = null; plEchBarre(); return; }
+    const d = new Date(iso + 'T12:00');
+    const eff = plSlots(c, d)[hh];
+    if (!eff) { plToast('Cette demi-journée n’est pas travaillée : il n’y a rien à échanger'); return; }
+    const eid = plNewId('xch');
+    plDropEx(cid, iso, demi);
+    const ex2 = { id: plNewId('ex'), contratId: cid, date: iso, demi: demi, type: 'horaire',
+      statut: plDoitValider(iso, plIsAdmin()) ? 'attente' : 'valide',
+      horaire: null, pos: null, echangeId: eid, imputation: 'echange',
+      saisiPar: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null,
+      updatedAt: Date.now() };
+    plExceptions.push(ex2);
+    prem.echangeId = eid; prem.imputation = 'echange'; plStamp(prem);
+    plEchSlot = null; plEchBarre();
+    plPersist(); plRender();
+    plToast('Échange noté — les deux plages portent le repère ⇄'
+      + (ex2.statut === 'attente' ? ', en attente de validation' : ''));
+  };
+
   window.plImputChoisir = function (v) {
     const cour = plImputFile.shift();
     const ex = cour && L('exceptions').find(x => x.id === cour.id);
     if (ex) { ex.imputation = v; plStamp(ex); plPersist(); }
     plClose('pl-ov-imput');
+    if (v === 'echange' && ex) {
+      plEchSlot = ex.id; plEchBarre(); plRender();
+      plToast('Cliquez maintenant sur la plage horaire à échanger');
+      return;
+    }
     plToast(v === 'compte' ? 'Créneau crédité sur le compte-temps' : 'Créneau compté en heures supplémentaires');
     plRender();
     if (document.getElementById('vue-compteurs') && document.getElementById('vue-compteurs').classList.contains('on')) plHsRender();
     if (plImputFile.length) setTimeout(plImputOuvrir, 120);
   };
+  // Les modifications qui attendent une decision, les plus proches d'abord :
+  // c'est celle de demain qui presse, pas celle du mois prochain.
+  function plModsEnAttente() {
+    return L('exceptions').filter(plExEnAttente)
+      .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  }
+  window.plModsEnAttente = plModsEnAttente;
+  window.plModValider = function (exId) {
+    if (!plGarde()) return;
+    const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
+    ex.statut = 'valide';
+    ex.valideePar = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    ex.valideeAt = Date.now();
+    plStamp(ex); plPersist(); plRender(); plHsRender(); plAValider();
+    plToast('Modification validée — elle entre dans le planning');
+  };
+  window.plModRefuser = function (exId) {
+    if (!plGarde()) return;
+    const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
+    const c = L('contrats').find(x => x.id === ex.contratId);
+    if (!confirm('Refuser cette modification ?\n\n' + (c ? c.nom : '') + ' — '
+      + plJoliDate(ex.date) + (ex.demi === 'AM' ? ' après-midi' : ' matin')
+      + '\n\nLa semaine type reprend ses droits sur cette demi-journée.')) return;
+    // On RETIRE la ligne : une modification refusee n'a pas a rester en base a
+    // encombrer la lecture. La pierre tombale evite qu'elle ne revienne.
+    const i = L('exceptions').findIndex(x => x.id === exId);
+    if (i >= 0) {
+      if (typeof markDeleted === 'function') markDeleted('plExceptions', exId);
+      plExceptions.splice(i, 1);
+    }
+    plPersist(); plRender(); plHsRender(); plAValider();
+    plToast('Modification refusée');
+  };
+
   window.plImputChanger = function (exId, v) {
     if (!plGarde()) return;
     const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
@@ -2751,6 +2926,9 @@
   // tenable.
   function plEcartEx(ex, c) {
     if (!ex || ex.type !== 'horaire' || !ex.date) return 0;
+    // UNE MODIFICATION EN ATTENTE N'A PAS EU LIEU : elle ne credite ni ne
+    // debite rien tant que personne ne l'a accordee.
+    if (plExEnAttente(ex)) return 0;
     c = c || L('contrats').find(x => x.id === ex.contratId); if (!c) return 0;
     const tr = plSlotsTrame(c, new Date(ex.date + 'T12:00'));
     const base = plDurOf(tr[ex.demi === 'AM' ? 1 : 0] || '') || 0;
@@ -2919,6 +3097,32 @@
             + '<td><b style="color:' + (s.compte < 0 ? '#C62828' : '#0D47A1') + '">' + plFmtH(s.compte) + '</b></td><td>' + plFmtH(plHsMoisCourant(c)) + '</td><td>' + plFmtH(s.navette) + '</td>'
             + '<td>' + (s.attente ? '<span style="color:#E65100;font-weight:700">' + plFmtH(s.attente) + '</span>' : '—') + '</td></tr>'; }).join('')
       + '</table></div>');
+
+    // 3 bis. Les modifications du planning qui attendent une décision
+    const mods = plModsEnAttente();
+    if (mods.length && admin) {
+      H.push('<div class="pl-card" style="padding:16px 18px;margin-bottom:14px">'
+        + '<b style="font-size:14px">Modifications du planning à valider</b>'
+        + '<div class="pl-sub" style="margin:4px 0 10px">Toute modification portant sur les '
+        + PL_VALID_JOURS + ' prochains jours attend votre accord. <b>En attendant, le planning affiche '
+        + 'l’horaire habituel</b> — personne ne se présente sur un horaire qui n’est pas encore accordé.</div>'
+        + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Date</th>'
+        + '<th>Habituel</th><th>Demandé</th><th>Dans</th><th></th></tr>'
+        + mods.slice(0, 40).map(function (m) {
+            const c = L('contrats').find(x => x.id === m.contratId);
+            const hab = c ? (plSlotsTrame(c, new Date(m.date + 'T12:00'))[m.demi === 'AM' ? 1 : 0] || 'repos') : '—';
+            const j = plJoursJusqua(m.date);
+            return '<tr><td style="text-align:left"><b>' + plEsc(c ? c.nom : '?') + '</b></td>'
+              + '<td>' + plJoliDate(m.date) + (m.demi === 'AM' ? ' ap.-midi' : ' matin') + '</td>'
+              + '<td style="color:var(--plmut)">' + plEsc(hab) + '</td>'
+              + '<td><b>' + plEsc(m.horaire || 'repos') + '</b>'
+              + (m.echangeId ? ' <span title="Plage échangée">⇄</span>' : '') + '</td>'
+              + '<td>' + (j === 0 ? 'aujourd’hui' : j === 1 ? 'demain' : j + ' jours') + '</td>'
+              + '<td><button class="pl-btn pl-mini pl-pri" onclick="plModValider(\'' + m.id + '\')">Valider</button> '
+              + '<button class="pl-btn pl-mini pl-ghost" style="color:#C62828" onclick="plModRefuser(\'' + m.id + '\')">Refuser</button></td></tr>';
+          }).join('')
+        + '</table></div>');
+    }
 
     // 4. Les écarts à la semaine type, dans les deux sens
     const ajouts = [];

@@ -31,6 +31,14 @@ function extraire(nom) {
   return src.slice(d, f + 4);
 }
 
+function bloc(depart, fin) {
+  const d = src.indexOf(depart);
+  if (d < 0) throw new Error('bloc introuvable : ' + depart);
+  const f = src.indexOf(fin, d);
+  if (f < 0) throw new Error('fin de bloc introuvable : ' + fin);
+  return src.slice(d, f + fin.length);
+}
+
 let ok = 0, ko = 0;
 const t = (n, c) => { c ? (ok++, console.log('  ✓ ' + n)) : (ko++, console.log('  ✗ ' + n)); };
 console.log('\nLE COMPTE-TEMPS\n');
@@ -56,7 +64,7 @@ let TRAME = {};
 globalThis.L = () => [];
 globalThis.plSlotsTrame = (c, d) => TRAME[c.id] || [null, null];
 eval(['plDurOf', 'plIso', 'plMonday'].map(extraire).join('\n'));
-eval(extraire('plEcartEx'));
+eval(['plExEnAttente', 'plEcartEx'].map(extraire).join('\n'));
 const C = { id: 'c1', nom: 'Essai' };
 const ex = (h, demi) => ({ contratId: 'c1', type: 'horaire', date: '2026-11-23', demi: demi || 'M', horaire: h });
 
@@ -139,6 +147,105 @@ t('... et explique dans quel ordre ils se déduisent',
   /les heures en moins se déduisent d\\'abord des heures supplémentaires de la même semaine/.test(src));
 t('UN COMPTE NÉGATIF NE S’AFFICHE PAS DU MÊME BLEU QU’UN CRÉDIT',
   /s\.compte < 0 \? '#C62828' : '#0D47A1'/.test(src));
+
+
+// ── La validation des modifications proches ─────────────────────────────────
+// CE QUI SE JOUE. Loin devant, on organise ; a trente jours, on derange
+// quelqu'un — et ca se decide. Deux pieges se cachent la :
+//
+//   • LE PASSE. Corriger hier n'est pas deranger quelqu'un : une correction
+//     retroactive bloquee en file d'attente serait absurde, et personne ne
+//     penserait a aller la valider.
+//   • LES COMPTEURS. Une modification pas encore accordee ne doit crediter ni
+//     debiter une seule minute — sinon le compte-temps avance sur une decision
+//     qui n'a pas ete prise, et se corrige tout seul en sens inverse si elle
+//     est refusee.
+console.log('\nUne modification proche se fait valider');
+eval(['plJoursJusqua', 'plDoitValider'].map(extraire).join('\n'));
+eval(bloc("const PL_VALID_JOURS =", "30;").replace(/^\s*const /, 'globalThis.'));
+eval(bloc("const PL_ADMIN_DISPENSE =", "true;").replace(/^\s*const /, 'globalThis.'));
+const REF = '2026-10-28';
+t('la fenêtre est de trente jours', PL_VALID_JOURS === 30);
+t('demain se fait valider', plDoitValider('2026-10-29', false, REF) === true);
+t('aujourd’hui aussi', plDoitValider('2026-10-28', false, REF) === true);
+t('le trentième jour encore', plDoitValider('2026-11-27', false, REF) === true);
+t('LE TRENTE ET UNIÈME EST LIBRE — on organise, on ne dérange personne',
+  plDoitValider('2026-11-28', false, REF) === false);
+t('LE PASSÉ NE SE FAIT PAS VALIDER — une correction rétroactive attendrait pour rien',
+  plDoitValider('2026-10-27', false, REF) === false);
+t('UN ADMINISTRATEUR EST DISPENSÉ — il est déjà celui qui validerait',
+  plDoitValider('2026-10-29', true, REF) === false);
+t('... et la dispense tient sur une seule ligne, prête à être retournée',
+  PL_ADMIN_DISPENSE === true && /PL_ADMIN_DISPENSE = true;/.test(src));
+t('une date absente ne fait pas tomber la lecture',
+  plDoitValider(null, false, REF) === false && plJoursJusqua(null) === null);
+
+console.log('\nTant qu’elle n’est pas accordée, elle ne compte pas');
+t('une exception en attente est reconnue',
+  plExEnAttente({ statut: 'attente' }) && !plExEnAttente({ statut: 'valide' })
+  && !plExEnAttente({}) && !plExEnAttente(null));
+TRAME = { c1: ['9h-12h30', null] };
+t('UNE MODIFICATION EN ATTENTE NE BOUGE AUCUN COMPTEUR',
+  plEcartEx({ contratId: 'c1', type: 'horaire', date: '2026-11-23', demi: 'M',
+              horaire: null, statut: 'attente' }, C) === 0);
+t('... et la même, une fois validée, compte normalement',
+  plEcartEx({ contratId: 'c1', type: 'horaire', date: '2026-11-23', demi: 'M',
+              horaire: null, statut: 'valide' }, C) === -3.5);
+t('une exception d’avant la règle, sans statut, compte comme valide',
+  plEcartEx({ contratId: 'c1', type: 'horaire', date: '2026-11-23', demi: 'M',
+              horaire: null }, C) === -3.5);
+
+console.log('\nCe que l’écran promet');
+t('LE PLANNING AFFICHE L’HORAIRE HABITUEL, pas celui qui est demandé',
+  /MODIFICATION EN ATTENTE DE VALIDATION/.test(src)
+  && /l\\'horaire affiché reste celui qui fait foi/.test(src));
+t('... derrière une pastille orange', /\.pl-attdot\{/.test(src) && /pl-att' : ''/.test(src));
+t('la lecture du planning ignore ce qui attend',
+  /&& !plExEnAttente\(x\)\) \|\| null;/.test(src));
+t('le bandeau d’accueil les compte', /bout\(mods, 'modification du planning'/.test(src));
+t('et l’administrateur peut valider ou refuser',
+  /window\.plModValider = function/.test(src) && /window\.plModRefuser = function/.test(src));
+t('UN REFUS RETIRE LA LIGNE, avec sa pierre tombale',
+  /markDeleted\('plExceptions', exId\)/.test(src));
+
+console.log('\nLa modification ponctuelle se voit');
+// `currentColor` est la couleur du texte du creneau — donc deja la teinte
+// foncee de sa position. Le pointille reprend la couleur du creneau sans qu'on
+// ait a la nommer, et suivra toute nouvelle position sans retouche.
+t('LE POINTILLÉ REPREND LA COULEUR DU CRÉNEAU, en plus foncé',
+  /\.pl-shift\.pl-mod\{box-shadow:none;border:2px dotted currentColor/.test(src));
+t('... et il est gras, pas un filet', /border:2px dotted currentColor/.test(src));
+t('l’attente se distingue du validé : tirets contre points',
+  /\.pl-shift\.pl-att\{border:2px dashed currentColor/.test(src));
+
+console.log('\nL’échange apparie deux plages');
+t('un troisième motif est proposé', /onclick="plImputChoisir\('echange'\)"/.test(src));
+t('... qui bascule en mode appariement au lieu d’enregistrer',
+  /if \(v === 'echange' && ex\) \{\n\s*plEchSlot = ex\.id;/.test(src));
+t('LE CLIC SUIVANT APPARIE AU LIEU D’OUVRIR L’ÉDITEUR',
+  /if \(plEchSlot\) \{ plEchApparier\(cid, iso, hh\); return; \}/.test(src));
+t('on ne s’échange pas avec soi-même',
+  /Choisissez une AUTRE plage horaire/.test(src));
+t('ON N’ÉCHANGE PAS CONTRE UNE DEMI-JOURNÉE DE REPOS — il n’y a rien à prendre',
+  /n’est pas travaillée : il n’y a rien à échanger/.test(src));
+t('LES DEUX PLAGES PORTENT LE MÊME IDENTIFIANT', /prem\.echangeId = eid;/.test(src)
+  && /echangeId: eid/.test(src));
+t('... et le même repère à l’écran', /pl-echpair/.test(src) && /Plage échangée/.test(src));
+t('un échange proche attend sa validation comme le reste',
+  /statut: plDoitValider\(iso, plIsAdmin\(\)\) \? 'attente' : 'valide',\n\s*horaire: null, pos: null, echangeId: eid/.test(src));
+// L'ECHANGE N'EST PAS UN TROISIEME MODE DE COMPTAGE : c'est deux ecarts
+// apparies. Le compte-temps les lit comme les autres, et la difference de
+// duree compte normalement — c'est la decision du 28/10.
+t('l’échange ne crée aucune règle de comptage à part',
+  /DEUX ECARTS\n\s*\/\/ APPARIES/.test(src));
+
+console.log('\nRetirer quelqu’un du planning');
+t('le bouton est dans la liste des contrats', /onclick="plContratRetirer\(/.test(src));
+t('RIEN N’EST DÉTRUIT — le contrat est désactivé', /c\.actif = false; plStamp\(c\); plPersist\(\);/.test(src));
+t('... et on dit où la retrouver pour la remettre',
+  /Collaborateurs du site sans contrat au planning/.test(src));
+t('c’est réservé aux administrateurs',
+  /plContratRetirer = function \(cid\) \{\n\s*if \(!plGarde\(\)\) return;/.test(src));
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
