@@ -1772,9 +1772,10 @@ tr:hover td{background:#fafffe}
             <div class="fg"><label>Nom</label><input type="text" id="st-nom" placeholder="NOM"></div>
             <div class="fg"><label>Prénom</label><input type="text" id="st-prenom" placeholder="Prénom"></div>
             <div class="fg"><label>Poste</label>
-              <select id="st-poste">
+              <select id="st-poste" title="Fonction — elle commande aussi le planning">
                 <option>Pharmacien</option><option>Préparateur</option><option>Logisticien</option>
-                <option>Secrétaire</option><option>Esthéticienne</option><option>Étudiant</option>
+                <option>Secrétaire</option><option>Esthéticienne</option><option>Entretien</option>
+                <option>Étudiant</option>
               </select>
             </div>
             <div class="fg"><label>Code PIN (4 chiffres)</label><input type="password" id="st-pin" placeholder="••••" maxlength="4"></div>
@@ -6006,7 +6007,12 @@ function addStaff(){
   while(pris.has(id)){ id=base+n; n++; }
   // updatedAt : sans lui, un vieux tombstone portant le même id supprimerait
   // aussitôt le nouveau collaborateur (0 <= date de suppression).
-  staffDB.push({id,nom,prenom,poste:document.getElementById('st-poste').value,pin,col:colors[staffDB.length%colors.length],rpps:(document.getElementById('st-rpps')?document.getElementById('st-rpps').value.trim():''),sig:'',updatedAt:Date.now()});
+  // LE POSTE EST DESORMAIS UNE FONCTION, partagee avec le planning. On stocke
+  // le code (`fonction`) et son libelle (`poste`) : le code fait foi, le libelle
+  // reste lisible partout ou l'on affichait deja `poste`.
+  const _kp=document.getElementById('st-poste').value;
+  const _lp=(window.plFonctionsListe?window.plFonctionsListe():[]).find(x=>x.k===_kp);
+  staffDB.push({id,nom,prenom,poste:_lp?_lp.lbl:_kp,fonction:_lp?_lp.k:undefined,pin,col:colors[staffDB.length%colors.length],rpps:(document.getElementById('st-rpps')?document.getElementById('st-rpps').value.trim():''),sig:'',updatedAt:Date.now()});
   ['st-nom','st-prenom','st-pin','st-rpps'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
   renderStaff(); buildPinChips();
 }
@@ -6054,8 +6060,53 @@ function toggleAdmin(id){
   renderStaff(); applyAdminUI(); schedSave();
 }
 
+// LA FICHE COLLABORATEUR FAIT FOI (decision d'Olivier du 28/10). Jusqu'ici le
+// poste ne se choisissait qu'a la creation et ne se corrigeait plus jamais :
+// la « source de verite » n'avait aucun bouton. Le voici.
+function plFonctionsDispo(){
+  const l=(window.plFonctionsListe?window.plFonctionsListe():null);
+  return (l&&l.length)?l:null;
+}
+function planningHtml(s){
+  const tous=(typeof plContrats!=='undefined'&&Array.isArray(plContrats))?plContrats:[];
+  if(tous.find(x=>x&&x.staffId===s.id&&x.actif!==false)) return 'Planning : contrat actif';
+  if(tous.find(x=>x&&x.staffId===s.id)) return 'Planning : retiré — se remet depuis Planning → Réglages → Contrats';
+  return 'Planning : aucun contrat';
+}
+function posteHtml(s, admin){
+  const liste=plFonctionsDispo();
+  const f=(window.plFonctionDe?window.plFonctionDe(s):null);
+  const lbl=(liste&&f)?((liste.find(x=>x.k===f)||{}).lbl||s.poste):s.poste;
+  if(!admin||!liste)
+    return `<div style="font-size:.74rem;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px">${lbl||'—'}</div>`;
+  return `<select onchange="setStaffFonction('${s.id}',this.value)" title="Fonction — c'est le même réglage que dans le planning" style="font-size:.74rem;padding:3px 10px;border-radius:20px;max-width:100%;border:1px solid var(--gray-200);background:var(--gray-100);color:var(--gray-600)">`
+    +(f?'':`<option value="">— à préciser —</option>`)
+    +liste.map(x=>`<option value="${x.k}"${x.k===f?' selected':''}>${x.lbl}</option>`).join('')
+    +`</select>`;
+}
+function setStaffFonction(id,k){
+  if(!isAdmin()){ alert('Action réservée aux administrateurs.'); renderStaff(); return; }
+  const s=staffDB.find(x=>x.id===id); if(!s) return;
+  const liste=plFonctionsDispo()||[];
+  const f=liste.find(x=>x.k===k); if(!f){ renderStaff(); return; }
+  const ct=(typeof plContrats!=='undefined'&&Array.isArray(plContrats))
+    ? plContrats.find(x=>x&&x.staffId===id&&x.actif!==false) : null;
+  // Avec un contrat au planning, on passe par plSetGrp : il annonce ce que le
+  // changement entraine (position au comptoir, statut de pharmacien, cycle)
+  // AVANT d'ecrire, et c'est lui qui met les deux cotes d'accord.
+  if(ct&&typeof plSetGrp==='function'&&ct.grp!==k){ plSetGrp(ct.id,k); renderStaff(); return; }
+  s.fonction=k; s.poste=f.lbl; s.updatedAt=Date.now();
+  renderStaff(); schedSave();
+}
+function remplirPostes(){
+  const sel=document.getElementById('st-poste'); if(!sel||sel.dataset.pl==='1') return;
+  const liste=plFonctionsDispo(); if(!liste) return;
+  sel.innerHTML=liste.map(f=>`<option value="${f.k}">${f.lbl}</option>`).join('');
+  sel.dataset.pl='1';
+}
 function renderStaff(){
   const admin = isAdmin();
+  remplirPostes();
   document.getElementById('staff-grid').innerHTML=staffDB.map(s=>{
     const isA = staffIsAdmin(s);
     const badge = isA ? `<div style="font-size:.66rem;font-weight:700;color:#8a5a00;background:#FFF3CD;border:1px solid #ffe08a;padding:2px 8px;border-radius:20px;margin-top:2px">★ Admin</div>` : '';
@@ -6064,9 +6115,10 @@ function renderStaff(){
     <div class="sfc">
       <div class="sfav" style="${s.photo?`background-image:url('${imgSrc(s.photo)}');background-size:cover;background-position:center;color:transparent`:`background:${s.col}`}">${s.id}</div>
       <div style="font-weight:600;font-size:.92rem">${s.prenom} ${s.nom}</div>
-      <div style="font-size:.74rem;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px">${s.poste}</div>
+      ${posteHtml(s, admin)}
       ${badge}
       <div style="font-size:.7rem;color:var(--gray-400)">Code : ${s.id}</div>
+      <div style="font-size:.66rem;color:var(--gray-400)">${planningHtml(s)}</div>
       <div style="font-size:.68rem;color:var(--gray-500);margin-top:2px">RPPS : ${s.rpps?s.rpps:'—'} · Signature : ${s.sig?'✓ enregistrée':'—'} · Photo : ${s.photo?'✓':'—'} · Anniv. : ${s.anniv?(+s.anniv.slice(3))+'/'+(+s.anniv.slice(0,2)):'—'}</div>
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="btn bs sm" onclick="editStaffPin('${s.id}')" title="Modifier le code PIN"><svg class="ico"><use href="#ic-verrouiller"></use></svg> PIN</button>
@@ -6349,6 +6401,15 @@ function deleteStaff(id){
   if(!s)return;
   if(currentUser&&currentUser.id===id){
     alert("Vous ne pouvez pas supprimer votre propre compte pendant que vous êtes connecté(e). Demandez à un(e) collègue de le faire.");
+    return;
+  }
+  const _ct=(typeof plContrats!=='undefined'&&Array.isArray(plContrats))
+    ? plContrats.find(x=>x&&x.staffId===id&&x.actif!==false) : null;
+  if(_ct){
+    alert(`${s.prenom} ${s.nom} a un contrat actif au planning.\n\n`
+      +`Supprimer ce compte maintenant laisserait le contrat — et les heures déjà comptées — sans titulaire.\n\n`
+      +`Retirez d'abord cette personne du planning : Planning → Réglages → Contrats → la croix rouge au bout de sa ligne. `
+      +`Rien n'est détruit, son historique reste lisible — et le compte pourra être supprimé ensuite.`);
     return;
   }
   document.getElementById('conf-title').textContent='Supprimer ce collaborateur';

@@ -91,10 +91,22 @@
 
   // ---------- groupes (fonctions) ----------
   const PL_GRPS = {
-    ph: { lbl: 'Pharmaciens', ord: 1 }, prep: { lbl: 'Préparateurs', ord: 2 },
-    avance: { lbl: 'Esthéticienne — poste avancé', ord: 3 }, secr: { lbl: 'Secrétariat', ord: 4 },
-    logi: { lbl: 'Logistique', ord: 5 }, entretien: { lbl: 'Entretien', ord: 6 },
-    renfort: { lbl: 'Étudiants · renforts', ord: 7 }
+    ph: { lbl: 'Pharmaciens', un: 'Pharmacien', ord: 1 },
+    prep: { lbl: 'Préparateurs', un: 'Préparateur', ord: 2 },
+    avance: { lbl: 'Esthéticienne — poste avancé', un: 'Esthéticienne', ord: 3 },
+    secr: { lbl: 'Secrétariat', un: 'Secrétaire', ord: 4 },
+    logi: { lbl: 'Logistique', un: 'Logisticien', ord: 5 },
+    entretien: { lbl: 'Entretien', un: 'Entretien', ord: 6 },
+    renfort: { lbl: 'Étudiants · renforts', un: 'Étudiant · renfort', ord: 7 }
+  };
+  function plFonctionsOrdre() {
+    return Object.keys(PL_GRPS).sort((a, b) => PL_GRPS[a].ord - PL_GRPS[b].ord);
+  }
+  // LA LISTE QUE LE BACK OFFICE AFFICHE DANS LA FICHE COLLABORATEUR. Elle sort
+  // d'ici et de nulle part ailleurs : ajouter une fonction au planning la rend
+  // choisissable dans la fiche sans retoucher l'intranet.
+  window.plFonctionsListe = function () {
+    return plFonctionsOrdre().map(k => ({ k: k, lbl: PL_GRPS[k].un, grp: PL_GRPS[k].lbl }));
   };
   // Position d'une demi-journée travaillée : C = comptoir, B = back-office, A = poste avancé.
   // Règles d'Olivier (28/08/2026) : pharmaciens TOUJOURS comptoir ; préparateurs C/B/A au choix
@@ -419,12 +431,100 @@
     }
     if (ch) plPersist();
     plLinkStaff();
+    plAlignerContrats();
   }
 
   // ── lien avec la liste des collaborateurs du Back Office (staffDB) ──
   function plNorm(x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]+/g, ' ').trim(); }
   function plStaffList() { return (typeof staffDB !== 'undefined' && Array.isArray(staffDB)) ? staffDB : []; }
   function plStaffOf(c) { return plStaffList().find(s => s.id === c.staffId) || null; }
+  // ═══ LA FICHE COLLABORATEUR FAIT FOI ══════════════════════════════════════
+  // Decision d'Olivier du 28/10 : le poste se corrige dans la fiche, et le
+  // contrat du planning suit. Reste a lire les anciennes fiches, remplies en
+  // texte libre avant que la liste ne soit commune : ON TRADUIT A LA LECTURE,
+  // on ne reecrit rien en base (cf. CLAUDE.md, piege n°7). Une fiche touchee
+  // depuis porte `fonction`, le code, et c'est lui qui gagne.
+  function plFonctionDuTexte(txt) {
+    const t = plNorm(txt);
+    if (!t) return null;
+    if (/pharmacien/.test(t)) return 'ph';
+    if (/prepar/.test(t)) return 'prep';
+    if (/esthet|beaute/.test(t)) return 'avance';
+    if (/secret|accueil/.test(t)) return 'secr';
+    if (/logistic|logistiq|receptionn/.test(t)) return 'logi';
+    if (/entretien|menage|proprete/.test(t)) return 'entretien';
+    if (/etudiant|apprenti|renfort|stagiaire/.test(t)) return 'renfort';
+    return null;
+  }
+  function plFonctionDe(st) {
+    if (!st) return null;
+    if (st.fonction && PL_GRPS[st.fonction]) return st.fonction;
+    return plFonctionDuTexte(st.poste);
+  }
+  // Explicite = quelqu'un l'a choisie dans la liste commune. C'est la seule que
+  // le planning s'autorise a appliquer tout seul ; une fonction devinee d'un
+  // vieux libelle est proposee, jamais imposee.
+  function plFonctionExplicite(st) {
+    return !!(st && st.fonction && PL_GRPS[st.fonction]);
+  }
+  function plNomDeStaff(st) {
+    if (!st) return '';
+    const n = String(st.nom || '').trim();
+    return (String(st.prenom || '').trim() + ' ' + (n ? n.charAt(0).toUpperCase() + n.slice(1).toLowerCase() : '')).trim();
+  }
+  // UN NOM PLUS COURT N'EST PAS UNE DIVERGENCE. La grille du planning est
+  // etroite : « Anouck » y tient la place de « Anouck Ferran ». On ne signale
+  // que deux noms qui se contredisent vraiment.
+  function plNomAccord(cNom, st) {
+    if (!st) return true;
+    const a = plNorm(cNom), b = plNorm(plNomDeStaff(st));
+    if (!a || !b) return true;
+    return a === b || b.indexOf(a + ' ') === 0 || a.indexOf(b + ' ') === 0;
+  }
+  function plContratDeStaff(sid, inclureRetires) {
+    return L('contrats').find(c => c.staffId === sid
+      && (inclureRetires ? true : c.actif !== false)) || null;
+  }
+  // Les collaborateurs qu'on peut encore mettre au planning : ceux qui n'y ont
+  // pas de contrat actif. Le dernier cree arrive en tete — c'est celui qu'on
+  // vient de saisir, et donc celui qu'on cherche.
+  function plStaffLibres() {
+    return plStaffList().filter(s => !L('contrats').some(c => c.actif !== false && c.staffId === s.id))
+      .slice().reverse();
+  }
+  window.plStaffLibres = plStaffLibres;
+  window.plFonctionDe = plFonctionDe;
+  // ALIGNER LES CONTRATS SUR LES FICHES. Idempotent, appele au chargement.
+  // N'applique QUE les fonctions explicites : rien ne bouge le premier jour,
+  // et des la premiere correction les deux ecrans ne peuvent plus diverger.
+  // Le nom, lui, est signale mais jamais reecrit tout seul — renommer une
+  // ligne de planning en silence est exactement ce qu'on ne veut pas.
+  function plAlignerContrats() {
+    let ch = false;
+    L('contrats').forEach(c => {
+      if (c.actif === false) return;
+      const st = plStaffOf(c); if (!plFonctionExplicite(st)) return;
+      const f = plFonctionDe(st);
+      if (f === c.grp) return;
+      c.grp = f; c.estPharmacien = (f === 'ph');
+      const rot = L('rotations').find(r => r.id === plRotCible(f));
+      if (rot) c.rotationId = rot.id;
+      plStamp(c); ch = true;
+    });
+    if (ch) plPersist();
+    return ch;
+  }
+  // Ce que le planning et la fiche ne disent pas pareil, pour l'afficher.
+  function plEcartsFiches() {
+    const out = [];
+    L('contrats').filter(c => c.actif !== false).forEach(c => {
+      const st = plStaffOf(c); if (!st) return;
+      const f = plFonctionDe(st);
+      if (f && f !== c.grp) out.push({ cid: c.id, quoi: 'fonction', dit: f });
+      if (!plNomAccord(c.nom, st)) out.push({ cid: c.id, quoi: 'nom', dit: plNomDeStaff(st) });
+    });
+    return out;
+  }
   // rapprochement automatique : « Prénom Nom » identique, sinon prénom unique. Idempotent.
   function plLinkStaff() {
     const staff = plStaffList(); if (!staff.length) return;
@@ -441,20 +541,196 @@
   window.plSetStaff = function (cid, sid) {
     if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
-    c.staffId = sid || null; plStamp(c); plPersist(); plRegRender(); plRender();
+    c.staffId = sid || null; plStamp(c);
+    // Relier un compte, c'est accepter ce que sa fiche dit du poste.
+    plAlignerContrats();
+    plPersist(); plRegRender(); plRender(); plFicheRafraichir();
   };
   // créer un contrat pour un collaborateur du site qui n'en a pas encore
-  window.plCreateFromStaff = function (sid) {
+  // UN CONTRAT NEUF PREND LA FONCTION DE LA FICHE. L'ancien code mettait tout
+  // le monde en preparateur sauf les pharmaciens : un logisticien se retrouvait
+  // compte dans l'effectif comptoir sans que personne ne le voie.
+  function plContratNeuf(st) {
+    const grp = plFonctionDe(st) || 'prep';
+    const rot = L('rotations').find(r => r.id === plRotCible(grp));
+    const c = {
+      id: plNewId('ct'), nom: plNomDeStaff(st), grp: grp,
+      role: PL_GRPS[grp].un, estPharmacien: grp === 'ph',
+      base: null, tempsPartiel: false, rotationId: rot ? rot.id : plRotCible(grp),
+      sem: {}, pos: {}, staffId: st.id, actif: true, updatedAt: Date.now()
+    };
+    plContrats.push(c);
+    return c;
+  }
+  window.plCreateFromStaff = function (sid) { plFicheChoisir(sid); };
+
+  // ═══ LA FICHE CONTRAT ═════════════════════════════════════════════════════
+  // Olivier : « on cree un nouvel operateur dans pilot. une fois dans planning,
+  // on ajoute un contrat, on choisit un operateur disponible et on edite son
+  // contrat : trame horaire, poste etc... » — donc un seul ecran, ouvert tout
+  // seul apres la creation, ou tout ce qui est propre au planning se regle.
+  let plFicheCid = null, plFicheSid = null;
+  function plFicheRafraichir() {
+    const ov = document.getElementById('pl-ov-ct');
+    if (ov && ov.classList.contains('pl-on')) plFicheRender();
+  }
+  window.plFicheRafraichir = plFicheRafraichir;
+  window.plFicheNouveau = function () {
     if (!plGarde()) return;
-    const st = plStaffList().find(s => s.id === sid); if (!st) return;
-    const grp = /pharmacien/i.test(st.poste || '') ? 'ph' : 'prep';
-    plContrats.push({
-      id: plNewId('ct'), nom: (st.prenom || '') + ' ' + (st.nom ? st.nom.charAt(0) + st.nom.slice(1).toLowerCase() : ''),
-      grp: grp, role: st.poste || 'À préciser', estPharmacien: grp === 'ph',
-      base: null, tempsPartiel: false, rotationId: grp === 'ph' ? 'rot:ph' : 'rot:prep',
-      sem: {}, staffId: st.id, actif: true, updatedAt: Date.now()
-    });
-    plPersist(); plToast('Contrat créé pour ' + st.prenom + ' — complétez sa trame et sa base'); plRegRender(); plRender();
+    plFicheCid = null; plFicheSid = null; plFicheRender(); plOpen('pl-ov-ct');
+  };
+  window.plFicheOuvrir = function (cid) {
+    if (!plGarde()) return;
+    plFicheCid = cid; plFicheSid = null; plFicheRender(); plOpen('pl-ov-ct');
+  };
+  // On a choisi quelqu'un dans la liste. S'il a deja eu un contrat, ON DEMANDE
+  // avant de rien creer (decision d'Olivier du 28/10) : repartir de zero
+  // perdrait sa trame et son compte-temps, et ca ne se rattrape pas.
+  window.plFicheChoisir = function (sid) {
+    if (!plGarde()) return;
+    if (!sid) { plFicheSid = null; plFicheRender(); return; }
+    const st = plStaffList().find(x => x.id === sid); if (!st) return;
+    plFicheSid = sid;
+    const anc = plContratDeStaff(sid, true);
+    if (anc && anc.actif === false) { plFicheRender(); plOpen('pl-ov-ct'); return; }
+    if (anc) { plFicheCid = anc.id; plFicheSid = null; plFicheRender(); plOpen('pl-ov-ct'); return; }
+    plFicheNeuf();
+  };
+  window.plFicheReprendre = function () {
+    if (!plGarde() || !plFicheSid) return;
+    const anc = plContratDeStaff(plFicheSid, true); if (!anc) return;
+    anc.actif = true; plStamp(anc); plPersist();
+    plFicheCid = anc.id; plFicheSid = null;
+    plFicheRender(); plOpen('pl-ov-ct'); plRegRender(); plRender();
+    plToast(anc.nom.split(' ')[0] + ' · contrat repris, trame et compte-temps conservés');
+  };
+  window.plFicheNeuf = function () {
+    if (!plGarde() || !plFicheSid) return;
+    const st = plStaffList().find(x => x.id === plFicheSid); if (!st) return;
+    const c = plContratNeuf(st);
+    plPersist(); plFicheCid = c.id; plFicheSid = null;
+    plFicheRender(); plOpen('pl-ov-ct'); plRegRender(); plRender();
+    plToast('Contrat créé pour ' + (st.prenom || c.nom) + ' — reste la base et les horaires');
+  };
+  window.plAlignerNom = function (cid) {
+    if (!plGarde()) return;
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    const st = plStaffOf(c); if (!st) return;
+    c.nom = plNomDeStaff(st); plStamp(c); plPersist();
+    plRegRender(); plRender(); plFicheRafraichir();
+    plToast('Nom repris du compte intranet : ' + c.nom);
+  };
+  function plFicheRender() {
+    const el = document.getElementById('pl-ct-corps'); if (!el) return;
+    const t = document.getElementById('pl-ct-titre'), sb = document.getElementById('pl-ct-sub');
+    const ferme = '<button class="pl-btn pl-pri" onclick="plClose(\'pl-ov-ct\')">Fermer</button>';
+
+    // ── mode « nouveau contrat » : on choisit d'abord la personne ──
+    if (!plFicheCid) {
+      const libres = plStaffLibres();
+      if (t) t.textContent = 'Ajouter un contrat au planning';
+      if (sb) sb.textContent = 'Choisissez un collaborateur déjà créé dans le Back Office. '
+        + 'Le dernier créé est en tête de liste.';
+      if (!libres.length) {
+        el.innerHTML = '<div class="pl-sub">Tous les collaborateurs du site ont déjà un contrat au planning.<br>'
+          + 'Pour en ajouter un, créez-le d’abord dans <b>Back Office → Collaborateurs</b>.</div>'
+          + '<div class="pl-actions">' + ferme + '</div>';
+        return;
+      }
+      let h = '<label class="pl-lab">Collaborateur</label>'
+        + '<select class="pl-inp" id="pl-ct-sel" style="width:100%;max-width:340px" onchange="plFicheChoisir(this.value)">'
+        + '<option value="">— choisir —</option>'
+        + libres.map(x => {
+            const f = plFonctionDe(x);
+            return '<option value="' + plEsc(x.id) + '"' + (x.id === plFicheSid ? ' selected' : '') + '>'
+              + plEsc(plNomDeStaff(x) || x.id) + ' — ' + plEsc(f ? PL_GRPS[f].un : (x.poste || 'poste à préciser')) + '</option>';
+          }).join('') + '</select>';
+      const anc = plFicheSid ? plContratDeStaff(plFicheSid, true) : null;
+      if (anc && anc.actif === false) {
+        const sem = Object.keys(anc.sem || {}).length, sol = plSoldes(anc);
+        h += '<div class="pl-ctwarn"><b>' + plEsc(anc.nom) + ' a déjà eu un contrat au planning.</b>'
+          + '<div class="pl-sub" style="margin:4px 0 9px">'
+          + (sem ? sem + ' semaine' + (sem > 1 ? 's' : '') + ' de trame remplie' + (sem > 1 ? 's' : '') : 'trame vide')
+          + ' · base ' + (anc.base != null ? anc.base + ' h' : 'non renseignée')
+          + ' · compte-temps ' + plFmtH(sol.compte) + '</div>'
+          + '<button class="pl-btn pl-pri" onclick="plFicheReprendre()">Reprendre ce contrat</button> '
+          + '<button class="pl-btn pl-ghost" onclick="plFicheNeuf()">Repartir de zéro</button>'
+          + '<div class="pl-sub" style="margin-top:7px">Repartir de zéro laisse l’ancien contrat de côté : '
+          + 'sa trame et son compte-temps ne reviendront pas.</div></div>';
+      }
+      el.innerHTML = h + '<div class="pl-actions">' + ferme + '</div>';
+      return;
+    }
+
+    // ── mode « fiche » : tout ce qui est propre au planning ──
+    const c = L('contrats').find(x => x.id === plFicheCid);
+    if (!c) { el.innerHTML = '<div class="pl-sub">Ce contrat n’existe plus.</div><div class="pl-actions">' + ferme + '</div>'; return; }
+    const st = plStaffOf(c), rot = plRotOf(c), f = plFonctionDe(st);
+    if (t) t.textContent = 'Fiche contrat — ' + c.nom;
+    if (sb) sb.textContent = 'La fonction et le nom viennent de la fiche collaborateur du Back Office ; '
+      + 'tout le reste est propre au planning.';
+    let h = '<div class="pl-ctgrid">';
+    h += '<div><label class="pl-lab">Compte intranet</label>'
+      + (st ? '<div><span class="pl-av" style="background:' + plEsc(st.col || '#888') + '"></span><b>'
+          + plEsc(plNomDeStaff(st)) + '</b> <span class="pl-sub">(' + plEsc(st.id) + ')</span> '
+          + '<button class="pl-btn pl-ghost pl-mini" title="Délier ce contrat du compte" onclick="plSetStaff(\'' + c.id + '\',null)">✕</button></div>'
+        : '<select class="pl-inp" style="width:100%" onchange="plSetStaff(\'' + c.id + '\',this.value)">'
+          + '<option value="">— aucun compte relié —</option>'
+          + plStaffLibres().map(x => '<option value="' + plEsc(x.id) + '">' + plEsc(plNomDeStaff(x)) + '</option>').join('')
+          + '</select>')
+      + '</div>';
+    h += '<div><label class="pl-lab">Nom affiché au planning</label>'
+      + '<input class="pl-inp" style="width:100%" value="' + plEsc(c.nom) + '" maxlength="40" onchange="plSetNom(\'' + c.id + '\',this.value)">'
+      + (st && !plNomAccord(c.nom, st)
+          ? '<div class="pl-ctdiv">Le compte s’appelle <b>' + plEsc(plNomDeStaff(st)) + '</b>. '
+            + '<button class="pl-btn pl-ghost pl-mini" onclick="plAlignerNom(\'' + c.id + '\')">Reprendre ce nom</button></div>'
+          : '<div class="pl-sub">Un nom plus court tient mieux dans la grille — « Anouck » pour « Anouck Ferran ».</div>')
+      + '</div>';
+    h += '<div><label class="pl-lab">Fonction</label>'
+      + '<select class="pl-inp" style="width:100%" onchange="plSetGrp(\'' + c.id + '\',this.value)">'
+      + plFonctionsOrdre().map(g => '<option value="' + g + '"' + (c.grp === g ? ' selected' : '') + '>'
+          + plEsc(PL_GRPS[g].un) + '</option>').join('') + '</select>'
+      + (st ? '<div class="pl-sub">Se change aussi depuis la fiche collaborateur — c’est le même réglage.</div>'
+            : '<div class="pl-ctdiv">Aucun compte relié : cette fonction ne vaut que pour le planning.</div>')
+      + (f && f !== c.grp ? '<div class="pl-ctdiv">La fiche du Back Office dit <b>' + plEsc(PL_GRPS[f].un) + '</b>.</div>' : '')
+      + '</div>';
+    h += '<div><label class="pl-lab">Intitulé affiché</label>'
+      + '<input class="pl-inp" style="width:100%" value="' + plEsc(c.role || '') + '" maxlength="60" '
+      + 'placeholder="Ex. Pharmacienne adjointe" onchange="plSetRole(\'' + c.id + '\',this.value)">'
+      + '<div class="pl-sub">Libre, et ne décide de rien : c’est la fonction au-dessus qui commande le planning.</div></div>';
+    h += '<div><label class="pl-lab">Base hebdomadaire</label>'
+      + '<input class="pl-inp" style="width:90px" value="' + (c.base != null ? c.base : '') + '"'
+      + (plHorsTemps(c) ? ' disabled' : '') + ' onchange="plSetBase(\'' + c.id + '\',this.value)"> h'
+      + '<div style="margin-top:7px"><label class="pl-sub" style="cursor:pointer"><input type="checkbox"'
+      + (plHorsTemps(c) ? '' : ' checked') + ' onchange="plSetTemps(\'' + c.id + '\',this.checked)"> '
+      + 'Temps décompté</label></div>'
+      + '<div class="pl-sub">Décochez pour un titulaire : présent au comptoir, mais sans heures, '
+      + 'sans compteur et hors navette. Pour un cycle à bases variables (34,5 / 35,5), saisir la moyenne.</div></div>';
+    h += '<div><label class="pl-lab">Cycle</label>'
+      + '<div>' + (rot ? '<b>' + plEsc(rot.lbl) + '</b> — ' + rot.longueur + ' semaine' + (rot.longueur > 1 ? 's' : '') : '—') + '</div>'
+      + '<div class="pl-sub">Déduit de la fonction : 3 semaines pour les pharmaciens, 2 pour l’officine. '
+      + 'La longueur se règle dans l’onglet Rotations.</div></div>';
+    h += '</div>';
+    const semN = Object.keys(c.sem || {}).length;
+    h += '<div class="pl-ctwarn" style="border-color:#D8E6DC;background:#F4F9F5">'
+      + '<b>Horaires de la semaine type</b>'
+      + '<div class="pl-sub" style="margin:3px 0 8px">'
+      + (semN ? semN + ' semaine' + (semN > 1 ? 's' : '') + ' remplie' + (semN > 1 ? 's' : '')
+              + (rot && semN < rot.longueur ? ' sur ' + rot.longueur + ' — les suivantes reprendront la première' : '')
+              : 'Aucune : ce collaborateur n’apparaîtra sur aucun planning avant d’avoir des horaires.')
+      + '</div>'
+      + '<button class="pl-btn pl-pri" onclick="plClose(\'pl-ov-ct\');plEditTrame(\'' + c.id + '\')">✎ Régler les horaires</button></div>';
+    h += '<div class="pl-actions">'
+      + '<button class="pl-btn pl-ghost" style="color:#C62828" onclick="plClose(\'pl-ov-ct\');plContratRetirer(\'' + c.id + '\')">Retirer du planning</button>'
+      + '<span style="flex:1"></span>' + ferme + '</div>';
+    el.innerHTML = h;
+  }
+  window.plSetNom = function (cid, v) {
+    if (!plGarde()) { plFicheRafraichir(); return; }
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    const t = String(v || '').trim().slice(0, 40);
+    if (!t || t === c.nom) { plFicheRafraichir(); return; }
+    c.nom = t; plStamp(c); plPersist(); plRegRender(); plRender(); plFicheRafraichir();
   };
 
   // ---------- moteur : rotation → semaine de cycle → horaires ----------
@@ -790,6 +1066,11 @@
   .pl-echmode{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:95;
     background:#1D5C3A;color:#fff;border-radius:11px;padding:10px 16px;font-size:12.5px;font-weight:600;
     box-shadow:0 8px 26px rgba(0,0,0,.28);display:flex;gap:12px;align-items:center}
+  .pl-lab{display:block;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+    color:var(--plmut);margin-bottom:4px}
+  .pl-ctgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px 18px}
+  .pl-ctwarn{margin-top:14px;border:1px solid #F0DCC6;background:#FDF7F0;border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .pl-ctdiv{margin-top:4px;font-size:11px;color:#9A5B00;background:#FFF6E6;border-radius:6px;padding:3px 7px;display:inline-block}
   .pl-cpt-tot{display:flex;align-items:baseline;justify-content:space-between;
     background:var(--placs);border-radius:10px;padding:10px 14px;font-size:13px}
   .pl-cpt-tot b{font-size:22px;font-variant-numeric:tabular-nums}
@@ -1090,6 +1371,11 @@
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-abs')">Annuler</button>
       <button class="pl-btn pl-pri" onclick="plAbsEnregistrer()">Enregistrer</button>
     </div>
+  </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-ct"><div class="pl-box" style="width:min(720px,96vw)">
+    <h3 id="pl-ct-titre">Fiche contrat</h3>
+    <div class="pl-sub" id="pl-ct-sub"></div>
+    <div id="pl-ct-corps" style="margin-top:13px"></div>
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-cpt"><div class="pl-box" style="width:min(620px,96vw)">
     <h3 id="pl-cpt-titre">Compte-temps</h3>
@@ -2096,7 +2382,16 @@
     } else if (plRegView === 'c') {
 
       const staff = plStaffList();
-      let h = '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Compte intranet</th><th>Base hebdo</th><th title="Décoché pour les titulaires : présents au comptoir mais sans décompte d’heures, de compteur ni de navette">Temps décompté</th><th>Rotation</th><th>Trame</th></tr>';
+      const libres = plStaffLibres(), ecarts = plEcartsFiches();
+      let h = '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:12px">'
+        + '<button class="pl-btn pl-pri" onclick="plFicheNouveau()">＋ Ajouter un contrat</button>'
+        + '<span class="pl-sub">' + (libres.length
+            ? libres.length + ' collaborateur' + (libres.length > 1 ? 's' : '') + ' du site sans contrat au planning'
+            : 'Toute l’équipe du site a un contrat au planning.') + '</span>'
+        + (ecarts.length ? '<span class="pl-ctdiv" style="margin:0">' + ecarts.length + ' écart'
+            + (ecarts.length > 1 ? 's' : '') + ' avec les fiches du Back Office</span>' : '')
+        + '</div>';
+      h += '<table class="pl-list"><tr><th>Collaborateur</th><th>Fonction</th><th>Compte intranet</th><th>Base hebdo</th><th title="Décoché pour les titulaires : présents au comptoir mais sans décompte d’heures, de compteur ni de navette">Temps décompté</th><th>Rotation</th><th>Trame</th></tr>';
       L('contrats').filter(c => c.actif !== false).sort(plCmp).forEach(c => {
         const rot = plRotOf(c), st = plStaffOf(c);
         let lien;
@@ -2105,21 +2400,32 @@
         else lien = '<select class="pl-inp" style="height:30px;max-width:170px" onchange="plSetStaff(\'' + c.id + '\',this.value)">'
           + '<option value="">— à relier —</option>'
           + staff.map(s2 => '<option value="' + plEsc(s2.id) + '">' + plEsc(s2.prenom + ' ' + s2.nom) + '</option>').join('') + '</select>';
-        h += '<tr><td><b>' + plEsc(c.nom) + '</b>' + (c.estPharmacien ? ' <span class="pl-chip pl-ch-cp" style="font-size:9.5px">Pharmacien</span>' : '') + '</td>'
+        const fDit = plFonctionDe(st);
+        h += '<tr><td><button class="pl-btn pl-ghost pl-mini" style="font-size:11.5px" title="Ouvrir la fiche contrat de ' + plEsc(c.nom) + '" onclick="plFicheOuvrir(\'' + c.id + '\')"><b>' + plEsc(c.nom) + '</b></button>'
+          + (c.estPharmacien ? ' <span class="pl-chip pl-ch-cp" style="font-size:9.5px">Pharmacien</span>' : '')
+          + (st && !plNomAccord(c.nom, st)
+              ? '<div class="pl-ctdiv">compte : ' + plEsc(plNomDeStaff(st))
+                + ' <button class="pl-btn pl-ghost pl-mini" onclick="plAlignerNom(\'' + c.id + '\')">reprendre</button></div>'
+              : '')
+          + '</td>'
           + '<td><select class="pl-inp" style="height:30px;max-width:168px" '
           +   'onchange="plSetGrp(\'' + c.id + '\',this.value)">'
-          +   Object.keys(PL_GRPS).sort((a, b) => PL_GRPS[a].ord - PL_GRPS[b].ord).map(g =>
+          +   plFonctionsOrdre().map(g =>
                 '<option value="' + g + '"' + (c.grp === g ? ' selected' : '') + '>'
-                + plEsc(PL_GRPS[g].lbl) + '</option>').join('')
+                + plEsc(PL_GRPS[g].un) + '</option>').join('')
           +   '</select>'
           +   '<input class="pl-inp" style="height:28px;max-width:168px;margin-top:4px;font-size:11px" '
           +   'value="' + plEsc(c.role || '') + '" placeholder="Intitulé du poste" maxlength="60" '
-          +   'onchange="plSetRole(\'' + c.id + '\',this.value)"></td>'
+          +   'onchange="plSetRole(\'' + c.id + '\',this.value)">'
+          +   (fDit && fDit !== c.grp
+                ? '<div class="pl-ctdiv">la fiche dit « ' + plEsc(PL_GRPS[fDit].un) + ' »</div>' : '')
+          +   '</td>'
           + '<td>' + lien + '</td>'
           + '<td><input class="pl-inp" style="width:70px;height:30px" value="' + (c.base != null ? c.base : '') + '"' + (plHorsTemps(c) ? ' disabled title="Contrat hors décompte de temps"' : '') + ' onchange="plSetBase(\'' + c.id + '\',this.value)"> h</td>'
           + '<td style="text-align:center"><input type="checkbox"' + (plHorsTemps(c) ? '' : ' checked') + ' title="Décocher pour un titulaire : il reste compté dans les effectifs mais sort des heures, des compteurs et de la navette" onchange="plSetTemps(\'' + c.id + '\',this.checked)"></td>'
           + '<td>' + (rot ? plEsc(rot.lbl) + ' (' + rot.longueur + ' sem)' : '—') + '</td>'
-          + '<td><button class="pl-btn pl-ghost pl-mini" onclick="plEditTrame(\'' + c.id + '\')">✎ Horaires</button> '
+          + '<td><button class="pl-btn pl-ghost pl-mini" title="Ouvrir la fiche contrat" onclick="plFicheOuvrir(\'' + c.id + '\')">✎ Fiche</button> '
+          + '<button class="pl-btn pl-ghost pl-mini" onclick="plEditTrame(\'' + c.id + '\')">Horaires</button> '
           + '<button class="pl-btn pl-ghost pl-mini" style="color:#C62828" title="Retirer du planning" onclick="plContratRetirer(\'' + c.id + '\')">✕</button></td></tr>';
       });
       h += '</table>';
@@ -2132,11 +2438,18 @@
         });
         h += '</div></div>';
       }
-      h += '<div class="pl-note"><b>La fonction se change ici</b> : le menu du haut commande le planning '
-        + '(regroupement, position par défaut au comptoir, statut de pharmacien et durée du cycle) ; '
-        + 'la ligne du dessous n’est que l’intitulé affiché. Ce qu’un changement de fonction entraîne '
-        + 'est annoncé avant d’être appliqué. '
-        + 'Le lien avec la liste des collaborateurs du Back Office est fait automatiquement par le nom ; corrigez-le ici si besoin. La pastille reprend la couleur du compte intranet. La base hebdo sert de référence au total de la semaine (vert = conforme, rouge = écart) ; pour un cycle à bases variables (ex. 34,5 / 35,5), saisir la moyenne.</div>';
+      h += '<div class="pl-note"><b>Un collaborateur se crée dans le Back Office, son contrat se crée ici.</b> '
+        + '« ＋ Ajouter un contrat » ouvre la liste de ceux qui n’en ont pas encore — le dernier créé en tête — '
+        + 'puis sa fiche, où l’on règle la fonction, la base hebdomadaire et les horaires. '
+        + 'Un clic sur un nom rouvre cette fiche à tout moment.<br>'
+        + '<b>La fonction est le même réglage des deux côtés</b> : la changer ici change le poste de la fiche '
+        + 'collaborateur, et l’inverse. C’est elle qui commande le planning (regroupement, position par défaut '
+        + 'au comptoir, statut de pharmacien, durée du cycle) ; l’intitulé du dessous n’est qu’un libellé affiché. '
+        + 'Ce qu’un changement de fonction entraîne est annoncé avant d’être appliqué.<br>'
+        + 'Le lien avec les comptes intranet est fait automatiquement par le nom ; corrigez-le ici si besoin. '
+        + 'Le nom affiché au planning peut rester plus court que celui du compte (« Anouck ») — on ne signale '
+        + 'que deux noms qui se contredisent. La base hebdo sert de référence au total de la semaine '
+        + '(vert = conforme, rouge = écart) ; pour un cycle à bases variables (ex. 34,5 / 35,5), saisir la moyenne.</div>';
       el.innerHTML = h;
     } else if (plRegView === 'r') {
       let h = '<table class="pl-list"><tr><th>Rotation</th><th>Cycle</th><th>Semaine en cours</th><th>Ancrage</th></tr>';
@@ -2218,7 +2531,7 @@
     if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     c.horsTemps = !compte;
-    plStamp(c); plPersist(); plRegRender(); plRender();
+    plStamp(c); plPersist(); plRegRender(); plRender(); plFicheRafraichir();
     plToast(c.nom.split(' ')[0] + (compte ? ' · temps décompté' : ' · hors décompte de temps'));
   };
   window.plSetGrp = function (cid, grp) {
@@ -2236,8 +2549,14 @@
     c.estPharmacien = (grp === 'ph');
     const rot = L('rotations').find(r => r.id === plRotCible(grp));
     if (rot) c.rotationId = rot.id;
-    plStamp(c); plPersist(); plRegRender(); plRender();
-    plToast(c.nom.split(' ')[0] + ' · ' + PL_GRPS[grp].lbl);
+    // LA FICHE COLLABORATEUR SUIT. C'est le meme reglage, stocke une seule fois :
+    // on le corrige d'ici ou du Back Office, les deux ecrans ne peuvent plus
+    // se contredire.
+    const st = plStaffOf(c);
+    if (st) { st.fonction = grp; st.poste = PL_GRPS[grp].un; plStamp(st); }
+    plStamp(c); plPersist(); plRegRender(); plRender(); plFicheRafraichir();
+    if (st && typeof renderStaff === 'function') { try { renderStaff(); } catch (_e) { } }
+    plToast(c.nom.split(' ')[0] + ' · ' + PL_GRPS[grp].un);
   };
   // L'INTITULE EST LIBRE, et il ne decide de rien : « Préparatrice », « Pharmacien
   // adjoint », « Apprenti ». C'est le groupe au-dessus qui commande le planning.
@@ -2246,7 +2565,7 @@
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const t = String(v || '').trim().slice(0, 60);
     if (t === (c.role || '')) return;
-    c.role = t; plStamp(c); plPersist(); plRegRender();
+    c.role = t; plStamp(c); plPersist(); plRegRender(); plFicheRafraichir();
   };
   // RETIRER QUELQU'UN DU PLANNING, SANS RIEN DETRUIRE. Le contrat est
   // desactive : il sort des ecrans, des compteurs et de la navette, mais son
@@ -2261,13 +2580,13 @@
       + 'Rien n’est détruit : son historique reste lisible, et elle réapparaîtra dans '
       + '« Collaborateurs du site sans contrat au planning », en bas de cet écran, '
       + 'pour être remise d’un clic.')) return;
-    c.actif = false; plStamp(c); plPersist(); plRegRender(); plRender();
+    c.actif = false; plStamp(c); plPersist(); plRegRender(); plRender(); plFicheRafraichir();
     plToast(c.nom.split(' ')[0] + ' · retiré du planning');
   };
   window.plSetBase = function (cid, v) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
     const n = parseFloat(String(v).replace(',', '.'));
-    c.base = isNaN(n) ? null : n; plStamp(c); plPersist(); plRender();
+    c.base = isNaN(n) ? null : n; plStamp(c); plPersist(); plRender(); plFicheRafraichir();
   };
   window.plSetLongueur = function (rid, v) { if (!plGarde()) return;
     const r = L('rotations').find(x => x.id === rid); if (!r) return;

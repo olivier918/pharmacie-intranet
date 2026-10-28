@@ -37,7 +37,7 @@ dépannages · `fc-` formulaires · `dm-` boîte à idées · `pl-` planning.
 
 ---
 
-## Les neuf pièges de ce dépôt
+## Les dix pièges de ce dépôt
 
 Chacun a déjà causé une perte de données en production. Les lire avant d'écrire
 une ligne.
@@ -172,6 +172,38 @@ saisie qu'offrir une case morte.
 `essais/saisie-en-cours.js` garde les deux corrections.
 
 ---
+
+### 10. Le même métier nommé deux fois dans deux écrans
+
+Les postes des collaborateurs vivaient en texte libre dans le Back Office
+(« Pharmacien », « Préparateur », six choix écrits en dur dans le `<select>`) et
+en codes dans le planning (`ph`, `prep`, `avance`, `secr`, `logi`, `entretien`,
+`renfort`, sept fonctions). Les deux listes ne se recouvraient pas, et **rien
+n'affichait le désaccord** :
+
+- la création d'un contrat ne reconnaissait que `/pharmacien/i` et mettait tout
+  le reste en préparateur — un logisticien se retrouvait au comptoir, compté
+  dans l'effectif, sa ligne affichée exactement là où on l'attendait ;
+- `Entretien` n'était choisissable d'aucun côté de la fiche ;
+- le poste ne se choisissait **qu'à la création** du compte : la « source de
+  vérité » n'avait aucun bouton pour se corriger.
+
+La règle : **une seule liste, servie par un seul module**, et un seul champ
+stocké. `PL_GRPS` dans `pl-module.js` est la liste ; `window.plFonctionsListe()`
+la sert à l'intranet, qui n'en écrit plus ; `staffDB[].fonction` est le champ, et
+les deux écrans l'écrivent tous les deux (`plSetGrp` côté planning,
+`setStaffFonction` côté fiche, qui délègue au premier pour que les conséquences
+soient annoncées avant d'écrire).
+
+Les anciennes fiches se lisent par **traduction à la lecture**
+(`plFonctionDuTexte`), jamais par migration (piège #7) — et une fonction
+*devinée* d'un vieux libellé est **signalée, jamais appliquée** :
+`plAlignerContrats()` ne touche que les fonctions explicitement choisies, sinon
+le premier chargement déplacerait dix-neuf lignes de planning tout seul.
+
+Corollaire : un enregistrement supprimé d'un côté laisse l'autre orphelin.
+`deleteStaff` **refuse** tant qu'un contrat actif pointe sur le compte, en disant
+où retirer la personne du planning. `node essais/harmonisation-contrats.js`.
 
 ## Secrets : rien ne sort, rien n'entre
 
