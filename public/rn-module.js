@@ -19,6 +19,51 @@
   function rnToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
   function rnAddDays(base, n) { const d = new Date(base); d.setDate(d.getDate() + n); return d; }
   function rnFmtFr(iso) { if (!iso) return ''; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
+  // LA CLE DU JOUR. Dix caracteres, ou rien du tout.
+  function rnCleJour(it) {
+    const d = String((it && it.date) || '').trim().slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
+  }
+  // L'ORDRE D'UNE LISTE DE RENOUVELLEMENTS. Par jour, puis par nom : dans une
+  // meme journee, l'ordre de creation n'apprend rien a personne, alors que
+  // l'ordre alphabetique se parcourt. Ce qui n'a pas de date exploitable
+  // remonte en tete, pour etre corrige plutot que dilue dans la liste.
+  function rnTrier(liste) {
+    return liste.slice().sort(function (a, b) {
+      const ja = rnCleJour(a), jb = rnCleJour(b);
+      if (ja !== jb) { if (!ja) return -1; if (!jb) return 1; return ja < jb ? -1 : 1; }
+      const na = (a.nom + ' ' + a.prenom).toLowerCase(), nb = (b.nom + ' ' + b.prenom).toLowerCase();
+      return na < nb ? -1 : na > nb ? 1 : 0;
+    });
+  }
+  // LE REGROUPEMENT PAR JOUR, ecrit une seule fois. Chaque groupe se REFERME :
+  // la version precedente en ouvrait un par jour et n'en fermait qu'un a la fin,
+  // si bien que les journees s'emboitaient les unes dans les autres comme des
+  // poupees russes — six niveaux sur une liste de six jours.
+  function rnParJour(liste, carte) {
+    let html = '', cle = null, ouvert = false;
+    liste.forEach(function (it) {
+      const j = rnCleJour(it);
+      if (j !== cle) {
+        if (ouvert) html += '</div>';
+        cle = j; ouvert = true;
+        if (!j) {
+          html += '<div class="rn-daygroup"><div class="rn-dayhead">'
+            + '<span class="rn-d">Sans date de préparation</span>'
+            + '<span class="rn-taglbl rn-t-retard">à corriger</span></div>';
+        } else {
+          const diff = rnDayDiff(j);
+          const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
+          const lbl = diff < 0 ? 'En retard' : diff === 0 ? "Aujourd'hui" : 'Dans ' + diff + ' j';
+          html += '<div class="rn-daygroup"><div class="rn-dayhead"><span class="rn-d">' + rnFmtFr(j)
+            + '</span><span class="rn-taglbl rn-t-' + cls + '">' + lbl + '</span></div>';
+        }
+      }
+      html += carte(it);
+    });
+    if (ouvert) html += '</div>';
+    return html;
+  }
   const RN_SOON_DAYS = 7;   // fenêtre « à préparer » avant la date prévue
 
   // ── Les événements ponctuels ────────────────────────────────────────────
@@ -420,26 +465,16 @@
     if (rnView === 'check') return rnRenderCheck();
     if (rnView === 'all') return rnRenderAll();
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
-    const visible = rnList()
+    const visible = rnTrier(rnList()
       .filter(it => !it.pause)                 // arrêt demandé par le patient : passé en « à vérifier »
-      .filter(it => rnDayDiff(it.date) <= 7)
-      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q))
-      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      // Sans date exploitable, on ne peut pas dire si c'est dans les sept jours :
+      // la fiche reste visible ici plutot que de disparaitre sans bruit.
+      .filter(it => !rnCleJour(it) || rnDayDiff(rnCleJour(it)) <= 7)
+      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q)));
     document.getElementById('rn-count').textContent = visible.length ? visible.length + ' ordonnance' + (visible.length > 1 ? 's' : '') + ' à préparer (7 jours)' : '';
     const wrap = document.getElementById('rn-listwrap');
     if (!visible.length) { wrap.innerHTML = '<div class="rn-empty">Aucune ordonnance à préparer dans les 7 prochains jours.</div>'; return; }
-    let html = '', last = null;
-    for (const it of visible) {
-      if (it.date !== last) {
-        last = it.date; const diff = rnDayDiff(it.date);
-        const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
-        const lbl = diff < 0 ? 'En retard' : diff === 0 ? "Aujourd'hui" : 'Dans ' + diff + ' j';
-        html += '<div class="rn-daygroup"><div class="rn-dayhead"><span class="rn-d">' + rnFmtFr(it.date) + '</span><span class="rn-taglbl rn-t-' + cls + '">' + lbl + '</span></div>';
-      }
-      html += rnCard(it);
-    }
-    html += '</div>';
-    wrap.innerHTML = html;
+    wrap.innerHTML = rnParJour(visible, rnCard);
   };
   function rnBadges(it) {
     const _d = rnDayDiff(it.date);
@@ -513,24 +548,12 @@
   // avec modification / report / suppression possibles à tout moment.
   function rnRenderAll() {
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
-    const all = rnList()
-      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q))
-      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    const all = rnTrier(rnList()
+      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q)));
     document.getElementById('rn-count').textContent = all.length ? all.length + ' renouvellement' + (all.length > 1 ? 's' : '') + ' programmé' + (all.length > 1 ? 's' : '') : '';
     const wrap = document.getElementById('rn-listwrap');
     if (!all.length) { wrap.innerHTML = '<div class="rn-empty">Aucun renouvellement programmé.</div>'; return; }
-    let html = '', last = null;
-    for (const it of all) {
-      if (it.date !== last) {
-        last = it.date; const diff = rnDayDiff(it.date);
-        const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
-        const lbl = diff < 0 ? 'En retard' : diff === 0 ? "Aujourd'hui" : 'Dans ' + diff + ' j';
-        html += '<div class="rn-daygroup"><div class="rn-dayhead"><span class="rn-d">' + rnFmtFr(it.date) + '</span><span class="rn-taglbl rn-t-' + cls + '">' + lbl + '</span></div>';
-      }
-      html += rnCardAll(it);
-    }
-    html += '</div>';
-    wrap.innerHTML = html;
+    wrap.innerHTML = rnParJour(all, rnCardAll);
   }
   function rnCardAll(it) {
     const diff = rnDayDiff(it.date); const cls = diff < 0 ? 'retard' : diff === 0 ? 'jour' : 'avenir';
@@ -552,7 +575,13 @@
   };
   function rnRenderArch() {
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
-    const a = rnArch().filter(x => !q || (x.nom + ' ' + x.prenom).toLowerCase().includes(q));
+    const a = rnArch().filter(x => !q || (x.nom + ' ' + x.prenom).toLowerCase().includes(q))
+      .slice().sort(function (x, y) {
+        const dx = String(x.prepDate || '').slice(0, 10), dy = String(y.prepDate || '').slice(0, 10);
+        if (dx !== dy) return dx < dy ? 1 : -1;            // la plus récente d'abord
+        const nx = (x.nom + ' ' + x.prenom).toLowerCase(), ny = (y.nom + ' ' + y.prenom).toLowerCase();
+        return nx < ny ? -1 : nx > ny ? 1 : 0;
+      });
     document.getElementById('rn-count').textContent = a.length ? a.length + ' préparation' + (a.length > 1 ? 's' : '') + ' archivée' + (a.length > 1 ? 's' : '') : '';
     const wrap = document.getElementById('rn-listwrap');
     if (!a.length) { wrap.innerHTML = '<div class="rn-empty">Aucune préparation archivée pour l\'instant.</div>'; return; }
@@ -1103,10 +1132,9 @@
   // ---------- vue « À vérifier » : ce que le patient a demandé d'arrêter ----------
   function rnRenderCheck() {
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
-    const l = rnList()
+    const l = rnTrier(rnList()
       .filter(it => it.pause)
-      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q))
-      .sort((a, b) => (a.date < b.date ? -1 : 1));
+      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q)));
     document.getElementById('rn-count').textContent = l.length
       ? l.length + ' ordonnance' + (l.length > 1 ? 's' : '') + ' à vérifier' : '';
     const wrap = document.getElementById('rn-listwrap');
