@@ -998,8 +998,9 @@
   .pl-who small{color:var(--plmut);font-size:10px;font-weight:500}
   .pl-hrs{margin-top:3px;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums}
   .pl-hrs.good{color:var(--plok)}.pl-hrs.bad{color:var(--plcrit)}
-  .pl-vide{position:relative;font-size:9px;font-weight:600;color:transparent;text-align:center;border:1px dashed transparent;
-    border-radius:6px;padding:1px 0;margin:1px 0;letter-spacing:.2px;transition:color .12s,border-color .12s}
+  .pl-vide{position:relative;justify-content:center;font-size:9px;font-weight:600;color:transparent;
+    text-align:center;border:1px dashed transparent;
+    border-radius:6px;padding:1px 0;letter-spacing:.2px;transition:color .12s,border-color .12s}
   .pl-cell:hover .pl-vide{color:#B9C2BD;border-color:var(--plline)}
   .pl-cell .pl-vide:hover{border-color:var(--plac);color:var(--plac);background:var(--placs)}
   .pl-repos:hover .pl-restlbl{display:none}
@@ -1018,19 +1019,22 @@
     border-left:4px solid var(--plwarn);border-radius:11px;padding:9px 14px;margin-bottom:12px;font-size:12.5px;color:#6E5210}
   .pl-aval b{color:#5A430C}
   .pl-aval .pl-btn{padding:5px 12px;font-size:12px}
-  .pl-echdot.pl-att{background:var(--platt);color:#fff;border:1.5px solid #fff}
-  .pl-echdot{position:absolute;left:-4px;bottom:-4px;width:12px;height:12px;border-radius:50%;background:var(--plac);
-    color:#fff;font-style:normal;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;
-    border:1.5px solid #fff}
+  .pl-echdot.pl-att{background:var(--platt);color:#fff}
+  .pl-echdot{position:absolute;right:18px;top:50%;transform:translateY(-50%);width:13px;height:13px;
+    border-radius:4px;background:var(--plac);
+    color:#fff;font-style:normal;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .pl-off .pl-echdot{right:4px}
   .pl-cyc2{font-size:9.5px;font-weight:600;color:var(--plmut);font-variant-numeric:tabular-nums}
   .pl-cyc2.good{color:var(--plok)}.pl-cyc2.bad{color:var(--plcrit)}
   .pl-grp td{background:var(--placs);padding:4px 14px;font-size:10.5px;
     font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--plac)}
   .pl-cell{padding:5px 6px;min-height:50px}
+  .pl-demi,.pl-shift,.pl-abs,.pl-off,.pl-vide{box-sizing:border-box;height:19px;margin:2px 0;
+    display:flex;align-items:center}
   .pl-shift{background:var(--placs);border-left:3px solid var(--plac);border-radius:6px;padding:3px 7px;
-    margin:2px 0;font-size:10.5px;font-weight:600;color:#0B5B44;font-variant-numeric:tabular-nums;white-space:nowrap}
+    font-size:10.5px;font-weight:600;color:#0B5B44;font-variant-numeric:tabular-nums;white-space:nowrap}
   .pl-shift.early{border-left-color:var(--plrose);background:var(--plroses);color:var(--plrosei)}
-  .pl-abs{border-radius:6px;padding:3px 7px;margin:2px 0;font-size:10px;font-weight:700;
+  .pl-abs{border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;
     text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
   .pl-abs.cp{background:var(--plcpb);color:var(--plcp)}.pl-abs.mal{background:var(--plmalb);color:var(--plmal)}
   .pl-abs.rec{background:var(--plrecb);color:var(--plrec)}.pl-abs.for{background:var(--plforb);color:var(--plfor)}
@@ -1041,14 +1045,17 @@
   .pl-impact span{font-size:10.5px;border-radius:6px;padding:2px 7px;background:#F1F3F2;color:#4A5250;white-space:nowrap}
   .pl-impact span.bad{background:#FAE9E7;color:#B23A2F;font-weight:700}.pl-impact span.lim{background:#FFF3E0;color:#B26A00}
   .pl-shift.pl-formation{background:#EDEDED;color:#8E9395;border-left-color:#B9BEC0;text-decoration:none}
-  .pl-shift.pl-formation .pl-fortag{display:block;font-style:normal;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--plfor);margin-top:1px}
-  .pl-off{position:relative;color:#C3CDC7;font-size:10px;padding:6px 7px}
+  .pl-shift.pl-formation .pl-fortag{position:absolute;right:3px;top:50%;transform:translateY(-50%);
+    font-style:normal;font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;
+    color:var(--plfor);background:var(--plforb);border-radius:4px;padding:1px 3px;line-height:1}
+  .pl-off{position:relative;color:#C3CDC7;font-size:10px;padding:3px 7px}
   .pl-cntrow td{background:#FBFAF9;border-bottom:2px solid var(--plline);padding:5px 6px}
   .pl-cntlbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--plmut)}
   .pl-pill.nt{background:#EDF0F4;color:#4A5B74}
   .pl-pill.lg{background:#EAF0E6;color:#4F6B3F}
   .pl-pill b{font-variant-numeric:tabular-nums}
-  .pl-shift{position:relative;padding-right:20px}
+  .pl-shift{position:relative;padding-right:33px}
+  .pl-off{padding-right:20px}
   .pl-shift.pl-pB{border-left-color:#5B7BA8;background:#E9EFF6;color:#2C4A78}
   .pl-shift.pl-pA{border-left-color:var(--plrose);background:var(--plroses);color:var(--plrosei)}
   .pl-pos{position:absolute;right:3px;top:50%;transform:translateY(-50%);font-style:normal;font-size:8.5px;
@@ -1075,6 +1082,11 @@
   .pl-echmode{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:95;
     background:#1D5C3A;color:#fff;border-radius:11px;padding:10px 16px;font-size:12.5px;font-weight:600;
     box-shadow:0 8px 26px rgba(0,0,0,.28);display:flex;gap:12px;align-items:center}
+  .pl-md-l{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+    padding:7px 0;border-bottom:1px solid var(--plline);font-size:12.5px}
+  .pl-md-l span{color:var(--plmut);font-size:11.5px}
+  .pl-md-l.pl-md-dem{background:var(--plattb);border-radius:8px;padding:7px 11px;border-bottom:none;margin-top:3px}
+  .pl-md-l.pl-md-dem b{color:var(--platti);font-size:14px}
   .pl-lab{display:block;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
     color:var(--plmut);margin-bottom:4px}
   .pl-ctgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px 18px}
@@ -1085,8 +1097,6 @@
   .pl-cpt-tot b{font-size:22px;font-variant-numeric:tabular-nums}
   .pl-echmode button{background:#fff;color:#1D5C3A;border:none;border-radius:7px;padding:5px 11px;
     font-weight:700;cursor:pointer;font-size:12px}
-  .pl-exdot{position:absolute;left:-4px;top:-4px;width:9px;height:9px;border-radius:50%;background:var(--plwarn);
-    border:1.5px solid #fff;font-style:normal}
   .pl-cell.pl-click{cursor:pointer}
   .pl-cell.pl-click:hover{background:#FBF8F6}
   .pl-shift.pl-click{cursor:pointer}
@@ -1381,6 +1391,11 @@
       <button class="pl-btn pl-pri" onclick="plAbsEnregistrer()">Enregistrer</button>
     </div>
   </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-mod"><div class="pl-box" style="width:min(460px,96vw)">
+    <h3 id="pl-md-titre">Modification à valider</h3>
+    <div class="pl-sub">Cette demi-journée a été modifiée à moins de ${PL_VALID_JOURS} jours : elle attend votre accord.</div>
+    <div id="pl-md-corps" style="margin-top:12px"></div>
+  </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-ct"><div class="pl-box" style="width:min(720px,96vw)">
     <h3 id="pl-ct-titre">Fiche contrat</h3>
     <div class="pl-sub" id="pl-ct-sub"></div>
@@ -1637,13 +1652,12 @@
               + (exAtt ? ' pl-att' : '') + (ex && ex.echangeId ? ' pl-echpair' : '') + (echAtt ? ' pl-echatt' : '') + kl + '"' + clic
               + ' title="' + plEsc(tt + ttAtt + (ech ? ' — journée issue d\'un échange' : (echAtt ? ' — échange demandé, en attente de validation' : ''))) + '">' + plEsc(sl[hh]) + posBadge
               + (ex && ex.echangeId ? '<i class="pl-echdot" title="Plage échangée">⇄</i>' : '')
-              + (ex && !ech ? '<i class="pl-exdot" title="Exception du jour"></i>' : '')
               + (ech ? '<i class="pl-echdot" title="Échange de jours validé">⇄</i>' : '')
               + (echAtt ? '<i class="pl-echdot pl-att" title="Échange demandé — en attente de validation">⇄</i>' : '') + '</div>';
           } else {
             const ex = plExOf(c, iso, hh ? 'AM' : 'M');
             const exAtt = !ex && plExAttOf(c, iso, hh ? 'AM' : 'M');
-            if (ex) cell += '<div class="pl-off pl-mod' + (ex.echangeId ? ' pl-echpair' : '') + kl + '"' + clic + ' title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')' + (ex.echangeId ? ' — plage échangée' : '') + '">absent' + (ex.echangeId ? '<i class="pl-echdot">⇄</i>' : '') + '<i class="pl-exdot"></i></div>';
+            if (ex) cell += '<div class="pl-off pl-mod' + (ex.echangeId ? ' pl-echpair' : '') + kl + '"' + clic + ' title="Créneau supprimé ce jour (trame : ' + plEsc(plSlotsTrame(c, d)[hh] || 'repos') + ')' + (ex.echangeId ? ' — plage échangée' : '') + '">absent' + (ex.echangeId ? '<i class="pl-echdot">⇄</i>' : '') + '</div>';
             else cell += '<div class="pl-vide' + (exAtt ? ' pl-att' : '') + kl + '"' + clic + ' title="' + (hh ? 'Après-midi' : 'Matin') + ' — repos'
               + (exAtt ? ' ; MODIFICATION EN ATTENTE : ' + plEsc(exAtt.horaire || 'repos') : '')
               + (admin ? ' ; cliquer pour ajouter un créneau' : '') + '">' + (hh ? 'après-midi' : 'matin')
@@ -2623,6 +2637,10 @@
     // EN MODE ECHANGE, LE CLIC APPARIE AU LIEU D'OUVRIR L'EDITEUR.
     if (plEchSlot) { plEchApparier(cid, iso, hh); return; }
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    // UNE CASE VIOLETTE S'OUVRE SUR LA DECISION, pas sur l'editeur d'horaires :
+    // sinon on poserait une SECONDE demande par-dessus la premiere sans la voir.
+    const enAttente = plExAttOf(c, iso, hh ? 'AM' : 'M');
+    if (enAttente) { plModOuvrir(enAttente.id); return; }
     const anc = (ev && ev.currentTarget) || document.body;
     const d = new Date(iso + 'T12:00'), demi = hh ? 'AM' : 'M';
     const trame = plSlotsTrame(c, d), eff = plSlots(c, d);
@@ -3191,13 +3209,39 @@
       .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
   }
   window.plModsEnAttente = plModsEnAttente;
+  window.plModOuvrir = function (exId) {
+    if (!plGarde()) return;
+    const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
+    const c = L('contrats').find(x => x.id === ex.contratId);
+    const el = document.getElementById('pl-md-corps'); if (!el) return;
+    const hab = c ? (plSlotsTrame(c, new Date(ex.date + 'T12:00'))[ex.demi === 'AM' ? 1 : 0] || 'repos') : '—';
+    const j = plJoursJusqua(ex.date);
+    const t = document.getElementById('pl-md-titre');
+    if (t) t.textContent = 'Modification à valider — ' + (c ? c.nom : '');
+    el.innerHTML = '<div class="pl-md-l"><span>Jour</span><b>' + plJoliDate(ex.date)
+        + (ex.demi === 'AM' ? ' après-midi' : ' matin') + '</b></div>'
+      + '<div class="pl-md-l"><span>Dans</span><b>'
+        + (j === 0 ? 'aujourd’hui' : j === 1 ? 'demain' : j + ' jours') + '</b></div>'
+      + '<div class="pl-md-l"><span>Horaire habituel</span><b>' + plEsc(hab) + '</b></div>'
+      + '<div class="pl-md-l pl-md-dem"><span>Horaire demandé</span><b>' + plEsc(ex.horaire || 'repos') + '</b></div>'
+      + (ex.echangeId ? '<div class="pl-sub" style="margin-top:9px">⇄ Cette demi-journée fait partie d’un échange : '
+          + 'valider ou refuser ici ne décide que de celle-ci.</div>' : '')
+      + '<div class="pl-sub" style="margin-top:9px">Tant que ce n’est pas validé, le planning affiche '
+      + '<b>' + plEsc(hab) + '</b> — personne ne se présente sur un horaire qui n’a pas été accordé.</div>'
+      + '<div class="pl-actions">'
+      + '<button class="pl-btn pl-ghost" style="color:#C62828" onclick="plModRefuser(\'' + ex.id + '\')">Refuser</button>'
+      + '<span style="flex:1"></span>'
+      + '<button class="pl-btn pl-ghost" onclick="plClose(\'pl-ov-mod\')">Plus tard</button>'
+      + '<button class="pl-btn pl-pri" onclick="plModValider(\'' + ex.id + '\')">Valider</button></div>';
+    plOpen('pl-ov-mod');
+  };
   window.plModValider = function (exId) {
     if (!plGarde()) return;
     const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
     ex.statut = 'valide';
     ex.valideePar = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
     ex.valideeAt = Date.now();
-    plStamp(ex); plPersist(); plRender(); plHsRender(); plAValider();
+    plStamp(ex); plPersist(); plClose('pl-ov-mod'); plRender(); plHsRender(); plAValider();
     plToast('Modification validée — elle entre dans le planning');
   };
   window.plModRefuser = function (exId) {
@@ -3214,7 +3258,7 @@
       if (typeof markDeleted === 'function') markDeleted('plExceptions', exId);
       plExceptions.splice(i, 1);
     }
-    plPersist(); plRender(); plHsRender(); plAValider();
+    plPersist(); plClose('pl-ov-mod'); plRender(); plHsRender(); plAValider();
     plToast('Modification refusée');
   };
 

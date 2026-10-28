@@ -39,6 +39,14 @@ function bloc(depart, fin) {
   return src.slice(d, f + fin.length);
 }
 
+function fenetre(nom) {
+  const d = src.indexOf('  window.' + nom + ' = function');
+  if (d < 0) throw new Error('fonction exposée introuvable : ' + nom);
+  const f = src.indexOf('\n  };\n', d);
+  if (f < 0) throw new Error('fin introuvable : ' + nom);
+  return src.slice(d, f + 5);
+}
+
 let ok = 0, ko = 0;
 const t = (n, c) => { c ? (ok++, console.log('  ✓ ' + n)) : (ko++, console.log('  ✗ ' + n)); };
 console.log('\nLE COMPTE-TEMPS\n');
@@ -391,6 +399,120 @@ t('... et chaque mouvement y porte son signe',
   /\(e < 0 \? '' : '\+'\) \+ plFmtH\(e\)/.test(src));
 t('les semaines soldées se lisent encore, en gris', /pl-sub">soldé</.test(src));
 t('et la remise à zéro se déclenche de là', /plRazFaire\(\\'' \+ c\.id/.test(src));
+
+// ── Toutes les demi-journées à la même hauteur ──────────────────────────────
+// OLIVIER, LE 28/10 : « les cartouches sont encore bien décalés, ce n'est pas
+// très beau. » Mesure dans un navigateur : horizontalement tout tombait juste,
+// mais chaque demi-journée prenait la hauteur de son CONTENU — 15 px pour un
+// repos, 18 pour un congé, 19 pour un horaire, 24 pour un créneau supprimé,
+// 31 pour une formation (son libellé passait à la ligne). Le bloc de
+// l'APRÈS-MIDI commençait donc à une altitude différente d'un jour à l'autre :
+// 24 px lundi, 18 px jeudi, 35 px là où il y avait une formation. La grille ne
+// se lisait plus en ligne — et le liseré des modifications n'avait fait que
+// rendre le décalage visible.
+console.log('\nToutes les demi-journées font la même hauteur');
+const CSS2 = bloc('.pl-cell{padding', '.pl-chip.pl-ch-part');
+t('LES QUATRE SORTES DE BLOCS PARTAGENT UNE SEULE RÈGLE DE HAUTEUR',
+  /\.pl-demi,\.pl-shift,\.pl-abs,\.pl-off,\.pl-vide\{box-sizing:border-box;height:19px;margin:2px 0;/.test(src));
+t('... en border-box, sinon bordures et remplissage s’y ajouteraient',
+  /box-sizing:border-box;height:19px/.test(src));
+t('... et le contenu est centré, pas calé en haut',
+  /display:flex;align-items:center\}/.test(bloc('.pl-demi,.pl-shift', 'align-items:center}')));
+// Il ne suffit pas de poser la hauteur : il faut qu'aucune variante ne la
+// reprenne. L'invariant de geometrie plus haut l'interdit deja ; on verifie
+// ici qu'aucune REGLE DE BASE ne la contredit non plus.
+const BASES = CSS2.split('\n').map(l => l.trim())
+  .filter(l => /^\.pl-(shift|abs|off|vide)\{/.test(l));
+t('les ' + BASES.length + ' règles de base ne redéfinissent ni hauteur ni marge verticale',
+  BASES.every(l => !/(^|;|\{)\s*(height|min-height|margin)\s*:/.test(l.slice(l.indexOf('{')))));
+// Cinq et non quatre : `.pl-off` en a deux, la seconde ne reservant que la
+// place de la pastille d'echange.
+t('... et il y en a bien cinq, sinon l’essai ne regarde pas les bonnes',
+  BASES.length === 5);
+t('LE LIBELLÉ DE LA FORMATION NE PASSE PLUS À LA LIGNE — il coûtait douze pixels',
+  /\.pl-shift\.pl-formation \.pl-fortag\{position:absolute;/.test(src)
+  && !/\.pl-fortag\{display:block/.test(src));
+
+console.log('\nLes pastilles ne débordent plus sur la case voisine');
+// Posees a -4px du haut ou du bas, elles chevauchaient le cartouche d'a cote :
+// la pastille du matin venait se poser SUR l'horaire de l'apres-midi.
+t('LA PASTILLE DE L’EXCEPTION A DISPARU — le liseré disait déjà la même chose',
+  !/pl-exdot/.test(src));
+t('le ⇄ de l’échange reste, mais rangé à droite, DANS le cartouche',
+  /\.pl-echdot\{position:absolute;right:18px;top:50%/.test(src)
+  && !/\.pl-echdot\{[^}]*left:-/.test(src));
+t('... à la taille et à la forme de la pastille de poste, juste à côté',
+  /width:13px;height:13px;\n\s*border-radius:4px/.test(bloc('.pl-echdot{', '\n  .pl-off .pl-echdot')));
+// LA PLACE EST RESERVEE PARTOUT : si seuls les cartouches echanges la
+// prenaient, leur texte utile serait plus etroit et on retomberait sur le
+// decalage qu'on vient de regler.
+t('LA PLACE DES DEUX PASTILLES EST RÉSERVÉE SUR TOUS LES CARTOUCHES',
+  /\.pl-shift\{position:relative;padding-right:33px\}/.test(src));
+t('... et le « absent », qui n’a pas de pastille de poste, garde la sienne',
+  /\.pl-off\{padding-right:20px\}/.test(src) && /\.pl-off \.pl-echdot\{right:4px\}/.test(src));
+
+// ── On valide là où l'on voit ───────────────────────────────────────────────
+// OLIVIER : « comment fait on pour valider une modification ? » — et il avait
+// raison de demander. La seule porte etait une carte au milieu de l'ecran
+// Compteurs, a deux ecrans de la case qu'on regarde. Un geste qu'on ne trouve
+// pas est un geste qui n'existe pas.
+console.log('\nUne case violette s’ouvre sur la décision');
+t('LE CLIC SUR UNE CASE EN ATTENTE N’OUVRE PLUS L’ÉDITEUR D’HORAIRES',
+  /const enAttente = plExAttOf\(c, iso, hh \? 'AM' : 'M'\);\n\s*if \(enAttente\) \{ plModOuvrir\(enAttente\.id\); return; \}/.test(src));
+t('... ce qui évite de poser une SECONDE demande par-dessus la première',
+  /sinon on poserait une SECONDE demande/.test(src));
+t('la fenêtre de décision existe', /id="pl-ov-mod"/.test(src) && /id="pl-md-corps"/.test(src));
+t('... et elle annonce la règle des trente jours sans la recopier',
+  /à moins de \$\{PL_VALID_JOURS\} jours/.test(src));
+t('la décision est exposée au clic', /window\.plModOuvrir = function/.test(src));
+t('VALIDER ET REFUSER REFERMENT LA FENÊTRE',
+  (src.match(/plClose\('pl-ov-mod'\); plRender\(\); plHsRender\(\); plAValider\(\);/g) || []).length === 2);
+t('la carte des Compteurs reste, pour traiter une file d’un coup',
+  /Modifications du planning à valider/.test(src));
+
+// Le rendu est EXECUTE contre un document de poche (garde du 28/10).
+globalThis.window = globalThis;
+globalThis.plGarde = () => true;
+globalThis.plEsc = (x) => String(x == null ? '' : x);
+globalThis.plJoliDate = (iso) => iso ? iso.split('-').reverse().join('/') : '—';
+globalThis.plOpen = () => { OUVERT = true; };
+let OUVERT = false;
+const EX = { id: 'ex1', contratId: 'c1', date: '2026-11-23', demi: 'M', type: 'horaire',
+             horaire: '14h-19h30', statut: 'attente' };
+const CT = { id: 'c1', nom: 'Céline Bourdon' };
+globalThis.L = (n) => n === 'exceptions' ? [EX] : n === 'contrats' ? [CT] : [];
+globalThis.plSlotsTrame = () => ['9h-12h30', null];
+const EL2 = {};
+globalThis.document = { getElementById: (id) => EL2[id] || (EL2[id] = { innerHTML: '', textContent: '' }) };
+eval(bloc('const PL_VALID_JOURS =', '30;').replace(/^\s*const /, 'globalThis.'));
+eval(['plJoursJusqua'].map(extraire).join('\n'));
+eval(fenetre('plModOuvrir'));
+plModOuvrir('ex1');
+const vuM = EL2['pl-md-corps'].innerHTML;
+t('le rendu de la décision produit quelque chose', vuM.length > 100);
+t('la fenêtre s’ouvre', OUVERT === true);
+t('le titre porte le nom', /Céline Bourdon/.test(EL2['pl-md-titre'].textContent));
+t('ON VOIT L’HABITUEL ET LE DEMANDÉ CÔTE À CÔTE',
+  /Horaire habituel<\/span><b>9h-12h30<\/b>/.test(vuM)
+  && /Horaire demandé<\/span><b>14h-19h30<\/b>/.test(vuM));
+t('... et le rappel que c’est l’habituel qui fait foi en attendant',
+  /personne ne se présente sur un horaire qui n’a pas été accordé/.test(vuM));
+t('les deux décisions sont là, et « plus tard » ne tranche rien',
+  /plModValider\('ex1'\)/.test(vuM) && /plModRefuser\('ex1'\)/.test(vuM)
+  && /Plus tard/.test(vuM));
+t('une demande de repos se lit aussi', (function () {
+  EX.horaire = null; plModOuvrir('ex1');
+  const v = EL2['pl-md-corps'].innerHTML; EX.horaire = '14h-19h30';
+  return /Horaire demandé<\/span><b>repos<\/b>/.test(v);
+})());
+t('une demi-journée issue d’un échange le dit', (function () {
+  EX.echangeId = 'e1'; plModOuvrir('ex1');
+  const v = EL2['pl-md-corps'].innerHTML; delete EX.echangeId;
+  return /fait partie d’un échange/.test(v);
+})());
+t('une exception disparue entre-temps ne fait pas tomber l’écran', (function () {
+  try { plModOuvrir('nexistepas'); return true; } catch (e) { return false; }
+})());
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
