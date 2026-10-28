@@ -188,5 +188,93 @@ t('un sortant est désactivé, jamais supprimé',
 t('le compte rendu dit combien de demi-journées ont été comblées',
   /demi-journée\(s\) sans horaire connu ont reçu/.test(src));
 
+
+// ── Changer la fonction d'un collaborateur ──────────────────────────────────
+// CE QUI SE JOUE. Le groupe n'est pas une étiquette. Il décide de la position
+// par défaut — donc de l'effectif comptoir, celui qu'on compare aux seuils —,
+// du statut de pharmacien, et de la rotation : deux semaines pour l'officine,
+// trois pour les pharmaciens.
+//
+// Faire passer quelqu'un de « Préparateurs » à « Logistique » déplace donc
+// TROIS choses d'un coup, et aucune ne se voit sur la ligne qu'on vient de
+// modifier. On les annonce avant d'écrire ; c'est ce texte qui est gardé ici.
+console.log('\nChanger la fonction : ce que ça entraîne');
+global_('const PL_ROT_DE_GRP =', "'rot:ph' };");
+global_('const PL_ROT_DEFAUT =', "'rot:prep';");
+global_('const PL_GRPS = {', '\n  };');
+global_('const PL_POS_DEFAUT =', "renfort: 'C' };");
+global_('const PL_POS_LBL =', "A: 'Poste avancé' };");
+eval(['plRotCible', 'plFonctionEffets'].map(extraire).join('\n'));
+
+const ROTATIONS = [{ id: 'rot:prep', lbl: 'Prép', longueur: 2 },
+                   { id: 'rot:ph', lbl: 'Ph', longueur: 3 }];
+t('un pharmacien suit la rotation des pharmaciens', plRotCible('ph') === 'rot:ph');
+t('TOUS LES AUTRES SUIVENT CELLE DE L’OFFICINE',
+  ['prep', 'logi', 'secr', 'avance', 'entretien', 'renfort']
+    .every(g => plRotCible(g) === 'rot:prep'));
+
+const prepa = { nom: 'Essai', grp: 'prep', estPharmacien: false, rotationId: 'rot:prep',
+                sem: { '1': {}, '2': {} } };
+t('changer pour la même fonction n’annonce rien',
+  plFonctionEffets(prepa, 'prep', ROTATIONS).length === 0);
+
+const versLogi = plFonctionEffets(prepa, 'logi', ROTATIONS);
+t('PASSER EN LOGISTIQUE SORT DE L’EFFECTIF COMPTOIR, et on le dit',
+  versLogi.some(e => /Back-office/.test(e) && /ne compte plus dans l’effectif comptoir/.test(e)));
+t('... et rien d’autre ne bouge : même rotation, toujours pas pharmacien',
+  versLogi.length === 1);
+
+const versPh = plFonctionEffets(prepa, 'ph', ROTATIONS);
+t('passer pharmacien est annoncé', versPh.some(e => /devient pharmacien/.test(e)));
+t('LE CYCLE PASSE DE DEUX À TROIS SEMAINES — c’est ce qu’on oublie',
+  versPh.some(e => /son cycle passe à 3 semaines/.test(e)));
+t('... et la position ne bouge pas : préparateur et pharmacien sont tous deux au comptoir',
+  !versPh.some(e => /position par défaut/.test(e)));
+// UNE SEMAINE TYPE TROP COURTE N'EST PAS UNE ERREUR, mais il faut le dire : le
+// module retombe sur la semaine 1 tant que les suivantes sont vides, et
+// personne ne s'en apercevrait en regardant l'ecran.
+t('ON PRÉVIENT QUE LA SEMAINE TYPE NE COUVRE PAS LE NOUVEAU CYCLE',
+  versPh.some(e => /n’en couvre que 2/.test(e) && /reprendront la première/.test(e)));
+
+const pharmacien = { nom: 'X', grp: 'ph', estPharmacien: true, rotationId: 'rot:ph',
+                     sem: { '1': {}, '2': {}, '3': {} } };
+const versPrep = plFonctionEffets(pharmacien, 'prep', ROTATIONS);
+t('dans l’autre sens, on cesse d’être pharmacien',
+  versPrep.some(e => /n’est plus marqué pharmacien/.test(e)));
+t('... et le cycle redescend à deux semaines',
+  versPrep.some(e => /son cycle passe à 2 semaines/.test(e)));
+t('UNE SEMAINE TYPE PLUS LONGUE QUE LE CYCLE NE FAIT PAS D’ALERTE — rien ne manque',
+  !versPrep.some(e => /n’en couvre que/.test(e)));
+
+const esth = { nom: 'Y', grp: 'prep', estPharmacien: false, rotationId: 'rot:prep', sem: {} };
+t('vers le poste avancé : la position change, et la semaine vide n’alerte pas',
+  plFonctionEffets(esth, 'avance', ROTATIONS).some(e => /Poste avancé/.test(e))
+  && !plFonctionEffets(esth, 'avance', ROTATIONS).some(e => /n’en couvre que/.test(e)));
+t('un contrat absent ne fait pas tomber la lecture',
+  plFonctionEffets(null, 'ph', ROTATIONS).length === 0
+  && plFonctionEffets(prepa, '', ROTATIONS).length === 0);
+t('et une liste de rotations vide n’invente aucun cycle',
+  !plFonctionEffets(prepa, 'ph', []).some(e => /cycle/.test(e)));
+
+console.log('\nCe que l’écran promet');
+t('les sept fonctions de la maison sont proposées', Object.keys(PL_GRPS).length === 7);
+t('LA FONCTION EST MODIFIABLE — un menu, plus un simple texte affiché',
+  /onchange="plSetGrp\(/.test(src) && !/\+ '<td>' \+ plEsc\(c\.role \|\| ''\) \+ '<\/td>'/.test(src));
+t('l’intitulé du poste se corrige à côté, et ne décide de rien',
+  /onchange="plSetRole\(/.test(src) && /L'INTITULE EST LIBRE, et il ne decide de rien/.test(src));
+t('les deux sont réservés aux administrateurs',
+  /plSetGrp = function \(cid, grp\) \{\n\s*if \(!plGarde\(\)\)/.test(src)
+  && /plSetRole = function \(cid, v\) \{\n\s*if \(!plGarde\(\)\)/.test(src));
+t('UN REFUS REDESSINE L’ÉCRAN — sinon le menu resterait sur un choix non appliqué',
+  (src.match(/\{ plRegRender\(\); return; \}/g) || []).length >= 3);
+t('le changement est confirmé, avec ses conséquences',
+  /if \(!confirm\('Changer la fonction de ' \+ c\.nom/.test(src)
+  && /Ce que cela entraîne/.test(src));
+t('le statut de pharmacien suit la fonction, il ne se règle pas à part',
+  /c\.estPharmacien = \(grp === 'ph'\);/.test(src));
+t('... et la rotation aussi', /const rot = L\('rotations'\)\.find\(r => r\.id === plRotCible\(grp\)\);/.test(src));
+t('l’intitulé est borné — une fiche n’est pas un carnet',
+  /\.trim\(\)\.slice\(0, 60\)/.test(src));
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

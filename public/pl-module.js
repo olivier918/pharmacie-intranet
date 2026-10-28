@@ -97,6 +97,47 @@
   const PL_POS_DEFAUT = { ph: 'C', prep: 'C', avance: 'A', secr: 'B', logi: 'B', entretien: 'B', renfort: 'C' };
   const PL_POS_CHOIX = { prep: ['C', 'B', 'A'] };   // seuls les préparateurs choisissent leur position
   const PL_POS_LBL = { C: 'Comptoir', B: 'Back-office', A: 'Poste avancé' };
+  // ═══ CHANGER LA FONCTION D'UN COLLABORATEUR ═══════════════════════════════
+  // Le groupe n'est pas une etiquette : il decide de la position par defaut
+  // (donc de l'effectif comptoir), du statut de pharmacien, et de la rotation —
+  // deux semaines pour l'officine, trois pour les pharmaciens. Changer la
+  // fonction de quelqu'un deplace donc trois choses d'un coup, et aucune ne se
+  // voit sur la ligne qu'on vient de modifier.
+  //
+  // D'ou cette fonction, PURE et eprouvee : elle dit ce que le changement
+  // entraine, et c'est ce texte-la qu'on affiche avant d'ecrire.
+  const PL_ROT_DE_GRP = { ph: 'rot:ph' };          // tout le reste suit l'officine
+  const PL_ROT_DEFAUT = 'rot:prep';
+  function plRotCible(grp) { return PL_ROT_DE_GRP[grp] || PL_ROT_DEFAUT; }
+  function plFonctionEffets(c, grp, rots) {
+    const out = [];
+    if (!c || !grp || grp === c.grp) return out;
+    const posAv = PL_POS_DEFAUT[c.grp] || 'C', posAp = PL_POS_DEFAUT[grp] || 'C';
+    if (posAv !== posAp) {
+      out.push('sa position par défaut passe de « ' + (PL_POS_LBL[posAv] || posAv)
+        + ' » à « ' + (PL_POS_LBL[posAp] || posAp) + ' »'
+        + (posAp === 'C' ? ' — il compte désormais dans l’effectif comptoir'
+                         : ' — il ne compte plus dans l’effectif comptoir'));
+    }
+    const phAv = !!c.estPharmacien, phAp = (grp === 'ph');
+    if (phAv !== phAp) out.push(phAp ? 'il devient pharmacien' : 'il n’est plus marqué pharmacien');
+    const rAv = (rots || []).find(r => r.id === c.rotationId) || null;
+    const rAp = (rots || []).find(r => r.id === plRotCible(grp)) || null;
+    if (rAp && (!rAv || rAv.id !== rAp.id)) {
+      out.push('son cycle passe à ' + rAp.longueur + ' semaine' + (rAp.longueur > 1 ? 's' : '')
+        + ' (' + rAp.lbl + ')');
+      // UNE SEMAINE TYPE QUI NE COUVRE PAS LE NOUVEAU CYCLE N'EST PAS UNE
+      // ERREUR, mais il faut le dire : le module retombe sur la semaine 1 tant
+      // que les suivantes sont vides, et personne ne s'en apercevrait.
+      const n = Object.keys((c && c.sem) || {}).length;
+      if (n && n < rAp.longueur) {
+        out.push('sa semaine type n’en couvre que ' + n + ' : les suivantes reprendront la première '
+          + 'tant qu’elles ne sont pas remplies');
+      }
+    }
+    return out;
+  }
+
   function plPosOf(c, rang, jour, hh, pos) {
     const P = pos !== undefined ? pos : c.pos;
     if (PL_POS_CHOIX[c.grp] && P && P[rang] && P[rang][jour] && P[rang][jour][hh]) return P[rang][jour][hh];
@@ -1988,7 +2029,15 @@
           + '<option value="">— à relier —</option>'
           + staff.map(s2 => '<option value="' + plEsc(s2.id) + '">' + plEsc(s2.prenom + ' ' + s2.nom) + '</option>').join('') + '</select>';
         h += '<tr><td><b>' + plEsc(c.nom) + '</b>' + (c.estPharmacien ? ' <span class="pl-chip pl-ch-cp" style="font-size:9.5px">Pharmacien</span>' : '') + '</td>'
-          + '<td>' + plEsc(c.role || '') + '</td>'
+          + '<td><select class="pl-inp" style="height:30px;max-width:168px" '
+          +   'onchange="plSetGrp(\'' + c.id + '\',this.value)">'
+          +   Object.keys(PL_GRPS).sort((a, b) => PL_GRPS[a].ord - PL_GRPS[b].ord).map(g =>
+                '<option value="' + g + '"' + (c.grp === g ? ' selected' : '') + '>'
+                + plEsc(PL_GRPS[g].lbl) + '</option>').join('')
+          +   '</select>'
+          +   '<input class="pl-inp" style="height:28px;max-width:168px;margin-top:4px;font-size:11px" '
+          +   'value="' + plEsc(c.role || '') + '" placeholder="Intitulé du poste" maxlength="60" '
+          +   'onchange="plSetRole(\'' + c.id + '\',this.value)"></td>'
           + '<td>' + lien + '</td>'
           + '<td><input class="pl-inp" style="width:70px;height:30px" value="' + (c.base != null ? c.base : '') + '"' + (plHorsTemps(c) ? ' disabled title="Contrat hors décompte de temps"' : '') + ' onchange="plSetBase(\'' + c.id + '\',this.value)"> h</td>'
           + '<td style="text-align:center"><input type="checkbox"' + (plHorsTemps(c) ? '' : ' checked') + ' title="Décocher pour un titulaire : il reste compté dans les effectifs mais sort des heures, des compteurs et de la navette" onchange="plSetTemps(\'' + c.id + '\',this.checked)"></td>'
@@ -2005,7 +2054,11 @@
         });
         h += '</div></div>';
       }
-      h += '<div class="pl-note">Le lien avec la liste des collaborateurs du Back Office est fait automatiquement par le nom ; corrigez-le ici si besoin. La pastille reprend la couleur du compte intranet. La base hebdo sert de référence au total de la semaine (vert = conforme, rouge = écart) ; pour un cycle à bases variables (ex. 34,5 / 35,5), saisir la moyenne.</div>';
+      h += '<div class="pl-note"><b>La fonction se change ici</b> : le menu du haut commande le planning '
+        + '(regroupement, position par défaut au comptoir, statut de pharmacien et durée du cycle) ; '
+        + 'la ligne du dessous n’est que l’intitulé affiché. Ce qu’un changement de fonction entraîne '
+        + 'est annoncé avant d’être appliqué. '
+        + 'Le lien avec la liste des collaborateurs du Back Office est fait automatiquement par le nom ; corrigez-le ici si besoin. La pastille reprend la couleur du compte intranet. La base hebdo sert de référence au total de la semaine (vert = conforme, rouge = écart) ; pour un cycle à bases variables (ex. 34,5 / 35,5), saisir la moyenne.</div>';
       el.innerHTML = h;
     } else if (plRegView === 'r') {
       let h = '<table class="pl-list"><tr><th>Rotation</th><th>Cycle</th><th>Semaine en cours</th><th>Ancrage</th></tr>';
@@ -2089,6 +2142,33 @@
     c.horsTemps = !compte;
     plStamp(c); plPersist(); plRegRender(); plRender();
     plToast(c.nom.split(' ')[0] + (compte ? ' · temps décompté' : ' · hors décompte de temps'));
+  };
+  window.plSetGrp = function (cid, grp) {
+    if (!plGarde()) { plRegRender(); return; }
+    const c = L('contrats').find(x => x.id === cid);
+    if (!c || !grp || !PL_GRPS[grp]) { plRegRender(); return; }
+    if (grp === c.grp) return;
+    const effets = plFonctionEffets(c, grp, L('rotations'));
+    const avant = (PL_GRPS[c.grp] || { lbl: c.grp }).lbl;
+    if (!confirm('Changer la fonction de ' + c.nom + ' ?\n\n'
+      + avant + '  →  ' + PL_GRPS[grp].lbl + '\n\n'
+      + (effets.length ? 'Ce que cela entraîne :\n  · ' + effets.join('\n  · ')
+                       : 'Rien d’autre ne change.'))) { plRegRender(); return; }
+    c.grp = grp;
+    c.estPharmacien = (grp === 'ph');
+    const rot = L('rotations').find(r => r.id === plRotCible(grp));
+    if (rot) c.rotationId = rot.id;
+    plStamp(c); plPersist(); plRegRender(); plRender();
+    plToast(c.nom.split(' ')[0] + ' · ' + PL_GRPS[grp].lbl);
+  };
+  // L'INTITULE EST LIBRE, et il ne decide de rien : « Préparatrice », « Pharmacien
+  // adjoint », « Apprenti ». C'est le groupe au-dessus qui commande le planning.
+  window.plSetRole = function (cid, v) {
+    if (!plGarde()) { plRegRender(); return; }
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    const t = String(v || '').trim().slice(0, 60);
+    if (t === (c.role || '')) return;
+    c.role = t; plStamp(c); plPersist(); plRegRender();
   };
   window.plSetBase = function (cid, v) { if (!plGarde()) return;
     const c = L('contrats').find(x => x.id === cid); if (!c) return;
