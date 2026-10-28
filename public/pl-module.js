@@ -790,6 +790,9 @@
   .pl-echmode{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:95;
     background:#1D5C3A;color:#fff;border-radius:11px;padding:10px 16px;font-size:12.5px;font-weight:600;
     box-shadow:0 8px 26px rgba(0,0,0,.28);display:flex;gap:12px;align-items:center}
+  .pl-cpt-tot{display:flex;align-items:baseline;justify-content:space-between;
+    background:var(--placs);border-radius:10px;padding:10px 14px;font-size:13px}
+  .pl-cpt-tot b{font-size:22px;font-variant-numeric:tabular-nums}
   .pl-echmode button{background:#fff;color:#1D5C3A;border:none;border-radius:7px;padding:5px 11px;
     font-weight:700;cursor:pointer;font-size:12px}
   .pl-exdot{position:absolute;left:-4px;top:-4px;width:9px;height:9px;border-radius:50%;background:var(--plwarn);
@@ -1087,6 +1090,12 @@
       <button class="pl-btn pl-ghost" onclick="plClose('pl-ov-abs')">Annuler</button>
       <button class="pl-btn pl-pri" onclick="plAbsEnregistrer()">Enregistrer</button>
     </div>
+  </div></div>
+  <div class="pl-ov pl-vars" id="pl-ov-cpt"><div class="pl-box" style="width:min(620px,96vw)">
+    <h3 id="pl-cpt-titre">Compte-temps</h3>
+    <div class="pl-sub">Semaine par semaine : ce qui a été ajouté, ce qui a été retiré, et le net.
+    Un retrait se déduit d'abord des heures supplémentaires de la même semaine.</div>
+    <div id="pl-cpt-corps" style="margin-top:10px"></div>
   </div></div>
   <div class="pl-ov pl-vars" id="pl-ov-imput"><div class="pl-box" style="width:min(480px,96vw)">
     <h3>Heures en plus de la trame</h3>
@@ -2882,6 +2891,74 @@
     plToast('Modification refusée');
   };
 
+  // ── LE DETAIL D'UN COMPTE-TEMPS ─────────────────────────────────────────
+  // Un solde qu'on ne peut pas ouvrir ne se verifie pas : on le subit. Au clic,
+  // la semaine par semaine, et le net de chacune.
+  function plCompteLignes(c, aujourdhui) {
+    const vivantes = L('exceptions').filter(x => x && x.contratId === c.id
+      && plEcartEx(x, c) && plEncoreLisible(c, x.date, aujourdhui));
+    const parSem = {};
+    vivantes.forEach(function (x) {
+      const lun = plIso(plMonday(new Date(x.date + 'T12:00')));
+      if (!parSem[lun]) parSem[lun] = { lun: lun, mvts: [], solde: plApresRaz(c, x.date) };
+      parSem[lun].mvts.push(x);
+    });
+    return Object.keys(parSem).sort().reverse().map(function (lun) {
+      const b = parSem[lun];
+      const compte = plEcartsParSemaine(c, b.mvts.filter(x => plApresRaz(c, x.date)));
+      b.net = compte[lun] ? plNetSemaine(compte[lun]) : { hs: 0, compte: 0 };
+      b.mvts.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+      return b;
+    });
+  }
+  window.plCompteDetail = function (cid) {
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    const el = document.getElementById('pl-cpt-corps'); if (!el) return;
+    const s0 = plSoldes(c);
+    const lignes = plCompteLignes(c);
+    const raz = plRazDe(c);
+    const t = document.getElementById('pl-cpt-titre');
+    if (t) t.textContent = 'Compte-temps — ' + c.nom;
+    let h = '<div class="pl-cpt-tot"><span>Solde</span><b style="color:'
+      + (s0.compte < 0 ? '#C62828' : '#0D47A1') + '">' + plFmtH(s0.compte) + '</b></div>';
+    if (raz) h += '<div class="pl-sub" style="margin:8px 0">Remis à zéro le <b>' + plJoliDate(raz)
+      + '</b>' + (c.razPar ? ' par ' + plEsc(c.razPar) : '')
+      + '. Ce qui précède ne compte plus, et s’effacera de cette liste au bout de '
+      + PL_OUBLI_MOIS + ' mois.</div>';
+    if (!lignes.length) {
+      h += '<div class="pl-sub" style="margin-top:12px">Aucun écart à la semaine type.</div>';
+    } else {
+      h += '<table class="pl-tt" style="margin-top:10px"><tr><th style="text-align:left">Semaine</th>'
+        + '<th style="text-align:left">Mouvements</th><th>Net</th></tr>';
+      lignes.forEach(function (b) {
+        const mv = b.mvts.map(function (x) {
+          const e = plEcartEx(x, c);
+          return '<div style="white-space:nowrap">' + plJoliDate(x.date)
+            + (x.demi === 'AM' ? ' ap.-midi' : ' matin') + ' · '
+            + '<b style="color:' + (e < 0 ? '#C62828' : '#1D5C3A') + '">'
+            + (e < 0 ? '' : '+') + plFmtH(e) + '</b>'
+            + (x.echangeId ? ' ⇄' : '')
+            + (x.imputation === 'compte' ? ' <span class="pl-sub">compte-temps</span>'
+               : e > 0 ? ' <span class="pl-sub">heures sup</span>' : '') + '</div>';
+        }).join('');
+        h += '<tr' + (b.solde ? '' : ' style="opacity:.5"') + '>'
+          + '<td style="text-align:left;white-space:nowrap">semaine du ' + plJoliDate(b.lun)
+          + (b.solde ? '' : '<br><span class="pl-sub">soldé</span>') + '</td>'
+          + '<td style="text-align:left">' + mv + '</td>'
+          + '<td><b style="color:' + (b.net.compte < 0 ? '#C62828' : '#0D47A1') + '">'
+          + (b.solde ? (b.net.compte > 0 ? '+' : '') + plFmtH(b.net.compte) : '—') + '</b>'
+          + (b.solde && b.net.hs ? '<br><span class="pl-sub">+' + plFmtH(b.net.hs) + ' h. sup</span>' : '')
+          + '</td></tr>';
+      });
+      h += '</table>';
+    }
+    h += '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">'
+      + (plIsAdmin() ? '<button class="pl-btn pl-ghost" onclick="plRazFaire(\'' + c.id + '\');plClose(\'pl-ov-cpt\')">Remettre à zéro</button>' : '')
+      + '<button class="pl-btn pl-pri" onclick="plClose(\'pl-ov-cpt\')">Fermer</button></div>';
+    el.innerHTML = h;
+    plOpen('pl-ov-cpt');
+  };
+
   window.plImputChanger = function (exId, v) {
     if (!plGarde()) return;
     const ex = L('exceptions').find(x => x.id === exId); if (!ex) return;
@@ -2962,6 +3039,48 @@
     const b = Math.min(compte, reste); compte -= b; reste -= b;
     return { hs: hs, compte: compte - reste };
   }
+  // ═══ LA REMISE A ZERO, ET L'OUBLI ════════════════════════════════════════
+  // Olivier : « l'historique disparait quand au bout de 3 mois ET une mise a
+  // 0 ». Les deux conditions, pas l'une ou l'autre — et c'est la seule lecture
+  // qui tienne : un mouvement qui compte encore dans le solde ne peut pas
+  // disparaitre de la liste qui l'explique. On n'oublie que ce qui est SOLDE
+  // *et* ancien.
+  //
+  // UNE REMISE A ZERO N'EFFACE RIEN. Elle pose une date : ce qui est anterieur
+  // ne compte plus dans le solde — les heures ont ete recuperees ou payees —
+  // mais reste lisible trois mois, le temps qu'on puisse encore verifier.
+  //
+  // Et surtout : les exceptions ne sont PAS supprimees. Elles sont le planning
+  // lui-meme. Ce qui disparait, c'est leur ligne dans le detail du compteur.
+  const PL_OUBLI_MOIS = 3;
+  function plRazDe(c) { return (c && c.razAt) || null; }
+  // Un mouvement compte-t-il encore dans le solde ?
+  function plApresRaz(c, iso) {
+    const r = plRazDe(c);
+    return !r || String(iso || '') > r;
+  }
+  // Un mouvement solde doit-il encore se lire ?
+  function plEncoreLisible(c, iso, aujourdhui) {
+    if (plApresRaz(c, iso)) return true;
+    const j = plJoursJusqua(iso, aujourdhui);
+    return j != null && j > -(PL_OUBLI_MOIS * 31);
+  }
+  window.plRazFaire = function (cid) {
+    if (!plGarde()) return;
+    const c = L('contrats').find(x => x.id === cid); if (!c) return;
+    const s0 = plSoldes(c);
+    if (!confirm('Remettre le compte-temps de ' + c.nom + ' à zéro ?\n\n'
+      + 'Solde actuel : ' + plFmtH(s0.compte) + '\n\n'
+      + 'Les heures antérieures à aujourd’hui cessent de compter — elles ont été '
+      + 'récupérées ou payées. Rien n’est effacé : le planning ne bouge pas, et le '
+      + 'détail reste lisible ' + PL_OUBLI_MOIS + ' mois.')) return;
+    c.razAt = plIso(new Date());
+    c.razPar = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : null;
+    c.razSolde = s0.compte;
+    plStamp(c); plPersist(); plHsRender(); plRender();
+    plToast(c.nom.split(' ')[0] + ' · compte-temps remis à zéro');
+  };
+
   // soldes d'un contrat
   function plSoldes(c) {
     let compte = 0, navette = 0, attente = 0;
@@ -2970,7 +3089,10 @@
       if (d.statut === 'attente') attente += +d.heures || 0;
       if (d.statut === 'validee') { if (d.affectation === 'compte') compte += +d.heures || 0; else navette += +d.heures || 0; }
     });
-    const sem = plEcartsParSemaine(c, L('exceptions'));
+    // CE QUI PRECEDE LA REMISE A ZERO NE COMPTE PLUS. On filtre les mouvements
+    // AVANT de renetter par semaine : netter puis filtrer ferait compter une
+    // semaine a cheval sur la remise des deux cotes a la fois.
+    const sem = plEcartsParSemaine(c, L('exceptions').filter(x => x && plApresRaz(c, x.date)));
     Object.keys(sem).forEach(function (lun) {
       const n = plNetSemaine(sem[lun]);
       compte += n.compte; navette += n.hs;
@@ -3094,7 +3216,7 @@
       + '<table class="pl-tt"><tr><th style="text-align:left">Collaborateur</th><th>Compte-temps</th><th>Heures sup ce mois</th><th>Heures sup cumulées</th><th>En attente</th></tr>'
       + listeC.map(c => { const s = plSoldes(c);
           return '<tr><td style="text-align:left"><b>' + plEsc(c.nom) + '</b></td>'
-            + '<td><b style="color:' + (s.compte < 0 ? '#C62828' : '#0D47A1') + '">' + plFmtH(s.compte) + '</b></td><td>' + plFmtH(plHsMoisCourant(c)) + '</td><td>' + plFmtH(s.navette) + '</td>'
+            + '<td><button class="pl-btn pl-ghost pl-mini" title="Voir le détail du compte-temps" onclick="plCompteDetail(\'' + c.id + '\')"><b style="color:' + (s.compte < 0 ? '#C62828' : '#0D47A1') + '">' + plFmtH(s.compte) + '</b></button></td><td>' + plFmtH(plHsMoisCourant(c)) + '</td><td>' + plFmtH(s.navette) + '</td>'
             + '<td>' + (s.attente ? '<span style="color:#E65100;font-weight:700">' + plFmtH(s.attente) + '</span>' : '—') + '</td></tr>'; }).join('')
       + '</table></div>');
 

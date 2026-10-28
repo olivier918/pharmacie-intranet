@@ -247,5 +247,65 @@ t('... et on dit où la retrouver pour la remettre',
 t('c’est réservé aux administrateurs',
   /plContratRetirer = function \(cid\) \{\n\s*if \(!plGarde\(\)\) return;/.test(src));
 
+
+// ── La remise à zéro, et l'oubli ────────────────────────────────────────────
+// CE QUI SE JOUE. Olivier : « l'historique disparaît quand au bout de 3 mois
+// ET une mise à 0 ». Les DEUX conditions, pas l'une ou l'autre — et c'est la
+// seule lecture qui tienne : un mouvement qui compte encore dans le solde ne
+// peut pas disparaître de la liste censée l'expliquer. On n'oublie que ce qui
+// est soldé *et* ancien.
+//
+// Et une remise à zéro n'efface rien : elle pose une date. Les exceptions,
+// elles, sont le planning lui-même — les supprimer effacerait des journées de
+// travail. Ce qui disparaît, c'est une ligne dans le détail du compteur.
+console.log('\nLa remise à zéro, et l’oubli à trois mois');
+eval(bloc("const PL_OUBLI_MOIS =", "3;").replace(/^\s*const /, 'globalThis.'));
+eval(['plRazDe', 'plApresRaz', 'plEncoreLisible'].map(extraire).join('\n'));
+const AUJ = '2026-10-28';
+const sansRaz = { id: 'c1' }, avecRaz = { id: 'c1', razAt: '2026-09-30' };
+
+t('la fenêtre d’oubli est de trois mois', PL_OUBLI_MOIS === 3);
+t('sans remise à zéro, tout compte',
+  plRazDe(sansRaz) === null && plApresRaz(sansRaz, '2020-01-01') === true);
+t('APRÈS LA REMISE À ZÉRO, LE MOUVEMENT COMPTE', plApresRaz(avecRaz, '2026-10-01') === true);
+t('AVANT, IL NE COMPTE PLUS — il a été récupéré ou payé',
+  plApresRaz(avecRaz, '2026-09-29') === false);
+t('le jour même de la remise est soldé, pas reporté',
+  plApresRaz(avecRaz, '2026-09-30') === false);
+
+console.log('\nOn n’oublie que ce qui est soldé ET ancien');
+t('un mouvement qui compte encore reste lisible, même vieux de deux ans',
+  plEncoreLisible(sansRaz, '2024-01-01', AUJ) === true);
+t('UN MOUVEMENT SOLDÉ MAIS RÉCENT RESTE LISIBLE — on doit pouvoir vérifier',
+  plEncoreLisible(avecRaz, '2026-09-01', AUJ) === true);
+t('SOLDÉ ET VIEUX DE PLUS DE TROIS MOIS, IL DISPARAÎT DE LA LISTE',
+  plEncoreLisible(avecRaz, '2026-05-01', AUJ) === false);
+t('... la limite se joue bien autour de trois mois',
+  plEncoreLisible(avecRaz, '2026-08-20', AUJ) === true
+  && plEncoreLisible(avecRaz, '2026-06-20', AUJ) === false);
+
+console.log('\nCe que la remise à zéro ne fait pas');
+t('ELLE N’EFFACE AUCUNE EXCEPTION — ce sont des journées de travail',
+  !/plExceptions\.splice/.test(bloc('window.plRazFaire = function', '};')));
+t('elle pose une date, un auteur et le solde repris',
+  /c\.razAt = plIso\(new Date\(\)\);/.test(src) && /c\.razSolde = s0\.compte;/.test(src));
+t('elle annonce le solde avant d’agir', /Solde actuel : ' \+ plFmtH\(s0\.compte\)/.test(src));
+t('elle est réservée aux administrateurs',
+  /plRazFaire = function \(cid\) \{\n\s*if \(!plGarde\(\)\) return;/.test(src));
+// FILTRER AVANT DE NETTER, et pas l'inverse : une semaine a cheval sur la
+// remise a zero serait sinon comptee des deux cotes a la fois.
+t('LE SOLDE FILTRE LES MOUVEMENTS AVANT DE NETTER PAR SEMAINE',
+  /plEcartsParSemaine\(c, L\('exceptions'\)\.filter\(x => x && plApresRaz\(c, x\.date\)\)\)/.test(src));
+
+console.log('\nLe détail s’ouvre au clic');
+t('le solde est un bouton, plus un simple chiffre',
+  /onclick="plCompteDetail\(/.test(src) && /title="Voir le détail du compte-temps"/.test(src));
+t('il ouvre une fenêtre qui lui est propre', /id="pl-ov-cpt"/.test(src));
+t('le détail est semaine par semaine', /semaine du ' \+ plJoliDate\(b\.lun\)/.test(src));
+t('... et chaque mouvement y porte son signe',
+  /\(e < 0 \? '' : '\+'\) \+ plFmtH\(e\)/.test(src));
+t('les semaines soldées se lisent encore, en gris', /pl-sub">soldé</.test(src));
+t('et la remise à zéro se déclenche de là', /plRazFaire\(\\'' \+ c\.id/.test(src));
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
