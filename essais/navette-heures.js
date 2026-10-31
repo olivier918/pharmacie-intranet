@@ -84,8 +84,8 @@ t('à 35 h pile, on est à temps complet',
 
 // ── LE MOIS : la somme des semaines, pas la moyenne ────────────────────────
 console.log('\nLe mois est la somme des semaines, jamais leur moyenne');
-const MOIS = [{ lundi: '2026-10-05', heures: 38 }, { lundi: '2026-10-12', heures: 38 },
-              { lundi: '2026-10-19', heures: 38 }, { lundi: '2026-10-26', heures: 44 }];
+const MOIS = [{ lundi: '2026-10-05', faites: 38 }, { lundi: '2026-10-12', faites: 38 },
+              { lundi: '2026-10-19', faites: 38 }, { lundi: '2026-10-26', faites: 44 }];
 const m = nvMois(MOIS, 35);
 t('les heures faites se totalisent', m.faites === 158);
 // 3 + 3 + 3 + 8 heures au premier taux, et la seule 44ᵉ au second.
@@ -99,12 +99,12 @@ t('ALORS QUE LE TOTAL MENSUEL PARTAGÉ D’UN COUP EN DONNERAIT CENT QUINZE',
 t('... soit sept fois le compte — l’erreur ne passerait pas inaperçue longtemps',
   ABSURDE.t150 > m.t150 * 100);
 t('une semaine à zéro ne gêne personne',
-  nvMois([{ heures: 0 }, { heures: 38 }], 35).t125 === 3);
+  nvMois([{ faites: 0 }, { faites: 38 }], 35).t125 === 3);
 t('le mois d’un temps partiel suit la même logique',
-  nvMois([{ heures: 29 }, { heures: 31 }], 27).c10 === 4.7
-  && nvMois([{ heures: 29 }, { heures: 31 }], 27).cPlus === 1.3);
+  nvMois([{ faites: 29 }, { faites: 31 }], 27).c10 === 4.7
+  && nvMois([{ faites: 29 }, { faites: 31 }], 27).cPlus === 1.3);
 t('les anomalies de la semaine remontent au mois, datées',
-  nvMois([{ lundi: '2026-10-05', heures: 36 }], 27).anomalies[0].lundi === '2026-10-05');
+  nvMois([{ lundi: '2026-10-05', faites: 36 }], 27).anomalies[0].lundi === '2026-10-05');
 t('un mois vide ne tombe pas', nvMois(null, 35).faites === 0 && nvMois([], 35).t125 === 0);
 
 // ── Les périodes d'absence ─────────────────────────────────────────────────
@@ -205,11 +205,11 @@ t('les ' + dedans.length + ' semaines de la plage tombent dans exactement une na
 t('... et aucune n’est réclamée par deux navettes',
   LUNDIS.every(function (l) { return compte[l] <= 1; }));
 t('le tri d’une liste de semaines ne retient que les bonnes',
-  nvSemainesRetenues([{ lundi: '2026-10-12', heures: 38 }, { lundi: '2026-10-19', heures: 44 }],
+  nvSemainesRetenues([{ lundi: '2026-10-12', faites: 38 }, { lundi: '2026-10-19', faites: 44 }],
     '2026-10').length === 1);
 t('... et c’est bien celle qui finit avant la borne',
-  nvSemainesRetenues([{ lundi: '2026-10-12', heures: 38 }, { lundi: '2026-10-19', heures: 44 }],
-    '2026-10')[0].heures === 38);
+  nvSemainesRetenues([{ lundi: '2026-10-12', faites: 38 }, { lundi: '2026-10-19', faites: 44 }],
+    '2026-10')[0].faites === 38);
 t('une liste vide ne tombe pas', nvSemainesRetenues(null, '2026-10').length === 0);
 
 // ── DEUX FENÊTRES DANS UN MÊME DOCUMENT ────────────────────────────────────
@@ -248,18 +248,18 @@ t('LA SEMAINE À 36 H PRÉVUE ET FAITE NE DONNE RIEN',
   nvSemaine(36, 35, 36).t125 === 0 && nvSemaine(36, 35, 36).t150 === 0);
 t('... et la semaine à 34 non plus', nvSemaine(34, 35, 34).t125 === 0);
 t('LE CYCLE ENTIER EST À ZÉRO — c’était la demande',
-  nvMois([{ heures: 36, prevues: 36 }, { heures: 34, prevues: 34 }], 35).t125 === 0);
+  nvMois([{ faites: 36, prevues: 36 }, { faites: 34, prevues: 34 }], 35).t125 === 0);
 t('... et quatre semaines de ce cycle aussi',
-  nvMois([{ heures: 36, prevues: 36 }, { heures: 34, prevues: 34 },
-          { heures: 36, prevues: 36 }, { heures: 34, prevues: 34 }], 35).t125 === 0);
+  nvMois([{ faites: 36, prevues: 36 }, { faites: 34, prevues: 34 },
+          { faites: 36, prevues: 36 }, { faites: 34, prevues: 34 }], 35).t125 === 0);
 // PROPRIETE : la borne du 20 coupe le cycle n'importe ou, et le total ne bouge
 // pas. Une navette ne peut donc pas facturer une heure sup par accident de
 // calendrier.
 t('LE TOTAL NE DÉPEND PAS DE L’ENDROIT OÙ LA BORNE COUPE LE CYCLE',
-  nvMois([{ heures: 34, prevues: 34 }, { heures: 36, prevues: 36 },
-          { heures: 34, prevues: 34 }], 35).t125 === 0
-  && nvMois([{ heures: 36, prevues: 36 }, { heures: 34, prevues: 34 },
-             { heures: 36, prevues: 36 }], 35).t125 === 0);
+  nvMois([{ faites: 34, prevues: 34 }, { faites: 36, prevues: 36 },
+          { faites: 34, prevues: 34 }], 35).t125 === 0
+  && nvMois([{ faites: 36, prevues: 36 }, { faites: 34, prevues: 34 },
+             { faites: 36, prevues: 36 }], 35).t125 === 0);
 
 console.log('\nMais ce qui dépasse vraiment la trame reste dû');
 t('prévu 36, fait 40 : quatre heures', nvSemaine(40, 35, 36).t125 === 4);
@@ -287,7 +287,7 @@ console.log('\nUn temps partiel en cycle suit la même règle');
 t('prévu 28, fait 28, base 27 : rien', nvSemaine(28, 27, 28).c10 === 0);
 t('... et la semaine creuse à 26 non plus', nvSemaine(26, 27, 26).c10 === 0);
 t('LE CYCLE 28 / 26 D’UN CONTRAT À 27 H EST À ZÉRO',
-  nvMois([{ heures: 28, prevues: 28 }, { heures: 26, prevues: 26 }], 27).c10 === 0);
+  nvMois([{ faites: 28, prevues: 28 }, { faites: 26, prevues: 26 }], 27).c10 === 0);
 t('prévu 28, fait 31 : trois heures, plafond des 10 % sur la BASE',
   nvSemaine(31, 27, 28).c10 === 2.7 && nvSemaine(31, 27, 28).cPlus === 0.3);
 t('... le plafond se calcule sur 27 h (2,7), pas sur la semaine du cycle (2,8)',
@@ -297,7 +297,47 @@ console.log('\nSans trame connue, on retombe sur l’horaire fixe');
 t('une semaine sans trame se lit comme avant',
   nvSemaine(38, 35).t125 === 3 && nvSemaine(38, 35, null).t125 === 3);
 t('... et un mois mêlant les deux ne tombe pas',
-  nvMois([{ heures: 38 }, { heures: 36, prevues: 36 }], 35).t125 === 3);
+  nvMois([{ faites: 38 }, { faites: 36, prevues: 36 }], 35).t125 === 3);
+
+// ── LA COUTURE AVEC LE PLANNING ────────────────────────────────────────────
+// CE QUI S'EST PASSÉ. `nvMois` lisait `s.heures`, un nom qui n'existait que
+// dans ces essais-ci : le planning, lui, produit `{ lundi, prevues, faites }`.
+// Tout tombait à zéro — heures faites, 125 %, 150 % — et PAS UNE des
+// quatre-vingts vérifications ne s'en est aperçue, puisqu'elles fabriquaient
+// elles-mêmes la forme qu'elles attendaient. C'est le navigateur, sur un vrai
+// planning, qui l'a vu : une navette entièrement vide.
+//
+// La leçon tient en une ligne : un essai qui invente sa donnée d'entrée ne
+// vérifie que sa propre invention. Celui-ci lit la forme DANS le module qui la
+// produit.
+console.log('\nLa forme que le planning produit est celle que le décompte lit');
+const PLSRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'pl-module.js'), 'utf8');
+t('LE PLANNING ÉMET BIEN { lundi, prevues, theorique, faites }',
+  /out\.push\(\{ lundi: plIso\(d\),/.test(PLSRC)
+  && /prevues: plHeuresSemaineTrame\(c, d\),/.test(PLSRC)
+  && /theorique: plHeuresSemaineTheorique\(c, d\),/.test(PLSRC)
+  && /faites: plHeuresSemaine\(c, d\) \}\);/.test(PLSRC));
+// LA TRAME THEORIQUE ignore les absences : sans elle, une semaine de conges
+// ferait croire a un contrat non tenu, puisque la trame y vaut zero.
+t('... et la trame théorique ne retire pas les absences',
+  /function plHeuresSemaineTheorique\(c, monday\) \{[\s\S]*?const sl = plSlotsTrame\(c, plAddD\(monday, k\)\);\n\s*if \(sl\[0\]\) tot \+= plDurOf\(sl\[0\]\);/.test(PLSRC));
+t('... alors que la trame « prévue », elle, les retire bien',
+  /const sl = plSlotsTrame\(c, d\), ab = plAbs\(c, iso\);/.test(PLSRC));
+t('... et le décompte lit « faites », pas autre chose',
+  /const h = nvNombre\(s && s\.faites\);/.test(src));
+t('... et « prevues », du même nom', /s && s\.prevues != null \? s\.prevues : null/.test(src));
+// La preuve par l'usage : on fabrique une semaine EXACTEMENT comme le planning
+// l'ecrit, et on verifie qu'elle produit quelque chose.
+const COMME_LE_PLANNING = [
+  { lundi: '2026-09-14', prevues: 35, faites: 35 },
+  { lundi: '2026-10-12', prevues: 35, faites: 38.5 }
+];
+const vrai = nvMois(COMME_LE_PLANNING, 35);
+t('UNE SEMAINE AU FORMAT DU PLANNING PRODUIT BIEN SES HEURES', vrai.faites === 73.5);
+t('... et ses heures supplémentaires', vrai.t125 === 3.5);
+t('UN CHAMP MAL NOMMÉ NE PASSE PLUS POUR ZÉRO EN SILENCE',
+  nvMois([{ lundi: '2026-10-12', prevues: 35, heures: 38.5 }], 35).faites === 0
+  && vrai.faites !== 0);
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

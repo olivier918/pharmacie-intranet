@@ -132,7 +132,7 @@ main{padding:18px 22px 30px;min-width:0}
 
     <div class="grp">Paie</div>
     <button class="it" data-v="compteurs" onclick="plVue('compteurs',this)"><i class="p"></i>Heures sup &amp; compte-temps<span class="bientot" id="pl-hs-badge" style="display:none"></span></button>
-    <button class="it" data-v="navette" data-admin="1" onclick="plVue('navette',this)"><i class="p"></i>Navette mensuelle<span class="bientot">bientôt</span></button>
+    <button class="it" data-v="navette" data-admin="1" onclick="plVue('navette',this)"><i class="p"></i>Navette mensuelle</button>
 
     <div class="grp" data-admin="1">Paramètres</div>
     <button class="it" data-v="reglages" data-admin="1" onclick="plVue('reglages',this)"><i class="p"></i>Contrats et seuils</button>
@@ -154,15 +154,7 @@ main{padding:18px 22px 30px;min-width:0}
 
     <div class="vue" id="vue-compteurs"><div id="pl-hs-host" class="pl-vars" style="padding:18px 22px"></div></div>
 
-    <div class="vue" id="vue-navette"><div class="attente">
-      <h2>Navette mensuelle</h2>
-      <p>Génération du fichier destiné au cabinet comptable, au format exact de la navette actuelle.</p>
-      <ul>
-        <li>Heures complémentaires (≤ 10 % et &gt; 10 %) et supplémentaires (125 % / 150 %)</li>
-        <li>Congés payés en jours ouvrés, absences par motif</li>
-        <li>Éléments variables de paie, export au format du cabinet</li>
-      </ul>
-    </div></div>
+    <div class="vue" id="vue-navette"><div id="nv-host" class="pl-vars"></div></div>
 
     <div class="vue" id="vue-reglages"><div class="attente">
       <h2>Contrats et seuils</h2>
@@ -174,6 +166,7 @@ main{padding:18px 22px 30px;min-width:0}
 
 <script src="pl-core.js"></script>
 <script src="pl-module.js"></script>
+<script src="nv-module.js"></script>
 <script>
 /* ── accès ─────────────────────────────────────────────────────────────── */
 let pinStr = '';
@@ -264,6 +257,7 @@ function plVue(v, btn){
   if (v === 'compteurs' && typeof plHsRender === 'function') plHsRender();
   if (v === 'conges' && typeof plAbsRender === 'function') plAbsRender();
   if (v === 'echanges' && typeof plEchRender === 'function') plEchRender();
+  if (v === 'navette' && typeof nvRender === 'function') nvRender();
 }
 /* pl-module appelle showSec sur l'intranet ; ici la navigation est locale */
 function showSec(){ }

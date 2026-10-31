@@ -22,6 +22,7 @@
   window.plHeuresSup = [];      // heures supplémentaires déclarées par les collaborateurs (validation admin)
   window.plAbsences = [];       // périodes d'absence (congés, maternité, maladie, récupération, formation)
   window.plEchanges = [];       // échanges de jours entre collaborateurs (ou permutation de ses propres jours)
+  window.plNavettes = [];       // une par mois : corrections à la main, lignes manuelles, date d'édition
   window.staffDB = [];          // lecture seule ici : sert aux noms et à l'identification par PIN
   window.currentUser = null;
   // Le mot de passe administrateur etait ecrit ICI, en clair, dans un fichier
@@ -36,7 +37,8 @@
   // Rubriques que CETTE page a le droit d'écrire. Ne jamais y ajouter une rubrique
   // d'un autre module : ce qui n'est pas dans cette liste n'est jamais envoyé.
   const PL_COLLS = ['plPostes', 'plRotations', 'plContrats', 'plTrames', 'plExceptions',
-    'plDemandes', 'plReels', 'plNotifs', 'plClotures', 'plHeuresSup', 'plAbsences', 'plEchanges'];
+    'plDemandes', 'plReels', 'plNotifs', 'plClotures', 'plHeuresSup', 'plAbsences', 'plEchanges',
+    'plNavettes'];
   const PLPARAMS_SUBS = ['periodes', 'seuilsComptoir', 'seuilsPharmaciens', 'seuilsPostes', 'motifsAbsence'];
 
   function ref(n) { return window[n]; }

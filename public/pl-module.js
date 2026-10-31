@@ -896,6 +896,20 @@
     }
     return Math.round(tot * 4) / 4;
   }
+  // LA TRAME SEULE, SANS RETIRER LES ABSENCES. Celle du dessus repond a « que
+  // devait-il faire cette semaine-la » — une semaine de conges y vaut zero. Il
+  // faut aussi savoir « que prevoit son contrat cette semaine-la », independamment
+  // de ses absences : sans quoi une semaine de vacances ferait croire a un
+  // contrat non tenu.
+  function plHeuresSemaineTheorique(c, monday) {
+    let tot = 0;
+    for (let k = 0; k < 7; k++) {
+      const sl = plSlotsTrame(c, plAddD(monday, k));
+      if (sl[0]) tot += plDurOf(sl[0]);
+      if (sl[1]) tot += plDurOf(sl[1]);
+    }
+    return Math.round(tot * 4) / 4;
+  }
 
   // ═══ CE QUE LE PLANNING OUVRE A LA NAVETTE ════════════════════════════════
   // Un seul point d'entree, en LECTURE SEULE. La navette ne recopie pas le
@@ -922,6 +936,7 @@
       for (let i = 0; i < 70 && d <= fin; i++) {
         out.push({ lundi: plIso(d),
                    prevues: plHeuresSemaineTrame(c, d),
+                   theorique: plHeuresSemaineTheorique(c, d),
                    faites: plHeuresSemaine(c, d) });
         d = plAddD(d, 7);
       }
