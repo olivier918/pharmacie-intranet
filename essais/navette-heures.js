@@ -339,5 +339,24 @@ t('UN CHAMP MAL NOMMÉ NE PASSE PLUS POUR ZÉRO EN SILENCE',
   nvMois([{ lundi: '2026-10-12', prevues: 35, heures: 38.5 }], 35).faites === 0
   && vrai.faites !== 0);
 
+// ── Les renforts ──────────────────────────────────────────────
+// Un étudiant n'a pas de colonne : le cabinet l'attend sur la ligne
+// « Étudiants », en texte libre, avec son total d'heures.
+console.log('\nLes renforts ne prennent pas de colonne');
+t('UN RENFORT EST RECONNU À SON GROUPE',
+  /function nvEstRenfort\(c\) \{ return c && c\.grp === 'renfort'; \}/.test(src));
+t('... le décompte le met à part, pas dans les colonnes',
+  /lignes: toutes\.filter\(function \(l\) \{ return !l\.renfort; \}\)/.test(src)
+  && /renforts: toutes\.filter\(function \(l\) \{ return l\.renfort; \}\)/.test(src));
+t('... ET LA LIGNE « ÉTUDIANTS » SE REMPLIT TOUTE SEULE',
+  /function nvEtudiantsAuto\(dec\)/.test(src)
+  && /nom \+ ' : ' \+ nvAff\(r\.faites\) \+ ' heures'/.test(src));
+t('... c’est elle que la génération envoie',
+  /etudiants: dos\.etudiants \|\| nvEtudiantsAuto\(dec\)/.test(src));
+// LA LIGNE QUE L'ON CORRIGE A LA MAIN GAGNE : si Olivier a écrit le texte des
+// étudiants lui-même, l'automatique ne le recouvre pas.
+t('... et le texte écrit à la main l’emporte sur l’automatique',
+  /dos\.etudiants \|\| nvEtudiantsAuto/.test(src));
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

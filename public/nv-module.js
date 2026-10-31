@@ -237,7 +237,8 @@
     const mat = nvPeriodes(abs, mois, 'mat');
     const sol = pl ? pl.soldes(c.id) : { compte: 0 };
     return {
-      id: c.id, nom: c.nom, role: c.role, base: base,
+      id: c.id, nom: c.nom, role: c.role, base: base, grp: c.grp,
+      renfort: nvEstRenfort(c),
       plein: nvTempsPlein(base),
       contract: nvHeuresContractuelles(base),
       faites: m.faites, prevues: prevues, theorique: theorique,
@@ -250,11 +251,14 @@
     };
   }
 
+  function nvEstRenfort(c) { return c && c.grp === 'renfort'; }
   function nvDecompte(mois) {
     const pl = nvPL();
     const cs = pl ? pl.contrats() : [];
+    const toutes = cs.map(function (c) { return nvLigne(c, mois); });
     return { mois: mois, fenetre: nvFenetre(mois),
-             lignes: cs.map(function (c) { return nvLigne(c, mois); }),
+             lignes: toutes.filter(function (l) { return !l.renfort; }),
+             renforts: toutes.filter(function (l) { return l.renfort; }),
              attente: pl ? pl.enAttente() : [] };
   }
 
@@ -635,9 +639,18 @@
     });
     if (!man.length) h += '<tr><td colspan="4" style="color:var(--mut);padding:10px 8px">Aucune ligne ce mois-ci.</td></tr>';
     h += '</tbody></table><button class="plus" onclick="nvManuelleAjout()">＋ Ajouter une ligne</button>'
-      + '<div style="margin-top:14px"><h2>Étudiants</h2>'
-      + '<div class="sous" style="margin-bottom:7px">Hors contrat au planning : leurs heures se saisissent à la main.</div>'
-      + '<input class="f w" style="width:100%;max-width:520px;text-align:left" value="' + E(dos.etudiants || '')
+      + '<div style="margin-top:14px"><h2>Étudiants et renforts</h2>'
+      + '<div class="sous" style="margin-bottom:7px">Ils ne prennent pas de colonne : le cabinet les attend '
+      + 'sur une seule ligne, en bas du classeur. PILOT compte leurs heures et propose le texte — '
+      + 'corrigez-le si besoin.</div>'
+      + (dec.renforts.length
+          ? '<div class="sous" style="margin-bottom:7px">Calculé sur la fenêtre : '
+            + dec.renforts.map(function (r) { return '<b>' + E(r.nom) + '</b> ' + nvAff(r.faites) + ' h'; }).join(' · ')
+            + (dos.etudiants ? '' : ' — repris ci-dessous.')
+            + '</div>'
+          : '')
+      + '<input id="nv-etudiants" class="f w" style="width:100%;max-width:520px;text-align:left" value="'
+      + E(dos.etudiants || nvEtudiantsAuto(dec))
       + '" placeholder="Ex. Lise Tison : 45 heures" onchange="nvEtudiants(this.value)"></div></div>';
 
     h += '<div class="pied"><b>Les heures contractuelles sont une mensualisation</b> (base × 52 ÷ 12) : '
@@ -652,6 +665,15 @@
     el.className = 'nv';
     el.innerHTML = h;
   };
+
+  // Le texte que PILOT propose pour la ligne « Etudiants », a partir des heures
+  // qu'il a comptees. Il reste un texte : le cabinet y lit parfois autre chose
+  // qu'un nombre d'heures, et on ne lui impose pas une forme.
+  function nvEtudiantsAuto(dec) {
+    return (dec.renforts || []).filter(function (r) { return r.faites; })
+      .map(function (r) { return r.nom + ' : ' + nvAff(r.faites) + ' heures'; }).join(' · ');
+  }
+  window.nvEtudiantsAuto = nvEtudiantsAuto;
 
   // ── La génération ────────────────────────────────────────────────────────
   // ON ENVOIE CE QUI EST A L'ECRAN, corrections comprises : le fichier ne peut
@@ -688,7 +710,8 @@
     try {
       const r = await fetch('/api/navette', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mois: mois, colonnes: colonnes, etudiants: dos.etudiants || '' })
+        body: JSON.stringify({ mois: mois, colonnes: colonnes,
+                             etudiants: dos.etudiants || nvEtudiantsAuto(dec) })
       });
       if (!r.ok) {
         const j = await r.json().catch(function () { return null; });

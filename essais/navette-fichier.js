@@ -111,20 +111,43 @@ t('LES INTITULÉS DU CABINET SONT INTACTS — ce sont eux qui portent la règle'
 t('le style de chaque case écrite est conservé',
   /<c r="B8" s="\d+"><v>151.67<\/v><\/c>/.test(feuille));
 
-// ── Les refus ───────────────────────────────────────────────────────────────
-console.log('\nCe que le générateur refuse de produire');
-// PLUS DE SEIZE SALARIES NE RENTRENT PAS : le classeur s'arrete a la colonne Q.
-// Mieux vaut un refus qu'un fichier amputé en silence.
+// ── Plus de seize salaries ─────────────────────────────────────────────────
+// Leur classeur s'arrete a la colonne Q. Ce n'est pas a nous de leur demander
+// une colonne de plus chaque fois qu'on embauche : la feuille s'allonge, et
+// chaque colonne neuve est une copie de Q — styles, largeur, bandeaux.
+console.log('\nQuand nous declarons plus de salaries que leur modele n\'en prevoit');
 const trop = { mois: '2026-11', colonnes: [] };
-for (let i = 0; i < 17; i++) trop.colonnes.push({ nom: 'SALARIE ' + i, contract: 151.67 });
-let refus = null;
-try { nx.remplir(GABARIT, trop); } catch (e) { refus = String(e.message); }
-t('DIX-SEPT SALARIÉS NE PASSENT PAS EN SILENCE', refus !== null);
-t('... et le message dit quoi faire', /colonne de plus/.test(refus || ''));
-t('seize passent', nx.remplir(GABARIT, {
-  mois: '2026-11',
-  colonnes: trop.colonnes.slice(0, 16)
-}).length > 1000);
+for (let i = 0; i < 19; i++) trop.colonnes.push({ nom: 'SALARIE ' + i, contract: 151.67 });
+const GRAND = nx.remplir(GABARIT, trop);
+const fGrand = nx.lireZip(GRAND).find(e => e.nom === 'xl/worksheets/sheet1.xml').contenu.toString('utf8');
+t('DIX-NEUF SALARIES TIENNENT DANS LE FICHIER', GRAND.length > 1000);
+t('... le dix-septieme a sa colonne', /<c r="R7"[^>]*t="inlineStr"><is><t[^>]*>SALARIE 16</.test(fGrand));
+t('... le dix-neuvieme aussi', /<c r="T7"[^>]*t="inlineStr"><is><t[^>]*>SALARIE 18</.test(fGrand));
+t('... ET SES HEURES CONTRACTUELLES AVEC', /<c r="T8" s="\d+"><v>151.67<\/v><\/c>/.test(fGrand));
+// LE STYLE EST CE QUI FAIT LE CLASSEUR : une colonne sans bordure ni fond
+// serait pire qu'un refus, parce qu'elle passerait inapercue.
+t('... chaque case neuve porte le style de la colonne Q, ligne par ligne', (function () {
+  function styleDe(x, ref) {
+    const m = new RegExp('<c r="' + ref + '"[^>]*?\\ss="(\\d+)"').exec(x);
+    return m ? m[1] : null;
+  }
+  for (const l of [8, 9, 11, 14, 17, 21, 25]) {
+    const q = styleDe(fGrand, 'Q' + l);
+    if (!q) return false;
+    for (const c of ['R', 'S', 'T']) if (styleDe(fGrand, c + l) !== q) return false;
+  }
+  return true;
+})());
+t('... la feuille declare sa nouvelle etendue', /<dimension ref="A1:T\d+"\/>/.test(fGrand));
+t('... les bandeaux fusionnes vont jusqu\'au bord', /ref="A13:T13"/.test(fGrand) && /ref="C16:T16"/.test(fGrand));
+t('... et les colonnes neuves ont la largeur d\'une colonne de salarie',
+  /<col min="18" max="20" width="20.7109375" customWidth="1"\/>/.test(fGrand));
+// ET SEIZE NE DOIVENT RIEN CHANGER : tant qu'on tient dans leur modele, le
+// fichier est le leur, octet pour octet.
+const SEIZE = nx.lireZip(nx.remplir(GABARIT, { mois: '2026-11', colonnes: trop.colonnes.slice(0, 16) }))
+  .find(e => e.nom === 'xl/worksheets/sheet1.xml').contenu.toString('utf8');
+t('SEIZE SALARIES NE TOUCHENT PAS A LA FEUILLE', /<dimension ref="A1:Q\d+"\/>/.test(SEIZE)
+  && SEIZE.indexOf('r="R7"') < 0 && /ref="A13:Q13"/.test(SEIZE));
 
 // ── Le fichier est valide ──────────────────────────────────────────────────
 console.log('\nLe fichier produit est un classeur valide');

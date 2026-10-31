@@ -150,6 +150,68 @@ const COLONNES = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N
 const MOIS_FR = ['JANVIER', 'FEVRIER', 'MARS', 'AVRIL', 'MAI', 'JUIN', 'JUILLET',
                  'AOUT', 'SEPTEMBRE', 'OCTOBRE', 'NOVEMBRE', 'DECEMBRE'];
 
+// ── Des colonnes au-delà de Q ──────────────────────────────────
+// Leur classeur s'arrête à la colonne Q : seize salariés. Nous en déclarons
+// autant que nous en employons, et ce n'est pas au cabinet de nous redessiner
+// une colonne chaque fois qu'on embauche. On PROLONGE donc la feuille, et
+// chaque colonne neuve est une COPIE DE Q : le style de chaque cellule, ligne
+// par ligne, la largeur, les bandeaux fusionnés qui courent jusqu'au bord, la
+// plage de la feuille. Rien n'est inventé — on duplique la dernière colonne
+// que le cabinet a dessinée, celle qui porte déjà toutes ses bordures.
+function lettre(n) {                      // 1 → A, 17 → Q, 27 → AA
+  let s = '';
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - r - 1) / 26; }
+  return s;
+}
+function etendre(xml, nb) {
+  const dernierPrevu = COLONNES.length + 1;        // 17, la colonne Q
+  const dernier = nb + 1;                          // la dernière colonne qu'il nous faut
+  if (dernier <= dernierPrevu) return { xml: xml, colonnes: COLONNES.slice() };
+  const modele = lettre(dernierPrevu), bord = lettre(dernier);
+  const neuves = [];
+  for (let i = dernierPrevu + 1; i <= dernier; i++) neuves.push(lettre(i));
+
+  // 1. Les cellules. Dans chaque ligne, on recopie celle de Q, avec son style.
+  xml = xml.replace(/<row [^>]*>[\s\S]*?<\/row>/g, function (ligne) {
+    const r = /<row r="(\d+)"/.exec(ligne);
+    if (!r) return ligne;
+    const num = r[1];
+    let out = ligne.replace(/spans="(\d+):\d+"/, 'spans="$1:' + dernier + '"');
+    const i = out.indexOf('<c r="' + modele + num + '"');
+    if (i < 0) return out;                         // ligne qui n'allait pas jusqu'à Q
+    const t = out.indexOf('>', i);
+    const fin = out[t - 1] === '/' ? t + 1 : out.indexOf('</c>', t) + 4;
+    const st = /\ss="(\d+)"/.exec(out.slice(i, t + 1));
+    const style = st ? ' s="' + st[1] + '"' : '';
+    const ajout = neuves.map(function (c) { return '<c r="' + c + num + '"' + style + '/>'; }).join('');
+    return out.slice(0, fin) + ajout + out.slice(fin);
+  });
+
+  // 2. La largeur. Pas celle de Q, qui est ajustée à la longueur d'UN nom :
+  // celle que le cabinet a donnée au plus grand nombre de ses colonnes. C'est
+  // la largeur d'une colonne de salarié ordinaire, et les nôtres le sont.
+  const compte = {};
+  let largeur = '20.7109375';
+  const colRe = /<col min="(\d+)" max="(\d+)"[^>]*?width="([0-9.]+)"/g;
+  let mc;
+  while ((mc = colRe.exec(xml))) {
+    const min = +mc[1], max = +mc[2];
+    if (min < 2 || min > dernierPrevu) continue;        // la colonne A porte les intitulés
+    compte[mc[3]] = (compte[mc[3]] || 0) + (Math.min(max, dernierPrevu) - min + 1);
+  }
+  Object.keys(compte).forEach(function (w) { if (compte[w] > (compte[largeur] || 0)) largeur = w; });
+  xml = xml.replace('</cols>', '<col min="' + (dernierPrevu + 1) + '" max="' + dernier
+    + '" width="' + largeur + '" customWidth="1"/></cols>');
+
+  // 3. La plage de la feuille, et les bandeaux qui vont jusqu'au bord.
+  xml = xml.replace(/<dimension ref="([A-Z]+\d+):[A-Z]+(\d+)"\/>/,
+    '<dimension ref="$1:' + bord + '$2"/>');
+  xml = xml.replace(/<mergeCells[\s\S]*?<\/mergeCells>/, function (bloc) {
+    return bloc.replace(new RegExp(':' + modele + '(\\d+)"', 'g'), ':' + bord + '$1"');
+  });
+  return { xml: xml, colonnes: COLONNES.concat(neuves) };
+}
+
 // `donnees` : { mois:'2026-10', colonnes:[{nom, contract, t125, ...}], etudiants:'…' }
 function remplir(gabarit, donnees) {
   const entrees = lireZip(gabarit);
@@ -163,14 +225,10 @@ function remplir(gabarit, donnees) {
   xml = ecrireCellule(xml, 'C4', an);
 
   const cols = donnees.colonnes || [];
-  // PLUS DE SEIZE SALARIES NE RENTRENT PAS dans ce classeur : il s'arrête à la
-  // colonne Q. On le dit plutôt que de produire un fichier amputé en silence.
-  if (cols.length > COLONNES.length) {
-    throw new Error('Le modèle du cabinet ne tient que ' + COLONNES.length
-      + ' salariés (colonnes B à Q) et il y en a ' + cols.length
-      + '. Demandez-leur une colonne de plus avant de générer.');
-  }
-  COLONNES.forEach(function (col, i) {
+  // Au-delà de seize salariés, la feuille s'allonge d'elle-même.
+  const etendu = etendre(xml, cols.length);
+  xml = etendu.xml;
+  etendu.colonnes.forEach(function (col, i) {
     const c = cols[i] || null;
     xml = ecrireCellule(xml, col + '7', c ? c.nom : '');
     Object.keys(LIGNES).forEach(function (k) {
@@ -186,4 +244,4 @@ function remplir(gabarit, donnees) {
   return ecrireZip(entrees);
 }
 
-module.exports = { remplir, lireZip, ecrireZip, crc32, LIGNES, COLONNES, MOIS_FR };
+module.exports = { remplir, lireZip, ecrireZip, crc32, etendre, lettre, LIGNES, COLONNES, MOIS_FR };
