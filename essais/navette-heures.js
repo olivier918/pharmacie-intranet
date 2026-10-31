@@ -229,5 +229,75 @@ t('un mois de 30 jours borne correctement',
 t('... et février aussi',
   nvPeriodes([{ motif: 'cp', debut: '2026-02-28', fin: '2026-02-28' }], '2026-02', 'cp').length === 1);
 
+// ── LE CYCLE : 36 H UNE SEMAINE, 34 L'AUTRE ────────────────────────────────
+// Olivier, le 31/10 : « certains salariés ont des emplois du temps alternés,
+// semaine à 36 h et semaine à 34 h : pas d'heure supplémentaire dans ce
+// cas-là. »
+//
+// CE QUI SE JOUE. C'est le principe même du cycle : 36 puis 34 valent 35 de
+// moyenne, le contrat est rempli, rien n'est dû en plus. Compter une heure
+// supplémentaire la semaine à 36 reviendrait à payer DEUX FOIS ce que la
+// semaine à 34 a déjà rendu — et à le payer majoré. Sur douze mois et quatre
+// salariés en cycle, l'erreur se chiffre.
+//
+// La référence n'est donc pas 35 h : c'est ce que la TRAME prévoyait cette
+// semaine-là. Une heure est supplémentaire quand elle dépasse à la fois ce qui
+// était prévu ET la durée légale.
+console.log('\nUn cycle 36 / 34 ne produit aucune heure supplémentaire');
+t('LA SEMAINE À 36 H PRÉVUE ET FAITE NE DONNE RIEN',
+  nvSemaine(36, 35, 36).t125 === 0 && nvSemaine(36, 35, 36).t150 === 0);
+t('... et la semaine à 34 non plus', nvSemaine(34, 35, 34).t125 === 0);
+t('LE CYCLE ENTIER EST À ZÉRO — c’était la demande',
+  nvMois([{ heures: 36, prevues: 36 }, { heures: 34, prevues: 34 }], 35).t125 === 0);
+t('... et quatre semaines de ce cycle aussi',
+  nvMois([{ heures: 36, prevues: 36 }, { heures: 34, prevues: 34 },
+          { heures: 36, prevues: 36 }, { heures: 34, prevues: 34 }], 35).t125 === 0);
+// PROPRIETE : la borne du 20 coupe le cycle n'importe ou, et le total ne bouge
+// pas. Une navette ne peut donc pas facturer une heure sup par accident de
+// calendrier.
+t('LE TOTAL NE DÉPEND PAS DE L’ENDROIT OÙ LA BORNE COUPE LE CYCLE',
+  nvMois([{ heures: 34, prevues: 34 }, { heures: 36, prevues: 36 },
+          { heures: 34, prevues: 34 }], 35).t125 === 0
+  && nvMois([{ heures: 36, prevues: 36 }, { heures: 34, prevues: 34 },
+             { heures: 36, prevues: 36 }], 35).t125 === 0);
+
+console.log('\nMais ce qui dépasse vraiment la trame reste dû');
+t('prévu 36, fait 40 : quatre heures', nvSemaine(40, 35, 36).t125 === 4);
+// CINQ, PAS SIX. L'heure de 34 a 35 rattrape le cycle : elle n'est pas due.
+// C'est la meme regle que deux lignes plus bas, et c'est celle qu'on oublie.
+t('prévu 34, fait 40 : CINQ heures — celle de 34 à 35 rattrape le cycle',
+  nvSemaine(40, 35, 34).t125 === 5);
+// LA 35e HEURE D'UNE SEMAINE CREUSE RATTRAPE LE CYCLE : elle n'est pas due.
+t('PRÉVU 34, FAIT 36 : UNE SEULE HEURE, celle qui dépasse 35',
+  nvSemaine(36, 35, 34).t125 === 1);
+t('... et prévu 34, fait 35 : rien du tout, la 35ᵉ rattrape le cycle',
+  nvSemaine(35, 35, 34).t125 === 0);
+t('le seuil ne descend jamais sous la durée légale',
+  nvSemaine(35, 35, 30).t125 === 0 && nvSemaine(36, 35, 30).t125 === 1);
+t('PRÉVU 36, FAIT 46 : dix heures, dont trois au-delà de la 43ᵉ',
+  nvSemaine(46, 35, 36).t125 === 7 && nvSemaine(46, 35, 36).t150 === 3);
+t('... le taux suit la place dans la semaine, la quantité suit l’écart à la trame',
+  nvSemaine(46, 35, 36).t125 + nvSemaine(46, 35, 36).t150 === 10);
+t('et le second taux ne dépasse jamais ce qui est dû',
+  nvSemaine(46, 35, 44).t150 === 2 && nvSemaine(46, 35, 44).t125 === 0);
+t('UNE TRAME AU-DELÀ DE LA 43ᵉ HEURE EST SIGNALÉE',
+  nvSemaine(46, 35, 44).anomalie === 'trame_haute');
+
+console.log('\nUn temps partiel en cycle suit la même règle');
+t('prévu 28, fait 28, base 27 : rien', nvSemaine(28, 27, 28).c10 === 0);
+t('... et la semaine creuse à 26 non plus', nvSemaine(26, 27, 26).c10 === 0);
+t('LE CYCLE 28 / 26 D’UN CONTRAT À 27 H EST À ZÉRO',
+  nvMois([{ heures: 28, prevues: 28 }, { heures: 26, prevues: 26 }], 27).c10 === 0);
+t('prévu 28, fait 31 : trois heures, plafond des 10 % sur la BASE',
+  nvSemaine(31, 27, 28).c10 === 2.7 && nvSemaine(31, 27, 28).cPlus === 0.3);
+t('... le plafond se calcule sur 27 h (2,7), pas sur la semaine du cycle (2,8)',
+  nvSemaine(31, 27, 28).c10 === 2.7);
+
+console.log('\nSans trame connue, on retombe sur l’horaire fixe');
+t('une semaine sans trame se lit comme avant',
+  nvSemaine(38, 35).t125 === 3 && nvSemaine(38, 35, null).t125 === 3);
+t('... et un mois mêlant les deux ne tombe pas',
+  nvMois([{ heures: 38 }, { heures: 36, prevues: 36 }], 35).t125 === 3);
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
