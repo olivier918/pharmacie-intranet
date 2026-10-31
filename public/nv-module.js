@@ -86,14 +86,73 @@
     return tot;
   }
 
+  // ═══ LA FENÊTRE DES HEURES : DU 20 AU 19 ═════════════════════════════════
+  // Olivier, le 31/10 : « la navette est éditée le 20 du mois pour être envoyée
+  // au cabinet afin qu'il prépare les bulletins ; les heures supplémentaires
+  // sont donc comptabilisées au réel du 20 du mois précédent au 20 du mois en
+  // cours », puis, sur la borne : DU 20 AU 19.
+  //
+  // La navette d'octobre couvre donc le 20 septembre au 19 octobre INCLUS, et
+  // celle de novembre reprend au 20 octobre. Aucun jour compté deux fois,
+  // aucun oublié — ce qui n'a rien d'évident : une borne « du 20 au 20 »
+  // ferait payer deux fois les heures du 20.
+  //
+  // CE N'EST PAS LE MOIS CIVIL, et c'est tout le piège de ce module : les
+  // congés, eux, se déclarent au mois civil (voir plus bas). Deux fenêtres
+  // cohabitent donc dans un même document, et les confondre se voit sur un
+  // bulletin.
+  const NV_BORNE = 20;   // premier jour de la fenêtre, dans le mois précédent
+
+  function nvMoisDecale(mois, n) {
+    const a = parseInt(String(mois).slice(0, 4), 10), m = parseInt(String(mois).slice(5, 7), 10);
+    if (!a || !m) return null;
+    const d = new Date(Date.UTC(a, m - 1 + n, 1));
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  }
+  function nvFenetre(mois) {
+    const pre = nvMoisDecale(mois, -1);
+    if (!pre) return null;
+    const j = String(NV_BORNE).padStart(2, '0');
+    return { debut: pre + '-' + j, fin: mois + '-' + String(NV_BORNE - 1).padStart(2, '0') };
+  }
+
+  // ═══ UNE SEMAINE APPARTIENT À LA NAVETTE OÙ ELLE FINIT ═══════════════════
+  // Choix d'Olivier du 31/10. La semaine est l'unité du calcul — on ne la coupe
+  // pas en deux pour la répartir au prorata : on paierait des fractions d'heure
+  // impossibles à défendre devant un salarié. Elle part donc entière sur la
+  // navette dont la fenêtre contient son DIMANCHE.
+  function nvDimanche(lundi) {
+    const d = new Date(String(lundi).slice(0, 10) + 'T12:00:00Z');
+    if (isNaN(d)) return '';
+    d.setUTCDate(d.getUTCDate() + 6);
+    return d.toISOString().slice(0, 10);
+  }
+  function nvSemaineRetenue(lundi, mois) {
+    const f = nvFenetre(mois); if (!f) return false;
+    const dim = nvDimanche(lundi); if (!dim) return false;
+    return dim >= f.debut && dim <= f.fin;
+  }
+  function nvSemainesRetenues(semaines, mois) {
+    return (semaines || []).filter(function (s) {
+      return s && nvSemaineRetenue(s.lundi, mois);
+    });
+  }
+
   // ═══ LES PÉRIODES D'ABSENCE ═══════════════════════════════════════════════
+  // DEUXIÈME FENÊTRE, ET C'EST VOULU : « les vacances sont déclarées du mois »
+  // (Olivier, 31/10). Les congés et les absences suivent le MOIS CIVIL, pas la
+  // fenêtre du 20 au 19 qui ne vaut que pour les heures. Un document, deux
+  // fenêtres — c'est contre-intuitif, et c'est pour cela que l'écran les
+  // affiche toutes les deux en toutes lettres.
+  //
   // Règle d'Olivier (31/10) : « la période TOTALE est indiquée sur les navettes
   // des deux mois concernés ». Un congé du 28/10 au 06/11 s'écrit donc
   // « 28/10 → 06/11 » sur octobre ET sur novembre — on ne découpe pas aux
   // bornes du mois. Vaut pour les congés comme pour les arrêts maladie.
   function nvChevauche(a, mois) {
     if (!a || !a.debut || !a.fin || !mois) return false;
-    const d1 = mois + '-01', d2 = mois + '-31';   // comparaison de chaînes ISO
+    const d1 = mois + '-01', d2 = mois + '-31';   // comparaison de chaînes ISO,
+    // « -31 » majore sans risque : aucune date réelle du mois ne lui est supérieure.
     return a.debut <= d2 && a.fin >= d1;
   }
   function nvPeriodes(absences, mois, motif) {
@@ -121,7 +180,13 @@
   window.nvHeuresContractuelles = nvHeuresContractuelles;
   window.nvPeriodes = nvPeriodes;
   window.nvDuAu = nvDuAu;
+  window.nvFenetre = nvFenetre;
+  window.nvMoisDecale = nvMoisDecale;
+  window.nvDimanche = nvDimanche;
+  window.nvSemaineRetenue = nvSemaineRetenue;
+  window.nvSemainesRetenues = nvSemainesRetenues;
   window.nvSeuils = function () {
-    return { legale: NV_DUREE_LEGALE, seuil150: NV_SEUIL_150, compl: NV_PART_COMPL, semParMois: NV_SEM_PAR_MOIS };
+    return { legale: NV_DUREE_LEGALE, seuil150: NV_SEUIL_150, compl: NV_PART_COMPL,
+             semParMois: NV_SEM_PAR_MOIS, borne: NV_BORNE };
   };
 })();

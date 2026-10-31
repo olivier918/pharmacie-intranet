@@ -136,5 +136,98 @@ t('une seule période s’écrit simplement',
   nvDuAu([ABS[0]]).du === '05/10/2026' && nvDuAu([ABS[0]]).au === '09/10/2026');
 t('aucune période ne laisse rien', nvDuAu([]).du === '' && nvDuAu(null).au === '');
 
+// ── LA FENÊTRE : DU 20 AU 19, PAS LE MOIS CIVIL ────────────────────────────
+// Olivier, le 31/10 : « la navette est éditée le 20 du mois pour être envoyée
+// au cabinet afin qu'il prépare les bulletins ; les heures supplémentaires sont
+// donc comptabilisées au réel du 20 du mois précédent au 20 du mois en cours »,
+// puis, sur la borne exacte : DU 20 AU 19.
+//
+// CE QUI SE JOUE. Une borne « du 20 au 20 » ferait payer DEUX FOIS les heures
+// du 20 — une fois en fin de navette, une fois au début de la suivante. Du 20
+// au 19, aucun jour n'est compté deux fois et aucun n'est oublié : les fenêtres
+// de deux mois consécutifs se touchent sans se chevaucher.
+const { nvFenetre, nvMoisDecale, nvDimanche, nvSemaineRetenue, nvSemainesRetenues } = window;
+console.log('\nLa fenêtre des heures va du 20 au 19, pas du 1ᵉʳ au 31');
+t('la borne est le 20', nvSeuils().borne === 20);
+const FO = nvFenetre('2026-10');
+t('OCTOBRE COMMENCE LE 20 SEPTEMBRE', FO.debut === '2026-09-20');
+t('... ET FINIT LE 19 OCTOBRE', FO.fin === '2026-10-19');
+t('AUCUN JOUR N’EST COMPTÉ DEUX FOIS — novembre reprend le 20 octobre',
+  nvFenetre('2026-11').debut === '2026-10-20');
+t('... ni oublié : la veille est bien la fin d’octobre',
+  nvFenetre('2026-11').debut > FO.fin
+  && nvFenetre('2026-11').debut === '2026-10-20' && FO.fin === '2026-10-19');
+t('JANVIER REMONTE SUR L’ANNÉE PRÉCÉDENTE', nvFenetre('2026-01').debut === '2025-12-20');
+t('... et mars part de février, qui est court', nvFenetre('2026-03').debut === '2026-02-20');
+t('le décalage de mois tient aux deux bouts de l’année',
+  nvMoisDecale('2026-01', -1) === '2025-12' && nvMoisDecale('2026-12', 1) === '2027-01');
+t('un mois illisible ne produit pas de fenêtre',
+  nvFenetre('') === null && nvMoisDecale('n’importe quoi', -1) === null);
+
+// ── LA SEMAINE PART OÙ ELLE FINIT ──────────────────────────────────────────
+// Choix d'Olivier du 31/10. La semaine est l'unité du calcul : on ne la coupe
+// pas au prorata, on paierait des fractions d'heure indéfendables devant un
+// salarié. Elle part entière sur la navette dont la fenêtre contient son
+// DIMANCHE.
+console.log('\nUne semaine coupée par la borne part là où elle finit');
+t('le dimanche se déduit du lundi', nvDimanche('2026-10-19') === '2026-10-25');
+t('... y compris par-dessus un changement de mois', nvDimanche('2026-10-26') === '2026-11-01');
+t('LA SEMAINE DU 19 OCTOBRE FINIT LE 25 : elle part sur NOVEMBRE',
+  nvSemaineRetenue('2026-10-19', '2026-10') === false
+  && nvSemaineRetenue('2026-10-19', '2026-11') === true);
+t('LA SEMAINE DU 12 OCTOBRE FINIT LE 18 : elle reste sur OCTOBRE',
+  nvSemaineRetenue('2026-10-12', '2026-10') === true
+  && nvSemaineRetenue('2026-10-12', '2026-11') === false);
+t('la semaine du 14 septembre finit le 20 : elle est la première d’octobre',
+  nvSemaineRetenue('2026-09-14', '2026-10') === true
+  && nvSemaineRetenue('2026-09-14', '2026-09') === false);
+t('un lundi illisible n’est retenu nulle part',
+  nvSemaineRetenue('', '2026-10') === false && nvSemaineRetenue('2026-10-12', '') === false);
+
+// CHAQUE SEMAINE APPARTIENT A UNE NAVETTE ET UNE SEULE. C'est la propriete qui
+// compte : une semaine comptee deux fois, ou aucune, se paie.
+console.log('\nChaque semaine appartient à une navette et une seule');
+const LUNDIS = [];
+for (let d = new Date(Date.UTC(2026, 7, 3)); d <= new Date(Date.UTC(2027, 0, 25)); d.setUTCDate(d.getUTCDate() + 7)) {
+  LUNDIS.push(d.toISOString().slice(0, 10));
+}
+const MOIS12 = ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01'];
+const compte = {};
+LUNDIS.forEach(function (l) {
+  compte[l] = MOIS12.filter(function (m) { return nvSemaineRetenue(l, m); }).length;
+});
+const dedans = LUNDIS.filter(function (l) {
+  const dim = nvDimanche(l);
+  return dim >= nvFenetre('2026-09').debut && dim <= nvFenetre('2027-01').fin;
+});
+t('les ' + dedans.length + ' semaines de la plage tombent dans exactement une navette',
+  dedans.every(function (l) { return compte[l] === 1; }));
+t('... et aucune n’est réclamée par deux navettes',
+  LUNDIS.every(function (l) { return compte[l] <= 1; }));
+t('le tri d’une liste de semaines ne retient que les bonnes',
+  nvSemainesRetenues([{ lundi: '2026-10-12', heures: 38 }, { lundi: '2026-10-19', heures: 44 }],
+    '2026-10').length === 1);
+t('... et c’est bien celle qui finit avant la borne',
+  nvSemainesRetenues([{ lundi: '2026-10-12', heures: 38 }, { lundi: '2026-10-19', heures: 44 }],
+    '2026-10')[0].heures === 38);
+t('une liste vide ne tombe pas', nvSemainesRetenues(null, '2026-10').length === 0);
+
+// ── DEUX FENÊTRES DANS UN MÊME DOCUMENT ────────────────────────────────────
+// « Les vacances sont déclarées du mois » (Olivier, 31/10) : les congés et les
+// absences suivent le MOIS CIVIL, pas la fenêtre du 20 au 19. C'est
+// contre-intuitif, et c'est voulu — d'où cet essai, qui fige la distinction.
+console.log('\nLes congés suivent le mois civil, pas la fenêtre des heures');
+const CP25 = [{ motif: 'cp', debut: '2026-10-25', fin: '2026-10-27' }];
+t('UN CONGÉ DU 25 OCTOBRE EST SUR LA NAVETTE D’OCTOBRE',
+  nvPeriodes(CP25, '2026-10', 'cp').length === 1);
+t('... alors que les heures de ce jour-là partent sur novembre',
+  nvSemaineRetenue('2026-10-19', '2026-11') === true);
+t('et un congé du 15 septembre n’est pas sur octobre, lui',
+  nvPeriodes([{ motif: 'cp', debut: '2026-09-15', fin: '2026-09-18' }], '2026-10', 'cp').length === 0);
+t('un mois de 30 jours borne correctement',
+  nvPeriodes([{ motif: 'cp', debut: '2026-11-30', fin: '2026-11-30' }], '2026-11', 'cp').length === 1);
+t('... et février aussi',
+  nvPeriodes([{ motif: 'cp', debut: '2026-02-28', fin: '2026-02-28' }], '2026-02', 'cp').length === 1);
+
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);
