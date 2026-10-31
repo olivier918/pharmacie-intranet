@@ -882,6 +882,71 @@
     }
     return Math.round(tot * 4) / 4;
   }
+  // LES HEURES QUE LA TRAME PREVOYAIT, sans les modifications du jour. C'est la
+  // REFERENCE du decompte de la navette : une semaine a 36 h dans un cycle
+  // 36/34 n'est pas une semaine en heures supplementaires, elle est la semaine
+  // du cycle. Meme boucle que plHeuresSemaine, mais sur la trame seule.
+  function plHeuresSemaineTrame(c, monday) {
+    let tot = 0;
+    for (let k = 0; k < 7; k++) {
+      const d = plAddD(monday, k), iso = plIso(d);
+      const sl = plSlotsTrame(c, d), ab = plAbs(c, iso);
+      if (sl[0] && (!ab[0] || plHeuresConservees(ab[0]))) tot += plDurOf(sl[0]);
+      if (sl[1] && (!ab[1] || plHeuresConservees(ab[1]))) tot += plDurOf(sl[1]);
+    }
+    return Math.round(tot * 4) / 4;
+  }
+
+  // ═══ CE QUE LE PLANNING OUVRE A LA NAVETTE ════════════════════════════════
+  // Un seul point d'entree, en LECTURE SEULE. La navette ne recopie pas le
+  // calcul des heures : deux copies d'une meme regle finissent toujours par
+  // diverger, et c'est exactement le piege n°10 de ce depot. Elle demande.
+  window.plNavette = {
+    // Les contrats a decompter : actifs, et dont le temps se compte.
+    contrats: function () {
+      return L('contrats').filter(c => c && c.actif !== false && !plHorsTemps(c))
+        .slice().sort(plCmp)
+        .map(c => ({ id: c.id, nom: c.nom, role: c.role || '', grp: c.grp,
+                     base: c.base != null ? c.base : null, staffId: c.staffId || null }));
+    },
+    // Les semaines dont le LUNDI tombe dans l'intervalle, avec pour chacune ce
+    // que la trame prevoyait et ce qui a ete fait.
+    semaines: function (cid, debutIso, finIso) {
+      const c = L('contrats').find(x => x.id === cid); if (!c) return [];
+      const out = [];
+      let d = plMonday(new Date(String(debutIso) + 'T12:00'));
+      const fin = new Date(String(finIso) + 'T12:00');
+      // On demarre une semaine avant : la premiere semaine retenue par la
+      // navette peut avoir son lundi dans le mois d'avant.
+      d = plAddD(d, -7);
+      for (let i = 0; i < 70 && d <= fin; i++) {
+        out.push({ lundi: plIso(d),
+                   prevues: plHeuresSemaineTrame(c, d),
+                   faites: plHeuresSemaine(c, d) });
+        d = plAddD(d, 7);
+      }
+      return out;
+    },
+    // Les absences declarees d'un contrat, periodes entieres, non decoupees.
+    absences: function (cid) {
+      return L('absences').filter(a => a && a.contratId === cid && a.debut && a.fin)
+        .map(a => ({ motif: a.motif || 'cp', debut: a.debut, fin: a.fin,
+                     debutAM: !!a.debutAM, finM: !!a.finM }));
+    },
+    // Le compte-temps, pour le document interne — il ne part pas au cabinet.
+    soldes: function (cid) {
+      const c = L('contrats').find(x => x.id === cid);
+      return c ? plSoldes(c) : { compte: 0, navette: 0, attente: 0 };
+    },
+    // Les declarations d'heures encore en attente : elles ne sont pas comptees,
+    // et il faut le dire avant d'envoyer quoi que ce soit.
+    enAttente: function () {
+      return L('heuresSup').filter(d => d && d.statut === 'attente')
+        .map(d => { const c = L('contrats').find(x => x.id === d.contratId);
+          return { nom: c ? c.nom : '?', date: d.date || '', heures: +d.heures || 0 }; });
+    }
+  };
+
   // base contractuelle applicable (moyenne du cycle si elle varie — cf. J-Claude 34,5/35,5)
   function plBase(c) { return c.base != null ? c.base : null; }
 

@@ -1042,6 +1042,37 @@ app.get('/api/config', (req, res) => {
   res.json({ basePatients: basePatients(), renouvBase: basePatients(), version: BUILD_ID });
 });
 
+// ─── NAVETTE DES SALAIRES : le classeur du cabinet comptable ───
+// Le serveur ne calcule RIEN. Le decompte est fait et relu dans le navigateur,
+// corrige a la main si besoin, puis poste tel quel : ici on ne fait que le
+// couler dans le gabarit du cabinet. Une regle de paie ecrite a deux endroits
+// est une regle qui divergera.
+const navetteXlsx = require('./navette-xlsx.js');
+const NAVETTE_GABARIT = path.join(__dirname, 'modeles', 'navette-modele.xlsx');
+
+app.post('/api/navette', express.json({ limit: '1mb' }), (req, res) => {
+  try {
+    const d = req.body || {};
+    if (!/^\d{4}-\d{2}$/.test(String(d.mois || ''))) {
+      return res.status(400).json({ ok: false, error: 'mois_invalide' });
+    }
+    if (!Array.isArray(d.colonnes) || !d.colonnes.length) {
+      return res.status(400).json({ ok: false, error: 'aucun_salarie' });
+    }
+    const gabarit = fs.readFileSync(NAVETTE_GABARIT);
+    const buf = navetteXlsx.remplir(gabarit, d);
+    // Le nom du fichier est celui que le cabinet connait deja.
+    const nom = d.mois + ' NAVETTE SALAIRES-PHARMACIE FERRAN.xlsx';
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition', 'attachment; filename="' + nom.replace(/"/g, '') + '"');
+    res.set('Cache-Control', 'no-store');
+    res.send(buf);
+  } catch (e) {
+    console.error('navette', e);
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
 // ─── Version déployée (pour l'auto-rafraîchissement des postes) ───
 app.get('/api/version', (req, res) => {
   res.set('Cache-Control', 'no-store');

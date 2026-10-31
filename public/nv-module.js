@@ -210,6 +210,63 @@
              au: l.map(function (a) { return nvJoliJour(a.fin); }).join(' et ') };
   }
 
+  // ═══ LE DÉCOMPTE D'UN MOIS, SUR LES VRAIES DONNÉES ═══════════════════════
+  // Rien n'est recalculé ici : les heures viennent du planning par son unique
+  // point d'ouverture (window.plNavette), et le partage par les fonctions pures
+  // du haut de ce fichier.
+  function nvPL() { return (typeof window !== 'undefined' && window.plNavette) || null; }
+
+  // Une ligne par salarié, telle que l'écran la montre et que le fichier la lit.
+  function nvLigne(c, mois) {
+    const pl = nvPL(), f = nvFenetre(mois);
+    const base = nvNombre(c.base);
+    const semTout = pl ? pl.semaines(c.id, f.debut, f.fin) : [];
+    const sem = nvSemainesRetenues(semTout, mois);
+    const m = nvMois(sem, base);
+    const abs = pl ? pl.absences(c.id) : [];
+    const cp = nvPeriodes(abs, mois, 'cp'), mal = nvPeriodes(abs, mois, 'mal');
+    const mat = nvPeriodes(abs, mois, 'mat');
+    const sol = pl ? pl.soldes(c.id) : { compte: 0 };
+    return {
+      id: c.id, nom: c.nom, role: c.role, base: base,
+      plein: nvTempsPlein(base),
+      contract: nvHeuresContractuelles(base),
+      faites: m.faites, semaines: sem,
+      t125: m.t125, t150: m.t150, c10: m.c10, cPlus: m.cPlus,
+      anomalies: m.anomalies,
+      cp: nvDuAu(cp), mal: nvDuAu(mal), mat: nvDuAu(mat),
+      cpPeriodes: cp, malPeriodes: mal, matPeriodes: mat,
+      compte: sol.compte
+    };
+  }
+
+  function nvDecompte(mois) {
+    const pl = nvPL();
+    const cs = pl ? pl.contrats() : [];
+    return { mois: mois, fenetre: nvFenetre(mois),
+             lignes: cs.map(function (c) { return nvLigne(c, mois); }),
+             attente: pl ? pl.enAttente() : [] };
+  }
+
+  // LES CORRECTIONS A LA MAIN SURVIVENT AU RECALCUL. On ne remplace jamais une
+  // valeur saisie : on la pose a cote de la valeur calculee, et l'ecran montre
+  // les deux. Sans cela, « Tout recalculer » effacerait le travail de relecture.
+  function nvAppliquer(ligne, corr) {
+    const o = Object.assign({}, ligne, { calcule: {} });
+    if (!corr) return o;
+    ['base', 'contract', 't125', 't150', 'c10', 'cPlus'].forEach(function (k) {
+      if (corr[k] == null || corr[k] === '') return;
+      o.calcule[k] = ligne[k];
+      o[k] = nvNombre(corr[k]);
+    });
+    ['cp', 'mal', 'mat'].forEach(function (k) {
+      if (!corr[k]) return;
+      o.calcule[k] = ligne[k];
+      o[k] = { du: String(corr[k].du || ''), au: String(corr[k].au || '') };
+    });
+    return o;
+  }
+
   // ── exposé pour les essais et pour l'écran ───────────────────────────────
   window.nvSemaine = nvSemaine;
   window.nvMois = nvMois;
@@ -217,6 +274,9 @@
   window.nvHeuresContractuelles = nvHeuresContractuelles;
   window.nvPeriodes = nvPeriodes;
   window.nvDuAu = nvDuAu;
+  window.nvDecompte = nvDecompte;
+  window.nvLigne = nvLigne;
+  window.nvAppliquer = nvAppliquer;
   window.nvFenetre = nvFenetre;
   window.nvMoisDecale = nvMoisDecale;
   window.nvDimanche = nvDimanche;
