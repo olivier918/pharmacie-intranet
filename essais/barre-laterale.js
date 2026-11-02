@@ -10,8 +10,10 @@
 // se devinent pas. Deux d'entre elles sont contre-intuitives, et c'est
 // précisément pour ça qu'elles sont gardées ici :
 //
-//   • la page OUVERTE reste visible même sous un parent replié — sinon
-//     replier donne l'impression d'avoir quitté l'écran qu'on regarde ;
+//   • replié veut dire replié : RIEN ne dépasse, pas même la page ouverte —
+//     une seule sous-entrée laissée sous un groupe fermé se lit comme un pli
+//     raté. On doit toujours savoir où l'on est, et c'est le GROUPE qui porte
+//     alors la marque de la page ouverte ;
 //   • replier ne doit JAMAIS déclencher la bascule de secours qui ramène au
 //     premier module visible. Masquer par droits, c'est retirer un module ;
 //     replier, c'est ranger. Se faire éjecter parce qu'on a rangé serait
@@ -95,8 +97,19 @@ t('... et un contenu illisible non plus', sbReplies().length === 0);
 
 // ── Ce que le code promet ───────────────────────────────────────────────────
 console.log('\nLes deux exceptions qui ne se devinent pas');
-t('LA PAGE OUVERTE RESTE VISIBLE SOUS UN PARENT REPLIÉ',
-  /else if\(sbReplie\(k\) && !b\.classList\.contains\('active'\)\)\{\n\s*b\.style\.display = 'none';/.test(ix));
+// REPLIÉ VEUT DIRE REPLIÉ. Le groupe fermé ne laisse rien dépasser, pas même
+// la page ouverte : c'est lui qu'on voit, c'est donc lui qui s'allume.
+t('UN GROUPE REPLIÉ NE LAISSE RIEN DÉPASSER',
+  /else if\(sbReplie\(k\)\)\{\n\s*b\.style\.display = 'none';/.test(ix)
+  && !/sbReplie\(k\) && !b\.classList\.contains\('active'\)/.test(ix));
+t('... et il porte lui-même la page ouverte, sinon la barre s’éteindrait',
+  /famillePorteuse\[k\] = 1;/.test(ix)
+  && /p\.classList\.toggle\('sb-porte', !!famillePorteuse\[p\.getAttribute\('data-sec'\)\]\);/.test(ix)
+  && /\.sb-item\.sb-porte\{background:var\(--g-pale\)/.test(ix));
+t('... y compris quand on navigue dans une famille repliée',
+  /if\(p && sbReplie\(sbBtn\.getAttribute\('data-parent'\)\)\) p\.classList\.add\('sb-porte'\);/.test(ix));
+t('... et la marque s’efface dès qu’on sort de la famille',
+  /b\.classList\.remove\('sb-porte'\);/.test(ix));
 t('REPLIER NE DÉCLENCHE PAS LA BASCULE DE SECOURS — seul un masquage le fait',
   /if\(p && p\.style\.display === 'none'\)\{\n\s*b\.style\.display = 'none';\n\s*if\(b\.classList\.contains\('active'\)\) actifMasque = true;/.test(ix));
 t('... et le code dit pourquoi', /replier, c'est ranger/.test(ix));

@@ -106,6 +106,8 @@ header{grid-area:hd;background:#fff;color:var(--gray-900);padding:0 1.5rem;displ
 .mo-i.mo-fige{background:var(--gray-100);cursor:default}
 .sb-item.active{background:var(--g-pale);color:var(--g-dark);border-left-color:var(--g-mid);font-weight:600}
 .sb-item.sb-ouvert{border-left-color:var(--g-mid);color:var(--g-dark)}
+/* Un groupe replie qui contient la page ouverte se porte comme elle. */
+.sb-item.sb-porte{background:var(--g-pale);color:var(--g-dark);border-left-color:var(--g-mid);font-weight:600}
 .sb-sub{padding-left:2.9rem;font-size:.84rem;gap:10px}
 .sb-groupe{font-weight:600}
 .sb-chev{margin-left:auto;font-size:.72rem;line-height:1;color:var(--gray-400);
@@ -3896,7 +3898,7 @@ function showSec(name,btn){
     return;
   }
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.sb-item').forEach(b=>{b.classList.remove('active');b.classList.remove('sb-ouvert');});
+  document.querySelectorAll('.sb-item').forEach(b=>{b.classList.remove('active');b.classList.remove('sb-ouvert');b.classList.remove('sb-porte');});
   document.getElementById('sec-'+name).classList.add('active');
   if(btn) btn.classList.add('active');
   // Active visuellement le bon item même si on n'a pas reçu btn (ex. première ouverture)
@@ -3908,6 +3910,9 @@ function showSec(name,btn){
     const p=document.querySelector('.sb-item[data-sec="'
       + sbBtn.getAttribute('data-parent') + '"]:not([data-parent])');
     if(p) p.classList.add('sb-ouvert');
+    // Groupe replie : c'est LUI qu'on voit, c'est donc lui qui porte la page
+    // ouverte. Sans cela, naviguer dans une famille repliee eteint la barre.
+    if(p && sbReplie(sbBtn.getAttribute('data-parent'))) p.classList.add('sb-porte');
   }
   // Mise à jour du fil d'Ariane
   const bc=document.getElementById('breadcrumb');
@@ -12579,22 +12584,33 @@ function appliquerModules(){
   // UNE SOUS-ENTREE DISPARAIT AVEC SON PARENT — masque, ou replie. La laisser
   // seule donnerait une ligne indentee sous rien.
   //
-  // DEUX NUANCES, ET ELLES COMPTENT :
-  //   • la page OUVERTE reste visible meme sous un parent replie — on doit
-  //     toujours voir ou l'on est, sinon replier donne l'impression d'avoir
-  //     quitte l'ecran qu'on regarde ;
-  //   • un parent REPLIE ne declenche pas la bascule de secours. Masquer par
-  //     droits, c'est retirer un module ; replier, c'est ranger. Se faire
-  //     ejecter vers Livraisons parce qu'on a range la barre serait absurde.
+  // REPLIE VEUT DIRE REPLIE : rien ne depasse, pas meme la page ouverte. Une
+  // seule sous-entree qui reste affichee sous un groupe ferme ressemble a un
+  // pli rate, et c'est bien ainsi qu'on la lit. On doit toujours savoir ou
+  // l'on est — c'etait la raison de laisser depasser la page ouverte, et elle
+  // reste valable ; c'est la reponse qui change : le GROUPE porte la marque de
+  // la page ouverte (voir juste apres).
+  //
+  // UN PARENT REPLIE NE DECLENCHE PAS LA BASCULE DE SECOURS. Masquer par
+  // droits, c'est retirer un module ; replier, c'est ranger. Se faire ejecter
+  // vers Livraisons parce qu'on a range la barre serait absurde.
+  const famillePorteuse = {};
   document.querySelectorAll('.sidebar .sb-item[data-parent]').forEach(function(b){
     const k = b.getAttribute('data-parent');
     const p = document.querySelector('.sidebar .sb-item[data-sec="' + k + '"]:not([data-parent])');
     if(p && p.style.display === 'none'){
       b.style.display = 'none';
       if(b.classList.contains('active')) actifMasque = true;
-    } else if(sbReplie(k) && !b.classList.contains('active')){
+    } else if(sbReplie(k)){
       b.style.display = 'none';
+      if(b.classList.contains('active')) famillePorteuse[k] = 1;
     }
+  });
+  // Le groupe replie qui contient la page ouverte s'allume a sa place. Sans
+  // cela, replier Logistique depuis Litiges eteindrait toute la barre, et l'on
+  // ne saurait plus d'ou l'on parle.
+  document.querySelectorAll('.sidebar .sb-item[data-sec]:not([data-parent])').forEach(function(p){
+    p.classList.toggle('sb-porte', !!famillePorteuse[p.getAttribute('data-sec')]);
   });
   // Si l'on masque le module actuellement ouvert, on bascule sur le premier
   // visible plutot que de laisser un ecran vide sans moyen d'en sortir.
