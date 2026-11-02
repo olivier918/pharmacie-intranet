@@ -2948,7 +2948,7 @@ function completerModelesSms(){
 
 function markDeleted(coll,id){ if(id==null) return; tombstones.push({c:coll,id:id,t:Date.now()}); }
 // Collections synchronisées « à id » (mêmes noms côté serveur). patients/medecins exclus (pas d'id).
-const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','etiqLibres','ruptures','cmdPasser','saModeles','saTaches','saIndics','ccControles'];
+const SYNCED_COLLS=['deliveries','staffDB','threads','preps','prepTrame','prepExceptions','prepRotation','bpmList','locations','credits','controles','retours','renouvellements','renouvArchives','perfadom','patients','medecins','smsLog','smsTemplates','plPostes','plRotations','plContrats','plTrames','plExceptions','plDemandes','plReels','plNotifs','plClotures','todoPerso','moments','agenda','liens','reunionThemes','reunions','depots','laboratoires','reactions','convos','messages','groupesMsg','litiges','facturesManq','smsProg','etiqFormats','etiqLibres','ruptures','cmdPasser','saModeles','saTaches','saIndics','ccControles'];
 // Sous-journaux de la caisse fusionnés finement par id côté serveur (clé tombstone 'caisse.<sub>').
 // Permet qu'une suppression (relevé/remise/ajustement/commande) se propage sans qu'un poste en
 // retard ne la ressuscite, et qu'une écriture d'un poste ne soit plus écrasée par un autre.
@@ -2985,7 +2985,7 @@ function _collRef(n){ switch(n){
   case 'deliveries':return deliveries; case 'staffDB':return staffDB; case 'threads':return threads;
   case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
   case 'credits':return credits; case 'controles':return controles; case 'retours':return retours;
-  case 'renouvellements':return renouvellements; case 'renouvArchives':return renouvArchives;
+  case 'renouvellements':return renouvellements; case 'renouvArchives':return renouvArchives; case 'perfadom':return perfadom;
   case 'patients':return patients; case 'medecins':return medecins;
   case 'smsLog':return smsLog; case 'smsTemplates':return smsTemplates;
   case 'plPostes':return plPostes; case 'plRotations':return plRotations; case 'plContrats':return plContrats;
@@ -3056,7 +3056,7 @@ async function saveAll(){
   try{
     diffTombstones();   // repère les suppressions locales depuis la dernière lecture serveur
     const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,etiqLibres,ruptures,cmdPasser,saModeles,saTaches,saIndics,ccControles,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
+      body:JSON.stringify({staffDB,patients,medecins,deliveries,threads,preps,prepTrame,prepExceptions,prepRotation,bpmList,locations,locTypes:locTypesDB,locProvenances:locProvDB,caisse,credits,labo,ADMIN,controles,controlesMail,retours,renouvellements,renouvArchives,perfadom,smsLog,smsTemplates,plParams,plPostes,plRotations,plContrats,plTrames,plExceptions,plDemandes,plReels,plNotifs,plClotures,journal,demandes,todoPerso,moments,agenda,liens,reunionThemes,reunions,depots,laboratoires,reactions,convos,messages,groupesMsg,litiges,facturesManq,smsProg,etiqFormats,etiqLibres,ruptures,cmdPasser,saModeles,saTaches,saIndics,ccControles,modulesParPoste,sonnetteRpi,tombstones,banque,bluestone:{nom:BLUESTONE.nom,mail:BLUESTONE.mail}})});
     if(r.ok){
       const j=await r.json().catch(function(){ return null; });
       ok = !j || j.ok!==false;
@@ -3124,6 +3124,7 @@ async function loadAll(){
     if(data.retours)retours=data.retours;
     if(data.renouvellements)renouvellements=data.renouvellements;
     if(data.renouvArchives)renouvArchives=data.renouvArchives;
+    if(data.perfadom)perfadom=data.perfadom;
     if(Array.isArray(data.smsLog))smsLog=data.smsLog;
     if(Array.isArray(data.smsTemplates))smsTemplates=data.smsTemplates;
     if(Array.isArray(data.prepTrame))prepTrame=data.prepTrame;
@@ -3198,6 +3199,7 @@ setInterval(async()=>{
         if(d.retours)retours=d.retours;
         if(d.renouvellements)renouvellements=d.renouvellements;
         if(d.renouvArchives)renouvArchives=d.renouvArchives;
+        if(d.perfadom)perfadom=d.perfadom;
         if(d.bluestone&&d.bluestone.mail)BLUESTONE.mail=d.bluestone.mail;
         if(d.banque)banque=d.banque;
         // Rafraîchir aussi staffDB / labo / ADMIN pour éviter qu'un onglet resté ouvert
@@ -3457,7 +3459,7 @@ function bandeauAnniversaire(prenom){
 // - On inactivity (5 min), only PIN required to resume
 // - Full logout clears day session
 
-let currentUser=null, delivView='jour', currentThread=null, bpmFilter=null, renouvellements=[], renouvArchives=[];
+let currentUser=null, delivView='jour', currentThread=null, bpmFilter=null, renouvellements=[], renouvArchives=[], perfadom=[];
 
 // ═══════════ JOURNAL DES ACCÈS ═══════════
 // Un appel, et on n'attend pas la réponse : le journal accompagne le geste, il
@@ -3758,6 +3760,7 @@ document.addEventListener('keydown', e => {
 const SEC_LABEL = {
   livraisons:'Livraisons',
   renouvellement:'Renouvellement',
+  perfadom:'Perfusions à domicile',
   messagerie:'Cahier de transmission',
   reunion:'Réunion d’équipe',
   depots:'Boîte de réception',
@@ -3902,6 +3905,7 @@ function showSec(name,btn){
   if(name==='caisse')renderCaisse();
   if(name==='backoffice'){renderStaff();renderPatients();applyAdminUI();}
   if(name==='renouvellement'&&window.rnRender)rnRender();
+  if(name==='perfadom'&&window.pfRender)pfRender();
   if(name==='accueil'&&window.acRender)acRender();
   if(name==='reunion'&&window.reRender)reRender();
   if(name==='depots'&&window.odRender)odRender();
@@ -13479,6 +13483,8 @@ document.getElementById('dv-date').value=new Date().toISOString().split('T')[0];
 <script src="vq-module.js"></script>
 <script src="et-module.js"></script>
 <script src="of-module.js"></script>
+<script src="pf-moteur.js"></script>
+<script src="pf-module.js"></script>
 
 <!-- ═══════════ SONNETTE COMPTOIR ═══════════ -->
 <style>

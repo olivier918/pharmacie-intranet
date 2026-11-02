@@ -109,7 +109,13 @@ t('le regroupement n’est plus écrit qu’une fois',
 
 // ── Les autres vues suivent la même règle ──────────────────────────────────
 console.log('\nLes quatre onglets rangent de la même façon');
-t('« À préparer » trie avec rnTrier', /const visible = rnTrier\(rnList\(\)/.test(src));
+// « À préparer » mélange deux listes depuis que les forfaits PERFADOM y
+// remontent : les ordonnances d'abord, les forfaits dus ensuite. Le tri, lui,
+// reste le même pour tout le monde — c'est tout l'intérêt d'avoir une seule
+// fonction de tri.
+t('« À préparer » trie avec rnTrier', /const visible = rnTrier\(ordos\.concat\(forfaits\)\);/.test(src));
+t('... et les deux listes y entrent', /const forfaits = rnPerfadom\(q\);/.test(src)
+  && /const ordos = rnList\(\)/.test(src));
 t('« Programmés » aussi', /const all = rnTrier\(rnList\(\)/.test(src));
 t('« À vérifier » aussi', /const l = rnTrier\(rnList\(\)/.test(src));
 t('plus aucun tri sur la chaîne brute de la date',

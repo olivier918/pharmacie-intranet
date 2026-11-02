@@ -441,7 +441,13 @@
   // retards —, et non ce qui arrive dans la semaine : une échéance à six jours
   // n'appelle aucun geste aujourd'hui, l'afficher en permanence use l'alerte.
   window.rnDueCount = function () {
-    try { return rnList().filter(it => !it.pause && rnDayDiff(it.date) <= 0).length; } catch (e) { return 0; }
+    try {
+      // Ce qui est DÛ, ordonnances et forfaits confondus : la pastille compte
+      // ce que la liste montre, sinon l'une dit deux et l'autre trois.
+      const n = rnList().filter(it => !it.pause && rnDayDiff(it.date) <= 0).length;
+      const f = (typeof window.pfDueCount === 'function') ? window.pfDueCount() : 0;
+      return n + f;
+    } catch (e) { return 0; }
   };
   // Trois états, dans cet ordre de priorité :
   //   rouge  — au moins une échéance est DÉPASSÉE ; c'est ce qui doit sauter aux yeux ;
@@ -465,16 +471,21 @@
     if (rnView === 'check') return rnRenderCheck();
     if (rnView === 'all') return rnRenderAll();
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
-    const visible = rnTrier(rnList()
+    const ordos = rnList()
       .filter(it => !it.pause)                 // arrêt demandé par le patient : passé en « à vérifier »
       // Sans date exploitable, on ne peut pas dire si c'est dans les sept jours :
       // la fiche reste visible ici plutot que de disparaitre sans bruit.
       .filter(it => !rnCleJour(it) || rnDayDiff(rnCleJour(it)) <= 7)
-      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q)));
-    document.getElementById('rn-count').textContent = visible.length ? visible.length + ' ordonnance' + (visible.length > 1 ? 's' : '') + ' à préparer (7 jours)' : '';
+      .filter(it => !q || (it.nom + ' ' + it.prenom).toLowerCase().includes(q));
+    const forfaits = rnPerfadom(q);
+    const visible = rnTrier(ordos.concat(forfaits));
+    document.getElementById('rn-count').textContent = [
+      ordos.length ? ordos.length + ' ordonnance' + (ordos.length > 1 ? 's' : '') + ' à préparer' : '',
+      forfaits.length ? forfaits.length + ' forfait' + (forfaits.length > 1 ? 's' : '') + ' à facturer' : ''
+    ].filter(Boolean).join(' · ') + (visible.length ? ' (7 jours)' : '');
     const wrap = document.getElementById('rn-listwrap');
     if (!visible.length) { wrap.innerHTML = '<div class="rn-empty">Aucune ordonnance à préparer dans les 7 prochains jours.</div>'; return; }
-    wrap.innerHTML = rnParJour(visible, rnCard);
+    wrap.innerHTML = rnParJour(visible, function (it) { return it.pf ? rnCartePf(it) : rnCard(it); });
   };
   function rnBadges(it) {
     const _d = rnDayDiff(it.date);
@@ -546,6 +557,61 @@
   }
   // Vue « Programmés » : TOUS les renouvellements, sans filtre de date,
   // avec modification / report / suppression possibles à tout moment.
+  // ── LES FORFAITS PERFADOM À FACTURER ────────────────────────────────────
+  // Une perfusion à domicile se facture chaque semaine, à terme échu : la
+  // première semaine à J+6, puis tous les sept jours. C'est une échéance datée
+  // comme une autre, et elle a sa place ICI — dans la liste qu'on ouvre le
+  // matin. Une alerte posée dans un écran qu'on n'ouvre pas n'est pas une
+  // alerte.
+  //
+  // ELLES NE VIVENT PAS DANS CE MODULE. Le module Perfusions les calcule à
+  // partir de ses fiches ; celui-ci les affiche et rien de plus. Rien n'est
+  // écrit dans `renouvellements` : deux métiers partagent une liste, pas une
+  // base.
+  function rnPerfadom(q) {
+    if (typeof window.pfDues !== 'function') return [];
+    try {
+      return window.pfDues(7)
+        .filter(d => !q || ((d.nom || '') + ' ' + (d.prenom || '')).toLowerCase().includes(q))
+        .map(d => ({ pf: true, id: 'pf:' + d.ficheId + ':' + d.echeance.no,
+                     ficheId: d.ficheId, no: d.echeance.no, date: d.date,
+                     nom: d.nom || '', prenom: d.prenom || '', ech: d.echeance, retard: d.retard }));
+    } catch (e) { console.warn('rn/perfadom', e); return []; }
+  }
+  // La carte porte une couleur à elle : dans une liste d'ordonnances, une
+  // ligne de facturation doit se voir pour ce qu'elle est.
+  function rnCartePf(it) {
+    const e = it.ech || { lignes: [] };
+    const periode = e.type === 'installation' ? 'Installation et suivi'
+                  : e.type === 'entretien' ? 'Entretien de voie'
+                  : 'Semaine ' + e.no;
+    const codes = (e.lignes || []).map(l => '<b>' + l.code + '</b> (forfait ' + l.num
+      + (l.qte !== 1 ? ' × ' + l.qte : '') + ')').join(' + ');
+    const euros = ((Math.round((e.total || 0) * 100) / 100).toFixed(2)).replace('.', ',') + ' €';
+    return '<div class="rn-card" style="border-left:4px solid #2E6F9E"><div class="rn-main">'
+      + '<div class="rn-who">' + rnEsc(it.nom) + ' ' + rnEsc(it.prenom)
+      + ' <span class="rn-taglbl" style="background:#E8F0F6;color:#2E6F9E">PERFADOM — à facturer</span></div>'
+      + '<div class="rn-meta">' + periode + ' du ' + rnFmtFr(e.du)
+      + (e.au && e.au !== e.du ? ' au ' + rnFmtFr(e.au) : '') + ' · ' + codes + ' · ' + euros + '</div>'
+      + '<div class="rn-meta" style="margin-top:4px;color:#2E6F9E">'
+      + (it.retard > 0 ? 'Exigible depuis ' + it.retard + ' jour(s) — à saisir dans le LGO.'
+                       : 'Exigible le ' + rnFmtFr(it.date) + ' — la semaine est échue, le forfait est dû.')
+      + '</div></div><div class="rn-acts">'
+      + '<button class="rn-btn rn-pri rn-mini" onclick="rnPfFacture(\'' + rnEsc(it.ficheId) + '\',' + it.no + ')">✓ Facturé</button>'
+      + '<button class="rn-btn rn-ghost rn-mini" onclick="rnPfOuvrir(\'' + rnEsc(it.ficheId) + '\')">Voir la fiche</button>'
+      + '</div></div>';
+  }
+  window.rnPfFacture = function (ficheId, no) {
+    if (typeof window.pfFacturerDepuis !== 'function') return;
+    window.pfFacturerDepuis(ficheId, no);
+    rnToast('Forfait noté comme facturé.');
+    rnRender();
+  };
+  window.rnPfOuvrir = function (ficheId) {
+    if (typeof showSec === 'function') showSec('perfadom');
+    if (typeof window.pfOuvrir === 'function') window.pfOuvrir(ficheId);
+  };
+
   function rnRenderAll() {
     const q = (document.getElementById('rn-search').value || '').trim().toLowerCase();
     const all = rnTrier(rnList()
