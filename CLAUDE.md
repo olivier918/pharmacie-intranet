@@ -82,7 +82,7 @@ symptôme est « ça marche puis ça disparaît au rechargement ».
 4. `SYNCED_COLLS` dans `server.js` (collections à `id`), ou `CONFIGS_DATEES`
    pour un objet de réglages fusionné par date
 
-### 5. Ne jamais garder une référence d'objet à travers un `await`
+### 5. Ne jamais garder une référence d'objet à travers une attente
 
 La resynchronisation, toutes les 8 secondes, **remplace les collections** par la
 copie du serveur (`locations = d.locations`). Une boucle qui garde des
@@ -100,6 +100,27 @@ l = locations.find(x => x.id === locId);       // et de nouveau APRÈS
 Pour une opération longue, geler en plus la resynchronisation avec
 `_savePending = true` au début, et enregistrer dans un `finally`. Voir
 `repriseScansLocations()`, dont le premier essai a perdu 72 conversions ainsi.
+
+**L'attente n'est pas toujours un `await`.** Une fenêtre que l'utilisateur
+remplit en est une, et c'est la plus longue de toutes : entre `openSmsModal(...)`
+et le rappel `onSent`, il se passe le temps de relire un message et de cliquer —
+largement plus que huit secondes. Sept envois différés écrivaient ainsi dans
+la fiche d'avant, dont la relance de crédit par SMS : le SMS partait, le fil de
+suivi ne bougeait pas, et rien ne tombait en erreur.
+
+Une fonction pour toute l'application, posée à côté de `_collRef` :
+
+```js
+onSent: (r) => {
+  const cf = fraiche('credits', credId) || c;   // la fiche telle qu'elle est MAINTENANT
+  cf.relances.push({ ... });
+  credTouche(cf);
+}
+```
+
+La règle se teste : `essais/credits-fil-de-suivi.js` remplace la collection
+entre l'ouverture de la fenêtre et l'envoi, exactement comme le fait la
+resynchronisation.
 
 ### 6. Les enregistrements ne sont pas envoyés tout de suite
 
