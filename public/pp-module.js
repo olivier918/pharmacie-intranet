@@ -486,10 +486,12 @@
       info: '<strong>' + E((p.nom || '') + ' ' + (p.prenom || '')) + '</strong>',
       templates: [{ lbl: 'Pr\u00e9paration pr\u00eate', text: texte }],
       onSent: function (r) {
-        p.smsAt = new Date().toISOString();
-        p.smsBy = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : '?';
-        p.smsId = (r && r.id) || null;
-        p.updatedAt = Date.now();
+        // Idem : on redemande la préparation à la collection avant d'y écrire.
+        const pf = P().find(function (x) { return x && x.id === p.id; }) || p;
+        pf.smsAt = new Date().toISOString();
+        pf.smsBy = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.id : '?';
+        pf.smsId = (r && r.id) || null;
+        pf.updatedAt = Date.now();
         if (typeof schedSave === 'function') schedSave();
         if (typeof renderPreps === 'function') renderPreps();
       }

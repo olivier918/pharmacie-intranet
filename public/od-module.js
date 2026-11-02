@@ -638,10 +638,14 @@
         + 'déjà rattaché' + (ou ? ' à son dossier' : '') + '. Il reste valable sept jours.</div>',
       templates: tpls, text: tpls[0].text,
       onSent: function (r) {
-        d.envois = (d.envois || 0) + 1;
-        d.demandeLe = Date.now();
-        d.smsId = (r && r.id) || null;
-        d.updatedAt = Date.now();
+        // La demande telle qu'elle est MAINTENANT : la resynchronisation a pu
+        // remplacer la collection pendant qu'on rédigeait le SMS, et l'objet
+        // qu'on tenait n'en fait alors plus partie.
+        const df = odListe().find(function (x) { return x && x.id === d.id; }) || d;
+        df.envois = (df.envois || 0) + 1;
+        df.demandeLe = Date.now();
+        df.smsId = (r && r.id) || null;
+        df.updatedAt = Date.now();
         if (typeof logAction === 'function') logAction('Document demandé au patient', '');
         odToast('Lien envoyé à ' + (d.prenom || d.nom || 'ce patient') + '.');
         odSave(true); window.odRender();

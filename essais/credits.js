@@ -88,10 +88,14 @@ t('... et elle enregistre', /saveNow\(\)/.test(del));
 console.log('\nLa relance par SMS');
 t('elle part vers la fenêtre d’envoi, sans rien écrire encore',
   /if\(canal==='sms'\)\{[\s\S]{0,120}openCredSms\(c\.id, etape, date, notes\);/.test(ix));
+// ELLE S'ECRIT SUR LA FICHE REDEMANDEE A LA COLLECTION, pas sur celle qu'on
+// tenait avant d'ouvrir la fenêtre : entre les deux, la resynchronisation a pu
+// remplacer `credits`, et l'objet d'origine n'en fait alors plus partie.
+// Voir essais/credits-fil-de-suivi.js.
 t('la relance n’est écrite qu’à la confirmation d’envoi',
-  /onSent:\(r\)=>\{[\s\S]{0,400}c\.relances\.push/.test(ix));
+  /onSent:\(r\)=>\{[\s\S]{0,400}cf\.relances\.push/.test(ix));
 t('... et cette écriture enregistre',
-  /onSent:\(r\)=>\{[\s\S]{0,700}credTouche\(c\);/.test(ix));
+  /onSent:\(r\)=>\{[\s\S]{0,800}credTouche\(cf\);/.test(ix));
 t('le texte du SMS porte le montant et l’étape',
   /function buildCredSmsBody/.test(ix));
 

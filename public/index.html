@@ -2981,6 +2981,28 @@ function fusionnerVus(local, distant){
   });
   return distant;
 }
+// ── RETROUVER UN ENREGISTREMENT APRÈS UNE ATTENTE ──────────────────────
+//
+// Toutes les huit secondes, la resynchronisation REMPLACE les collections par
+// celles du serveur. Les objets changent alors d'identité même quand rien n'a
+// bougé : `credits` n'est plus le même tableau, et ses fiches ne sont plus les
+// mêmes objets.
+//
+// Une fonction qui garde une fiche sous le coude PENDANT qu'on rédige un SMS
+// écrit donc, à l'envoi, dans un objet qui n'est plus dans la liste. L'écriture
+// ne se voit nulle part, et disparaît à la première sauvegarde : le fil de
+// suivi ne bouge pas, et personne ne comprend pourquoi, parce que le SMS, lui,
+// est bien parti.
+//
+// AVANT D'ÉCRIRE APRÈS UNE ATTENTE, ON REDEMANDE LA FICHE. Rien d'autre.
+function fraiche(coll, id){
+  try{
+    const l=_collRef(coll);
+    if(Array.isArray(l)){ const x=l.find(r=>r&&r.id===id); if(x) return x; }
+  }catch(e){}
+  return null;
+}
+window.fraiche=fraiche;
 function _collRef(n){ switch(n){
   case 'deliveries':return deliveries; case 'staffDB':return staffDB; case 'threads':return threads;
   case 'preps':return preps; case 'bpmList':return bpmList; case 'locations':return locations;
@@ -5510,8 +5532,9 @@ function openPrepSms(id){
        text:`Bonjour, votre preparation est prete a la Pharmacie du Centre. Merci de venir la retirer avec votre ordonnance aux heures d'ouverture. 02 31 52 15 71.`}
     ],
     onSent:(r)=>{
-      p.smsAt=new Date().toISOString(); p.smsBy=currentUser?.id||'?'; p.smsId=r.id||null;
-      p.updatedAt=Date.now(); renderPreps();
+      const pf=fraiche('preps',id)||p;
+      pf.smsAt=new Date().toISOString(); pf.smsBy=currentUser?.id||'?'; pf.smsId=r.id||null;
+      pf.updatedAt=Date.now(); renderPreps();
     }
   });
 }
@@ -8567,6 +8590,15 @@ ${[1,2].map(ex=>`
 }
 
 // ═══════════ CRÉDITS & PRODUITS AVANCÉS ═══════════
+// LE MONTANT PORTE PAR UNE RELANCE. Celui qui etait du ce jour-la quand la
+// relance le sait, celui du dossier sinon — et dans ce cas on le dit, parce
+// qu'un chiffre d'aujourd'hui presente comme celui d'hier est un mensonge
+// discret.
+function credRelMontant(r, c){
+  const m = (r && r.montant != null) ? r.montant : (c ? c.montant : null);
+  if(!(m > 0)) return { txt:'\u00c0 r\u00e9gulariser', propre:(r && r.montant != null) };
+  return { txt: m.toFixed(2) + ' \u20ac', propre: (r && r.montant != null) };
+}
 function credAmountTxt(c){ return (c.montant && c.montant>0) ? `${c.montant.toFixed(2)} €` : 'À régulariser'; }
 function credAmountHtml(c){ return (c.montant && c.montant>0) ? `${c.montant.toFixed(2)} €` : '<span style="color:var(--gray-500);font-style:italic">À régulariser</span>'; }
 
@@ -8981,6 +9013,7 @@ function saveCred(){
     const jourSaisie=isoLocal(new Date());   // jamais toISOString() : la veille avant 02 h
     credits.unshift({id:Date.now(),...obj,status:'en cours',
       relances:[{date:jourSaisie, type:canal1, etape:1, by:currentUser?.id||'?',
+        montant:(obj.montant||0),
         notes:'Relance orale '+(canal1==='tel'?'par téléphone':'au comptoir')+' à la saisie du crédit'}],
       createdBy:currentUser?.id||'?',createdAt:jourSaisie,updatedAt:Date.now()});
   }
@@ -9073,7 +9106,7 @@ function saveCredRelance(){
     return;
   }
   credEnsureRelances(c);
-  c.relances.push({date, type:canal, etape, notes, by:currentUser?.id||'?'});
+  c.relances.push({date, type:canal, etape, notes, by:currentUser?.id||'?', montant:(c.montant||0)});
   if(canal==='huissier'||etape===5){
     c.status='huissier';
     c.huissierAt=date;
@@ -9181,6 +9214,7 @@ function openCredDetail(id){
     const e=credRelEtape(r), E=CRED_ETAPES[e];
     return `<div style="font-size:.8rem;padding:8px 11px;background:var(--gray-100);border-left:3px solid ${E.col};border-radius:6px;margin-bottom:5px">
       <strong>${r.date?new Date(r.date).toLocaleDateString('fr-FR'):'—'}</strong>${r.time?` à ${r.time}`:''} · ${CRED_REL_LBL[r.type]||r.type||'—'} ${credEtapeBadge(e,true)} · par ${staffName(r.by)}
+      <span style="float:right;font-weight:700;color:${E.col}" title="${credRelMontant(r,c).propre?'Montant d\u00fb le jour de la relance':'Montant actuel du dossier \u2014 cette relance est ant\u00e9rieure au suivi des montants'}">${credRelMontant(r,c).txt}${credRelMontant(r,c).propre?'':'&nbsp;<span style="font-weight:400;color:var(--gray-500)">(aujourd\u2019hui)</span>'}</span>
       ${r.notes?`<div style="margin-top:2px;color:var(--gray-700)">${r.notes}</div>`:''}
       ${r.body?`<div style="margin-top:5px"><button class="btn bs sm" style="padding:3px 9px;font-size:.72rem" onclick="viewArchivedCredMsg(${c.id},${r._idx})">${ico('voir')} Voir le message archivé</button></div>`:''}
     </div>`;
@@ -9393,7 +9427,7 @@ function confirmCredMsg(){
   c.relances.push({
     date: currentMsgDate || now.toISOString().split('T')[0],
     time: now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
-    type: canal, tpl: canal==='sms'?'sms':'courrier', etape:e, subject, body,
+    type: canal, tpl: canal==='sms'?'sms':'courrier', etape:e, subject, body, montant:(c.montant||0),
     notes: currentMsgNotes || `Relance étape ${e} — ${CRED_ETAPES[e].lbl} (${CRED_REL_LBL[canal]||canal})`,
     by: currentUser?.id||'?'
   });
@@ -12187,15 +12221,17 @@ function sendCredPayLinkSms(){
     templates:[{lbl:'Lien de paiement', text:credPaySmsBody(c)}],
     onSent:(r)=>{
       const now=new Date();
-      credEnsureRelances(c);
-      c.relances.push({
+      const cf=fraiche('credits',c.id)||c;
+      credEnsureRelances(cf);
+      cf.relances.push({
         date:now.toISOString().split('T')[0],
         time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
         type:'sms', tpl:'sms', etape:2, body:r.text, smsId:r.id||null, smsTo:r.to||null,
-        notes:'Lien de paiement en ligne envoyé par SMS ('+credPayEuro(c.paiement.montant)+' €)',
+        montant:(cf.montant||0),
+        notes:'Lien de paiement en ligne envoyé par SMS ('+credPayEuro(cf.paiement.montant)+' €)',
         by:currentUser?.id||'?'
       });
-      credPayNoteEnvoi(c.id,'SMS',r.to||null);
+      credPayNoteEnvoi(cf.id,'SMS',r.to||null);
     }
   });
 }
@@ -12218,15 +12254,18 @@ async function sendCredPayLinkMail(){
     const j=await r.json();
     if(!r.ok||!j.ok) throw new Error(j.error||'Envoi refusé par le serveur');
     const now=new Date();
-    credEnsureRelances(c);
-    c.relances.push({
+    // L'ENVOI A PRIS DU TEMPS : la resynchronisation a pu passer pendant
+    // l'attente du serveur de mail. On redemande la fiche avant d'y écrire.
+    const cf=fraiche('credits',c.id)||c;
+    credEnsureRelances(cf);
+    cf.relances.push({
       date:now.toISOString().split('T')[0],
       time:now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
-      type:'mail', tpl:'courrier', etape:3, subject, body,
+      type:'mail', tpl:'courrier', etape:3, subject, body, montant:(cf.montant||0),
       notes:'Lien de paiement en ligne envoyé par mail ('+credPayEuro(p.montant)+' €)',
       by:currentUser?.id||'?'
     });
-    credPayNoteEnvoi(c.id,'mail',c.mail);
+    credPayNoteEnvoi(cf.id,'mail',cf.mail);
   }catch(e){
     alert('Échec de l\'envoi : '+(e.message||'erreur inconnue'));
   }
@@ -12319,16 +12358,20 @@ function openCredSms(credId, etape, date, notes){
     templates:[{lbl:`Étape ${etape}`, text:buildCredSmsBody(c, etape)}],
     onSent:(r)=>{
       const now=new Date();
-      credEnsureRelances(c);
-      c.relances.push({
+      // La fiche telle qu'elle est MAINTENANT : entre l'ouverture de la modale
+      // et l'envoi, la resynchronisation a pu remplacer la collection.
+      const cf=fraiche('credits',credId)||c;
+      credEnsureRelances(cf);
+      cf.relances.push({
         date: date||now.toISOString().split('T')[0],
         time: now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
         type:'sms', tpl:'sms', etape, body:r.text, smsId:r.id||null, smsTo:r.to||null,
+        montant:(cf.montant||0),
         notes: notes || (r.manual ? `Relance étape ${etape} — SMS envoyé manuellement`
                                   : `Relance étape ${etape} — SMS envoyé depuis l'intranet`),
         by: currentUser?.id||'?'
       });
-      credTouche(c);
+      credTouche(cf);
       renderCreds();
     }
   });
@@ -12356,10 +12399,11 @@ function openDelivSms(id){
        text:`Bonjour, un produit de votre commande n'est pas disponible immediatement a la Pharmacie du Centre. Merci de nous rappeler au 02 31 52 15 71.`}
     ],
     onSent:(r)=>{
-      d.smsAt=new Date().toISOString();
-      d.smsBy=currentUser?.id||'?';
-      d.smsId=r.id||null;
-      d.updatedAt=Date.now();
+      const df=fraiche('deliveries',id)||d;
+      df.smsAt=new Date().toISOString();
+      df.smsBy=currentUser?.id||'?';
+      df.smsId=r.id||null;
+      df.updatedAt=Date.now();
       renderD();
     }
   });
