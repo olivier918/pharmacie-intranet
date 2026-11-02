@@ -4835,6 +4835,7 @@ function openDForm(id){
     document.getElementById('dform-title').textContent='Modifier la livraison';
     document.getElementById('d-nom').value=d.nom;
     document.getElementById('d-prenom').value=d.prenom;
+    dobPoser('d-dob', d.dob);
     document.getElementById('d-adresse').value=d.adresse;
     document.getElementById('d-commune').value=d.commune||'';
     document.getElementById('d-tel').value=d.tel;
@@ -4852,9 +4853,17 @@ function openDForm(id){
     document.getElementById('dform-title').textContent='Nouvelle livraison';
     document.getElementById('d-nom').value='';
     document.getElementById('d-prenom').value='';
+    // LA DATE DE NAISSANCE SE VIDE COMME LE RESTE. Un champ oublie au vidage
+    // garde celle du patient precedent, et c'est la pire des erreurs : elle ne
+    // se voit pas, elle s'enregistre, et elle range la livraison au dossier de
+    // quelqu'un d'autre.
+    dobPoser('d-dob', '');
     document.getElementById('d-adresse').value='';
     document.getElementById('d-commune').value='';
     document.getElementById('d-tel').value='';
+    // MEME RAISON POUR LE LIEU : reste sur « EHPAD », il part avec la
+    // livraison suivante, qui va au domicile.
+    document.getElementById('d-lieu').value='Domicile';
     document.getElementById('d-montant').value='';
     document.getElementById('d-date').value=document.getElementById('dv-date').value;
     document.getElementById('d-heure').value='';
@@ -4863,6 +4872,8 @@ function openDForm(id){
     document.getElementById('d-ordo').checked=false;
     document.getElementById('d-notes').value='';
     document.getElementById('d-prepnotes').value='';
+    const q=document.getElementById('ps-q'); if(q) q.value='';
+    const sg=document.getElementById('ps-sugg'); if(sg) sg.style.display='none';
     delete form.dataset.editId;
   }
   form.style.display='block';
@@ -4911,7 +4922,7 @@ function saveD(){
     deliveries.unshift({id:Date.now(),...obj,status:'wait',prepBy:null,livrBy:null,createdBy:currentUser?.id||null,createdAt:nowStamp(),updatedAt:Date.now()});
   }
   // Always update patient record with latest address/commune/tel
-  upsertPatient({nom,prenom,adresse:obj.adresse,commune:obj.commune,tel:obj.tel});
+  upsertPatient({nom,prenom,dob,adresse:obj.adresse,commune:obj.commune,tel:obj.tel});
   closeDForm(); renderD();
 }
 function pSearch(){
@@ -4929,6 +4940,7 @@ function fillP(i){
   const p=psResPatients[i]; if(!p) return;
   document.getElementById('d-nom').value=p.nom||'';
   document.getElementById('d-prenom').value=p.prenom||'';
+  dobPoser('d-dob', p.dob);
   document.getElementById('d-adresse').value=p.adresse||'';
   document.getElementById('d-commune').value=p.commune||'';
   document.getElementById('d-tel').value=p.tel||'';
