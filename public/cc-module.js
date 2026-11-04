@@ -40,12 +40,20 @@
   const ccSave = () => { try { if (typeof saveNow === 'function') saveNow(); } catch (e) {} };
   const ccAdmin = () => { try { return typeof isAdmin === 'function' ? !!isAdmin() : false; } catch (e) { return false; } };
 
-  // Les quatre écarts du pointage, dans l'ordre où la responsable les rencontre.
+  // Ce qui peut clocher au pointage, dans l'ordre où la responsable le
+  // rencontre. Les quatre premiers portent sur une ligne de la facture ; le
+  // dernier porte sur une ligne qui n'aurait pas dû y être du tout — un
+  // article livré que personne n'a commandé. D'où sa place à la fin.
+  //
+  // CETTE LISTE EST LA SEULE SOURCE : les cases du formulaire, les étiquettes
+  // des lignes et la relecture en découlent. Ajouter un motif se fait ici, et
+  // nulle part ailleurs.
   const CC_PROBS = [
-    { k: 'remise',   lbl: 'Remise' },
-    { k: 'ug',       lbl: 'UG' },
-    { k: 'quantite', lbl: 'Quantité' },
-    { k: 'prix',     lbl: 'Prix' }
+    { k: 'remise',      lbl: 'Remise' },
+    { k: 'ug',          lbl: 'UG' },
+    { k: 'quantite',    lbl: 'Quantité' },
+    { k: 'prix',        lbl: 'Prix' },
+    { k: 'noncommande', lbl: 'Non commandé' }
   ];
   const CC_HISTO_JOURS = 30;
 

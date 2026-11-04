@@ -65,17 +65,24 @@ t('... et le module demande confirmation au lieu de refuser',
   /ne commence pas par 17/.test(src) && /On l\\'enregistre quand même/.test(src));
 
 // ── Ce qui cloche ───────────────────────────────────────────────────────────
-console.log('\nLes quatre écarts du pointage');
-t('les quatre cases de la demande sont là, et pas une de plus',
-  CC_PROBS.map(p => p.k).join(',') === 'remise,ug,quantite,prix');
+console.log('\nCe qui peut clocher au pointage');
+t('les cases de la demande sont là, et pas une de plus',
+  CC_PROBS.map(p => p.k).join(',') === 'remise,ug,quantite,prix,noncommande');
 t('elles s’affichent dans la langue de l’officine',
-  CC_PROBS.map(p => p.lbl).join(', ') === 'Remise, UG, Quantité, Prix');
+  CC_PROBS.map(p => p.lbl).join(', ') === 'Remise, UG, Quantité, Prix, Non commandé');
+// UN ARTICLE LIVRÉ QUE PERSONNE N'A COMMANDÉ n'est pas un écart sur une ligne :
+// c'est une ligne qui n'aurait pas dû exister. Il se coche comme les autres,
+// et se relit comme les autres.
+t('UN ARTICLE NON COMMANDÉ SE COCHE ET SE RELIT',
+  ccProbs({ id: 'c', num: '170414', noncommande: true }).map(p => p.lbl).join(',') === 'Non commandé');
+t('... et une commande qui n’a que ce motif n’est pas « sans écart »',
+  !ccSansProbleme({ id: 'c', num: '170414', noncommande: true }));
 const C1 = { id: 'a', num: '170412', remise: true, prix: true };
 t('on relit ce qui a été coché', ccProbs(C1).map(p => p.k).join(',') === 'remise,prix');
 t('une commande sans écart est reconnue comme telle', ccSansProbleme({ id: 'b', num: '170413' }));
 t('... et une commande avec écart ne l’est pas', !ccSansProbleme(C1));
 t('une case à `false` ne compte pas pour une case cochée',
-  ccSansProbleme({ remise: false, ug: false, quantite: false, prix: false }));
+  ccSansProbleme({ remise: false, ug: false, quantite: false, prix: false, noncommande: false }));
 
 // ── Qui recontrôle ──────────────────────────────────────────────────────────
 // LES DESTINATAIRES SONT LES ADMINISTRATEURS, pas deux identifiants écrits en
