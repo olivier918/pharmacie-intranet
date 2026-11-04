@@ -48,11 +48,19 @@
   // CETTE LISTE EST LA SEULE SOURCE : les cases du formulaire, les étiquettes
   // des lignes et la relecture en découlent. Ajouter un motif se fait ici, et
   // nulle part ailleurs.
+  // DEUX PRIX, ET CE SONT DEUX MÉTIERS. Celui de la facture, c'est le tarif
+  // du fournisseur, et la responsable le pointe ; celui de la vente, c'est
+  // celui que le patient paiera, et c'est précisément ce qu'Anouck ou Olivier
+  // recontrôlent ensuite. Les mettre tous les deux sous le mot « Prix » les
+  // rendrait illisibles côte à côte : l'ancien s'appelle donc « Prix d'achat ».
+  // LA CLÉ `prix` NE BOUGE PAS — les contrôles déjà enregistrés la portent,
+  // et une étiquette se change, une donnée ne se migre pas (piège n°7).
   const CC_PROBS = [
     { k: 'remise',      lbl: 'Remise' },
     { k: 'ug',          lbl: 'UG' },
     { k: 'quantite',    lbl: 'Quantité' },
-    { k: 'prix',        lbl: 'Prix' },
+    { k: 'prix',        lbl: 'Prix d’achat' },
+    { k: 'prixvente',   lbl: 'Prix de vente' },
     { k: 'noncommande', lbl: 'Non commandé' }
   ];
   const CC_HISTO_JOURS = 30;

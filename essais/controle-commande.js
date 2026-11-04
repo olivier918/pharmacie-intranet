@@ -67,9 +67,20 @@ t('... et le module demande confirmation au lieu de refuser',
 // ── Ce qui cloche ───────────────────────────────────────────────────────────
 console.log('\nCe qui peut clocher au pointage');
 t('les cases de la demande sont là, et pas une de plus',
-  CC_PROBS.map(p => p.k).join(',') === 'remise,ug,quantite,prix,noncommande');
+  CC_PROBS.map(p => p.k).join(',') === 'remise,ug,quantite,prix,prixvente,noncommande');
 t('elles s’affichent dans la langue de l’officine',
-  CC_PROBS.map(p => p.lbl).join(', ') === 'Remise, UG, Quantité, Prix, Non commandé');
+  CC_PROBS.map(p => p.lbl).join(', ')
+    === 'Remise, UG, Quantité, Prix d’achat, Prix de vente, Non commandé');
+// DEUX PRIX, DEUX MÉTIERS : celui de la facture et celui que le patient
+// paiera. C'est le second que le destinataire recontrôle.
+t('LE PRIX DE VENTE EST UN MOTIF À LUI',
+  ccProbs({ id: 'd', num: '170415', prixvente: true }).map(p => p.lbl).join(',') === 'Prix de vente');
+t('... et il ne se confond pas avec le prix d’achat',
+  ccProbs({ id: 'e', num: '170416', prix: true }).map(p => p.lbl).join(',') === 'Prix d’achat');
+// LA CLÉ `prix` N'A PAS BOUGÉ : un contrôle enregistré avant ce changement se
+// relit toujours, sous son nouveau nom.
+t('UN CONTRÔLE D’AVANT SE RELIT SOUS LE NOUVEAU NOM',
+  ccProbs({ id: 'f', num: '170412', prix: true, remise: true }).map(p => p.k).join(',') === 'remise,prix');
 // UN ARTICLE LIVRÉ QUE PERSONNE N'A COMMANDÉ n'est pas un écart sur une ligne :
 // c'est une ligne qui n'aurait pas dû exister. Il se coche comme les autres,
 // et se relit comme les autres.
@@ -82,7 +93,8 @@ t('on relit ce qui a été coché', ccProbs(C1).map(p => p.k).join(',') === 'rem
 t('une commande sans écart est reconnue comme telle', ccSansProbleme({ id: 'b', num: '170413' }));
 t('... et une commande avec écart ne l’est pas', !ccSansProbleme(C1));
 t('une case à `false` ne compte pas pour une case cochée',
-  ccSansProbleme({ remise: false, ug: false, quantite: false, prix: false, noncommande: false }));
+  ccSansProbleme({ remise: false, ug: false, quantite: false, prix: false,
+                   prixvente: false, noncommande: false }));
 
 // ── Qui recontrôle ──────────────────────────────────────────────────────────
 // LES DESTINATAIRES SONT LES ADMINISTRATEURS, pas deux identifiants écrits en
@@ -208,7 +220,8 @@ const vue = ELS['cc-listes'].innerHTML;
 t('ELLE NE JETTE PAS' + (jet ? ' — ' + jet : ''), jet === null);
 t('la commande qui m’est adressée est en tête', vue.indexOf('170412') < vue.indexOf('170413'));
 t('mes lignes sont annoncées comme miennes', /Pour vous — 1 à revoir/.test(vue));
-t('les écarts cochés s’affichent', /class="cc-p">Remise</.test(vue) && /class="cc-p">Prix</.test(vue));
+t('les écarts cochés s’affichent',
+  /class="cc-p">Remise</.test(vue) && /class="cc-p">Prix d’achat</.test(vue));
 t('UNE COMMANDE SANS ÉCART LE DIT, au lieu de rester muette', /rien à signaler/.test(vue));
 t('la précision écrite se lit', /remise à 24 % au lieu de 30 %/.test(vue));
 t('on voit qui a contrôlé, en initiales', /class="cc-qui"[^>]*>JN</.test(vue));
