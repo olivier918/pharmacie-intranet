@@ -260,6 +260,21 @@
         Les identifiants de lecture Saveris manquent côté serveur : aucune mesure n'est collectée.</div></div>`;
       return;
     }
+    // LA CONNEXION REFUSEE A SON PROPRE BANDEAU. « Le relevé a échoué » dirait
+    // vrai sans rien apprendre : ici, le geste à faire n'est pas de regarder
+    // les armoires, c'est de réparer un accès. Et le dire évite qu'on attende
+    // un rétablissement qui ne viendra pas tout seul.
+    const auth = tpEtat.auth;
+    if (auth && auth.suspendu) {
+      z.innerHTML = `<div class="tp-bandeau grave"><span>⛔</span><div>
+        <b>Saveris refuse la connexion — PILOT a cessé de réessayer.</b>
+        Après ${auth.refus} refus de suite, les tentatives sont suspendues : les répéter ferait
+        bloquer le compte chez Testo, et la surveillance des armoires avec lui.
+        <b>Plus aucune mesure n'arrive.</b> Vérifiez l'accès de lecture Saveris, puis relancez
+        le diagnostic pour réessayer tout de suite.
+        <span style="opacity:.75">(${(auth.message || '').slice(0, 140)})</span></div></div>`;
+      return;
+    }
     const der = tpEtat.dernierTirage;
     const pts = tpEtat.points || [];
     const plusRecent = pts.reduce((m, p) => Math.max(m, new Date(p.derniere).getTime()), 0);

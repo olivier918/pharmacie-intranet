@@ -58,6 +58,54 @@ function requete(options, corps) {
   });
 }
 
+// ─── LE DISJONCTEUR D'AUTHENTIFICATION ───
+//
+// LE 12 NOVEMBRE 2026, TESTO A BLOQUÉ LE COMPTE. Le motif tenait en une ligne
+// dans leur courriel : « several failed login attempts ». Il n'y avait aucune
+// intrusion — c'était nous. Le jeton vit vingt-quatre heures, donc une seule
+// connexion par jour quand tout va bien ; mais dès qu'une connexion ÉCHOUE,
+// aucun jeton n'est mis en cache, et le cycle de quinze minutes la retentait.
+// Quatre-vingt-seize refus par jour, jusqu'au blocage.
+//
+// Et un compte bloqué, ici, ce n'est pas une gêne : c'est la surveillance des
+// frigos qui s'arrête.
+//
+// UN MOT DE PASSE REFUSÉ NE DEVIENT PAS BON PARCE QU'ON LE REPRÉSENTE. Trois
+// refus de suite, et l'on cesse de demander. On réessaie une fois une heure
+// plus tard, puis deux, puis quatre — jusqu'à douze heures au plus. Un clic
+// sur « Diagnostic » dans le back-office réarme tout de suite : derrière ce
+// clic il y a quelqu'un qui vient de corriger quelque chose.
+//
+// SEULS LES REFUS COMPTENT. Un 500 ou une coupure réseau n'est pas de notre
+// fait et ne dit rien du mot de passe : on repassera au cycle suivant, comme
+// avant.
+const AUTH_SEUIL    = 3;                   // refus consécutifs avant de s'abstenir
+const AUTH_ATTENTE  = 60 * 60 * 1000;      // première attente : une heure
+const AUTH_ATTENTE_MAX = 12 * 60 * 60 * 1000;
+let _authKO = { nb: 0, depuis: null, prochain: 0, message: '' };
+
+function authNoter(statut, msg) {
+  // 4xx : c'est l'identifiant, le flux ou le compte qui est en cause.
+  if (!(statut >= 400 && statut < 500)) return;
+  _authKO.nb += 1;
+  if (!_authKO.depuis) _authKO.depuis = new Date().toISOString();
+  _authKO.message = String(msg || '').slice(0, 200);
+  if (_authKO.nb >= AUTH_SEUIL) {
+    const rang = _authKO.nb - AUTH_SEUIL;                 // 0, 1, 2, ...
+    const attente = Math.min(AUTH_ATTENTE * Math.pow(2, rang), AUTH_ATTENTE_MAX);
+    _authKO.prochain = Date.now() + attente;
+  }
+}
+function authOuvert(maintenant) {
+  return _authKO.nb >= AUTH_SEUIL && (maintenant || Date.now()) < _authKO.prochain;
+}
+function authRearmer() { _authKO = { nb: 0, depuis: null, prochain: 0, message: '' }; }
+function authEtat() {
+  return { refus: _authKO.nb, suspendu: authOuvert(), depuis: _authKO.depuis,
+           message: _authKO.message,
+           prochainEssai: _authKO.prochain ? new Date(_authKO.prochain).toISOString() : null };
+}
+
 // ─── Le jeton ───
 // Auth0. Duree de vie constatee : 24 h, sans jeton de rafraichissement — on
 // redemande simplement un jeton quand celui-ci approche de sa fin.
@@ -66,6 +114,16 @@ let _jeton = null;         // { valeur, expireA }
 async function jeton(force) {
   if (!force && _jeton && Date.now() < _jeton.expireA) return _jeton.valeur;
   if (!configure()) throw new Error('SAVERIS_USER / SAVERIS_PASS absents');
+  // LE DISJONCTEUR VAUT AUSSI POUR `force` : la reprise après un 401 de l'API
+  // est une connexion de plus, et c'est le nombre qui fait bloquer le compte.
+  // Seul un humain le réarme, depuis le back-office.
+  if (authOuvert()) {
+    const e = authEtat();
+    throw new Error('Connexion Saveris suspendue après ' + e.refus + ' refus ('
+      + (e.message || 'motif inconnu') + '). Prochain essai le '
+      + new Date(e.prochainEssai).toLocaleString('fr-FR')
+      + '. Back office > Temperatures > Diagnostic pour reessayer tout de suite.');
+  }
 
   const payload = JSON.stringify({
     grant_type: 'password',
@@ -87,11 +145,13 @@ async function jeton(force) {
     // n'apparait jamais ici.
     let msg = r.corps;
     try { const j = JSON.parse(r.corps); msg = (j.error || '') + (j.error_description ? ' — ' + j.error_description : ''); } catch (e) {}
+    authNoter(r.statut, msg);
     throw new Error('Auth0 ' + r.statut + ' : ' + msg);
   }
   const j = JSON.parse(r.corps);
   const duree = Number(j.expires_in) || 86400;
   _jeton = { valeur: j.access_token, expireA: Date.now() + (duree - MARGE_JETON_S) * 1000 };
+  authRearmer();                      // une connexion réussie efface l'ardoise
   return _jeton.valeur;
 }
 
@@ -683,7 +743,8 @@ function routes(app, getDb, deps) {
         SELECT point, MAX(ts) AS derniere,
                (SELECT valeur FROM app_temperatures t2 WHERE t2.point = t1.point ORDER BY ts DESC LIMIT 1) AS valeur
         FROM app_temperatures t1 GROUP BY point ORDER BY point`);
-      res.json({ ok: true, configure: configure(), dernierTirage: _dernier, points: q.rows });
+      res.json({ ok: true, configure: configure(), dernierTirage: _dernier,
+                 auth: authEtat(), points: q.rows });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
@@ -732,6 +793,11 @@ function routes(app, getDb, deps) {
     try {
       etapes.push({ etape: 'identifiants', ok: configure() });
       if (!configure()) return res.json({ ok: false, etapes });
+      // DERRIÈRE CE CLIC, IL Y A QUELQU'UN qui vient de corriger quelque chose :
+      // on réarme le disjoncteur et l'on retente tout de suite.
+      const avant = authEtat();
+      if (avant.refus) etapes.push({ etape: 'disjoncteur', rearme: true, avant: avant });
+      authRearmer();
       const jt = await jeton(true);
       etapes.push({ etape: 'jeton', ok: true, expire_dans_h: Math.round((_jeton.expireA - Date.now()) / 36e5) });
       const pts = await points(jt);
@@ -761,4 +827,9 @@ function routes(app, getDb, deps) {
 }
 
 module.exports = { demarrer, routes, tirage, creerTable, configure, normaliser, lireGroupes,
-                   evaluerAlertes, lireReglages, cycle, POINT_ROBOT };
+                   evaluerAlertes, lireReglages, cycle, POINT_ROBOT,
+                   // Le disjoncteur est expose pour l'essai : il se verifie sans
+                   // reseau, et c'est la moitie de son interet.
+                   _auth: { noter: authNoter, ouvert: authOuvert, etat: authEtat,
+                            rearmer: authRearmer, SEUIL: AUTH_SEUIL,
+                            ATTENTE: AUTH_ATTENTE, ATTENTE_MAX: AUTH_ATTENTE_MAX } };
