@@ -62,7 +62,7 @@ function prendre(nom) {
   return ix.slice(d, f + 2);
 }
 ['dobFr', 'dobIso', 'dobMasque', 'dobPoser', 'dobExigee', 'upsertPatient',
- 'openDForm', 'closeDForm', 'saveD', 'fillP'].forEach(function (n) {
+ 'openDForm', 'closeDForm', 'saveD', 'fillP', 'dCompleterPatient'].forEach(function (n) {
   global[n] = eval('(' + prendre(n) + ')');
 });
 // Les fonctions s'appellent entre elles : elles doivent se voir.
@@ -140,6 +140,57 @@ psResPatients = [patients[0]];
 fillP(0);
 t('SA DATE REMPLACE CELLE QUI TRAÎNAIT À L’ÉCRAN', champ('d-dob').value === '12/03/1948');
 t('... et son nom suit', champ('d-nom').value === 'MARTIN');
+
+// ── LA DATE QUI SE MET TOUTE SEULE ────────────────────────────────
+// Vider le champ à chaque nouveau patient était juste — une date qui traine est
+// une date qu'on enregistre sans la relire. Mais cela laissait l'équipe la
+// ressaisir pour des patients que l'annuaire connait par coeur. Elle se repose
+// donc, quand il n'y a RIEN à deviner.
+console.log('\nLa date se remet toute seule quand elle ne peut pas se tromper');
+patients.length = 0;
+patients.push({ id: 'pt:1', nom: 'THOMAS', prenom: 'Liliane', dob: '1938-03-25',
+                tel: '02 31 00 00 00', adresse: '19 Rue Gambetta', commune: 'Mondeville' });
+openDForm();
+champ('d-nom').value = 'THOMAS'; champ('d-prenom').value = 'Liliane';
+dCompleterPatient();
+t('UN PATIENT CONNU RAMÈNE SA DATE, en français', champ('d-dob').value === '25/03/1938');
+t('... et ce qu’on sait déjà de lui avec', champ('d-tel').value === '02 31 00 00 00'
+  && champ('d-adresse').value === '19 Rue Gambetta' && champ('d-commune').value === 'Mondeville');
+
+// CE QUI EST TAPÉ À LA MAIN EST PLUS RÉCENT QUE L'ANNUAIRE.
+openDForm();
+champ('d-nom').value = 'THOMAS'; champ('d-prenom').value = 'Liliane';
+champ('d-dob').value = '26/03/1938'; champ('d-tel').value = '06 12 34 56 78';
+dCompleterPatient();
+t('CE QUI EST TAPÉ À LA MAIN N’EST JAMAIS ÉCRASÉ', champ('d-dob').value === '26/03/1938'
+  && champ('d-tel').value === '06 12 34 56 78');
+
+// DEUX HOMONYMES ARRETENT TOUT : c'est tout l'objet de la date de naissance.
+patients.push({ id: 'pt:2', nom: 'THOMAS', prenom: 'Liliane', dob: '1951-07-04', tel: '06 99 99 99 99' });
+openDForm();
+champ('d-nom').value = 'THOMAS'; champ('d-prenom').value = 'Liliane';
+dCompleterPatient();
+t('DEUX HOMONYMES NE REMPLISSENT RIEN — en choisir un au hasard serait pire que rien',
+  champ('d-dob').value === '' && champ('d-tel').value === '');
+// Un patient inconnu ne declenche rien non plus, et ne tombe pas.
+openDForm();
+champ('d-nom').value = 'INCONNU'; champ('d-prenom').value = 'Personne';
+dCompleterPatient();
+t('un patient inconnu laisse le formulaire tel quel', champ('d-dob').value === '');
+// Et un nom sans prenom n'est pas une identite : on attend.
+openDForm();
+champ('d-nom').value = 'THOMAS'; champ('d-prenom').value = '';
+dCompleterPatient();
+t('un nom sans prénom n’est pas une identité', champ('d-dob').value === '');
+
+// Le menu de l'annuaire, lui, est revenu sur le champ Nom.
+console.log('\nL’annuaire est de nouveau sous le champ Nom');
+t('LE CHAMP NOM INTERROGE L’ANNUAIRE, comme dans tous les autres formulaires',
+  /id="d-nom"[\s\S]{0,200}acPatient\('d-nom','d-prenom','d-dob','d-ac','d-tel',null,'d-adresse','d-commune'\)/.test(ix));
+t('... et il a le menu où se poser', /<div id="d-ac" class="ac-drop"><\/div>/.test(ix));
+t('... le choix d’un patient y pose sa date', /if\(c\.dobId\) dobPoser\(c\.dobId, p\.dob\);/.test(ix));
+t('... et le nom comme le prénom rappellent l’annuaire en sortant du champ',
+  (ix.match(/onchange="dCompleterPatient\(\)"/g) || []).length === 2);
 
 console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

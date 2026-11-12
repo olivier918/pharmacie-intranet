@@ -704,8 +704,13 @@ tr:hover td{background:#fafffe}
           <div id="ps-sugg" style="background:#fff;border:1px solid var(--gray-200);border-radius:7px;margin-top:3px;display:none;max-height:130px;overflow-y:auto"></div>
         </div>
         <div class="fgrid">
-          <div class="fg"><label>Nom <span class="req">*</span></label><input type="text" id="d-nom" placeholder="NOM"></div>
-          <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="d-prenom" placeholder="Prénom"></div>
+          <div class="fg" style="position:relative"><label>Nom <span class="req">*</span></label>
+            <input type="text" id="d-nom" placeholder="NOM" autocomplete="off"
+              oninput="acPatient('d-nom','d-prenom','d-dob','d-ac','d-tel',null,'d-adresse','d-commune')"
+              onchange="dCompleterPatient()">
+            <div id="d-ac" class="ac-drop"></div>
+          </div>
+          <div class="fg"><label>Prénom <span class="req">*</span></label><input type="text" id="d-prenom" placeholder="Prénom" onchange="dCompleterPatient()"></div>
           <div class="fg"><label>Date de naissance <span class="req">*</span></label><input type="text" inputmode="numeric" maxlength="10" placeholder="JJ/MM/AAAA" oninput="dobMasque(this)" id="d-dob"></div>
           <div class="fg"><label>Adresse</label><input type="text" id="d-adresse" placeholder="Adresse complète"></div>
           <div class="fg"><label>Commune</label><input type="text" id="d-commune" placeholder="Mondeville"></div>
@@ -4956,6 +4961,34 @@ function saveD(){
   upsertPatient({nom,prenom,dob,adresse:obj.adresse,commune:obj.commune,tel:obj.tel});
   closeDForm(); renderD();
 }
+// ── LA FICHE SE COMPLÈTE TOUTE SEULE QUAND ELLE NE PEUT PAS SE TROMPER ─────
+//
+// Au comptoir, on tape le nom et le prénom sans regarder le menu qui s'ouvre
+// dessous. Si l'annuaire ne connaît qu'UNE personne de ce nom, il n'y a rien à
+// deviner : on pose ce qu'on sait déjà d'elle.
+//
+// DEUX RÈGLES, ET ELLES NE SE DISCUTENT PAS :
+//   • on ne remplit QUE les cases restées vides — ce qui a été tapé à la main
+//     est toujours plus récent que ce qu'on a en mémoire ;
+//   • DEUX HOMONYMES ARRÊTENT TOUT. C'est précisément ce que la date de
+//     naissance sert à départager : en poser une au hasard entre deux fiches
+//     serait bien pire que de la laisser vide.
+function dCompleterPatient(){
+  const nom=(document.getElementById('d-nom').value||'').trim().toUpperCase();
+  const prenom=(document.getElementById('d-prenom').value||'').trim().toLowerCase();
+  if(!nom||!prenom) return;
+  const m=patients.filter(function(p){
+    return p && String(p.nom||'').trim().toUpperCase()===nom
+             && String(p.prenom||'').trim().toLowerCase()===prenom;
+  });
+  if(m.length!==1) return;
+  const p=m[0];
+  const poser=function(id,v){ const e=document.getElementById(id); if(e&&!String(e.value||'').trim()&&v) e.value=v; };
+  const dob=document.getElementById('d-dob');
+  if(p.dob && dob && !String(dob.value||'').trim()) dobPoser('d-dob', p.dob);
+  poser('d-tel',p.tel); poser('d-adresse',p.adresse); poser('d-commune',p.commune);
+}
+
 function pSearch(){
   const q=document.getElementById('ps-q').value.toLowerCase();
   const el=document.getElementById('ps-sugg');
