@@ -48,6 +48,11 @@ global.renderD = function () {};
 global.majFabLiv = function () {};
 global.formEnVue = function () {};
 global.psResPatients = [];
+// Le formulaire redessine ses pièces jointes à l'ouverture. Elles ont leur
+// propre essai (livraison-pieces-jointes.js) ; ici, elles ne doivent pas faire
+// tomber celui de la date de naissance.
+global.dPJ = [];
+global.dPjRendre = function () {};
 
 // ── Les vraies fonctions, prises dans la page ──────────────────────────────
 function prendre(nom) {

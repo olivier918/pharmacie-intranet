@@ -217,8 +217,11 @@ t('CHANGER LE POSTE DANS LA FICHE PASSE PAR LE PLANNING, qui annonce les suites'
   /if\(ct&&typeof plSetGrp==='function'&&ct\.grp!==k\)\{ plSetGrp\(ct\.id,k\); renderStaff\(\); return; \}/.test(html));
 t('... et sans contrat au planning, la fiche s’écrit seule',
   /s\.fonction=k; s\.poste=f\.lbl; s\.updatedAt=Date\.now\(\);\n\s*renderStaff\(\); schedSave\(\);/.test(html));
+// Le réglage du poste a suivi la refonte de l'écran : il n'est plus sur la
+// carte de la liste, il est dans la FICHE qui s'ouvre au clic. Ce qui comptait
+// — qu'il existe, au lieu de se figer après la création — n'a pas changé.
 t('LA FICHE A ENFIN UN BOUTON — le poste se figeait après la création',
-  /function posteHtml\(s, admin\)/.test(html) && /\$\{posteHtml\(s, admin\)\}/.test(html));
+  /function posteHtml\(s, admin\)/.test(html) && /posteHtml\(s, true\)/.test(html));
 t('... réservé aux administrateurs',
   /if\(!isAdmin\(\)\)\{ alert\('Action réservée aux administrateurs\.'\); renderStaff\(\); return; \}/.test(html));
 t('le poste enregistré à la création porte son code', /fonction:_lp\?_lp\.k:undefined/.test(html));

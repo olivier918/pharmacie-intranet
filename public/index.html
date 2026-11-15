@@ -495,6 +495,38 @@ tr:hover td{background:#fafffe}
 
 /* ── STAFF ── */
 .staff-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.9rem}
+/* ── La liste des collaborateurs ──────────────────────────────────
+   Une ligne par personne : le portrait, le nom, le poste. Le reste s'ouvre
+   dessous, au clic. Une liste se parcourt du regard ; une grille de cartes
+   couvertes de boutons se dechiffre. */
+.stl-wrap{display:block}
+.stl{display:flex;flex-direction:column;gap:7px}
+.stl-tete{display:flex;align-items:baseline;gap:9px;font-size:.78rem;color:var(--gray-500);padding:2px 4px 4px}
+.stl-tete b{font-size:.9rem;color:var(--gray-700)}
+.stl-grp{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);
+  font-weight:700;padding:10px 4px 2px}
+.stl-r{display:flex;align-items:center;gap:12px;padding:9px 13px;background:#fff;
+  border:1px solid var(--gray-200);border-radius:11px;cursor:pointer;transition:border-color .12s}
+.stl-r:hover{border-color:var(--g-mid)}
+.stl-r.on{border-color:var(--g-mid);background:var(--g-pale);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.stl-av{width:38px;height:38px;border-radius:50%;flex:none;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-weight:700;font-size:.76rem;background-size:cover;background-position:center}
+.stl-id{min-width:0;flex:1}
+.stl-n{font-weight:600;font-size:.94rem;line-height:1.25}
+.stl-p{font-size:.76rem;color:var(--gray-500)}
+.stl-t{display:flex;align-items:center;gap:7px;flex:none}
+.stl-code{font-size:.7rem;color:var(--gray-400);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.stl-chev{color:var(--gray-400);font-size:.8rem;width:14px;text-align:center}
+.stl-etoile{color:#C79A00;font-size:.84rem}
+.stl-manque{font-size:.66rem;font-weight:700;color:#8a5a00;background:#FFF3CD;
+  border:1px solid #ffe08a;padding:1px 8px;border-radius:20px}
+.stl-f{border:1px solid var(--g-mid);border-top:none;border-radius:0 0 11px 11px;
+  background:#fff;padding:14px 16px 13px;margin-top:-7px}
+.stl-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px 20px;margin-bottom:13px}
+.stl-k{font-size:.67rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);margin-bottom:1px}
+.stl-v{font-size:.85rem;color:var(--gray-700)}
+.stl-v.vide{color:var(--gray-400);font-style:italic}
+.stl-b{display:flex;gap:6px;flex-wrap:wrap}
 .sfc{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:1.1rem;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
 .sfav{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:700;color:#fff}
 
@@ -514,6 +546,11 @@ tr:hover td{background:#fafffe}
 .bclose{background:var(--gray-100);color:var(--gray-700)}
 
 /* ── AUTOCOMPLETE ── */
+.dc-pj{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;color:#1D5C3A;
+  background:#E8F3EC;border:1px solid #C9E2D4;border-radius:14px;padding:2px 9px;margin-right:5px;
+  text-decoration:none;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-pj:hover{border-color:#1D5C3A}
+.dc-pj .ico{width:13px;height:13px}
 .ac-drop{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:7px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none;max-height:160px;overflow-y:auto}
 .ac-neuf{color:var(--g-dark,#1D5C3A);font-weight:600;border-top:1px solid var(--gray-200)}
 .ac-item{padding:8px 12px;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-100);display:flex;flex-direction:column;gap:1px}
@@ -735,6 +772,12 @@ tr:hover td{background:#fafffe}
         </div>
         <div class="fg" style="margin-top:.9rem"><label>Informations préparation <span class="hint">— interne, non imprimé sur le ticket</span></label><textarea id="d-prepnotes" placeholder="Produits à préparer, stock, commande en cours, à vérifier…"></textarea></div>
         <div class="fg" style="margin-top:.9rem"><label>Informations de livraison <span class="hint">— imprimé sur le ticket remis au patient</span></label><textarea id="d-notes" placeholder="Produits livrés, message ou consigne pour le patient…"></textarea></div>
+        <div class="fg no-print" style="margin-top:.9rem">
+          <label>Pièces jointes <span class="hint">— ordonnance, devis, courrier… 8 Mo par fichier</span></label>
+          <div id="d-pj-liste"></div>
+          <input type="file" id="d-pj-fichier" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.docx,.xlsx,.doc,.xls"
+                 onchange="dPjAjouter(this)" style="font-size:.84rem">
+        </div>
         <div style="display:flex;gap:8px;margin-top:1rem">
           <button class="btn bp" onclick="saveD()"><svg class="ico"><use href="#ic-valider"></use></svg> Enregistrer</button>
           <button class="btn bs" onclick="closeDForm()">Annuler</button>
@@ -4633,6 +4676,7 @@ function dCard(d){
       ${d.cautionCheque&&!d.chequeRecupereLe?`<div class="dc-row2"><span class="badge" style="background:#EDE7F6;color:#4527A0;border:1px solid #B39DDB;font-weight:700;padding:3px 9px">${ico('euro')} Chèque de caution à récupérer</span></div>`:''}
       ${dSerieAFaire(d)?`<div class="dc-row2"><span class="badge no-print" style="background:#E3F2FD;color:#0D47A1;border:1px solid #90CAF9;font-weight:700;padding:3px 9px;cursor:pointer" onclick="dSerieOuvrir(${d.id})">${ico('modifier')} N° de série à relever</span></div>`:''}
       ${dAFacturer(d)?`<div class="dc-row2"><span class="badge" style="background:#FFF3E0;color:#BF360C;border:1px solid #FFCC80;font-weight:700;padding:3px 9px">${ico('alerte')} Facturation à finaliser — ordonnance récupérée à la livraison</span></div>`:''}
+      ${(d.pj&&d.pj.length)?`<div class="dc-row2 no-print">${d.pj.map(x=>`<a class="dc-pj" href="/api/images/${hEsc(x.id)}" target="_blank" rel="noopener" download="${hEsc(x.nom||'piece-jointe')}">${ico('document')} ${hEsc(x.nom||'pièce jointe')}</a>`).join(' ')}</div>`:''}
       ${d.preuveId?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('photo')} Dépôt photographié${d.preuveAt?' à '+dPreuveHeure(d.preuveAt):''}${d.preuvePar?' par '+staffName(d.preuvePar):''} <span onclick="dVoirPreuve('${d.preuveId}')" style="cursor:pointer;text-decoration:underline">voir la photo</span></span></div>`:''}
       ${d.factureAt?`<div class="dc-row2"><span style="font-size:.72rem;color:#2E7D32">${ico('valider')} Facturé le ${new Date(d.factureAt).toLocaleDateString('fr-FR')} par ${staffName(d.factureBy)} <span onclick="annulerFacture(${d.id})" style="cursor:pointer;color:var(--gray-500);text-decoration:underline;margin-left:6px" title="Remettre en attente">annuler</span></span></div>`:''}
       <div class="dc-row2 no-print" style="margin-top:1px">
@@ -4862,6 +4906,113 @@ function formEnVue(el){
 }
 window.formEnVue = formEnVue;
 
+// ── LES PIÈCES JOINTES D'UNE LIVRAISON ─────────────────────────────
+//
+// Une ordonnance photographiée, un devis, le courrier d'une mutuelle : ce qui
+// accompagne une livraison se perdait jusqu'ici sur un bureau. On le range
+// avec elle.
+//
+// LE FICHIER VA DANS LE COFFRE, PAS DANS LE BLOB. `/api/images` chiffre, et
+// déduplique sur le condensat du contenu ; le blob de données, lui, part en
+// clair à chaque synchronisation et serait à recopier toutes les huit
+// secondes. La livraison ne garde donc que l'identifiant, le nom et le type.
+//
+// LA LISTE VIT HORS DE LA LIVRAISON TANT QU'ON SAISIT. Une nouvelle livraison
+// n'existe pas encore quand on joint le fichier, et une livraison ouverte en
+// modification peut être remplacée sous nos pieds par la resynchronisation
+// (piège n°5). On tient donc la liste à côté, et c'est « Enregistrer » qui
+// la pose sur la fiche — comme tout le reste du formulaire.
+const D_PJ_LBL = {
+  'application/pdf': 'PDF',
+  'image/jpeg': 'image', 'image/png': 'image', 'image/gif': 'image', 'image/webp': 'image',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
+  'application/msword': 'Word', 'application/vnd.ms-excel': 'Excel'
+};
+const D_PJ_EXT = {
+  pdf:'application/pdf', jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png',
+  gif:'image/gif', webp:'image/webp',
+  docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  doc:'application/msword', xls:'application/vnd.ms-excel'
+};
+const D_PJ_MAX = 8 * 1024 * 1024;
+let dPJ = [];                      // les pièces de la saisie en cours
+
+// Le type annoncé par le navigateur d'abord ; l'extension ensuite, parce qu'un
+// scan arrivé d'un réseau partagé arrive parfois sans type du tout.
+function dPjMime(f){
+  const t = String((f && f.type) || '');
+  if (D_PJ_LBL[t]) return t;
+  const ext = (String((f && f.name) || '').split('.').pop() || '').toLowerCase();
+  return D_PJ_EXT[ext] || null;
+}
+function dPjLireBase64(f){
+  return new Promise(function(ok, ko){
+    const r = new FileReader();
+    r.onload = function(){
+      const m = String(r.result || '').match(/^data:[^;]*;base64,(.+)$/);
+      m ? ok(m[1]) : ko(new Error('illisible'));
+    };
+    r.onerror = function(){ ko(new Error('illisible')); };
+    r.readAsDataURL(f);
+  });
+}
+function dPjRendre(){
+  const z = document.getElementById('d-pj-liste'); if (!z) return;
+  if (!dPJ.length) {
+    z.innerHTML = '<div style="font-size:.78rem;color:var(--gray-500);margin-bottom:5px">'
+      + 'Aucune pièce jointe.</div>';
+    return;
+  }
+  z.innerHTML = dPJ.map(function(x, i){
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:.84rem">'
+      + '<a href="/api/images/' + hEsc(x.id) + '" target="_blank" rel="noopener" download="'
+      + hEsc(x.nom || 'piece-jointe') + '" style="display:inline-flex;align-items:center;gap:6px">'
+      + '<span style="font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;background:var(--g-dark,#1D5C3A);'
+      + 'color:#fff;border-radius:4px;padding:1px 6px">' + hEsc(D_PJ_LBL[x.mime] || 'fichier') + '</span>'
+      + hEsc(x.nom || 'pièce jointe') + '</a>'
+      + '<button type="button" class="btn bs sm" style="padding:2px 8px;font-size:.72rem" '
+      + 'onclick="dPjRetirer(' + i + ')">Retirer</button></div>';
+  }).join('');
+}
+window.dPjAjouter = async function(input){
+  const f = input && input.files && input.files[0]; if (!f) return;
+  const rendre = function(){ if (input) input.value = ''; };
+  const mime = dPjMime(f);
+  if (!mime) { alert('Ce type de fichier n’est pas accepté.\n\nPDF, image, Word ou Excel.'); return rendre(); }
+  if (f.size > D_PJ_MAX) {
+    alert('Fichier trop lourd : ' + Math.round(f.size / 1048576) + ' Mo, pour 8 Mo au maximum.');
+    return rendre();
+  }
+  let data;
+  try { data = await dPjLireBase64(f); }
+  catch (e) { alert('Le fichier n’a pas pu être lu.'); return rendre(); }
+  try {
+    const r = await fetch('/api/images', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ mime: mime, data: data }) });
+    const j = await r.json().catch(function(){ return null; });
+    if (!r.ok || !j || !j.ok || !j.id) {
+      alert('La pièce jointe n’a pas pu être enregistrée : ' + ((j && j.error) || ('erreur ' + r.status)));
+      return rendre();
+    }
+    dPJ.push({ id: j.id, nom: String(f.name || 'fichier').slice(0, 120), mime: mime,
+               taille: f.size, par: currentUser?.id || '?', le: new Date().toISOString() });
+    dPjRendre();
+  } catch (e) {
+    alert('La pièce jointe n’a pas pu être enregistrée : serveur injoignable.');
+  }
+  rendre();
+};
+// RETIRER NE SUPPRIME PAS LE FICHIER DU COFFRE. Il est dédupliqué : les mêmes
+// octets peuvent être la pièce jointe d'une autre livraison, ou l'ordonnance
+// d'un dépôt. On détache, on ne détruit pas.
+window.dPjRetirer = function(i){
+  if (i < 0 || i >= dPJ.length) return;
+  dPJ.splice(i, 1);
+  dPjRendre();
+};
+
 function openDForm(id){
   const form=document.getElementById('dform');
   if(id){
@@ -4884,6 +5035,7 @@ function openDForm(id){
     document.getElementById('d-ordo').checked=d.ordo;
     document.getElementById('d-notes').value=d.notes||'';
     document.getElementById('d-prepnotes').value=d.prepNotes||'';
+    dPJ=(d.pj||[]).slice(); dPjRendre();
     form.dataset.editId=id;
   } else {
     document.getElementById('dform-title').textContent='Nouvelle livraison';
@@ -4908,8 +5060,12 @@ function openDForm(id){
     document.getElementById('d-ordo').checked=false;
     document.getElementById('d-notes').value='';
     document.getElementById('d-prepnotes').value='';
+    // Les pièces jointes se vident comme le reste : celles du patient
+    // précédent n'ont rien à faire sur la livraison suivante.
+    dPJ=[]; dPjRendre();
     const q=document.getElementById('ps-q'); if(q) q.value='';
     const sg=document.getElementById('ps-sugg'); if(sg) sg.style.display='none';
+    const fp=document.getElementById('d-pj-fichier'); if(fp) fp.value='';
     delete form.dataset.editId;
   }
   form.style.display='block';
@@ -4949,6 +5105,7 @@ function saveD(){
     ordo:document.getElementById('d-ordo').checked,
     notes:document.getElementById('d-notes').value.trim(),
     prepNotes:document.getElementById('d-prepnotes').value.trim(),
+    pj:dPJ.slice(),
     cold:document.getElementById('d-frigo').checked,
   };
   if(editId){
@@ -6207,34 +6364,148 @@ function remplirPostes(){
   sel.innerHTML=liste.map(f=>`<option value="${f.k}">${f.lbl}</option>`).join('');
   sel.dataset.pl='1';
 }
+// ── LA LISTE DES COLLABORATEURS ─────────────────────────────────
+//
+// Une ligne par personne, et rien d'autre dessus que ce qu'on cherche en la
+// parcourant : le portrait, le nom, le poste. Les sept boutons qui couvraient
+// chaque carte sont descendus dans la fiche, qui s'ouvre au clic.
+//
+// UNE SEULE FICHE OUVERTE À LA FOIS. Deux fiches ouvertes, c'est une liste
+// qu'on ne voit plus ; et l'on ne compare pas deux collaborateurs, on en
+// corrige un.
+let _stOuvert = null;
+window.staffOuvrir = function (id) {
+  _stOuvert = (_stOuvert === id) ? null : id;
+  renderStaff();
+};
+
+// L'ordre de la maison : pharmaciens, préparateurs, puis le reste, et par nom
+// à l'intérieur de chaque métier. C'est l'ordre du planning — une seule
+// façon de ranger l'équipe dans toute l'application.
+function stRang(s) {
+  const liste = plFonctionsDispo();
+  const f = (window.plFonctionDe ? window.plFonctionDe(s) : null);
+  if (!liste || !f) return 900;
+  const i = liste.findIndex(x => x.k === f);
+  return i < 0 ? 900 : i;
+}
+function stLibelleFonction(s) {
+  const liste = plFonctionsDispo();
+  const f = (window.plFonctionDe ? window.plFonctionDe(s) : null);
+  const lbl = (liste && f) ? ((liste.find(x => x.k === f) || {}).lbl || s.poste) : s.poste;
+  return lbl || '';
+}
+function stTries() {
+  return staffDB.slice().sort((a, b) => {
+    const ra = stRang(a), rb = stRang(b);
+    if (ra !== rb) return ra - rb;
+    // SANS LE MODULE PLANNING, aucun métier n'a de rang, et trier par nom
+    // seul éparpillerait les familles : l'en-tête « Préparateur »
+    // reviendrait trois fois dans la même liste. On range alors par libellé
+    // de poste, et les sans-poste ferment la marche.
+    const pa = stLibelleFonction(a) || '￿', pb = stLibelleFonction(b) || '￿';
+    if (pa !== pb) return pa.localeCompare(pb, 'fr');
+    const na = ((a.nom || '') + ' ' + (a.prenom || '')).toLowerCase();
+    const nb = ((b.nom || '') + ' ' + (b.prenom || '')).toLowerCase();
+    return na < nb ? -1 : na > nb ? 1 : 0;
+  });
+}
+// CE QUI MANQUE VRAIMENT. Le code PIN et le poste empêchent de travailler :
+// sans PIN on n'entre pas, sans poste le planning ne sait pas où ranger la
+// personne. Le reste est un complément, et se voit dans la fiche — une
+// pastille orange pour une photo manquante userait l'alerte.
+function stManques(s) {
+  const m = [];
+  if (!s.pin) m.push('code PIN');
+  if (!stLibelleFonction(s)) m.push('poste');
+  return m;
+}
+function stAvatar(s, taille) {
+  const t = taille || 38;
+  const fond = s.photo
+    ? `background-image:url('${imgSrc(s.photo)}');color:transparent`
+    : `background-color:${s.col || 'var(--g-mid)'}`;
+  return `<div class="stl-av" style="width:${t}px;height:${t}px;font-size:${t < 40 ? .76 : 1}rem;${fond}">${s.id}</div>`;
+}
+
 function renderStaff(){
   const admin = isAdmin();
   remplirPostes();
-  document.getElementById('staff-grid').innerHTML=staffDB.map(s=>{
-    const isA = staffIsAdmin(s);
-    const badge = isA ? `<div style="font-size:.66rem;font-weight:700;color:#8a5a00;background:#FFF3CD;border:1px solid #ffe08a;padding:2px 8px;border-radius:20px;margin-top:2px">★ Admin</div>` : '';
-    const adminBtn = admin ? `<button class="btn ${isA?'bd':'bs'} sm" onclick="toggleAdmin('${s.id}')" title="${isA?'Retirer les droits admin':'Donner les droits admin'}"><svg class="ico"><use href="#ic-securite"></use></svg> ${isA?'Retirer admin':'Rendre admin'}</button>` : '';
-    return `
-    <div class="sfc">
-      <div class="sfav" style="${s.photo?`background-image:url('${imgSrc(s.photo)}');background-size:cover;background-position:center;color:transparent`:`background:${s.col}`}">${s.id}</div>
-      <div style="font-weight:600;font-size:.92rem">${s.prenom} ${s.nom}</div>
-      ${posteHtml(s, admin)}
-      ${badge}
-      <div style="font-size:.7rem;color:var(--gray-400)">Code : ${s.id}</div>
-      <div style="font-size:.66rem;color:var(--gray-400)">${planningHtml(s)}</div>
-      <div style="font-size:.68rem;color:var(--gray-500);margin-top:2px">RPPS : ${s.rpps?s.rpps:'—'} · Signature : ${s.sig?'✓ enregistrée':'—'} · Photo : ${s.photo?'✓':'—'} · Anniv. : ${s.anniv?(+s.anniv.slice(3))+'/'+(+s.anniv.slice(0,2)):'—'}</div>
-      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-        <button class="btn bs sm" onclick="editStaffPin('${s.id}')" title="Modifier le code PIN"><svg class="ico"><use href="#ic-verrouiller"></use></svg> PIN</button>
-        <button class="btn bs sm" onclick="editStaffRpps('${s.id}')" title="Renseigner le n° RPPS"><svg class="ico"><use href="#ic-modifier"></use></svg> RPPS</button>
-        <button class="btn ${s.anniv?'bp':'bs'} sm" onclick="editStaffAnniv('${s.id}')" title="Jour et mois d'anniversaire"><svg class="ico"><use href="#ic-anniversaire"></use></svg> Anniv.${s.anniv?' ✓':''}</button>
-        <button class="btn ${s.sig?'bp':'bs'} sm" onclick="openStaffSig('${s.id}')" title="Enregistrer la signature"><svg class="ico"><use href="#ic-modifier"></use></svg> Signature${s.sig?' ✓':''}</button>
-        <button class="btn ${s.photo?'bp':'bs'} sm" onclick="openStaffPhoto('${s.id}')" title="Choisir une photo de profil"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Photo${s.photo?' ✓':''}</button>
-        <button class="btn bd sm" onclick="deleteStaff('${s.id}')" title="Supprimer ce collaborateur"><svg class="ico"><use href="#ic-supprimer"></use></svg></button>
-        ${adminBtn}
+  const liste = stTries();
+  let groupe = null;
+  const lignes = liste.map(s => {
+    const ouvert = _stOuvert === s.id;
+    const poste = stLibelleFonction(s);
+    const manques = stManques(s);
+    let tete = '';
+    const g = poste || 'À préciser';
+    if (g !== groupe) { groupe = g; tete = `<div class="stl-grp">${g}</div>`; }
+    return tete + `
+    <div class="stl-r${ouvert ? ' on' : ''}" onclick="staffOuvrir('${s.id}')"
+         title="Ouvrir la fiche de ${s.prenom} ${s.nom}">
+      ${stAvatar(s)}
+      <div class="stl-id">
+        <div class="stl-n">${s.prenom} ${s.nom}</div>
+        <div class="stl-p">${poste || '— poste à préciser —'}</div>
       </div>
-    </div>`;
+      <div class="stl-t">
+        ${manques.length ? `<span class="stl-manque" title="À compléter : ${manques.join(', ')}">À compléter</span>` : ''}
+        ${staffIsAdmin(s) ? '<span class="stl-etoile" title="Administrateur">★</span>' : ''}
+        <span class="stl-code">${s.id}</span>
+        <span class="stl-chev">${ouvert ? '▾' : '▸'}</span>
+      </div>
+    </div>` + (ouvert ? stFiche(s, admin) : '');
   }).join('');
+
+  // LE CONTENEUR N'EST PLUS UNE GRILLE. Il porte encore la classe
+  // `staff-grid` dans le HTML — une grille de colonnes de 200 px, dans
+  // laquelle une liste se retrouverait pliée en accordéon. On la remplace
+  // ici plutôt que dans le gabarit : un seul endroit à corriger, et pas deux
+  // qui se désynchronisent.
+  const z = document.getElementById('staff-grid');
+  z.className = 'stl-wrap';
+  z.innerHTML =
+    `<div class="stl-tete"><b>${liste.length} collaborateur${liste.length > 1 ? 's' : ''}</b>
+       <span>Cliquez sur un nom pour ouvrir sa fiche.</span></div>
+     <div class="stl">${lignes}</div>`;
   applyAdminUI();
+}
+
+// LA FICHE DIT TOUT CE QUE PILOT SAIT DE LA PERSONNE, et rien qu'on ne
+// puisse corriger depuis là. Le code PIN n'y figure jamais : on sait s'il est
+// posé, pas lequel.
+function stFiche(s, admin){
+  const isA = staffIsAdmin(s);
+  const ct = (typeof plContratDeStaff === 'function') ? plContratDeStaff(s.id) : null;
+  const contrat = ct
+    ? `${ct.base != null && ct.base !== '' ? ct.base + ' h' : 'base à préciser'}${ct.role ? ' — ' + ct.role : ''}`
+    : null;
+  const anniv = s.anniv ? (+s.anniv.slice(3)) + '/' + (+s.anniv.slice(0, 2)) : null;
+  const champ = (k, v, vide) => `<div><div class="stl-k">${k}</div>
+    <div class="stl-v${v ? '' : ' vide'}">${v || (vide || '—')}</div></div>`;
+  return `
+  <div class="stl-f">
+    <div class="stl-g">
+      ${champ('Poste', admin ? posteHtml(s, true) : (stLibelleFonction(s) || ''), 'à préciser')}
+      ${champ('Code', `<span class="stl-code">${s.id}</span>`)}
+      ${champ('Accès', isA ? 'Administrateur' : 'Collaborateur')}
+      ${champ('Code PIN', s.pin ? 'Défini' : '', 'aucun — cette personne ne peut pas entrer')}
+      ${champ('N° RPPS', s.rpps || '', 'non renseigné')}
+      ${champ('Anniversaire', anniv || '', 'non renseigné')}
+      ${champ('Signature', s.sig ? 'Enregistrée' : '', 'aucune')}
+      ${champ('Photo', s.photo ? 'Enregistrée' : '', 'initiales')}
+      ${champ('Contrat au planning', contrat || '', planningHtml(s).replace('Planning : ', ''))}
+    </div>
+    <div class="stl-b" onclick="event.stopPropagation()">
+      <button class="btn bs sm" onclick="editStaffPin('${s.id}')"><svg class="ico"><use href="#ic-verrouiller"></use></svg> Code PIN</button>
+      <button class="btn bs sm" onclick="editStaffRpps('${s.id}')"><svg class="ico"><use href="#ic-modifier"></use></svg> RPPS</button>
+      <button class="btn ${s.anniv ? 'bp' : 'bs'} sm" onclick="editStaffAnniv('${s.id}')"><svg class="ico"><use href="#ic-anniversaire"></use></svg> Anniversaire</button>
+      <button class="btn ${s.sig ? 'bp' : 'bs'} sm" onclick="openStaffSig('${s.id}')"><svg class="ico"><use href="#ic-modifier"></use></svg> Signature</button>
+      <button class="btn ${s.photo ? 'bp' : 'bs'} sm" onclick="openStaffPhoto('${s.id}')"><svg class="ico"><use href="#ic-collaborateurs"></use></svg> Photo</button>
+      ${admin ? `<button class="btn ${isA ? 'bd' : 'bs'} sm" onclick="toggleAdmin('${s.id}')"><svg class="ico"><use href="#ic-securite"></use></svg> ${isA ? 'Retirer les droits admin' : 'Rendre administrateur'}</button>` : ''}
+      <button class="btn bd sm" style="margin-left:auto" onclick="deleteStaff('${s.id}')"><svg class="ico"><use href="#ic-supprimer"></use></svg> Supprimer</button>
+    </div>
+  </div>`;
 }
 
 // ─── Photo de profil des collaborateurs ───
