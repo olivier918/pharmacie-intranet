@@ -267,5 +267,85 @@ console.log('\nLe SMS proposé quand la préparation est faite');
     statutApres('realisation-kerangal', { status: 'en cours' }) === 'en cours');
 })();
 
+// ── L'ORDRE DE LA LISTE, LA DATE DE SAISIE, ET LA FIN DU « DÉLIVRÉ » ───────
+//
+// Trois changements du 19/11/2026, demandés par Olivier :
+//   • les demandes se lisent du plus récent au plus ancien — la liste n'était
+//     pas triée du tout, et la resynchronisation en rebattait l'ordre ;
+//   • la date de saisie se voit, au lieu d'être noyée en bas de carte ;
+//   • l'étape « Délivré » disparaît : personne ne la cliquait, parce qu'au
+//     comptoir le patient repart avec son flacon, pas avec un bouton.
+(function () {
+  const ix = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  function bloc(nom) {
+    const d = ix.indexOf('\nfunction ' + nom + '(');
+    if (d < 0) throw new Error('introuvable : ' + nom);
+    const une = ix.slice(d + 1).split('\n')[0];
+    if (/^function [^(]+\([^)]*\)\s*\{.*\}$/.test(une)) return une;
+    const f = ix.indexOf('\n}\n', d);
+    return ix.slice(d + 1, f + 2);
+  }
+  eval(/const PREP_TYPES=\{[\s\S]*?\n\};/.exec(ix)[0].replace('const', 'var'));
+  eval(/const PREP_PRETE_JOURS=\d+;/.exec(ix)[0].replace('const', 'var'));
+  eval(bloc('prepArchivee')); eval(bloc('prepCleSaisie')); eval(bloc('prepTries'));
+  eval(bloc('prepSteps'));
+
+  console.log('\nLa liste se lit du plus récent au plus ancien');
+  const L = [
+    { id: 3, date: '2026-11-02', heure: '09:15' },
+    { id: 1, date: '2026-11-19', heure: '08:02' },
+    { id: 2, date: '2026-11-19', heure: '16:40' },
+    { id: 4, date: '2026-10-28', heure: '11:00' }
+  ];
+  t('LA DERNIÈRE SAISIE EST EN TÊTE', prepTries(L).map(x => x.id).join(',') === '2,1,3,4');
+  t('... et l’heure départage deux demandes du même jour',
+    prepTries(L)[0].heure === '16:40' && prepTries(L)[1].heure === '08:02');
+  t('à la même minute, la dernière enregistrée passe devant',
+    prepTries([{ id: 10, date: '2026-11-19', heure: '09:00' },
+               { id: 11, date: '2026-11-19', heure: '09:00' }])[0].id === 11);
+  t('une demande sans date ne fait pas tomber le tri', prepTries([{ id: 1 }, L[1]]).length === 2);
+  t('... et elle finit la liste au lieu de la commencer',
+    prepTries([{ id: 1 }, L[1]])[0].id === L[1].id);
+  t('LE TRI NE TOUCHE PAS À LA COLLECTION — il en rend une copie',
+    (function () { const avant = L.map(x => x.id).join(','); prepTries(L); return L.map(x => x.id).join(',') === avant; })());
+
+  console.log('\nL’étape « Délivré » a disparu du fil');
+  const etapes = t2 => prepSteps({ type: t2 }).map(x => x.lbl).join(' → ');
+  t('une réalisation va jusqu’à « Préparé », et s’arrête là',
+    etapes('realisation-pharmacie') === 'Préparé');
+  t('une demande Kerangal jusqu’à « Réceptionné »',
+    etapes('realisation-kerangal') === 'Réceptionné');
+  t('un devis garde ses deux étapes', etapes('devis-kerangal') === 'Devis validé → Réceptionné');
+  t('PLUS AUCUNE ÉTAPE NE MÈNE À « délivrée »',
+    ['realisation-pharmacie', 'realisation-kerangal', 'devis-kerangal']
+      .every(x => prepSteps({ type: x }).every(e => e.status !== 'délivrée')));
+
+  console.log('\nUne demande prête reste visible quinze jours');
+  const ilYA = j => new Date(Date.now() - j * 86400000).toISOString().slice(0, 10);
+  t('une demande en cours n’est pas archivée', !prepArchivee({ status: 'en cours' }));
+  t('une demande prête d’hier reste sous les yeux',
+    !prepArchivee({ status: 'prête', preteAt: ilYA(1) }));
+  t('... le quatorzième jour encore', !prepArchivee({ status: 'prête', preteAt: ilYA(14) }));
+  t('AU SEIZIÈME JOUR, ELLE S’ARCHIVE TOUTE SEULE',
+    prepArchivee({ status: 'prête', preteAt: ilYA(16) }));
+  t('une demande abandonnée est archivée', prepArchivee({ status: 'abandonnée' }));
+  // « Delivree » n'est plus atteignable, mais les demandes d'avant le portent :
+  // on ne migre pas une donnee, on la relit telle quelle (piege n°7).
+  t('UNE ANCIENNE DEMANDE « DÉLIVRÉE » RESTE ARCHIVÉE', prepArchivee({ status: 'délivrée' }));
+  // ARCHIVER SUR UN DOUTE, c'est faire disparaitre une preparation deja payee.
+  t('UNE DATE DE PRÊTE ABSENTE GARDE LA DEMANDE VISIBLE', !prepArchivee({ status: 'prête' }));
+  t('... une date illisible aussi', !prepArchivee({ status: 'prête', preteAt: 'bientôt' }));
+  t('rien du tout n’est pas archivé', !prepArchivee(null));
+
+  console.log('\nLa date de saisie se voit sur la carte');
+  t('elle a sa propre pastille, avec l’heure',
+    /title="Date de saisie de la demande">\$\{ico\('calendrier'\)\} \$\{fmt\(p\.date\)\|\|p\.date\|\|'—'\}\$\{p\.heure\?/.test(ix));
+  t('... et le bas de carte ne la répète plus', !/Demande du \$\{fmt\(p\.date\)/.test(ix));
+  t('la liste affichée est bien la liste triée', /let f=prepTries\(preps\.filter/.test(ix));
+  t('l’annonce du fil ne promet plus de délivrance',
+    !/préparé \/ réceptionné, délivré/.test(ix)
+    && (ix.match(/s’archive d’elle-même quinze jours/g) || []).length === 2);
+})();
+
 console.log('\n' + ok + ' réussi(s), ' + ko + ' échec(s)\n');
 process.exit(ko ? 1 : 0);

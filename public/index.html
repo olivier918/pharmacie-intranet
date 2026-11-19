@@ -821,7 +821,7 @@ tr:hover td{background:#fafffe}
           </div>
           <div>
             <div style="font-size:1.15rem;font-weight:700;color:var(--g-dark)" id="prep-form-t">Nouvelle demande de préparation</div>
-            <div style="font-size:.78rem;color:var(--gray-500)" id="prep-form-s">Enregistrez la demande, puis suivez-la sur son fil : devis validé, préparé / réceptionné, délivré.</div>
+            <div style="font-size:.78rem;color:var(--gray-500)" id="prep-form-s">Enregistrez la demande, puis suivez-la sur son fil : devis validé, préparé / réceptionné — puis elle s’archive d’elle-même quinze jours après.</div>
           </div>
         </div>
         <div class="fgrid">
@@ -5424,7 +5424,46 @@ const PREP_TYPES={
   'devis-kerangal':       {lbl:'Devis Kerangal',        col:'background:#FFF3CD;color:#856404;border:2px solid #E65100', etape1:'Réceptionné', devis:true}
 };
 const PREP_STATUSES=['attente devis','en cours','prête','délivrée','abandonnée'];
-const PREP_ARCHIVED=['délivrée','abandonnée'];
+// ── CE QUI SORT DE LA LISTE ──────────────────────────────────────
+//
+// L'étape « Délivré » n'existe plus. Personne ne la cliquait : au comptoir, le
+// patient repart avec son flacon, pas avec un bouton — et les demandes prêtes
+// s'empilaient en attendant un geste qui ne venait jamais.
+//
+// UNE DEMANDE PRÊTE RESTE DONC VISIBLE QUINZE JOURS. C'est un flacon sur
+// l'étagère : tant qu'il n'est pas retiré, il a sa place sous les yeux. Passé
+// ce délai, la demande rejoint les archives toute seule, sans que personne
+// ait à ranger.
+//
+// « Délivrée » RESTE RECONNU : les demandes d'avant le portent, et on ne migre
+// pas une donnée (piège n°7). Elles restent archivées, avec leur mot.
+const PREP_PRETE_JOURS=15;
+function prepArchivee(p){
+  if(!p) return false;
+  if(p.status==='abandonnée'||p.status==='délivrée') return true;
+  if(p.status!=='prête') return false;
+  // UNE DATE ILLISIBLE OU ABSENTE GARDE LA DEMANDE SOUS LES YEUX : archiver
+  // sur un doute, c'est faire disparaître une préparation déjà payée.
+  const t=Date.parse(String(p.preteAt||'').slice(0,10)+'T12:00:00');
+  if(!isFinite(t)) return false;
+  return (Date.now()-t) > PREP_PRETE_JOURS*86400000;
+}
+
+// ── L'ORDRE DE LA LISTE ─────────────────────────────────────────
+// Du plus récent au plus ancien, la dernière saisie en tête. La liste n'était
+// pas triée du tout : elle suivait l'ordre des enregistrements, que la
+// resynchronisation de huit secondes rebat à chaque fusion — deux postes
+// pouvaient afficher deux ordres différents du même travail.
+function prepCleSaisie(p){
+  return String((p&&p.date)||'')+' '+String((p&&p.heure)||'');
+}
+function prepTries(l){
+  return l.slice().sort(function(a,b){
+    const ka=prepCleSaisie(a), kb=prepCleSaisie(b);
+    if(ka!==kb) return ka<kb?1:-1;
+    return (b.id||0)-(a.id||0);          // même minute : le dernier saisi d'abord
+  });
+}
 let showPrepArchives=false;
 
 // Reprise des demandes saisies avec l'ancien module (envoi au préparatoire =
@@ -5445,7 +5484,8 @@ function prepSteps(p){
   const s=[];
   if(t.devis) s.push({lbl:'Devis validé', status:'en cours', key:'devisValideAt'});
   s.push({lbl:t.etape1, status:'prête', key:'preteAt'});
-  s.push({lbl:'Délivré', status:'délivrée', key:'delivAt'});
+  // Plus d'étape « Délivré » : le fil s'arrête à ce qui se constate dans
+  // l'officine. Ce qui part avec le patient ne se pointe pas.
   return s;
 }
 // Index de la dernière étape franchie (-1 : aucune).
@@ -5483,7 +5523,7 @@ function prepFormMaj(){
   if(t) t.textContent = e ? 'Modifier la demande de préparation' : 'Nouvelle demande de préparation';
   if(d) d.textContent = e
     ? 'Corrigez ce qui doit l’être, puis enregistrez. Le fil de suivi et la place au planning sont conservés.'
-    : 'Enregistrez la demande, puis suivez-la sur son fil : devis validé, préparé / réceptionné, délivré.';
+    : 'Enregistrez la demande, puis suivez-la sur son fil : devis validé, préparé / réceptionné — puis elle s’archive d’elle-même quinze jours après.';
   if(l) l.textContent = e ? 'Enregistrer les modifications' : 'Enregistrer la demande';
   if(a) a.style.display = e ? '' : 'none';
 }
@@ -5615,17 +5655,17 @@ function renderPreps(){
   prepMigrer();
   if(window.ppRendPlanning) ppRendPlanning();
   const q=(document.getElementById('prep-q')?.value||'').toLowerCase();
-  let f=preps.filter(p=>{
-    if(!showPrepArchives&&PREP_ARCHIVED.includes(p.status))return false;
+  let f=prepTries(preps.filter(p=>{
+    if(!showPrepArchives&&prepArchivee(p))return false;
     return (p.nom+' '+p.prenom+' '+(p.prep||'')).toLowerCase().includes(q);
-  });
+  }));
   const el=document.getElementById('prep-table'); if(!el) return;
   if(!f.length){el.innerHTML=`<div style="text-align:center;color:var(--gray-500);padding:1.5rem;font-size:.86rem">${showPrepArchives?'Aucune demande archivée':'Aucune demande en cours'}</div>`;return;}
   el.innerHTML=`<div class="dlist-wrap">${f.map(p=>prepCard(p)).join('')}</div>`;
 }
 
 function prepCard(p){
-  const archived=PREP_ARCHIVED.includes(p.status);
+  const archived=prepArchivee(p);
   const isAbandoned=p.status==='abandonnée';
   const T=PREP_TYPES[p.type]||PREP_TYPES['realisation-kerangal'];
   const steps=prepSteps(p);
@@ -5644,7 +5684,7 @@ function prepCard(p){
   // pastille d'etape garde sa couleur (en attente, en cours, faite).
   const icoMortier=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.88 3.03 C17.19 3.16 16.81 3.53 16.42 4.47 16.23 4.9 16.19 4.96 15.82 5.39 15.59 5.64 15.23 6.07 15 6.33 14.78 6.59 14.43 7 14.23 7.24 14.03 7.47 13.78 7.76 13.69 7.87 13.6 7.98 13.42 8.19 13.29 8.33 13.17 8.48 13.01 8.68 12.92 8.78 12.84 8.88 12.71 9.04 12.63 9.13 12.55 9.22 12.44 9.35 12.38 9.42 12.29 9.54 12.29 9.54 8.1 9.54 4.57 9.54 3.86 9.55 3.65 9.6 2.21 9.9 2 11.28 3 13.87 3.52 15.22 4.81 16.86 5.97 17.63 6.28 17.84 6.28 17.85 6 18.12 5.17 18.94 5.18 20.66 6.02 20.97 6.24 21.06 17.73 21.02 17.92 20.94 18.69 20.59 18.72 18.97 17.97 18.17 17.77 17.95 17.77 17.95 18.15 17.69 20.38 16.17 22 13.21 21.84 10.96 21.8 10.34 21.23 9.65 20.77 9.65 20.72 9.65 20.66 9.63 20.63 9.61 20.6 9.57 20.36 9.56 19.81 9.55 18.87 9.53 18.92 9.61 19.36 8.75 19.54 8.4 19.84 7.82 20.03 7.46 20.21 7.1 20.45 6.68 20.56 6.51 21.18 5.6 21.23 4.84 20.72 4.2 20.48 3.91 20.26 3.77 19.07 3.17 18.72 2.99 18.3 2.94 17.88 3.03 z M18.73 4.42 C18.93 4.52 19.18 4.65 19.29 4.71 19.39 4.77 19.49 4.83 19.51 4.83 19.76 4.83 19.84 5.28 19.65 5.58 19.25 6.21 19.12 6.43 18.81 7.03 18.62 7.4 18.3 8.01 18.11 8.39 17.91 8.77 17.71 9.17 17.65 9.29 17.59 9.41 17.53 9.51 17.51 9.52 17.47 9.55 14.05 9.55 14.03 9.53 14.02 9.52 14.02 9.48 14.04 9.44 14.06 9.38 14.11 9.31 14.44 8.95 14.51 8.88 14.67 8.67 14.82 8.5 14.96 8.33 15.25 7.98 15.47 7.74 15.68 7.49 16.08 7.02 16.36 6.7 16.63 6.37 16.97 5.98 17.11 5.83 17.28 5.64 17.39 5.48 17.44 5.35 17.51 5.15 17.73 4.64 17.81 4.46 17.94 4.2 18.27 4.18 18.73 4.42 z M20.36 10.82 C20.55 10.86 20.6 10.97 20.57 11.31 20.39 13.42 19.15 15.52 17.41 16.67 16.25 17.44 16.77 17.37 12.11 17.37 7.76 17.37 7.84 17.38 7.16 16.9 7.1 16.85 7.03 16.82 7.02 16.82 6.95 16.82 6.25 16.25 5.91 15.93 4.74 14.79 4.03 13.44 3.72 11.74 3.55 10.81 3.53 10.83 4.87 10.8 6.32 10.78 20.21 10.8 20.36 10.82 z M16.45 18.66 C16.7 18.72 16.94 18.89 17.08 19.09 17.18 19.25 17.25 19.69 17.19 19.75 17.17 19.77 15.11 19.78 11.94 19.78 6.72 19.77 6.72 19.77 6.71 19.59 6.68 19.15 6.93 18.81 7.37 18.68 7.47 18.65 7.56 18.62 7.58 18.62 7.74 18.57 16.25 18.61 16.45 18.66 z"/></svg>`;
   const icoColis=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9z"/><path d="M12 12l8 -4.5"/><path d="M12 12v9"/><path d="M12 12l-8 -4.5"/></svg>`;
-  const icoOf=st=>st.key==='devisValideAt'?icoDevis:st.key==='delivAt'?icoCheck:(p.type==='realisation-pharmacie'?icoMortier:icoColis);
+  const icoOf=st=>st.key==='devisValideAt'?icoDevis:(p.type==='realisation-pharmacie'?icoMortier:icoColis);
 
   let statusBlock;
   if(p.status==='délivrée'){
@@ -5665,10 +5705,11 @@ function prepCard(p){
         <span class="dc-name">${p.nom} ${p.prenom}</span>
         <span class="dc-lieu">${p.dob?'🎂 '+p.dob:''}${prepTel(p)?' · '+ico('telephone')+' '+prepTel(p):''}${p.med?' · '+ico('medecin')+' '+p.med:''}</span>
         <span class="badge" style="${T.col};padding:3px 10px;border-radius:6px;font-size:.7rem;font-weight:700">${T.lbl}</span>
+        <span class="badge" style="background:var(--gray-100);color:var(--gray-600);padding:3px 9px;border-radius:6px;font-size:.7rem;font-weight:600" title="Date de saisie de la demande">${ico('calendrier')} ${fmt(p.date)||p.date||'—'}${p.heure?' · '+p.heure:''}</span>
         ${attente}
       </div>
       ${p.prep?`<div class="dc-row2"><span class="dc-notes-inline">${ico('ordonnance')} ${p.prep}</span></div>`:''}
-      <div class="dc-row2"><span class="dc-track">Demande du ${fmt(p.date)||p.date}${p.heure?' à '+p.heure:''}${p.operateur?' · '+p.operateur:''}${p.modifieLe?` · modifiée le ${new Date(p.modifieLe).toLocaleDateString('fr-FR')} par ${staffName(p.modifiePar)}`:''}${p.etiq&&p.etiq.lot?` · étiquette lot ${p.etiq.lot}`:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}${smsMention(p.smsId)}`:''}</span></div>
+      <div class="dc-row2"><span class="dc-track">${p.operateur?'Saisie par '+p.operateur:'Saisie'}${p.modifieLe?` · modifiée le ${new Date(p.modifieLe).toLocaleDateString('fr-FR')} par ${staffName(p.modifiePar)}`:''}${p.etiq&&p.etiq.lot?` · étiquette lot ${p.etiq.lot}`:''}${p.smsAt?` · SMS envoyé le ${new Date(p.smsAt).toLocaleDateString('fr-FR')} par ${staffName(p.smsBy)}${smsMention(p.smsId)}`:''}</span></div>
     </div>
     <div class="dc-right no-print" style="align-items:center">
       ${statusBlock}
