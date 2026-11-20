@@ -29,10 +29,18 @@ function fausseBase(lignes) {
     query: async (sql, p) => {
       const q = String(sql).replace(/\s+/g, ' ').trim();
       ordres.push({ sql: q, p: p || [] });
+      // LE STATUT COMPTE DANS LES DEUX SENS : une requete qui le filtre ne doit
+      // pas voir les propositions, une requete qui ne le filtre pas doit les
+      // voir. Une base de poche qui ignorerait le WHERE rendrait l'essai
+      // aveugle precisement la ou tout se joue.
+      const publiee = x => (x.statut || 'publiee') === 'publiee';
       if (/^SELECT .* FROM app_offres WHERE code = \$1/i.test(q)) {
-        return { rows: T.filter(x => x.code === p[0]) };
+        const l = T.filter(x => x.code === p[0]);
+        return { rows: /statut = 'publiee'/.test(q) ? l.filter(publiee) : l };
       }
-      if (/^SELECT .* FROM app_offres/i.test(q)) return { rows: T };
+      if (/^SELECT .* FROM app_offres/i.test(q)) {
+        return { rows: /statut = 'publiee'/.test(q) ? T.filter(publiee) : T };
+      }
       if (/^UPDATE app_offres SET vues/i.test(q)) {
         const o = T.find(x => x.code === p[0]); if (o) o.vues = (o.vues || 0) + 1;
         return { rows: [], rowCount: o ? 1 : 0 };
@@ -44,7 +52,8 @@ function fausseBase(lignes) {
       if (/^INSERT INTO app_offres/i.test(q)) {
         T.push({ code: p[0], titre: p[1], mentions: p[2], mime: p[3], octets: p[4],
                  taille: p[5], empreinte: p[6], largeur: p[7], hauteur: p[8],
-                 debut: p[9], fin: p[10], veille: p[11], vues: 0 });
+                 debut: p[9], fin: p[10], veille: p[11], par: p[12],
+                 statut: p[13] || 'publiee', propose_par: p[14] || null, vues: 0 });
         return { rows: [], rowCount: 1 };
       }
       if (/^UPDATE app_offres SET titre/i.test(q)) {
@@ -53,7 +62,13 @@ function fausseBase(lignes) {
         // puis l'image SEULEMENT si elle accompagne (mime, octets, taille,
         // empreinte, largeur, hauteur).
         if (o) { o.titre = p[1]; o.mentions = p[2]; o.debut = p[3]; o.fin = p[4]; o.veille = p[5];
-                 if (p.length > 7) { o.mime = p[7]; o.octets = p[8]; o.empreinte = p[10]; } }
+                 if (p.length > 7) { o.mime = p[7]; o.octets = p[8]; o.taille = p[9];
+                                     o.empreinte = p[10]; o.largeur = p[11]; o.hauteur = p[12]; } }
+        return { rows: [], rowCount: o ? 1 : 0 };
+      }
+      if (/^UPDATE app_offres SET statut/i.test(q)) {
+        const o = T.find(x => x.code === p[0]);
+        if (o) { o.statut = 'publiee'; o.par = p[1]; }
         return { rows: [], rowCount: o ? 1 : 0 };
       }
       if (/^DELETE FROM app_offres/i.test(q)) {
@@ -257,9 +272,118 @@ async function lancer() {
   const svc = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   t('server.js transmet bien le domaine patient comme repli',
     /basePatients:\s*\(\)\s*=>\s*basePatients\(\)/.test(svc));
-  t('... et sait qu’elle ne peut pas écrire', j.redacteur === false);
-  t('une non-administratrice se voit refuser l’écriture',
-    (await poster('/api/offres', { code: 'x', titre: 'x', mime: 'image/jpeg', data: img })).code === 403);
+  t('... et sait qu’elle ne peut pas publier', j.redacteur === false);
+  t('... et qui elle est — l’écran doit reconnaître ses propres propositions',
+    j.moi === 'JN');
+
+  // ── L'ÉQUIPE PROPOSE, LE TITULAIRE PUBLIE ──────────────────────────
+  // Une préparatrice voit passer l'offre d'un laboratoire avant tout le monde.
+  // Jusqu'ici elle ne pouvait rien en faire : l'écran était en lecture seule.
+  // Elle propose maintenant — et ce qu'elle propose ne sort pas de l'officine
+  // tant qu'un titulaire ne l'a pas publié.
+  console.log('\nCe qu’une préparatrice propose');
+  let pq = await poster('/api/offres', { code: 'nuxe', titre: 'Semaine Nuxe -15%',
+    debut: '2026-11-02', fin: '2026-11-07' });
+  t('ELLE PROPOSE UNE OPÉRATION, SANS AFFICHE — le visuel vient souvent après',
+    pq.code === 200 && pq.j.ok);
+  let prop = db2.T.find(x => x.code === 'nuxe');
+  t('... et c’est une proposition, pas une affiche', !!prop && prop.statut === 'proposition');
+  t('... signée de son nom, pour qu’on sache à qui en parler', prop.propose_par === 'JN');
+  t('une proposition sans affiche n’en a pas une vide pour autant',
+    prop.mime === '' && prop.taille === 0);
+
+  // ELLE N'EST PAS PUBLIQUE. C'est la seule chose qui compte vraiment ici : un
+  // lien devine se repond jamais avec une offre que le titulaire n'a pas vue.
+  // LA PROPOSITION EST MISE EN POSITION DE NUIRE : une affiche, et aucune date
+  // — donc « en cours » aujourd'hui et pour toujours. Datée du mois dernier,
+  // elle serait écartée comme périmée et l'essai passerait même sans le filtre :
+  // il ne prouverait plus rien (vérifié par l'absurde, en retirant le filtre).
+  const EXPOSEE = Object.assign({}, prop, { mime: 'image/jpeg', octets: Buffer.from('JPEG'),
+    taille: 4, empreinte: '1111222233334444', largeur: 800, hauteur: 1200,
+    debut: null, fin: null });
+  const dbPub = fausseBase([EXPOSEE, VEILLE]);
+  const pub2 = express();
+  of.publiques(pub2, { getDb: () => dbPub });
+  const s3 = await new Promise(r3 => { const x = pub2.listen(0, () => r3(x)); });
+  const P = 'http://127.0.0.1:' + s3.address().port;
+  let rp = await fetch(P + '/offre/nuxe');
+  let tp = await rp.text();
+  t('L’ADRESSE DEVINÉE NE LA SERT PAS — elle montre la veille',
+    rp.status === 200 && /offre\/i\/veille/.test(tp) && !/Nuxe/.test(tp));
+  t('... et l’adresse générale ne la sert pas davantage',
+    !/Nuxe/.test(await (await fetch(P + '/offre')).text()));
+  t('... et son image n’est servie à personne',
+    (await fetch(P + '/offre/i/nuxe')).status === 404);
+  s3.close();
+
+  console.log('\nCe qu’elle ne peut pas faire');
+  // Une affiche DÉJÀ EN LIGNE : c'est devant celle-là que les refus comptent.
+  db2.T.push({ code: 'en-ligne', titre: 'Deja en ligne', mentions: null,
+    mime: 'image/jpeg', octets: Buffer.from('JPEG'), taille: 4, empreinte: 'aaaabbbbccccdddd',
+    largeur: 800, hauteur: 1200, debut: null, fin: null, veille: false,
+    par: 'OF', statut: 'publiee', propose_par: null, vues: 0 });
+  t('elle ne corrige pas une affiche en ligne',
+    (await poster('/api/offres', { code: 'en-ligne', titre: 'Detourne' })).code === 403);
+  t('... et l’affiche n’a pas bronché',
+    db2.T.find(x => x.code === 'en-ligne').titre === 'Deja en ligne');
+  t('elle ne désigne pas l’image de veille',
+    (await poster('/api/offres', { code: 'nuxe', titre: 'Semaine Nuxe -15%', veille: true })).code === 403);
+  t('elle ne publie pas sa propre proposition',
+    (await poster('/api/offres/publier', { code: 'nuxe' })).code === 403);
+  t('... et elle est toujours une proposition',
+    db2.T.find(x => x.code === 'nuxe').statut === 'proposition');
+
+  QUI = 'CB';   // une autre préparatrice
+  t('UNE PROPOSITION APPARTIENT À QUI L’ÉCRIT — une collègue n’y touche pas',
+    (await poster('/api/offres', { code: 'nuxe', titre: 'Pas la mienne' })).code === 403);
+  t('... et ne la retire pas non plus',
+    (await poster('/api/offres/supprimer', { code: 'nuxe' })).code === 403
+    && db2.T.some(x => x.code === 'nuxe'));
+
+  QUI = 'JN';
+  pq = await poster('/api/offres', { code: 'nuxe', titre: 'Semaine Nuxe -15%',
+    mime: 'image/jpeg', data: img, largeur: 800, hauteur: 1200 });
+  t('elle complète la sienne, affiche comprise', pq.code === 200);
+  prop = db2.T.find(x => x.code === 'nuxe');
+  t('... l’affiche est arrivée', prop.octets.length > 0 && prop.mime === 'image/jpeg');
+  t('... et c’est TOUJOURS une proposition : compléter n’est pas publier',
+    prop.statut === 'proposition');
+
+  console.log('\nLe titulaire finalise');
+  QUI = 'OF'; ADMIN = true;
+  pq = await poster('/api/offres', { code: 'nuxe', titre: 'Semaine Nuxe -15%',
+    debut: '2026-11-02', fin: '2026-11-08', mentions: 'Hors medicaments.' });
+  t('il corrige la proposition de quelqu’un d’autre', pq.code === 200);
+  t('... sans la publier par inadvertance',
+    db2.T.find(x => x.code === 'nuxe').statut === 'proposition');
+  pq = await poster('/api/offres/publier', { code: 'nuxe' });
+  t('PUBLIER EST UN GESTE À PART, et c’est le sien', pq.code === 200 && pq.j.ok);
+  prop = db2.T.find(x => x.code === 'nuxe');
+  t('... l’affiche est en ligne', prop.statut === 'publiee');
+  t('... et c’est lui qui l’a mise en ligne', prop.par === 'OF');
+  t('publier deux fois ne fait rien de plus',
+    (await poster('/api/offres/publier', { code: 'nuxe' })).code === 200);
+
+  // CE QUI MANQUE VRAIMENT SE VOIT À LA PUBLICATION, pas avant : c'est le seul
+  // moment où l'absence d'affiche devient un problème pour quelqu'un.
+  QUI = 'JN'; ADMIN = false;
+  await poster('/api/offres', { code: 'caudalie', titre: 'Caudalie' });
+  QUI = 'OF'; ADMIN = true;
+  pq = await poster('/api/offres/publier', { code: 'caudalie' });
+  t('UNE PROPOSITION SANS AFFICHE NE SE PUBLIE PAS', pq.code === 400);
+  t('... et la route dit ce qui manque', /affiche/i.test(pq.j.error || ''));
+  t('... elle reste une proposition', db2.T.find(x => x.code === 'caudalie').statut === 'proposition');
+  t('publier ce qui n’existe pas est un 404 ordinaire',
+    (await poster('/api/offres/publier', { code: 'jamais-vu' })).code === 404);
+
+  QUI = 'JN'; ADMIN = false;
+  pq = await poster('/api/offres/supprimer', { code: 'caudalie' });
+  t('SE RAVISER EST UN GESTE NORMAL : elle retire sa proposition',
+    pq.code === 200 && !db2.T.some(x => x.code === 'caudalie'));
+  t('... mais pas une affiche en ligne',
+    (await poster('/api/offres/supprimer', { code: 'nuxe' })).code === 403
+    && db2.T.some(x => x.code === 'nuxe'));
+  QUI = 'OF'; ADMIN = true;
 
   QUI = 'OF'; ADMIN = true;
   console.log('\nCe que la route refuse, même à un titulaire');
@@ -322,6 +446,27 @@ async function lancer() {
   t('l’écran est chargé par l’application', /<script src="of-module\.js"><\/script>/.test(ix));
   t('... et il relit le serveur à chaque ouverture de la rubrique',
     /name==='offres'&&window\.ofCharger/.test(ix));
+
+  // ── L'ÉCRAN ──────────────────────────────────────────────────
+  // Le module est une fonction immediate : on ne l'execute pas ici. On garde
+  // donc les quatre points ou une regression serait silencieuse et grave.
+  console.log('\nL’écran, relu');
+  const om = fs.readFileSync(path.join(__dirname, '..', 'public', 'of-module.js'), 'utf8');
+  t('LE FORMULAIRE N’EST PLUS RÉSERVÉ AUX TITULAIRES',
+    !/function ofForm\(\) \{\s*if \(!ofRedacteur\) return '';/.test(om));
+  t('la liste des affiches ne montre pas les propositions',
+    /ofPubliees\(\)\.map\(ofLigne\)/.test(om) && !/ofListe\.map\(ofLigne\)/.test(om));
+  t('l’adresse publique ne les voit pas non plus', /ofPubliees\(\)\.filter\(o => !o\.veille/.test(om));
+  t('un collaborateur n’a ni champ d’adresse ni case de veille',
+    /\(ofRedacteur\s*\n?\s*\? '<div class="fg"><label>Adresse du lien/.test(om)
+    && /\(ofRedacteur\s*\n?\s*\? '<label class="of-chk"><input type="checkbox" id="of-veille"/.test(om));
+  t('la pastille emprunte celle de la maison, qui sait se replier',
+    /id="navb-of"/.test(om) && /sb-badge/.test(om));
+  t('... et le rafraîchissement central la tient à jour',
+    /window\.ofPastille==='function'\) window\.ofPastille\(\)/.test(ix));
+  // Un « + » de trop devant un gabarit : les mentions s'affichaient « 0 ».
+  t('les mentions se relisent telles qu’on les a écrites',
+    !/\+\s*\+ E\(o\.mentions/.test(om));
 
   console.log('\n' + ok + ' vérifications, ' + ko + ' échec(s)\n');
   process.exit(ko ? 1 : 0);

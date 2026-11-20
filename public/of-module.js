@@ -34,6 +34,28 @@
 
   let ofListe = [], ofRedacteur = false, ofJourServeur = '', ofEdite = null, ofImage = null;
   let ofCodeTouche = false;
+  // `ofMoi` : qui regarde. Une proposition se corrige par celui qui l'a
+  // ecrite ; les autres la lisent.
+  let ofMoi = '';
+
+  // UNE PROPOSITION N'EST PAS UNE AFFICHE. L'equipe propose une operation ;
+  // le titulaire la finalise et la publie. Tant qu'elle est proposee, elle ne
+  // sort pas d'ici : ni sur l'adresse publique, ni dans un SMS.
+  const ofPropose = o => !!o && o.statut === 'proposition';
+  const ofPubliees = () => ofListe.filter(o => !ofPropose(o));
+  const ofPropositions = () => ofListe.filter(ofPropose);
+  const ofMienne = o => ofPropose(o) && (!o.propose_par || o.propose_par === ofMoi);
+  // Le nom plutot que les initiales, quand la page connait l'equipe.
+  function ofQui(id) {
+    if (!id) return 'quelqu\u2019un';
+    try {
+      const l = (typeof staffDB !== 'undefined' && Array.isArray(staffDB)) ? staffDB : [];
+      const s = l.find(x => x && x.id === id);
+      if (s) return ((s.prenom || '') + ' ' + (s.nom || '')).trim() || id;
+    } catch (e) {}
+    return id;
+  }
+  const ofAImage = o => !!(o && o.taille > 0);
 
   function ofBase() {
     if (!OF_DIFFUSION) return location.origin;
@@ -49,6 +71,7 @@
 
   function ofEtat(o) {
     if (!o) return { cls: '', mot: '' };
+    if (ofPropose(o)) return { cls: 'of-e-prop', mot: 'Proposition' };
     if (o.veille) return { cls: 'of-e-veille', mot: 'Image de veille' };
     const j = ofJourServeur || ofJour();
     if (o.debut && j < o.debut) return { cls: 'of-e-avenir', mot: 'À partir du ' + ofFr(o.debut) };
@@ -66,10 +89,10 @@
   // serveur : la plus proche de sa fin d'abord.
   function ofCourante() {
     const j = ofJourServeur || ofJour();
-    const vives = ofListe.filter(o => !o.veille
+    const vives = ofPubliees().filter(o => !o.veille
       && (!o.debut || j >= o.debut) && (!o.fin || j <= o.fin))
       .sort((a, b) => ((a.fin || '9999') < (b.fin || '9999') ? -1 : 1));
-    return vives[0] || ofListe.find(o => o.veille) || null;
+    return vives[0] || ofPubliees().find(o => o.veille) || null;
   }
 
   function ofVignette(o) {
@@ -120,10 +143,17 @@
       + '</div></div>';
   }
 
+  // La vignette, ou un cadre vide : une proposition peut attendre son visuel.
+  function ofMiniature(o) {
+    return ofAImage(o)
+      ? '<img class="of-l-i" src="' + E(ofVignette(o)) + '" alt="">'
+      : '<div class="of-l-i of-l-vide" title="affiche à venir">—</div>';
+  }
+
   function ofLigne(o) {
     const e = ofEtat(o);
     return '<div class="of-l">'
-      + '<img class="of-l-i" src="' + E(ofVignette(o)) + '" alt="">'
+      + ofMiniature(o)
       + '<div class="of-l-d"><div class="of-l-t">' + E(o.titre) + '</div>'
       +   '<div class="of-l-p">' + E(ofPeriode(o)) + ' · ' + E(ofLienCourt(o)) + '</div></div>'
       + '<span class="of-badge ' + e.cls + '">' + E(e.mot) + '</span>'
@@ -135,31 +165,69 @@
       + '</div>';
   }
 
+  // ── LA LIGNE D'UNE PROPOSITION ───────────────────────────────
+  // Elle dit QUI PROPOSE : une operation se discute avec quelqu'un, pas avec
+  // une liste. Et elle dit ce qui manque encore pour la publier — l'affiche,
+  // le plus souvent, parce qu'on propose avant que le laboratoire ne l'envoie.
+  function ofLigneProp(o) {
+    const manque = [];
+    if (!ofAImage(o)) manque.push('l’affiche');
+    if (!String(o.titre || '').trim()) manque.push('le titre');
+    const peut = ofRedacteur || ofMienne(o);
+    return '<div class="of-l of-l-prop">'
+      + ofMiniature(o)
+      + '<div class="of-l-d"><div class="of-l-t">' + E(o.titre || 'Sans titre') + '</div>'
+      +   '<div class="of-l-p">' + E(ofPeriode(o)) + ' · proposée par <b>'
+      +     E(ofQui(o.propose_par)) + '</b>'
+      +     (manque.length ? ' · <span class="of-manque">il manque ' + manque.join(' et ') + '</span>' : '')
+      +   '</div></div>'
+      + (peut ? '<button class="btn bs sm" onclick="ofOuvrirForm(\'' + E(o.code) + '\')">Modifier</button>' : '')
+      + (ofRedacteur && !manque.length
+          ? '<button class="btn bp sm" onclick="ofPublier(\'' + E(o.code) + '\')">Publier</button>' : '')
+      + (peut ? '<button class="btn bs sm of-sup" onclick="ofSupprimer(\'' + E(o.code) + '\')">Retirer</button>' : '')
+      + '</div>';
+  }
+
   function ofForm() {
-    if (!ofRedacteur) return '';
     const o = ofEdite ? (ofListe.find(x => x.code === ofEdite) || {}) : {};
     const neuf = !ofEdite;
+    // CE QUE REMPLIT L'ÉQUIPE EST UNE PROPOSITION. Elle n'a ni adresse de lien
+    // ni image de veille à choisir : ces deux-là engagent la pharmacie
+    // au-dehors, et c'est le titulaire qui les pose en publiant.
+    const prop = !ofRedacteur || (!neuf && ofPropose(o));
+    const titre = neuf
+      ? (ofRedacteur ? 'Nouvelle affiche' : 'Proposer une opération')
+      : (ofPropose(o) ? 'Modifier la proposition' : 'Modifier l’affiche');
+    // L'adresse se verrouille quand des SMS la portent peut-être déjà — donc
+    // une fois publiée, pas avant.
+    const codeFige = !neuf && !ofPropose(o);
     return '<div class="card" id="of-form-card" style="display:none">'
-      + '<div class="ch"><span class="ct">' + (neuf ? 'Nouvelle affiche' : 'Modifier l’affiche') + '</span>'
+      + '<div class="ch"><span class="ct">' + titre + '</span>'
       +   '<button class="btn bs sm" onclick="ofFermerForm()">Annuler</button></div>'
       + '<div class="cb of-f">'
       +   '<label class="of-depot" id="of-depot">'
       +     '<input type="file" id="of-f" accept="image/jpeg,image/png,image/webp" onchange="ofChoisir(this)">'
       +     '<span id="of-depot-txt">'
-      +       (neuf ? 'Déposer l’affiche (JPEG, PNG ou WebP)' : 'Remplacer l’affiche — facultatif')
+      +       (neuf
+               ? ('Déposer l’affiche (JPEG, PNG ou WebP)'
+                  + (prop ? ' — facultatif, elle peut venir plus tard' : ''))
+               : 'Remplacer l’affiche — facultatif')
       +     '</span>'
       +   '</label>'
       +   '<img id="of-apercu" class="of-apercu" style="display:none" alt="">'
       +   '<div class="fg"><label>Titre de l’offre</label>'
       +     '<input class="inp" id="of-titre" maxlength="120" value="' + E(o.titre || '') + '" '
       +       'oninput="ofTitreChange()" placeholder="Journee Avene -20%"></div>'
-      +   '<div class="fg"><label>Adresse du lien</label>'
-      +     '<div class="of-code"><span>' + E(ofBase().replace(/^https?:\/\//, '')) + '/offre/</span>'
-      +     '<input class="inp" id="of-code" maxlength="32" value="' + E(o.code || '') + '" '
-      +       (neuf ? '' : 'readonly ') + 'placeholder="avene"></div>'
-      +     '<div class="of-aide">' + (neuf
-             ? 'Lettres, chiffres et tirets. C’est ce que lira le patient dans son SMS.'
-             : 'L’adresse ne change plus : des SMS la portent peut-être déjà.') + '</div></div>'
+      +   (ofRedacteur
+          ? '<div class="fg"><label>Adresse du lien</label>'
+            + '<div class="of-code"><span>' + E(ofBase().replace(/^https?:\/\//, '')) + '/offre/</span>'
+            + '<input class="inp" id="of-code" maxlength="32" value="' + E(o.code || '') + '" '
+            +   (codeFige ? 'readonly ' : '') + 'placeholder="avene"></div>'
+            + '<div class="of-aide">' + (codeFige
+                ? 'L’adresse ne change plus : des SMS la portent peut-être déjà.'
+                : 'Lettres, chiffres et tirets. C’est ce que lira le patient dans son SMS.')
+            + '</div></div>'
+          : '')
       +   '<div class="of-2"><div class="fg"><label>Premier jour</label>'
       +     '<input class="inp" type="date" id="of-debut" value="' + E(o.debut || '') + '"></div>'
       +     '<div class="fg"><label>Dernier jour (inclus)</label>'
@@ -167,12 +235,18 @@
       +   '<div class="fg"><label>Mentions sous l’affiche</label>'
       +     '<textarea class="inp" id="of-mentions" rows="2" maxlength="600" '
       +       'placeholder="Offre valable le vendredi 16 octobre 2026, dans la limite des stocks disponibles. Hors medicaments.">'
-      +       + E(o.mentions || '') + '</textarea>'
+      +       E(o.mentions || '') + '</textarea>'
       +     '<div class="of-aide">C’est ici que se lit l’astérisque de l’affiche.</div></div>'
-      +   '<label class="of-chk"><input type="checkbox" id="of-veille"' + (o.veille ? ' checked' : '') + '>'
-      +     '<span>C’est l’image de <b>veille</b> — celle qu’on montre quand aucune offre n’est en cours. '
-      +     'Elle n’a pas de date, et il ne peut y en avoir qu’une.</span></label>'
-      +   '<div class="of-act"><button class="btn bp" onclick="ofEnregistrer()">Enregistrer</button>'
+      +   (ofRedacteur
+          ? '<label class="of-chk"><input type="checkbox" id="of-veille"' + (o.veille ? ' checked' : '') + '>'
+            + '<span>C’est l’image de <b>veille</b> — celle qu’on montre quand aucune offre n’est en cours. '
+            + 'Elle n’a pas de date, et il ne peut y en avoir qu’une.</span></label>'
+          : '<div class="of-chk"><span>Votre proposition part au titulaire : il la complète, '
+            + 'choisit l’adresse du lien et la publie. Rien n’est visible des patients avant.</span></div>')
+      +   '<div class="of-act"><button class="btn bp" onclick="ofEnregistrer()">'
+      +     (prop && neuf ? 'Proposer' : 'Enregistrer') + '</button>'
+      +     ((ofRedacteur && !neuf && ofPropose(o))
+              ? '<button class="btn bs" onclick="ofPublier(\'' + E(o.code) + '\')">Publier</button>' : '')
       +     '<span class="of-msg" id="of-msg"></span></div>'
       + '</div></div>';
   }
@@ -183,13 +257,15 @@
     h.innerHTML =
       '<div class="card"><div class="ch"><span class="ct">'
       + '<svg class="ico"><use href="#ic-messagerie"></use></svg> L’offre en ligne</span>'
-      + (ofRedacteur ? '<button class="btn bp sm" onclick="ofOuvrirForm(null)">Nouvelle affiche</button>' : '')
+      + '<button class="btn bp sm" onclick="ofOuvrirForm(null)">'
+      +   (ofRedacteur ? 'Nouvelle affiche' : 'Proposer une opération') + '</button>'
       + '</div><div class="cb">' + ofCarteCourante() + '</div></div>'
       + ofForm()
-      + (ofListe.length
+      + ofCarteProps()
+      + (ofPubliees().length
           ? '<div class="card"><div class="ch"><span class="ct">Toutes les affiches</span>'
             + '<span class="of-th">ouvertures</span></div>'
-            + '<div class="cb of-liste">' + ofListe.map(ofLigne).join('') + '</div></div>'
+            + '<div class="cb of-liste">' + ofPubliees().map(ofLigne).join('') + '</div></div>'
           : '')
       + '<div class="of-hote">Adresse de diffusion : <b>' + E(ofBase().replace(/^https?:\/\//, '')) + '</b>'
       +   (OF_DIFFUSION
@@ -199,6 +275,36 @@
             : ' — aucun domaine public réglé (variable <code>OFFRE_BASE_URL</code>)')
       +   '</div>';
   };
+
+  // « À finaliser » : ce que l'équipe a proposé et qui attend un titulaire.
+  // La carte ne s'affiche que s'il y a quelque chose dedans — un titre vide
+  // sur un écran est une question sans réponse.
+  function ofCarteProps() {
+    const l = ofPropositions();
+    if (!l.length) return '';
+    return '<div class="card"><div class="ch"><span class="ct">'
+      + 'Propositions de l’équipe <span class="of-n">' + l.length + '</span></span>'
+      + '<span class="of-th">' + (ofRedacteur ? 'à finaliser' : 'en attente du titulaire') + '</span></div>'
+      + '<div class="cb of-liste">' + l.map(ofLigneProp).join('') + '</div></div>';
+  }
+
+  // La pastille sur l'entrée de la barre latérale : une proposition qui dort
+  // n'est pas une proposition, et personne ne vient voir cet écran chaque jour.
+  // On emprunte la pastille de la maison (`sb-badge`) plutôt que d'en inventer
+  // une : c'est elle qui sait se replacer dans un coin quand la barre est
+  // repliée, et une seconde façon de compter serait une seconde à corriger.
+  function ofPastille() {
+    const el = document.getElementById('navb-of');
+    if (!el) return;
+    const n = window.ofDueCount();
+    el.classList.remove('on');
+    if (!n) { el.textContent = ''; return; }
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.classList.add('on');
+    el.title = n + ' proposition' + (n > 1 ? 's' : '') + ' à finaliser';
+  }
+  window.ofPastille = ofPastille;
+  window.ofDueCount = () => (ofRedacteur ? ofPropositions().length : 0);
 
   window.ofRecompter = function () {
     const t = document.getElementById('of-sms'), c = document.getElementById('of-compte');
@@ -307,8 +413,11 @@
 
   window.ofEnregistrer = async function () {
     const v = function (id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
+    // Un collaborateur n'a pas de champ d'adresse : on la devine du titre, et
+    // on évite celle d'une offre déjà en base — le titulaire la changera s'il
+    // veut, tant qu'elle n'est pas publiée.
     const corps = {
-      code: ofEdite || v('of-code'),
+      code: ofEdite || v('of-code') || ofCodeLibre(ofSlug(v('of-titre'))),
       titre: v('of-titre'),
       mentions: v('of-mentions'),
       debut: v('of-debut') || null,
@@ -321,7 +430,10 @@
     }
     if (!corps.titre) return ofDire('Il manque le titre.', true);
     if (!corps.code) return ofDire('Il manque l’adresse du lien.', true);
-    if (!ofEdite && !ofImage) return ofDire('Il manque l’affiche.', true);
+    // L'AFFICHE N'EST EXIGÉE QU'AU MOMENT DE PUBLIER. On propose souvent une
+    // opération avant d'avoir reçu le visuel du laboratoire ; exiger l'image
+    // ici ferait perdre l'idée.
+    if (ofRedacteur && !ofEdite && !ofImage) return ofDire('Il manque l’affiche.', true);
     ofDire('Envoi…');
     try {
       const r = await fetch('/api/offres', {
@@ -334,14 +446,43 @@
     } catch (e) { ofDire('Enregistrement impossible : ' + e.message, true); }
   };
 
-  window.ofSupprimer = async function (code) {
+  function ofCodeLibre(base) {
+    let c = base || 'offre', i = 2;
+    while (ofListe.some(o => o.code === c && o.code !== ofEdite)) c = (base || 'offre') + '-' + (i++);
+    return c.slice(0, 32);
+  }
+
+  // ── PUBLIER ─────────────────────────────────────────────
+  // Le seul geste irréversible de cet écran : à partir de là, l'adresse est
+  // publique et peut partir dans un SMS. On le dit avant.
+  window.ofPublier = async function (code) {
     const o = ofListe.find(x => x.code === code); if (!o) return;
-    if (!confirm('Supprimer « ' + o.titre + ' » ?\n\nLes SMS déjà envoyés qui portent cette adresse '
-      + 'montreront l’image de veille.')) return;
+    if (!confirm('Publier « ' + (o.titre || '') + ' » ?\n\nL’affiche devient visible de tous à '
+      + ofLienCourt(o) + ', et son adresse ne changera plus.')) return;
     try {
-      await fetch('/api/offres/supprimer', {
+      const r = await fetch('/api/offres/publier', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code })
       });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.ok) { alert((j && j.error) || 'Publication impossible.'); return; }
+      ofEdite = null; ofImage = null;
+      await window.ofCharger();
+    } catch (e) { alert('Publication impossible : ' + e.message); }
+  };
+
+  window.ofSupprimer = async function (code) {
+    const o = ofListe.find(x => x.code === code); if (!o) return;
+    const q = ofPropose(o)
+      ? 'Retirer la proposition « ' + (o.titre || '') + ' » ?'
+      : 'Supprimer « ' + o.titre + ' » ?\n\nLes SMS déjà envoyés qui portent cette adresse '
+        + 'montreront l’image de veille.';
+    if (!confirm(q)) return;
+    try {
+      const rep = await fetch('/api/offres/supprimer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code })
+      });
+      const j = await rep.json().catch(() => null);
+      if (!rep.ok || !j || !j.ok) alert((j && j.error) || 'Suppression impossible.');
       await window.ofCharger();
     } catch (e) {}
   };
@@ -352,10 +493,12 @@
       const j = await r.json();
       if (r.ok && j.ok) {
         ofListe = j.offres || []; ofRedacteur = !!j.redacteur; ofJourServeur = j.jour || '';
+        ofMoi = j.moi || '';
         OF_DIFFUSION = j.base || '';
       }
     } catch (e) {}
     window.ofRender();
+    ofPastille();
   };
 
   // ── Injection ─────────────────────────────────────────────────────────────
@@ -389,6 +532,12 @@
     '.of-l-n{font-variant-numeric:tabular-nums;font-weight:600;color:var(--gray-500);min-width:38px;text-align:right}',
     '.of-th{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-500)}',
     '.of-sup{color:var(--red)}',
+    '.of-e-prop{background:var(--b-pale,#E7EEF8);color:var(--b-dark,#2B4C7E)}',
+    '.of-l-prop{background:var(--gray-50,#FAFAFA)}',
+    '.of-l-vide{display:flex;align-items:center;justify-content:center;color:var(--gray-300);background:var(--gray-100);font-size:.9rem}',
+    '.of-manque{color:var(--amber)}',
+    '.of-n{display:inline-block;background:var(--b-pale,#E7EEF8);color:var(--b-dark,#2B4C7E);border-radius:20px;padding:1px 8px;font-size:.74rem;font-weight:700;margin-left:5px;vertical-align:middle}',
+
     '.of-f .fg{margin-bottom:13px}',
     '.of-f label{display:block;font-size:.76rem;font-weight:600;color:var(--gray-700);margin-bottom:4px}',
     '.of-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}',
@@ -424,7 +573,8 @@
       b.setAttribute('data-sec', 'offres');
       b.setAttribute('onclick', "showSec('offres',this)");
       b.innerHTML = '<svg class="ico sb-ico"><use href="#ic-idee"></use></svg>'
-        + '<span class="sb-label">Offres</span>';
+        + '<span class="sb-label">Offres</span>'
+        + '<span class="sb-badge" id="navb-of" title="Propositions à finaliser"></span>';
       ref.insertAdjacentElement('afterend', b);
     }
     const secRef = document.getElementById('sec-livraisons');
@@ -441,6 +591,10 @@
     document.addEventListener('input', function (e) {
       if (e.target && e.target.id === 'of-code') ofCodeTouche = true;
     });
+    // UNE PROPOSITION QUI DORT N'EN EST PAS UNE. On ne passe pas par cet écran
+    // chaque matin : la liste se charge une fois, au calme, pour que la
+    // pastille existe avant qu'on y pense.
+    setTimeout(function () { if (window.ofCharger) window.ofCharger(); }, 4000);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ofInject);

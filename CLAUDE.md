@@ -817,6 +817,27 @@ Deux garde-fous en sont sortis, et ils valent pour tout module à écran :
 
 `essais/suivi-admin.js` porte les deux.
 
+### Un essai qui ne peut pas rougir n'est pas un essai
+
+20/11/2026, en posant les propositions d'offres : trois vérifications gardaient
+la propriété la plus importante du module — *une proposition n'est jamais servie
+aux patients* — et elles passaient **aussi bien sans le filtre que avec**. La
+proposition de l'essai était datée du mois précédent : écartée comme périmée,
+elle ne pouvait pas sortir de toute façon. L'essai décrivait la règle sans
+l'éprouver. Deux pièges, tous deux muets :
+
+1. **Le cas doit être en position de nuire.** Pour éprouver qu'une chose est
+   cachée, il faut qu'elle soit par ailleurs parfaitement montrable : ici une
+   affiche, et aucune date — donc valable aujourd'hui et pour toujours.
+2. **Une expression régulière sans `.test()` est toujours vraie.**
+   `t('...', /Deux propositions</)` passe quoi qu'il arrive. Le même piège vaut
+   pour un `includes` oublié ou un `&&` qui rend une chaîne.
+
+D'où la règle : **vérifier par l'absurde**. Casser volontairement la ligne que
+l'essai garde, relancer, voir rouge, remettre. Dix secondes, et c'est la seule
+preuve que la suite sert à quelque chose. Les trois vérifications ci-dessus sont
+restées vertes à ce test-là : elles ne valaient rien.
+
 Pour une logique de tri, de date ou de fusion, écrire un petit script Node qui
 l'exerce sur des cas construits et montrer la sortie. C'est ainsi qu'ont été
 attrapés le décalage de date et la falaise du classement.

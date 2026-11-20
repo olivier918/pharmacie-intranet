@@ -285,6 +285,14 @@ module.exports = {
     // code : deux titulaires qui en désignent une chacun de leur côté ne
     // peuvent pas en laisser deux derrière eux.
     await db.query('CREATE UNIQUE INDEX IF NOT EXISTS app_offres_veille ON app_offres (veille) WHERE veille');
+    // UNE OFFRE PROPOSÉE N'EST PAS UNE OFFRE. L'équipe propose une opération,
+    // le titulaire la finalise et la publie : tant qu'elle est « proposition »,
+    // la page publique l'ignore et son image n'est servie à personne.
+    //
+    // Les offres déjà en base sont publiées — c'est la seule chose qu'elles
+    // pouvaient être : le DEFAULT le dit, et rien n'est à migrer.
+    await db.query("ALTER TABLE app_offres ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'publiee'");
+    await db.query('ALTER TABLE app_offres ADD COLUMN IF NOT EXISTS propose_par TEXT');
   },
 
   /* ──────────────────────────────────────────────────────────────────────────
@@ -300,9 +308,12 @@ module.exports = {
     const toutes = async () => {
       const db = base();
       if (!db) return [];
+      // SEULEMENT CE QUI EST PUBLIÉ. Une proposition de l'équipe ne doit jamais
+      // sortir d'ici : ni à l'adresse générale, ni à son adresse nommée, même
+      // devinée.
       const r = await db.query(
         `SELECT code, titre, mentions, empreinte, largeur, hauteur, debut, fin, veille, cree
-           FROM app_offres`);
+           FROM app_offres WHERE statut = 'publiee'`);
       return r.rows || [];
     };
 
@@ -314,7 +325,10 @@ module.exports = {
         if (!db) return res.status(503).end();
         const code = normCode(req.params.code);
         if (!code) return res.status(404).end();
-        const r = await db.query('SELECT mime, octets, empreinte FROM app_offres WHERE code = $1', [code]);
+        // MÊME RÈGLE POUR L'IMAGE que pour la page : l'affiche d'une
+        // proposition n'est servie à personne, même avec son adresse exacte.
+        const r = await db.query(
+          "SELECT mime, octets, empreinte FROM app_offres WHERE code = $1 AND statut = 'publiee'", [code]);
         const o = r.rows[0];
         if (!o || !TYPES[o.mime]) return res.status(404).end();
         // Le nom ne désigne pas le contenu (le code survit à un remplacement
@@ -391,18 +405,32 @@ module.exports = {
         // pèse mille fois ce que pèsent ses métadonnées.
         const r = await db().query(
           `SELECT code, titre, mentions, mime, taille, empreinte, largeur, hauteur,
-                  debut, fin, veille, vues, par, cree, maj
+                  debut, fin, veille, vues, par, statut, propose_par, cree, maj
              FROM app_offres ORDER BY veille, cree DESC`);
         const peut = (typeof d.estAdmin === 'function') ? await d.estAdmin(uid) : false;
         const repli = (typeof d.basePatients === 'function') ? d.basePatients() : null;
-        res.json({ ok: true, jour: jourParis(), redacteur: peut, base: diffusion(repli),
-                   offres: r.rows || [] });
+        // `moi` : l'écran a besoin de savoir quelles propositions sont celles
+        // de celui qui regarde — il peut corriger les siennes, pas celles des
+        // autres.
+        res.json({ ok: true, jour: jourParis(), redacteur: peut, moi: uid,
+                   base: diffusion(repli), offres: r.rows || [] });
       } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
     });
 
+    // QUI EST LÀ, sans exiger d'être titulaire. L'équipe propose ; seules la
+    // publication et la retouche d'une offre en ligne restent aux titulaires.
+    const session = async (req, res) => {
+      const uid = (typeof d.qui === 'function') ? d.qui(req) : null;
+      if (!uid) { res.status(401).json({ ok: false, error: 'session inconnue' }); return null; }
+      return uid;
+    };
+    const estTitulaire = async (uid) =>
+      (typeof d.estAdmin === 'function') ? !!(await d.estAdmin(uid)) : false;
+
     app.post('/api/offres', async (req, res) => {
       try {
-        const moi = await admin(req, res); if (!moi) return;
+        const moi = await session(req, res); if (!moi) return;
+        const titulaire = await estTitulaire(moi);
         if (!db()) return res.status(503).json({ ok: false, error: 'base indisponible' });
         const b = req.body || {};
         const code = normCode(b.code);
@@ -440,8 +468,35 @@ module.exports = {
           };
         }
 
-        const existe = (await db().query('SELECT code FROM app_offres WHERE code = $1', [code])).rows[0];
-        if (!existe && !img) return res.status(400).json({ ok: false, error: 'Il manque l’affiche.' });
+        const existe = (await db().query(
+          'SELECT code, statut, propose_par FROM app_offres WHERE code = $1', [code])).rows[0];
+
+        // ── CE QU'UN COLLABORATEUR PEUT FAIRE ───────────────────────────
+        // Proposer une opération, et corriger la sienne tant qu'elle n'est pas
+        // publiée. Rien d'autre : une affiche en ligne porte des SMS déjà
+        // envoyés, et l'image de veille répond pour toute la pharmacie quand
+        // rien n'est en cours.
+        if (!titulaire) {
+          if (existe && existe.statut !== 'proposition') {
+            return res.status(403).json({ ok: false,
+              error: 'Cette offre est en ligne : seul un titulaire peut la modifier.' });
+          }
+          if (existe && existe.propose_par && existe.propose_par !== moi) {
+            return res.status(403).json({ ok: false,
+              error: 'Cette proposition est celle de quelqu’un d’autre.' });
+          }
+          if (veille) {
+            return res.status(403).json({ ok: false,
+              error: 'L’image de veille est posée par un titulaire.' });
+          }
+        }
+        // L'AFFICHE N'EST PAS EXIGÉE POUR PROPOSER. Une opération se propose
+        // souvent avant que le laboratoire n'ait fourni le visuel ; elle sera
+        // exigée à la publication, là où elle manquerait vraiment.
+        const proposition = !titulaire || (existe && existe.statut === 'proposition');
+        if (!existe && !img && !proposition) {
+          return res.status(400).json({ ok: false, error: 'Il manque l’affiche.' });
+        }
 
         // La veille est unique : on libère l'ancienne AVANT d'écrire, sinon
         // l'index unique refuse l'écriture et l'opération échoue au milieu.
@@ -464,21 +519,63 @@ module.exports = {
         } else {
           await db().query(
             `INSERT INTO app_offres (code,titre,mentions,mime,octets,taille,empreinte,
-                                     largeur,hauteur,debut,fin,veille,par)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-            [code, titre, mentions, img.mime, img.octets, img.octets.length, img.empreinte,
-             img.largeur, img.hauteur, debut, fin, veille, moi]);
+                                     largeur,hauteur,debut,fin,veille,par,statut,propose_par)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+            [code, titre, mentions,
+             img ? img.mime : '', img ? img.octets : Buffer.alloc(0),
+             img ? img.octets.length : 0, img ? img.empreinte : '',
+             img ? img.largeur : null, img ? img.hauteur : null,
+             debut, fin, veille, moi,
+             proposition ? 'proposition' : 'publiee',
+             proposition ? moi : null]);
         }
+        res.json({ ok: true, code });
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+
+    // ── PUBLIER ─────────────────────────────────────────────
+    // Le seul geste qui fait passer une proposition devant les patients. Il
+    // vérifie ce qui manquerait vraiment une fois le lien parti : l'affiche,
+    // et le titre que le SMS portera.
+    app.post('/api/offres/publier', async (req, res) => {
+      try {
+        const moi = await admin(req, res); if (!moi) return;
+        if (!db()) return res.status(503).json({ ok: false, error: 'base indisponible' });
+        const code = normCode((req.body || {}).code);
+        if (!code) return res.status(400).json({ ok: false, error: 'offre inconnue' });
+        const o = (await db().query(
+          'SELECT code, titre, mime, taille, statut FROM app_offres WHERE code = $1', [code])).rows[0];
+        if (!o) return res.status(404).json({ ok: false, error: 'offre inconnue' });
+        if (!TYPES[o.mime] || !(o.taille > 0)) {
+          return res.status(400).json({ ok: false, error: 'Il manque l’affiche : déposez-la avant de publier.' });
+        }
+        if (!String(o.titre || '').trim()) {
+          return res.status(400).json({ ok: false, error: 'Il manque le titre : c’est lui qui part dans le SMS.' });
+        }
+        await db().query(
+          "UPDATE app_offres SET statut = 'publiee', par = $2, maj = NOW() WHERE code = $1", [code, moi]);
         res.json({ ok: true, code });
       } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
     });
 
     app.post('/api/offres/supprimer', async (req, res) => {
       try {
-        const moi = await admin(req, res); if (!moi) return;
+        const moi = await session(req, res); if (!moi) return;
+        const titulaire = await estTitulaire(moi);
         if (!db()) return res.status(503).json({ ok: false, error: 'base indisponible' });
         const code = normCode((req.body || {}).code);
         if (!code) return res.status(400).json({ ok: false, error: 'offre inconnue' });
+        // ON RETIRE SA PROPRE PROPOSITION, pas l'offre d'un autre : se raviser
+        // est un geste normal, effacer une affiche en ligne ne l'est pas.
+        if (!titulaire) {
+          const o = (await db().query(
+            'SELECT statut, propose_par FROM app_offres WHERE code = $1', [code])).rows[0];
+          if (!o) return res.json({ ok: true, supprime: false });
+          if (o.statut !== 'proposition' || (o.propose_par && o.propose_par !== moi)) {
+            return res.status(403).json({ ok: false,
+              error: 'Seul un titulaire retire une offre qui n’est pas votre proposition.' });
+          }
+        }
         const r = await db().query('DELETE FROM app_offres WHERE code = $1', [code]);
         res.json({ ok: true, supprime: r.rowCount > 0 });
       } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
